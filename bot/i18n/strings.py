@@ -24,6 +24,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "verify.ok": "验证通过，已解除限制。",
         "verify.expired": "验证已过期，请联系管理员或重新入群触发验证。",
         "moderation.deleted": "已删除违规消息。",
+        "welcome.default": "欢迎 {user} 加入 {chat}！祝你在这里玩得开心~",
     },
     "en": {
         "start.private": "Hi! Add me to a group and grant admin rights, then run /admin in the group to configure.",
@@ -47,6 +48,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "verify.ok": "Verified. Restrictions lifted.",
         "verify.expired": "Verification expired.",
         "moderation.deleted": "Removed a violating message.",
+        "welcome.default": "Welcome {user} to {chat}! Have a great time here~",
     },
 }
 

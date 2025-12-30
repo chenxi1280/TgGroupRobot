@@ -26,12 +26,78 @@ class PointsTxnType(str, enum.Enum):
     admin_adjust = "admin_adjust"
     reward = "reward"
     penalty = "penalty"
+    lottery_join = "lottery_join"       # 参与抽奖扣费
+    lottery_win = "lottery_win"         # 中奖奖励
 
 
 class SubscriptionStatus(str, enum.Enum):
     active = "active"
     expired = "expired"
     cancelled = "cancelled"
+
+
+class ConversationStateType(str, enum.Enum):
+    """对话状态类型"""
+    lottery_create = "lottery_create"  # 创建抽奖流程
+    scheduled_create = "scheduled_create"  # 创建定时消息流程
+    auto_reply_create = "auto_reply_create"  # 创建自动回复流程
+    banned_word_add = "banned_word_add"  # 添加违禁词流程
+
+
+class BannedWordMatchType(str, enum.Enum):
+    """违禁词匹配类型"""
+    exact = "exact"  # 精确匹配
+    contains = "contains"  # 包含匹配
+    regex = "regex"  # 正则表达式
+
+
+class AutoReplyMatchType(str, enum.Enum):
+    """自动回复匹配类型"""
+    exact = "exact"  # 精确匹配
+    contains = "contains"  # 包含匹配
+    regex = "regex"  # 正则表达式
+    starts_with = "starts_with"  # 以...开头
+    ends_with = "ends_with"  # 以...结尾
+
+
+class ScheduleType(str, enum.Enum):
+    """定时消息类型"""
+    none = "none"  # 一次性消息
+    every_minute = "every_minute"  # 每分钟
+    every_5_minutes = "every_5_minutes"  # 每5分钟
+    every_15_minutes = "every_15_minutes"  # 每15分钟
+    every_30_minutes = "every_30_minutes"  # 每30分钟
+    every_hour = "every_hour"  # 每小时
+    every_6_hours = "every_6_hours"  # 每6小时
+    every_12_hours = "every_12_hours"  # 每12小时
+    every_day = "every_day"  # 每天
+    custom = "custom"  # 自定义间隔
+
+
+class VerificationMode(str, enum.Enum):
+    """验证模式"""
+    button = "button"  # 按钮验证
+    math = "math"  # 数学题验证
+    captcha = "captcha"  # 验证码验证
+
+
+class InviteLinkStatus(str, enum.Enum):
+    """邀请链接状态"""
+    active = "active"  # 激活
+    revoked = "revoked"  # 已撤销
+    expired = "expired"  # 已过期
+
+
+class SolitaireStatus(str, enum.Enum):
+    """接龙状态"""
+    active = "active"  # 进行中
+    closed = "closed"  # 已结束
+
+
+class LotteryDrawMode(str, enum.Enum):
+    """抽奖开奖模式"""
+    random = "random"  # 随机开奖
+    manual = "manual"  # 手动指定中奖人
 
 
 

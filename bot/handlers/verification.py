@@ -8,7 +8,12 @@ from bot.i18n.strings import t
 from bot.keyboards.verification import verification_keyboard
 from bot.services.chat_service import ensure_chat, get_chat_settings
 from bot.services.user_service import ensure_user
-from bot.services.verification_service import create_or_replace_challenge, solve_by_token
+from bot.services.verification_service import (
+    create_or_replace_challenge,
+    get_challenge,
+    solve_by_answer,
+    solve_by_token,
+)
 
 
 async def new_members_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -23,6 +28,26 @@ async def new_members_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         await ensure_chat(session, chat_id=chat.id, chat_type=chat.type, title=chat.title)
         settings = await get_chat_settings(session, chat.id)
 
+        # 发送欢迎消息（独立于验证功能）
+        if settings.welcome_enabled:
+            for u in update.effective_message.new_chat_members or []:
+                mention = u.mention_html()
+                if settings.welcome_message:
+                    # 使用自定义欢迎消息
+                    welcome_text = settings.welcome_message.format(user=mention, chat=chat.title or "本群")
+                else:
+                    # 使用默认欢迎消息
+                    welcome_text = t(settings.language, "welcome.default", user=mention, chat=chat.title or "本群")
+                try:
+                    await context.bot.send_message(
+                        chat_id=chat.id,
+                        text=welcome_text,
+                        parse_mode="HTML",
+                    )
+                except Exception:
+                    pass
+
+        # 如果未启用验证，直接返回
         if not settings.verification_enabled:
             await session.commit()
             return
@@ -37,7 +62,11 @@ async def new_members_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
                 language_code=u.language_code,
             )
             ch = await create_or_replace_challenge(
-                session, chat_id=chat.id, user_id=u.id, ttl_seconds=settings.verification_timeout_seconds
+                session,
+                chat_id=chat.id,
+                user_id=u.id,
+                ttl_seconds=settings.verification_timeout_seconds,
+                verification_type=settings.verification_mode,
             )
 
             # 先限制发言（最小限制：不能发消息）
@@ -63,13 +92,27 @@ async def new_members_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
                 # 权限不足就只能提示
                 pass
 
+            # 根据验证类型发送不同的验证消息
             mention = u.mention_html()
-            await context.bot.send_message(
-                chat_id=chat.id,
-                text=t(settings.language, "verify.prompt", user=mention, seconds=settings.verification_timeout_seconds),
-                reply_markup=verification_keyboard(ch.token),
-                parse_mode="HTML",
-            )
+            if settings.verification_mode == "button":
+                await context.bot.send_message(
+                    chat_id=chat.id,
+                    text=t(settings.language, "verify.prompt", user=mention, seconds=settings.verification_timeout_seconds),
+                    reply_markup=verification_keyboard(ch.token),
+                    parse_mode="HTML",
+                )
+            elif settings.verification_mode == "math":
+                await context.bot.send_message(
+                    chat_id=chat.id,
+                    text=f"🔢 {mention} 请回答以下数学题以完成验证：\n\n<b>{ch.question}</b>\n\n⏱️ {settings.verification_timeout_seconds} 秒内完成",
+                    parse_mode="HTML",
+                )
+            elif settings.verification_mode == "captcha":
+                await context.bot.send_message(
+                    chat_id=chat.id,
+                    text=f"🔢 {mention} 请输入以下验证码以完成验证：\n\n<b>{ch.question}</b>\n\n⏱️ {settings.verification_timeout_seconds} 秒内完成",
+                    parse_mode="HTML",
+                )
 
         await session.commit()
 
@@ -102,10 +145,62 @@ async def verify_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await q.edit_message_text(t(settings.language, "verify.expired"))
         return
 
+    await _unrestrict_and_notify(context, chat.id, ch.user_id, settings.language)
+    await q.edit_message_text(t(settings.language, "verify.ok"))
+
+
+async def verify_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """处理验证答案消息（数学题/验证码模式）"""
+    if update.effective_chat is None or update.effective_user is None or update.effective_message is None:
+        return
+
+    chat = update.effective_chat
+    user = update.effective_user
+    message_text = update.effective_message.text or ""
+
+    if chat.type == "private" or not message_text:
+        return
+
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        settings = await get_chat_settings(session, chat.id)
+
+        # 只处理非按钮模式的验证
+        if settings.verification_mode == "button":
+            await session.commit()
+            return
+
+        # 检查用户是否有待验证的挑战
+        ch = await get_challenge(session, chat.id, user.id)
+        if ch is None or ch.solved:
+            await session.commit()
+            return
+
+        # 尝试验证答案
+        result = await solve_by_answer(session, chat.id, user.id, message_text)
+        await session.commit()
+
+        if result and result.solved:
+            # 验证成功
+            try:
+                await update.effective_message.reply_text("✅ 验证成功！")
+            except Exception:
+                pass
+            await _unrestrict_and_notify(context, chat.id, user.id, settings.language)
+        else:
+            # 验证失败
+            try:
+                await update.effective_message.reply_text(f"❌ 答案错误，请重试。\n\n{ch.question}")
+            except Exception:
+                pass
+
+
+async def _unrestrict_and_notify(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int, language: str) -> None:
+    """解除限制并发送通知"""
     try:
         await context.bot.restrict_chat_member(
-            chat_id=chat.id,
-            user_id=ch.user_id,
+            chat_id=chat_id,
+            user_id=user_id,
             permissions=ChatPermissions(
                 can_send_messages=True,
                 can_send_audios=True,
@@ -125,7 +220,3 @@ async def verify_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
     except Exception:
         pass
-
-    await q.edit_message_text(t(settings.language, "verify.ok"))
-
-

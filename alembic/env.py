@@ -7,6 +7,10 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.engine.url import make_url
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 from bot.db.base import Base
 from bot.models import core  # noqa: F401  # ensure models imported
