@@ -41,6 +41,8 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
+        version_table_schema="bot",
+        include_schemas=True,
     )
 
     with context.begin_transaction():
@@ -55,10 +57,17 @@ def run_migrations_online() -> None:
         configuration,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        connect_args={"options": "-csearch_path=bot"},
     )
 
     with connectable.connect() as connection:  # type: Connection
-        context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+            compare_type=True,
+            version_table_schema="bot",
+            include_schemas=True,
+        )
 
         with context.begin_transaction():
             context.run_migrations()
@@ -68,6 +77,7 @@ if context.is_offline_mode():
     run_migrations_offline()
 else:
     run_migrations_online()
+
 
 
 

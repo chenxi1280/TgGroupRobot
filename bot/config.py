@@ -1,20 +1,41 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
+from dotenv import load_dotenv
 from pydantic import Field, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+def _find_env_file() -> Path | None:
+    """查找 env 文件，优先级：项目根目录的 .env > 项目根目录的 env"""
+    # 获取项目根目录（bot/config.py 的上两级目录）
+    config_dir = Path(__file__).parent
+    project_root = config_dir.parent
+    
+    # 按优先级查找
+    for filename in [".env", "env"]:
+        env_path = project_root / filename
+        if env_path.exists():
+            return env_path
+    
+    return None
+
+
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env",  # 默认值，会在 get_settings() 中动态覆盖
+        env_file_encoding="utf-8",
+        extra="ignore"
+    )
 
     app_env: str = Field(default="dev", alias="APP_ENV")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
 
     bot_token: str = Field(alias="BOT_TOKEN")
     database_url: str = Field(
-        default="postgresql+psycopg://tg_bot:tg_bot@localhost:5432/tg_bot",
+        default="postgresql+psycopg://tg_bot:tg_bot@db:5432/tg_bot",
         alias="DATABASE_URL",
     )
 
@@ -23,29 +44,48 @@ class Settings(BaseSettings):
 
 
 def get_settings() -> Settings:
+    # 查找 env 文件
+    env_file = _find_env_file()
+    
+    # 如果找到 env 文件，使用 load_dotenv 加载它到环境变量
+    if env_file:
+        # 加载 env 文件到环境变量，这样 Settings 就可以从环境变量读取
+        load_dotenv(env_file, override=True)
+    
+    # 尝试创建 Settings 实例（会从环境变量读取）
     try:
         return Settings()
     except ValidationError as e:
         # 检查是否缺少 BOT_TOKEN
         for error in e.errors():
-            if error.get("loc") == ("bot_token",) and error.get("type") == "missing":
-                env_file = Path(".env")
-                example_file = Path("config/env.example")
+            error_loc = error.get("loc", ())
+            error_type = error.get("type", "")
+            
+            # 兼容不同的 loc 格式（元组或列表）
+            loc_tuple = tuple(error_loc) if error_loc else ()
+            
+            if loc_tuple == ("bot_token",) and error_type == "missing":
+                config_dir = Path(__file__).parent
+                project_root = config_dir.parent
+                env_file = _find_env_file()
+                example_file = project_root / "config" / "env.example"
                 
                 error_msg = "\n" + "=" * 60 + "\n"
                 error_msg += "配置错误：缺少必需的 BOT_TOKEN\n"
                 error_msg += "=" * 60 + "\n\n"
                 
-                if not env_file.exists():
-                    error_msg += f"未找到 .env 文件。\n"
+                if env_file is None:
+                    error_msg += f"未找到环境配置文件（.env 或 env）。\n"
                     error_msg += f"请参考示例文件创建：{example_file}\n\n"
                     error_msg += "创建步骤：\n"
                     error_msg += "1. 复制示例文件：cp config/env.example .env\n"
-                    error_msg += "2. 编辑 .env 文件，设置你的 BOT_TOKEN\n"
+                    error_msg += "   或者：cp config/env.example env\n"
+                    error_msg += "2. 编辑文件，设置你的 BOT_TOKEN\n"
                     error_msg += "   例如：BOT_TOKEN=1234567890:ABCdefGHIjklMNOpqrsTUVwxyz\n\n"
                 else:
-                    error_msg += f".env 文件存在，但缺少 BOT_TOKEN 配置。\n"
-                    error_msg += f"请在 .env 文件中添加：BOT_TOKEN=你的机器人令牌\n\n"
+                    error_msg += f"环境配置文件存在：{env_file}\n"
+                    error_msg += f"但缺少 BOT_TOKEN 配置。\n"
+                    error_msg += f"请在文件中添加：BOT_TOKEN=你的机器人令牌\n\n"
                 
                 error_msg += "如何获取 BOT_TOKEN：\n"
                 error_msg += "1. 在 Telegram 中搜索 @BotFather\n"

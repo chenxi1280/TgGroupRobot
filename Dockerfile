@@ -14,3 +14,5 @@ CMD ["bash", "-lc", "alembic upgrade head && python -m bot"]
 
 
 
+
+

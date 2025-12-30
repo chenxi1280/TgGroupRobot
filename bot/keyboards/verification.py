@@ -8,3 +8,5 @@ def verification_keyboard(token: str) -> InlineKeyboardMarkup:
 
 
 
+
+

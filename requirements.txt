@@ -7,9 +7,11 @@ pydantic-settings==2.6.1
 python-dotenv==1.0.1
 structlog==24.4.0
 tenacity==9.0.0
+greenlet>=3.0.0
 
 pytest==8.3.4
 pytest-asyncio==0.25.0
+
 
 
 

@@ -36,3 +36,5 @@ async def get_chat_settings(session: AsyncSession, chat_id: int) -> ChatSettings
 
 
 
+
+

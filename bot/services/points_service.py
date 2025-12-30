@@ -47,3 +47,5 @@ async def sign_in(session: AsyncSession, chat_id: int, user_id: int, points: int
 
 
 
+
+

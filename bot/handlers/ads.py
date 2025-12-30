@@ -54,3 +54,5 @@ async def ad_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
 
 
+
+
