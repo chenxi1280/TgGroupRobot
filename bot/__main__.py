@@ -9,7 +9,7 @@ from bot.handlers.admin import admin_command, admin_callback
 from bot.handlers.ads import ad_command
 from bot.handlers.moderation import moderation_message_handler
 from bot.handlers.points import points_command, sign_command
-from bot.handlers.start import start_command
+from bot.handlers.start import start_command, private_message_handler
 from bot.handlers.verification import new_members_handler, verify_callback
 from bot.logging_config import configure_logging
 
@@ -48,6 +48,9 @@ def build_application() -> Application:
     # group events
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, new_members_handler))
     app.add_handler(MessageHandler(filters.ChatType.GROUPS & filters.TEXT & ~filters.COMMAND, moderation_message_handler))
+    
+    # private chat messages (non-command)
+    app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND, private_message_handler))
 
     async def on_error(update, context):  # type: ignore[no-untyped-def]
         log.exception("bot_error", err=context.error)

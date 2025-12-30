@@ -38,4 +38,19 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     await update.effective_message.reply_text(t(settings.language, "start.group"))
 
 
+async def private_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """处理私聊中的普通文本消息"""
+    if update.effective_chat is None or update.effective_message is None:
+        return
+    
+    chat = update.effective_chat
+    if chat.type != "private":
+        return
+    
+    # 回复提示信息
+    await update.effective_message.reply_text(t("zh-CN", "start.private"))
+
+
+
+
 
