@@ -1,14 +1,22 @@
+version: '3.8'
+
 services:
   bot:
+    # 构建当前目录
     build: .
+    container_name: tg_group_bot
+    # 总是自动重启 (崩溃或服务器重启后自动拉起)
+    restart: always
+    # 加载环境变量文件
     env_file:
       - .env
-    depends_on:
-      db:
-        condition: service_healthy
-    restart: unless-stopped
+    # 挂载日志目录 (可选，如果你想在宿主机看日志文件)
+    # volumes:
+    #   - ./logs:/app/logs
 
-
-
-
-
+    # 资源限制 (生产环境建议配置，防止内存溢出)
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
