@@ -65,7 +65,6 @@ TgGroupRobot 是一个功能完整的 **To C** Telegram 群组管理机器人，
 | python-telegram-bot | 21.6 | Telegram Bot API |
 | SQLAlchemy | 2.0.36 | ORM 框架 |
 | psycopg | 3.2.3 | PostgreSQL 驱动 |
-| Alembic | 1.14.0 | 数据库迁移 |
 | Pydantic | 2.10.3 | 数据验证 |
 | structlog | 24.4.0 | 结构化日志 |
 | tenacity | 9.0.0 | 重试机制 |
@@ -170,7 +169,7 @@ cp .env.example .env
 4. **初始化数据库**
 
 ```bash
-alembic upgrade head
+psql -h host -U user -d dbname -f sql/init.sql
 ```
 
 5. **运行应用**
@@ -242,7 +241,6 @@ TgGroupRobot/
 │   │   └── ...
 │   └── i18n/                 # 国际化
 │       └── strings.py        # 语言字符串
-├── alembic/                  # 数据库迁移
 ├── config/                   # 配置文件目录
 ├── docs/                     # 文档目录
 ├── sql/                      # SQL 文件
@@ -274,17 +272,10 @@ pytest tests/test_specific.py
 pytest tests/test_specific.py::test_function
 ```
 
-### 数据库迁移
-```bash
-# 创建新迁移
-alembic revision --autogenerate -m "描述"
-
-# 执行迁移
-alembic upgrade head
-
-# 回滚迁移
-alembic downgrade -1
-```
+### 数据库变更
+数据库变更通过维护 `sql/init.sql` 文件管理：
+- 修改表结构后，更新 `init.sql` 中对应的 DDL 语句
+- 手动执行更新后的 SQL 脚本到数据库
 
 ### 日志
 日志采用 structlog 进行结构化记录，支持以下级别：
@@ -297,11 +288,10 @@ alembic downgrade -1
 ## 部署说明
 
 1. **获取 Bot Token**：通过 [@BotFather](https://t.me/botfather) 创建机器人并获取 Token
-2. **配置数据库**：准备 PostgreSQL 数据库实例
+2. **配置数据库**：准备 PostgreSQL 数据库实例，执行 `sql/init.sql` 初始化表结构
 3. **设置环境变量**：正确配置 `.env` 文件
-4. **运行数据库迁移**：`alembic upgrade head`
-5. **启动机器人**：`docker compose up -d`
-6. **添加到群组**：将机器人添加到目标群组并授予管理员权限
+4. **启动机器人**：`docker compose up -d`
+5. **添加到群组**：将机器人添加到目标群组并授予管理员权限
 
 ## 许可证
 
