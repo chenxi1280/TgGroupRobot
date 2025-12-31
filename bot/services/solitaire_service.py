@@ -23,7 +23,7 @@ class CreateResult:
 class JoinResult:
     """参与接龙结果"""
     success: bool
-    reason: Literal["ok", "not_found", "already_closed", "already_joined", "full", "error"]
+    reason: Literal["ok", "not_found", "already_closed", "already_joined", "full", "expired", "insufficient_points", "error"]
     solitaire: Solitaire | None = None
 
 
@@ -42,6 +42,8 @@ async def create_solitaire(
     title: str,
     description: str | None = None,
     max_participants: int | None = None,
+    points_required: int | None = None,
+    deadline: dt.datetime | None = None,
 ) -> CreateResult:
     """创建接龙"""
     try:
@@ -52,6 +54,8 @@ async def create_solitaire(
             description=description,
             status=SolitaireStatus.active.value,
             max_participants=max_participants,
+            points_required=points_required,
+            deadline=deadline,
             entries=[],
         )
         session.add(solitaire)
@@ -100,6 +104,12 @@ async def join_solitaire(
     if solitaire.status != SolitaireStatus.active.value:
         return JoinResult(success=False, reason="already_closed", solitaire=solitaire)
 
+    # 检查截止时间
+    if solitaire.deadline:
+        now = dt.datetime.now(dt.UTC)
+        if now > solitaire.deadline:
+            return JoinResult(success=False, reason="expired", solitaire=solitaire)
+
     # 检查是否已参与
     for entry in solitaire.entries:
         if entry.get("user_id") == user_id:
@@ -108,6 +118,22 @@ async def join_solitaire(
     # 检查人数限制
     if solitaire.max_participants and len(solitaire.entries) >= solitaire.max_participants:
         return JoinResult(success=False, reason="full", solitaire=solitaire)
+
+    # 检查积分限制
+    if solitaire.points_required:
+        from bot.models.core import PointsAccount
+        user_points = 0
+        points_stmt = select(PointsAccount).where(
+            PointsAccount.chat_id == solitaire.chat_id,
+            PointsAccount.user_id == user_id
+        )
+        points_result = await session.execute(points_stmt)
+        points_account = points_result.scalar_one_or_none()
+        if points_account:
+            user_points = points_account.balance
+
+        if user_points < solitaire.points_required:
+            return JoinResult(success=False, reason="insufficient_points", solitaire=solitaire)
 
     # 添加参与记录
     entry = {
@@ -220,6 +246,15 @@ def format_solitaire_message(solitaire: Solitaire, show_closed: bool = True) -> 
     else:
         text += f" ({len(solitaire.entries)}人)"
     text += "\n"
+
+    # 积分限制
+    if solitaire.points_required:
+        text += f"💎 需积分: {solitaire.points_required}\n"
+
+    # 截止时间
+    if solitaire.deadline:
+        deadline_str = solitaire.deadline.strftime("%Y-%m-%d %H:%M")
+        text += f"⏰ 截止: {deadline_str}\n"
 
     if solitaire.description:
         text += f"\n{solitaire.description}\n"

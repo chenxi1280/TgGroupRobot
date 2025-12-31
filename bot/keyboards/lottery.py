@@ -3,12 +3,24 @@ from __future__ import annotations
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 
-def lottery_menu_keyboard() -> InlineKeyboardMarkup:
-    """抽奖菜单键盘"""
+def lottery_menu_keyboard(chat_id: int | None = None) -> InlineKeyboardMarkup:
+    """抽奖菜单键盘
+
+    Args:
+        chat_id: 群组ID，用于在私聊中操作群组时指定目标群组
+    """
+    # 构建创建抽奖的回调数据
+    if chat_id:
+        create_callback = f"lot:create:{chat_id}"
+        back_callback = f"adm:back_to_menu:{chat_id}"
+    else:
+        create_callback = "lot:create"
+        back_callback = "adm:menu:main"
+
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("🎁创建通用抽奖", callback_data="lot:create")],
-            [InlineKeyboardButton("返回", callback_data="adm:menu:main")],
+            [InlineKeyboardButton("🎁创建通用抽奖", callback_data=create_callback)],
+            [InlineKeyboardButton("返回", callback_data=back_callback)],
         ]
     )
 
@@ -72,4 +84,20 @@ def manual_draw_summary_keyboard_with_winners(lottery_id: int, prizes: list, win
     buttons.append([InlineKeyboardButton("✅ 完成开奖", callback_data=f"lot:complete_manual_draw:{lottery_id}")])
     buttons.append([InlineKeyboardButton("🔙 返回", callback_data="adm:menu:main")])
     return InlineKeyboardMarkup(buttons)
+
+
+def get_join_keyboard(lottery_id: int) -> InlineKeyboardMarkup:
+    """获取参与抽奖的键盘
+
+    Args:
+        lottery_id: 抽奖ID
+
+    Returns:
+        参与抽奖的按钮键盘
+    """
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("🎯 参与抽奖", callback_data=f"join_lottery_{lottery_id}")],
+        ]
+    )
 

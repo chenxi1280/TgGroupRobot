@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import datetime as dt
 import random
+import re
+import structlog
 
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -33,6 +35,8 @@ from bot.keyboards.lottery import (
 
 from sqlalchemy import select
 
+log = structlog.get_logger(__name__)
+
 
 # ============================================
 # 回调处理器
@@ -47,95 +51,149 @@ async def lottery_menu_callback(update: Update, context: ContextTypes.DEFAULT_TY
 
     chat = update.effective_chat
     user = update.effective_user
-    if chat.type == "private":
-        await q.edit_message_text("请在群里使用。")
-        return
-    if not await is_user_admin(context, chat.id, user.id):
+
+    # 从回调数据中提取目标群组ID
+    data = q.data or ""
+    target_chat_id = None
+    if data.startswith("lot:menu:"):
+        parts = data.split(":")
+        if len(parts) >= 3:
+            target_chat_id = int(parts[2])
+
+    # 如果没有指定群组ID，使用当前群组
+    if target_chat_id is None:
+        if chat.type == "private":
+            await q.edit_message_text("请在群里使用。")
+            return
+        target_chat_id = chat.id
+
+    # 检查管理员权限
+    if not await is_user_admin(context, target_chat_id, user.id):
         await q.edit_message_text("需要管理员权限。")
         return
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
-        await ensure_chat(session, chat_id=chat.id, chat_type=chat.type, title=chat.title)
-        stats = await get_lottery_stats(session, chat.id)
+        from bot.models.core import TgChat
+        from sqlalchemy import select
+
+        # 获取群组信息
+        chat_stmt = select(TgChat).where(TgChat.id == target_chat_id)
+        chat_result = await session.execute(chat_stmt)
+        target_chat = chat_result.scalar_one_or_none()
+
+        stats = await get_lottery_stats(session, target_chat_id)
         await session.commit()
 
-    text = f"🎁[{chat.title}]抽奖\n\n"
+    chat_title = target_chat.title if target_chat else f"群组{target_chat_id}"
+    text = f"🎁[{chat_title}]抽奖\n\n"
     text += f"创建的抽奖次数:{stats['total']}\n\n"
     text += f"已开奖:{stats['completed']}       未开奖:{stats['pending']}       取消:{stats['cancelled']}"
 
     from bot.keyboards.lottery import lottery_menu_keyboard
 
-    await q.edit_message_text(text, reply_markup=lottery_menu_keyboard())
+    await q.edit_message_text(text, reply_markup=lottery_menu_keyboard(target_chat_id))
 
 
 async def lottery_create_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """开始创建抽奖流程"""
-    if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
-        return
-    q = update.callback_query
-    await q.answer()
+    try:
+        log.info("lottery_create_start_entered")
 
-    chat = update.effective_chat
-    user = update.effective_user
-    if chat.type == "private":
-        await q.edit_message_text("请在群里使用。")
-        return
-    if not await is_user_admin(context, chat.id, user.id):
-        await q.edit_message_text("需要管理员权限。")
-        return
+        if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
+            log.warning("lottery_create_start_missing_data")
+            return
+        q = update.callback_query
+        await q.answer()
 
-    db: Database = context.application.bot_data["db"]
-    async with db.session_factory() as session:
-        await ensure_chat(session, chat_id=chat.id, chat_type=chat.type, title=chat.title)
-        await ensure_user(
-            session,
-            user_id=user.id,
-            username=user.username,
-            first_name=user.first_name,
-            last_name=user.last_name,
-            language_code=user.language_code,
-        )
+        chat = update.effective_chat
+        user = update.effective_user
 
-        # 设置状态：等待输入配置
-        await set_user_state(
-            session,
-            chat_id=chat.id,
-            user_id=user.id,
-            state_type=ConversationStateType.lottery_create.value,
-            state_data={"step": "config"},
-        )
-        await session.commit()
+        # 从回调数据中提取目标群组ID
+        data = q.data or ""
+        target_chat_id = None
+        if data.startswith("lot:create:"):
+            parts = data.split(":")
+            if len(parts) >= 3:
+                target_chat_id = int(parts[2])
 
-    text = "🎁创建抽奖  ( /cancel 取消)\n\n"
-    text += "请按以下格式一次性发送配置：\n\n"
-    text += "```\n"
-    text += "标题|描述（可选）\n"
-    text += "开奖时间: 2025-12-30 12:00\n"
-    text += "最低积分: 0\n"
-    text += "参与费用: 0\n"
-    text += "最大人数: 0（0=无限制）\n"
-    text += "入群天数: 0（0=无限制）\n"
-    text += "奖品:\n"
-    text += "奖品1名称,数量\n"
-    text += "奖品2名称,数量\n"
-    text += "...\n"
-    text += "```\n\n"
-    text += "示例:\n"
-    text += "```\n"
-    text += "新年大抽奖|祝大家新年快乐！\n"
-    text += "开奖时间: 2025-12-31 20:00\n"
-    text += "最低积分: 100\n"
-    text += "参与费用: 10\n"
-    text += "最大人数: 50\n"
-    text += "入群天数: 7\n"
-    text += "奖品:\n"
-    text += "一等奖:100U,1\n"
-    text += "二等奖:50U,3\n"
-    text += "三等奖:10U,10\n"
-    text += "```"
+        log.info("lottery_create_start_called", callback_data=data, target_chat_id=target_chat_id, user_id=user.id, chat_type=chat.type)
 
-    await q.edit_message_text(text, parse_mode="Markdown")
+        # 如果没有指定群组ID，使用当前群组
+        if target_chat_id is None:
+            if chat.type == "private":
+                await q.edit_message_text("请在群里使用。")
+                return
+            target_chat_id = chat.id
+
+        # 检查管理员权限
+        log.info("lottery_create_checking_admin", target_chat_id=target_chat_id, user_id=user.id)
+        is_admin = await is_user_admin(context, target_chat_id, user.id)
+        log.info("lottery_create_admin_check_result", target_chat_id=target_chat_id, user_id=user.id, is_admin=is_admin)
+        if not is_admin:
+            log.warning("lottery_create_permission_denied", target_chat_id=target_chat_id, user_id=user.id)
+            await q.edit_message_text(f"需要管理员权限。\n\n请确保你是群组 {target_chat_id} 的管理员，且 Bot 已加入该群组。")
+            return
+
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            await ensure_chat(session, chat_id=target_chat_id, chat_type="supergroup", title=None)
+            await ensure_user(
+                session,
+                user_id=user.id,
+                username=user.username,
+                first_name=user.first_name,
+                last_name=user.last_name,
+                language_code=user.language_code,
+            )
+
+            # 设置状态：等待输入配置，保存目标群组ID
+            await set_user_state(
+                session,
+                chat_id=chat.id,  # 使用当前聊天（私聊）存储状态
+                user_id=user.id,
+                state_type=ConversationStateType.lottery_create.value,
+                state_data={"step": "config", "target_chat_id": target_chat_id},
+            )
+            await session.commit()
+
+        text = "🎁创建抽奖  ( /cancel 取消)\n\n"
+        text += "请按以下格式一次性发送配置：\n\n"
+        text += "```\n"
+        text += "标题|描述（可选）\n"
+        text += "开奖时间: 2025-12-30 12:00\n"
+        text += "最低积分: 0\n"
+        text += "参与费用: 0\n"
+        text += "最大人数: 0（0=无限制）\n"
+        text += "入群天数: 0（0=无限制）\n"
+        text += "奖品:\n"
+        text += "奖品1名称,数量\n"
+        text += "奖品2名称,数量\n"
+        text += "...\n"
+        text += "```\n\n"
+        text += "示例:\n"
+        text += "```\n"
+        text += "新年大抽奖|祝大家新年快乐！\n"
+        text += "开奖时间: 2025-12-31 20:00\n"
+        text += "最低积分: 100\n"
+        text += "参与费用: 10\n"
+        text += "最大人数: 50\n"
+        text += "入群天数: 7\n"
+        text += "奖品:\n"
+        text += "一等奖:100U,1\n"
+        text += "二等奖:50U,3\n"
+        text += "三等奖:10U,10\n"
+        text += "```"
+
+        await q.edit_message_text(text, parse_mode="Markdown")
+        log.info("lottery_create_start_success")
+    except Exception as e:
+        log.exception("lottery_create_start_error", error=str(e))
+        if update.callback_query:
+            try:
+                await update.callback_query.edit_message_text(f"发生错误: {str(e)}")
+            except:
+                pass
 
 
 # ============================================
@@ -151,7 +209,8 @@ async def lottery_message_handler(update: Update, context: ContextTypes.DEFAULT_
     user = update.effective_user
     text = update.effective_message.text or ""
 
-    if chat.type == "private" or not text:
+    # 支持私聊和群聊中的消息
+    if not text:
         return
 
     db: Database = context.application.bot_data["db"]
@@ -165,12 +224,12 @@ async def lottery_message_handler(update: Update, context: ContextTypes.DEFAULT_
         step = state.state_data.get("step")
 
         if step == "config":
-            await _parse_lottery_config(update, session, state, text)
+            await _parse_lottery_config(update, context, session, state, text)
         else:
             await session.commit()
 
 
-async def _parse_lottery_config(update: Update, session, state: object, text: str) -> None:
+async def _parse_lottery_config(update: Update, context: ContextTypes.DEFAULT_TYPE, session, state: object, text: str) -> None:
     """解析抽奖配置"""
     try:
         lines = text.strip().split("\n")
@@ -195,7 +254,7 @@ async def _parse_lottery_config(update: Update, session, state: object, text: st
         if not draw_time_line.startswith("开奖时间:"):
             raise ValueError("开奖时间格式错误，应为: 开奖时间: 2025-12-30 12:00")
         time_pattern = r"(\d{4})-(\d{1,2})-(\d{1,2})\s+(\d{1,2}):(\d{1,2})"
-        match = time_pattern.search(draw_time_line)
+        match = re.search(time_pattern, draw_time_line)
         if not match:
             raise ValueError("开奖时间格式错误，请使用: YYYY-MM-DD HH:MM")
         year, month, day, hour, minute = map(int, match.groups())
@@ -240,10 +299,15 @@ async def _parse_lottery_config(update: Update, session, state: object, text: st
         if not prizes:
             raise ValueError("至少需要一个奖品")
 
+        # 从状态中获取目标群组ID
+        target_chat_id = state.state_data.get("target_chat_id")
+        if not target_chat_id:
+            target_chat_id = update.effective_chat.id
+
         # 创建抽奖
         lottery = await create_lottery(
             session,
-            chat_id=update.effective_chat.id,
+            chat_id=target_chat_id,
             created_by_user_id=update.effective_user.id,
             title=title,
             draw_time=draw_time_utc,
@@ -260,8 +324,39 @@ async def _parse_lottery_config(update: Update, session, state: object, text: st
         await clear_user_state(session, chat_id=update.effective_chat.id, user_id=update.effective_user.id)
         await session.commit()
 
-        # 返回成功消息
-        from bot.keyboards.admin import admin_main_menu
+        # 构建抽奖公告消息
+        announcement_text = f"🎁【抽奖活动】\n\n"
+        announcement_text += f"📢 {title}"
+        if description:
+            announcement_text += f"\n\n{description}"
+        announcement_text += f"\n\n🕐 开奖时间: {draw_time.strftime('%Y-%m-%d %H:%M')}"
+        if min_points > 0:
+            announcement_text += f"\n💰 最低积分: {min_points}"
+        if participation_cost > 0:
+            announcement_text += f"\n💸 参与费用: {participation_cost} 积分"
+        if max_participants > 0:
+            announcement_text += f"\n👥 最大人数: {max_participants}"
+        if requirement_days > 0:
+            announcement_text += f"\n📅 入群天数: {requirement_days}"
+        announcement_text += f"\n\n🎁 奖品:"
+        for prize in prizes:
+            announcement_text += f"\n  • {prize['name']} x {prize['quantity']}"
+        announcement_text += f"\n\n💡 点击下方按钮参与抽奖！"
+
+        # 向目标群组发送抽奖公告
+        try:
+            from bot.keyboards.lottery import get_join_keyboard
+            keyboard = get_join_keyboard(lottery.id)
+            await context.bot.send_message(
+                chat_id=target_chat_id,
+                text=announcement_text,
+                reply_markup=keyboard
+            )
+            log.info("lottery_announcement_sent", lottery_id=lottery.id, target_chat_id=target_chat_id)
+        except Exception as e:
+            log.error("lottery_announcement_failed", lottery_id=lottery.id, target_chat_id=target_chat_id, error=str(e))
+
+        # 返回成功消息给用户
         reply_text = f"✅ 抽奖创建成功！\n\n"
         reply_text += f"📢 标题: {title}\n"
         reply_text += f"🕐 开奖时间: {draw_time.strftime('%Y-%m-%d %H:%M:%S UTC+8')}\n"
@@ -274,9 +369,9 @@ async def _parse_lottery_config(update: Update, session, state: object, text: st
             reply_text += f"👥 最大人数: {max_participants}\n"
         if requirement_days > 0:
             reply_text += f"📅 入群天数: {requirement_days}\n"
-        reply_text += f"\n抽奖ID: {lottery.id}"
+        reply_text += f"\n📢 已发送公告到群组"
 
-        await update.effective_message.reply_text(reply_text, reply_markup=admin_main_menu())
+        await update.effective_message.reply_text(reply_text)
 
     except ValueError as e:
         await update.effective_message.reply_text(f"❌ 配置错误: {e}\n\n请重新发送配置，或使用 /cancel 取消。")

@@ -32,9 +32,26 @@ async def auto_reply_menu_callback(update: Update, context: ContextTypes.DEFAULT
 
     chat = update.effective_chat
     user = update.effective_user
+
+    # 私聊中的自动回复管理 - 返回到管理面板
     if chat.type == "private":
-        await q.edit_message_text("请在群里使用。")
+        from bot.services.chat_group_service import get_user_current_chat
+        from bot.services.chat_group_service import get_user_managed_chats
+        db: Database = context.application.bot_data["db"]
+        target_chat_id = await get_user_current_chat(db, user.id)
+        if target_chat_id is None:
+            await q.edit_message_text("请先选择一个群组")
+            return
+        if not await is_user_admin(context, target_chat_id, user.id):
+            await q.edit_message_text("你没有该群组的管理权限")
+            return
+
+        # 返回到管理面板
+        chats = await get_user_managed_chats(db, user.id, context.bot)
+        from bot.handlers.admin import _show_private_admin_menu
+        await _show_private_admin_menu(update, context, target_chat_id, chats)
         return
+
     if not await is_user_admin(context, chat.id, user.id):
         await q.edit_message_text("需要管理员权限。")
         return
@@ -78,16 +95,40 @@ async def auto_reply_create_start(update: Update, context: ContextTypes.DEFAULT_
 
     chat = update.effective_chat
     user = update.effective_user
+
+    # 私聊中的自动回复创建 - 获取目标群组ID
+    target_chat_id = None
+    target_chat_title = None
     if chat.type == "private":
-        await q.edit_message_text("请在群里使用。")
-        return
-    if not await is_user_admin(context, chat.id, user.id):
-        await q.edit_message_text("需要管理员权限。")
-        return
+        from bot.services.chat_group_service import get_user_current_chat
+        from bot.models.core import TgChat
+        from sqlalchemy import select
+        db: Database = context.application.bot_data["db"]
+        target_chat_id = await get_user_current_chat(db, user.id)
+        if target_chat_id is None:
+            await q.edit_message_text("请先选择一个群组")
+            return
+        if not await is_user_admin(context, target_chat_id, user.id):
+            await q.edit_message_text("你没有该群组的管理权限")
+            return
+
+        # 获取群组信息用于后续操作
+        async with db.session_factory() as session:
+            chat_stmt = select(TgChat).where(TgChat.id == target_chat_id)
+            chat_result = await session.execute(chat_stmt)
+            target_chat_obj = chat_result.scalar_one_or_none()
+            target_chat_title = target_chat_obj.title if target_chat_obj else f"群组{target_chat_id}"
+            await session.commit()
+    else:
+        if not await is_user_admin(context, chat.id, user.id):
+            await q.edit_message_text("需要管理员权限。")
+            return
+        target_chat_id = chat.id
+        target_chat_title = chat.title
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
-        await ensure_chat(session, chat_id=chat.id, chat_type=chat.type, title=chat.title)
+        await ensure_chat(session, chat_id=target_chat_id, chat_type="group", title=target_chat_title)
         await ensure_user(
             session,
             user_id=user.id,
@@ -97,13 +138,13 @@ async def auto_reply_create_start(update: Update, context: ContextTypes.DEFAULT_
             language_code=user.language_code,
         )
 
-        # 设置状态：等待输入配置
+        # 设置状态：等待输入配置，保存目标群组ID
         await set_user_state(
             session,
-            chat_id=chat.id,
+            chat_id=target_chat_id,  # 使用目标群组ID保存状态
             user_id=user.id,
             state_type=ConversationStateType.auto_reply_create.value,
-            state_data={"step": "config"},
+            state_data={"step": "config", "target_chat_id": target_chat_id},
         )
         await session.commit()
 
@@ -219,13 +260,26 @@ async def auto_reply_config_handler(update: Update, context: ContextTypes.DEFAUL
     user = update.effective_user
     text = update.effective_message.text or ""
 
-    if chat.type == "private" or not text:
+    # 只在私聊或群聊中处理
+    if not text:
         return
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
-        # 获取用户状态
-        state = await get_user_state(session, chat_id=chat.id, user_id=user.id)
+        # 获取用户状态 - 从目标群组获取状态（私聊模式下）
+        if chat.type == "private":
+            # 私聊模式：从用户当前选中的群组获取状态
+            from bot.services.chat_group_service import get_user_current_chat
+            target_chat_id = await get_user_current_chat(db, user.id)
+            if target_chat_id:
+                state = await get_user_state(session, chat_id=target_chat_id, user_id=user.id)
+            else:
+                await session.commit()
+                return
+        else:
+            # 群聊模式：从当前群组获取状态
+            state = await get_user_state(session, chat_id=chat.id, user_id=user.id)
+
         if state is None or state.state_type != ConversationStateType.auto_reply_create.value:
             await session.commit()
             return
@@ -284,10 +338,13 @@ async def _parse_auto_reply_config(update: Update, session, state: object, text:
         if not reply_content:
             raise ValueError("回复内容不能为空")
 
+        # 获取目标群组ID（从状态数据中获取）
+        target_chat_id = state.state_data.get("target_chat_id") or update.effective_chat.id
+
         # 创建自动回复规则
         result = await create_auto_reply_rule(
             session,
-            chat_id=update.effective_chat.id,
+            chat_id=target_chat_id,
             created_by_user_id=update.effective_user.id,
             keywords=keywords,
             reply_content=reply_content,
@@ -304,7 +361,7 @@ async def _parse_auto_reply_config(update: Update, session, state: object, text:
             raise ValueError(error_messages.get(result.reason, "创建失败"))
 
         # 清除状态
-        await clear_user_state(session, chat_id=update.effective_chat.id, user_id=update.effective_user.id)
+        await clear_user_state(session, chat_id=target_chat_id, user_id=update.effective_user.id)
         await session.commit()
 
         # 返回成功消息

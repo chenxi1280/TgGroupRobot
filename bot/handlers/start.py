@@ -141,8 +141,19 @@ async def private_message_handler(update: Update, context: ContextTypes.DEFAULT_
 
     user = update.effective_user
 
-    # 显示群组列表
+    # 先检查用户是否有对话状态（如抽奖创建流程）
     db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        from bot.services.state_service import get_user_state
+
+        state = await get_user_state(session, chat_id=chat.id, user_id=user.id)
+        await session.commit()
+
+    # 如果有对话状态，不做处理（让其他专门的消息处理器处理）
+    if state is not None:
+        return
+
+    # 没有对话状态，显示群组列表
     chats = await get_user_managed_chats(db, user.id, context.bot)
     current_chat_id = await get_user_current_chat(db, user.id)
 

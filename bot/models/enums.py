@@ -23,11 +23,14 @@ class ModerationAction(str, enum.Enum):
 
 class PointsTxnType(str, enum.Enum):
     sign_in = "sign_in"
+    sign_in_consecutive = "sign_in_consecutive"  # 连续签到奖励
     admin_adjust = "admin_adjust"
     reward = "reward"
     penalty = "penalty"
     lottery_join = "lottery_join"       # 参与抽奖扣费
     lottery_win = "lottery_win"         # 中奖奖励
+    message = "message"                 # 发言积分
+    invite = "invite"                   # 邀请积分
 
 
 class SubscriptionStatus(str, enum.Enum):

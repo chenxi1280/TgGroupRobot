@@ -14,6 +14,7 @@ from bot.services.verification_service import (
     solve_by_answer,
     solve_by_token,
 )
+from bot.services.invite_service import track_and_award_invite
 
 
 async def new_members_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -61,6 +62,42 @@ async def new_members_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
                 last_name=u.last_name,
                 language_code=u.language_code,
             )
+
+            # 追踪邀请并发放积分
+            # 注意：由于 Telegram 的 API 限制，new_chat_members 消息不包含使用的邀请链接信息
+            # 需要使用 ChatMemberHandler 来获取 via_invite_link 信息
+            # 这里先尝试追踪（如果有 invite_link_id 的上下文）
+            # TODO: 实现 ChatMemberHandler 来准确追踪邀请链接
+            invite_link_id = context.user_data.get("pending_invite_link_id") if context.user_data else None
+            if invite_link_id:
+                from bot.models.core import InviteLink
+                from sqlalchemy import select
+
+                link_result = await session.execute(
+                    select(InviteLink).where(InviteLink.id == invite_link_id)
+                )
+                link = link_result.scalar_one_or_none()
+                if link and link.chat_id == chat.id:
+                    is_new, awarded, _ = await track_and_award_invite(
+                        session,
+                        chat_id=chat.id,
+                        inviter_user_id=link.created_by_user_id,
+                        invited_user_id=u.id,
+                        invite_link_id=link.id,
+                    )
+                    if is_new:
+                        # 更新链接的成员计数
+                        link.member_count += 1
+                        if awarded and settings.invite_link_notify:
+                            try:
+                                # 通知邀请人
+                                await context.bot.send_message(
+                                    chat_id=link.created_by_user_id,
+                                    text=f"🎉 恭喜！您邀请的 {u.first_name or u.username or '用户'} 加入了群组 {chat.title}"
+                                )
+                            except Exception:
+                                pass
+
             ch = await create_or_replace_challenge(
                 session,
                 chat_id=chat.id,

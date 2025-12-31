@@ -72,6 +72,39 @@ class ChatSettings(Base):
     sign_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     sign_points: Mapped[int] = mapped_column(Integer, default=5)
     sign_cooldown_hours: Mapped[int] = mapped_column(Integer, default=20)
+    sign_consecutive_days: Mapped[int] = mapped_column(Integer, default=0)  # 连续签到多少天奖励
+    sign_consecutive_bonus: Mapped[int] = mapped_column(Integer, default=0)  # 连续签到奖励积分
+
+    # 发言积分
+    message_points_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    message_points: Mapped[int] = mapped_column(Integer, default=1)
+    message_points_daily_limit: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 每日上限，null=无限制
+    message_min_length: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 最小字数，null=无限制
+
+    # 邀请积分
+    invite_points_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    invite_points: Mapped[int] = mapped_column(Integer, default=1)
+    invite_points_daily_limit: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 每日上限，null=无限制
+
+    # 邀请链接配置
+    invite_link_enabled: Mapped[bool] = mapped_column(Boolean, default=True)  # 是否开启用户生成链接
+    invite_link_notify: Mapped[bool] = mapped_column(Boolean, default=True)  # 是否通知新成员加入
+    invite_link_expire_days: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 链接过期的天数，null=无限制
+    invite_link_max_joins: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 单个链接最大加入人数，null=无限制
+    invite_link_user_limit: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 每个用户可生成链接数量上限，null=无限制
+
+    # 自动删除配置
+    auto_delete_enabled: Mapped[bool] = mapped_column(Boolean, default=False)  # 是否开启自动删除
+    auto_delete_join: Mapped[bool] = mapped_column(Boolean, default=False)  # 自动删除进群消息
+    auto_delete_left: Mapped[bool] = mapped_column(Boolean, default=False)  # 自动删除退群消息
+    auto_delete_pinned: Mapped[bool] = mapped_column(Boolean, default=False)  # 自动删除置顶消息
+    auto_delete_avatar: Mapped[bool] = mapped_column(Boolean, default=False)  # 自动删除修改头像消息
+    auto_delete_title: Mapped[bool] = mapped_column(Boolean, default=False)  # 自动删除修改群名消息
+    auto_delete_anonymous: Mapped[bool] = mapped_column(Boolean, default=False)  # 自动删除匿名管理员消息
+
+    # 积分命令别名
+    points_alias: Mapped[str] = mapped_column(String(32), default="积分")  # 查询积分别名
+    points_rank_alias: Mapped[str] = mapped_column(String(32), default="积分排行")  # 积分排行别名
 
     # 新人验证/限制
     verification_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -176,6 +209,37 @@ class SignInLog(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC))
 
 
+class UserDailyStats(Base):
+    """用户每日统计：用于发言积分、邀请积分的每日上限控制"""
+    __tablename__ = "user_daily_stats"
+    __table_args__ = (
+        UniqueConstraint("chat_id", "user_id", "stat_date", name="uq_user_daily_stat"),
+        {"schema": "bot"},
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("bot.tg_chats.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("bot.tg_users.id", ondelete="CASCADE"), index=True)
+    stat_date: Mapped[dt.date] = mapped_column(default=lambda: dt.datetime.now(dt.UTC).date(), index=True)
+
+    # 发言积分相关
+    message_points_earned: Mapped[int] = mapped_column(Integer, default=0)  # 今日发言已获得积分
+
+    # 邀请积分相关
+    invite_points_earned: Mapped[int] = mapped_column(Integer, default=0)  # 今日邀请已获得积分
+    invites_count: Mapped[int] = mapped_column(Integer, default=0)  # 今日邀请人数
+
+    # 连续签到
+    consecutive_sign_days: Mapped[int] = mapped_column(Integer, default=0)  # 连续签到天数
+
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC))
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: dt.datetime.now(dt.UTC),
+        onupdate=lambda: dt.datetime.now(dt.UTC),
+    )
+
+
 class ModerationViolation(Base):
     __tablename__ = "moderation_violations"
     __table_args__ = {"schema": "bot"}
@@ -239,6 +303,7 @@ class ChatSubscription(Base):
 
 
 class AdCampaign(Base):
+    """广告活动"""
     __tablename__ = "ad_campaigns"
     __table_args__ = {"schema": "bot"}
 
@@ -247,8 +312,20 @@ class AdCampaign(Base):
     created_by_user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("bot.tg_users.id", ondelete="SET NULL"), nullable=True)
     title: Mapped[str] = mapped_column(String(128))
     content: Mapped[str] = mapped_column(Text)
+    image_file_id: Mapped[str | None] = mapped_column(String(256), nullable=True)  # 图片文件ID（Telegram）
+    image_url: Mapped[str | None] = mapped_column(Text, nullable=True)  # 图片URL
+    has_image: Mapped[bool] = mapped_column(Boolean, default=False)  # 是否包含图片
+    schedule_time: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # 定时推送时间
+    frequency: Mapped[str | None] = mapped_column(String(32), nullable=True)  # 推送频次: once/daily/weekly/monthly
+    last_sent_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # 上次发送时间
+    send_locked: Mapped[bool] = mapped_column(Boolean, default=False)  # 发送锁定（防重机制）
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC))
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: dt.datetime.now(dt.UTC),
+        onupdate=lambda: dt.datetime.now(dt.UTC),
+    )
 
 
 class ConversationState(Base):
@@ -419,6 +496,24 @@ class InviteLink(Base):
     )
 
 
+class InviteTracking(Base):
+    """邀请追踪：记录谁邀请谁加入了群组"""
+    __tablename__ = "invite_tracking"
+    __table_args__ = (
+        UniqueConstraint("chat_id", "invited_user_id", name="uq_invite_tracking"),
+        {"schema": "bot"},
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("bot.tg_chats.id", ondelete="CASCADE"), index=True)
+    inviter_user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("bot.tg_users.id", ondelete="SET NULL"), nullable=True, index=True)  # 邀请人
+    invited_user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("bot.tg_users.id", ondelete="CASCADE"), index=True)  # 被邀请人
+    invite_link_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("bot.invite_links.id", ondelete="SET NULL"), nullable=True)  # 使用的邀请链接
+    points_awarded: Mapped[bool] = mapped_column(Boolean, default=False)  # 是否已发放积分
+    joined_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC))  # 加入时间
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC))
+
+
 class Solitaire(Base):
     """群组接龙活动"""
     __tablename__ = "solitaires"
@@ -431,6 +526,8 @@ class Solitaire(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)  # 描述说明
     status: Mapped[str] = mapped_column(String(16), default=SolitaireStatus.active.value)  # 状态
     max_participants: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 最大参与人数（null=无限制）
+    points_required: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 参与所需积分（null=无限制）
+    deadline: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # 截止时间（null=无限制）
     entries: Mapped[list] = mapped_column(JSONB, default=list)  # 参与记录 [{"user_id": 123, "username": "xxx", "content": "xxx", "joined_at": "2024-01-01"}]
     message_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 接龙消息ID（用于更新）
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC))

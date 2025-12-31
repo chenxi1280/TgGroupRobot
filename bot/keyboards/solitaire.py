@@ -5,8 +5,13 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from bot.models.enums import SolitaireStatus
 
 
-def solitaire_menu_keyboard() -> InlineKeyboardMarkup:
-    """接龙管理主菜单"""
+def solitaire_menu_keyboard(chat_id: int | None = None) -> InlineKeyboardMarkup:
+    """接龙管理主菜单
+
+    Args:
+        chat_id: 群组ID，用于在私聊中操作群组时指定目标群组
+    """
+    back_callback = f"adm:back_to_menu:{chat_id}" if chat_id else "adm:menu:main"
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("➕ 创建接龙", callback_data="sol:create"),
@@ -16,13 +21,20 @@ def solitaire_menu_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton("📊 统计", callback_data="sol:stats"),
         ],
         [
-            InlineKeyboardButton("🔙 返回", callback_data="adm:menu:main"),
+            InlineKeyboardButton("🔙 返回", callback_data=back_callback),
         ],
     ])
 
 
-def solitaire_list_keyboard(solitaires: list, page: int = 0, page_size: int = 5) -> InlineKeyboardMarkup:
-    """接龙列表键盘"""
+def solitaire_list_keyboard(solitaires: list, chat_id: int | None = None, page: int = 0, page_size: int = 5) -> InlineKeyboardMarkup:
+    """接龙列表键盘
+
+    Args:
+        solitaires: 接龙列表
+        chat_id: 群组ID，用于在私聊中操作群组时指定目标群组
+        page: 当前页码
+        page_size: 每页数量
+    """
     buttons = []
     start_idx = page * page_size
     end_idx = start_idx + page_size
@@ -52,7 +64,8 @@ def solitaire_list_keyboard(solitaires: list, page: int = 0, page_size: int = 5)
     if nav_buttons:
         buttons.append(nav_buttons)
 
-    buttons.append([InlineKeyboardButton("🔙 返回", callback_data="sol:menu")])
+    back_callback = f"adm:back_to_menu:{chat_id}" if chat_id else "sol:menu"
+    buttons.append([InlineKeyboardButton("🔙 返回", callback_data=back_callback)])
     return InlineKeyboardMarkup(buttons)
 
 

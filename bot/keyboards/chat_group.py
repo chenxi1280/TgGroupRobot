@@ -37,15 +37,3 @@ def chat_group_list_keyboard(chats: list[tuple[int, str, bool]], current_chat_id
     buttons.append([InlineKeyboardButton("🔄 刷新列表", callback_data="group:refresh")])
 
     return InlineKeyboardMarkup(buttons)
-
-
-def chat_group_selected_keyboard(chat_id: int, chat_title: str) -> InlineKeyboardMarkup:
-    """选中群组后的操作键盘"""
-    return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("⚙️ 群组设置", callback_data=f"group:admin:{chat_id}"),
-        ],
-        [
-            InlineKeyboardButton("🔄 切换其他群组", callback_data="group:list:0"),
-        ],
-    ])
