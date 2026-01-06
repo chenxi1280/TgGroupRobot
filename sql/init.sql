@@ -861,7 +861,6 @@ CREATE TABLE IF NOT EXISTS bot.solitaires (
     max_participants INTEGER,                                    -- 最大参与人数（NULL=无限制）
     points_required INTEGER,                                     -- 参与所需积分（NULL=无限制）
     deadline TIMESTAMPTZ,                                        -- 截止时间（带时区，NULL=无限制）
-    entries JSONB NOT NULL DEFAULT '[]',                         -- 参与记录（JSON 数组格式）
     message_id INTEGER,                                          -- 接龙消息ID（用于更新）
     created_at TIMESTAMPTZ NOT NULL,                             -- 创建时间（带时区）
     updated_at TIMESTAMPTZ NOT NULL,                             -- 更新时间（带时区）
@@ -881,7 +880,6 @@ COMMENT ON COLUMN bot.solitaires.status IS '接龙状态：active（进行中）
 COMMENT ON COLUMN bot.solitaires.max_participants IS '最大参与人数，NULL表示无限制';
 COMMENT ON COLUMN bot.solitaires.points_required IS '参与接龙所需积分，NULL表示无限制';
 COMMENT ON COLUMN bot.solitaires.deadline IS '接龙截止时间，NULL表示无限制';
-COMMENT ON COLUMN bot.solitaires.entries IS '参与记录，JSONB 数组格式存储，如：[{"user_id": 123, "username": "xxx", "content": "xxx", "joined_at": "2024-01-01"}]';
 COMMENT ON COLUMN bot.solitaires.message_id IS '接龙消息的 Telegram message_id，用于更新消息';
 COMMENT ON COLUMN bot.solitaires.created_at IS '接龙创建时间';
 COMMENT ON COLUMN bot.solitaires.updated_at IS '记录最后更新时间';
@@ -890,6 +888,41 @@ COMMENT ON COLUMN bot.solitaires.updated_at IS '记录最后更新时间';
 CREATE INDEX IF NOT EXISTS ix_solitaires_chat_id ON bot.solitaires(chat_id);
 CREATE INDEX IF NOT EXISTS ix_solitaires_status ON bot.solitaires(status);
 CREATE INDEX IF NOT EXISTS ix_solitaires_deadline ON bot.solitaires(deadline);
+
+
+-- ============================================
+-- 22. 接龙参与记录表 (solitaire_entries)
+-- 存储用户参与接龙的记录
+-- ============================================
+CREATE TABLE IF NOT EXISTS bot.solitaire_entries (
+    id SERIAL PRIMARY KEY,                                         -- 自增主键
+    solitaire_id INTEGER NOT NULL,                               -- 接龙 ID（外键关联 solitaires.id）
+    user_id BIGINT NOT NULL,                                     -- 用户 ID（外键关联 tg_users.id）
+    username VARCHAR(255),                                       -- 用户名（用于显示，保留以便用户名变更后仍显示原始名称）
+    content TEXT NOT NULL DEFAULT '',                             -- 参与内容
+    joined_at TIMESTAMPTZ NOT NULL,                              -- 参与时间（带时区）
+    updated_at TIMESTAMPTZ,                                      -- 更新时间（带时区，修改内容时更新）
+    created_at TIMESTAMPTZ NOT NULL,                             -- 记录创建时间（带时区）
+    CONSTRAINT fk_solitaire_entries_solitaire_id FOREIGN KEY (solitaire_id)
+        REFERENCES bot.solitaires(id) ON DELETE CASCADE,              -- 外键约束：删除接龙时级联删除参与记录
+    CONSTRAINT fk_solitaire_entries_user_id FOREIGN KEY (user_id)
+        REFERENCES bot.tg_users(id) ON DELETE CASCADE,                  -- 外键约束：删除用户时级联删除参与记录
+    CONSTRAINT uq_solitaire_entries UNIQUE (solitaire_id, user_id)      -- 唯一约束：同一用户在同一接龙中只能参与一次
+);
+
+COMMENT ON TABLE bot.solitaire_entries IS '接龙参与记录表，存储用户参与接龙的记录';
+COMMENT ON COLUMN bot.solitaire_entries.id IS '自增主键';
+COMMENT ON COLUMN bot.solitaire_entries.solitaire_id IS '接龙 ID，外键关联 solitaires.id';
+COMMENT ON COLUMN bot.solitaire_entries.user_id IS '用户 ID，外键关联 tg_users.id';
+COMMENT ON COLUMN bot.solitaire_entries.username IS '用户名，用于显示，保留用户参与时的用户名';
+COMMENT ON COLUMN bot.solitaire_entries.content IS '参与内容，用户填写的报名信息';
+COMMENT ON COLUMN bot.solitaire_entries.joined_at IS '参与时间，用户首次参与的时间';
+COMMENT ON COLUMN bot.solitaire_entries.updated_at IS '更新时间，用户修改参与内容的时间';
+COMMENT ON COLUMN bot.solitaire_entries.created_at IS '记录创建时间';
+
+-- 创建索引以优化查询性能
+CREATE INDEX IF NOT EXISTS ix_solitaire_entries_solitaire_id ON bot.solitaire_entries(solitaire_id);
+CREATE INDEX IF NOT EXISTS ix_solitaire_entries_user_id ON bot.solitaire_entries(user_id);
 
 -- ============================================
 -- 数据库初始化完成

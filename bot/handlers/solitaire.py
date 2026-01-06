@@ -1,18 +1,18 @@
 from __future__ import annotations
 
+import asyncio
+import datetime as dt
 import structlog
 from telegram import Update
 from telegram.ext import ContextTypes, ConversationHandler
 
 from bot.db.session import Database
 from bot.keyboards.solitaire import (
-    solitaire_create_keyboard,
     solitaire_detail_keyboard,
     solitaire_list_keyboard,
     solitaire_menu_keyboard,
 )
 from bot.models.enums import SolitaireStatus
-from bot.services.chat_service import get_chat_settings
 from bot.services.solitaire_service import (
     close_solitaire,
     create_solitaire,
@@ -28,7 +28,7 @@ from bot.services.state_service import clear_user_state, set_user_state, get_use
 from bot.services.telegram_perm import is_user_admin
 
 # 创建流程状态
-WAIT_TITLE = 1
+WAIT_CONFIG = 1
 WAIT_DESCRIPTION = 2
 WAIT_MAX_PARTICIPANTS = 3
 WAIT_POINTS_REQUIRED = 4
@@ -72,11 +72,6 @@ async def solitaire_menu_callback(update: Update, context: ContextTypes.DEFAULT_
             return
         target_chat_id = chat.id
 
-    db: Database = context.application.bot_data["db"]
-    async with db.session_factory() as session:
-        settings = await get_chat_settings(session, target_chat_id)
-        await session.commit()
-
     await q.edit_message_text(
         f"📋 [{chat.title}] 接龙管理\n\n管理群内接龙活动",
         reply_markup=solitaire_menu_keyboard(),
@@ -95,14 +90,33 @@ async def solitaire_list_callback(update: Update, context: ContextTypes.DEFAULT_
 
     data = q.data or ""
     parts = data.split(":")
-    page = int(parts[2]) if len(parts) > 2 else 0
 
-    # 私聊中的接龙管理 - 从回调中获取目标群组ID
+    # 优先从 callback_data 获取目标群组ID
     target_chat_id = None
+    page = 0
     if chat.type == "private":
-        from bot.services.chat_group_service import get_user_current_chat
-        db: Database = context.application.bot_data["db"]
-        target_chat_id = await get_user_current_chat(db, user.id)
+        # sol:list:{chat_id}:{page} 格式
+        # chat_id 可能是负数（群组），所以不能直接用 isdigit()
+        if len(parts) >= 3:
+            try:
+                target_chat_id = int(parts[2])
+                if len(parts) >= 4:
+                    page = int(parts[3])
+            except ValueError:
+                pass
+
+        # 如果无法从 callback_data 获取，回退到数据库
+        if target_chat_id is None:
+            from bot.services.chat_group_service import get_user_current_chat
+            db: Database = context.application.bot_data["db"]
+            target_chat_id = await get_user_current_chat(db, user.id)
+            # 尝试从 parts[3] 获取页码
+            if len(parts) >= 4:
+                try:
+                    page = int(parts[3])
+                except ValueError:
+                    pass
+
         if target_chat_id is None:
             await q.edit_message_text("请先选择一个群组")
             return
@@ -110,6 +124,8 @@ async def solitaire_list_callback(update: Update, context: ContextTypes.DEFAULT_
             await q.edit_message_text("你没有该群组的管理权限")
             return
     else:
+        # 群聊场景：sol:list 或 sol:list:{page}
+        page = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
         if not await is_user_admin(context, chat.id, user.id):
             await q.edit_message_text("仅管理员可使用此功能")
             return
@@ -147,12 +163,26 @@ async def solitaire_stats_callback(update: Update, context: ContextTypes.DEFAULT
     chat = update.effective_chat
     user = update.effective_user
 
-    # 私聊中的接龙管理 - 从回调中获取目标群组ID
+    data = q.data or ""
+    parts = data.split(":")
+
+    # 优先从 callback_data 获取目标群组ID
     target_chat_id = None
     if chat.type == "private":
-        from bot.services.chat_group_service import get_user_current_chat
-        db: Database = context.application.bot_data["db"]
-        target_chat_id = await get_user_current_chat(db, user.id)
+        # sol:stats:{chat_id} 格式
+        # chat_id 可能是负数（群组），所以不能直接用 isdigit()
+        if len(parts) >= 3:
+            try:
+                target_chat_id = int(parts[2])
+            except ValueError:
+                pass
+
+        # 如果无法从 callback_data 获取，回退到数据库
+        if target_chat_id is None:
+            from bot.services.chat_group_service import get_user_current_chat
+            db: Database = context.application.bot_data["db"]
+            target_chat_id = await get_user_current_chat(db, user.id)
+
         if target_chat_id is None:
             await q.edit_message_text("请先选择一个群组")
             return
@@ -177,7 +207,13 @@ async def solitaire_stats_callback(update: Update, context: ContextTypes.DEFAULT
     text += f"总参与人次: {stats['total_entries']}"
 
     keyboard = solitaire_menu_keyboard(target_chat_id if chat.type == "private" else None)
-    await q.edit_message_text(text, reply_markup=keyboard)
+    # 添加异常处理，避免 "Message is not modified" 错误
+    from telegram.error import BadRequest
+    try:
+        await q.edit_message_text(text, reply_markup=keyboard)
+    except BadRequest as e:
+        if "Message is not modified" not in str(e):
+            log.error("solitaire_stats_failed", error=str(e))
 
 
 async def solitaire_detail_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -190,10 +226,6 @@ async def solitaire_detail_callback(update: Update, context: ContextTypes.DEFAUL
     chat = update.effective_chat
     user = update.effective_user
 
-    if not await is_user_admin(context, chat.id, user.id):
-        await q.edit_message_text("仅管理员可使用此功能")
-        return
-
     data = q.data or ""
     parts = data.split(":")
     if len(parts) < 3:
@@ -201,19 +233,53 @@ async def solitaire_detail_callback(update: Update, context: ContextTypes.DEFAUL
 
     solitaire_id = int(parts[2])
 
+    # 解析可选的 chat_id 参数
+    target_chat_id = None
+    if chat.type == "private":
+        # chat_id 可能是负数（群组），所以不能直接用 isdigit()
+        if len(parts) >= 4:
+            try:
+                target_chat_id = int(parts[3])
+            except ValueError:
+                pass
+
+        # 如果无法从 callback_data 获取，回退到数据库
+        if target_chat_id is None:
+            from bot.services.chat_group_service import get_user_current_chat
+            db: Database = context.application.bot_data["db"]
+            target_chat_id = await get_user_current_chat(db, user.id)
+            if target_chat_id is None:
+                await q.edit_message_text("请先选择一个群组")
+                return
+
+        if not await is_user_admin(context, target_chat_id, user.id):
+            await q.edit_message_text("你没有该群组的管理权限")
+            return
+    else:
+        if not await is_user_admin(context, chat.id, user.id):
+            await q.edit_message_text("仅管理员可使用此功能")
+            return
+        target_chat_id = chat.id
+
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
         solitaire = await get_solitaire(session, solitaire_id)
         if not solitaire:
             await session.commit()
-            await q.edit_message_text("接龙不存在", reply_markup=solitaire_menu_keyboard())
+            await q.edit_message_text("接龙不存在", reply_markup=solitaire_menu_keyboard(target_chat_id if chat.type == "private" else None))
             return
 
         text = format_solitaire_message(solitaire, show_closed=False)
         is_active = solitaire.status == SolitaireStatus.active.value
         await session.commit()
 
-    await q.edit_message_text(text, reply_markup=solitaire_detail_keyboard(solitaire_id, is_active))
+    # 添加异常处理，避免 "Message is not modified" 错误
+    from telegram.error import BadRequest
+    try:
+        await q.edit_message_text(text, reply_markup=solitaire_detail_keyboard(solitaire_id, is_active, target_chat_id if chat.type == "private" else None))
+    except BadRequest as e:
+        if "Message is not modified" not in str(e):
+            log.error("solitaire_detail_failed", error=str(e))
 
 
 async def solitaire_create_start_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -226,21 +292,219 @@ async def solitaire_create_start_callback(update: Update, context: ContextTypes.
     chat = update.effective_chat
     user = update.effective_user
 
-    if not await is_user_admin(context, chat.id, user.id):
-        await q.edit_message_text("仅管理员可使用此功能")
-        return
+    # 私聊中的接龙创建 - 优先从 callback_data 获取目标群组ID
+    target_chat_id = None
+    if chat.type == "private":
+        # 优先从 callback_data 提取 chat_id
+        data = q.data or ""
+        if data.startswith("sol:create:"):
+            parts = data.split(":")
+            if len(parts) >= 3:
+                try:
+                    target_chat_id = int(parts[2])
+                except ValueError:
+                    pass
+
+        # 如果 callback_data 中没有 chat_id，从数据库获取
+        if target_chat_id is None:
+            from bot.services.chat_group_service import get_user_current_chat
+            db: Database = context.application.bot_data["db"]
+            target_chat_id = await get_user_current_chat(db, user.id)
+            if target_chat_id is None:
+                await q.edit_message_text("请先选择一个群组")
+                return
+
+        if not await is_user_admin(context, target_chat_id, user.id):
+            await q.edit_message_text("你没有该群组的管理权限")
+            return
+    else:
+        if not await is_user_admin(context, chat.id, user.id):
+            await q.edit_message_text("仅管理员可使用此功能")
+            return
+        target_chat_id = chat.id
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
-        await set_user_state(session, chat.id, user.id, "solitaire_create", {})
+        await set_user_state(session, chat.id, user.id, "solitaire_create", {"target_chat_id": target_chat_id})
         await session.commit()
 
-    await q.edit_message_text(
-        "➕ 创建接龙\n\n请输入接龙标题",
-    )
-    return WAIT_TITLE
+    # 显示配置模板
+    text = "➕ 创建接龙 ( /cancel 取消)\n\n"
+    text += "请按以下格式一次性发送配置：\n\n"
+    text += "```\n"
+    text += "接龙标题\n"
+    text += "描述（可选，可直接留空）\n"
+    text += "最大人数: 0（0=无限制）\n"
+    text += "参与积分: 0（0=无限制）\n"
+    text += "截止时间: YYYY-MM-DD HH:MM（可选，可直接留空）\n"
+    text += "```\n\n"
+    text += "示例:\n"
+    text += "```\n"
+    text += "今晚聚餐\n"
+    text += "一起吃火锅\n"
+    text += "最大人数: 10\n"
+    text += "参与积分: 50\n"
+    # 计算当前时间+24小时
+    now_local = dt.datetime.now(dt.timezone.utc).astimezone(dt.timezone(dt.timedelta(hours=8)))
+    deadline_example = now_local + dt.timedelta(hours=24)
+    text += f"截止时间: {deadline_example.strftime('%Y-%m-%d %H:%M')}\n"
+    text += "```"
+
+    await q.edit_message_text(text, parse_mode="Markdown")
+    return WAIT_CONFIG
 
 
+async def solitaire_create_config_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int | None:
+    """处理一次性配置输入"""
+    if update.effective_message is None or update.effective_user is None or update.effective_chat is None:
+        return ConversationHandler.END
+
+    user = update.effective_user
+    chat = update.effective_chat
+    text = update.effective_message.text
+
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        state = await get_user_state(session, chat.id, user.id)
+        if not state or not state.state_data.get("target_chat_id"):
+            await update.effective_message.reply_text("会话已过期，请重新开始")
+            return ConversationHandler.END
+
+        target_chat_id = state.state_data["target_chat_id"]
+
+    # 解析配置
+    try:
+        lines = text.strip().split("\n")
+
+        title = lines[0].strip() if len(lines) > 0 else ""
+        description = None
+        max_participants = None
+        points_required = None
+        deadline = None
+
+        # 解析可选参数
+        for line in lines[1:]:
+            line = line.strip()
+            if not line:
+                continue
+
+            if line.startswith("最大人数:") or line.startswith("最大人数："):
+                try:
+                    max_participants = int(line.split(":")[1].split("：")[1].strip())
+                    if max_participants <= 0:
+                        max_participants = None
+                except (ValueError, IndexError):
+                    pass
+            elif line.startswith("参与积分:") or line.startswith("参与积分："):
+                try:
+                    # 找到分隔符的位置
+                    separator_pos = -1
+                    for sep in ["参与积分:", "参与积分："]:
+                        pos = line.find(sep)
+                        if pos != -1:
+                            separator_pos = pos + len(sep)
+                            break
+
+                    if separator_pos > 0:
+                        points_str = line[separator_pos:].strip()
+                        if points_str:
+                            points_required = int(points_str)
+                            if points_required < 0:
+                                points_required = None
+                except (ValueError, IndexError):
+                    pass
+            elif line.startswith("截止时间:") or line.startswith("截止时间："):
+                try:
+                    # 找到分隔符的位置
+                    separator_pos = -1
+                    for sep in ["截止时间:", "截止时间："]:
+                        pos = line.find(sep)
+                        if pos != -1:
+                            separator_pos = pos + len(sep)
+                            break
+
+                    if separator_pos > 0:
+                        deadline_str = line[separator_pos:].strip()
+                        if deadline_str:
+                            import datetime as dt
+                            # 解析用户输入的本地时间
+                            deadline_local = dt.datetime.strptime(deadline_str, "%Y-%m-%d %H:%M")
+                            # 将本地时间转换为UTC时间（假设用户使用北京时间 UTC+8）
+                            local_tz = dt.timezone(dt.timedelta(hours=8))
+                            deadline = deadline_local.replace(tzinfo=local_tz).astimezone(dt.timezone.utc)
+                except (ValueError, IndexError):
+                    pass
+            elif line and not line.startswith("最大人数") and not line.startswith("参与积分") and not line.startswith("截止时间"):
+                # 如果不是参数行，就是描述
+                if not description:
+                    description = line
+
+        # 验证标题
+        if not title:
+            await update.effective_message.reply_text("❌ 标题不能为空\n\n请重新输入配置")
+            return WAIT_CONFIG
+
+        # 验证截止时间（如果设置了）
+        if deadline:
+            import datetime as dt
+            now = dt.datetime.now(dt.timezone.utc)
+            if deadline <= now:
+                await update.effective_message.reply_text("❌ 截止时间必须是未来时间\n\n请重新输入配置")
+                return WAIT_CONFIG
+
+        # 创建接龙
+        async with db.session_factory() as session:
+            result = await create_solitaire(
+                session,
+                chat_id=target_chat_id,
+                created_by_user_id=user.id,
+                title=title,
+                description=description,
+                max_participants=max_participants,
+                points_required=points_required,
+                deadline=deadline,
+            )
+
+            if result.success:
+                # 构建接龙消息
+                text_msg = format_solitaire_message(result.solitaire)
+
+                # 向目标群组发送接龙（带一键接龙按钮）
+                try:
+                    from bot.keyboards.solitaire import get_join_solitaire_keyboard
+                    keyboard = get_join_solitaire_keyboard(result.solitaire.id)
+                    group_message = await context.bot.send_message(
+                        chat_id=target_chat_id,
+                        text=text_msg,
+                        reply_markup=keyboard
+                    )
+                    # 保存消息ID
+                    result.solitaire.message_id = group_message.message_id
+                    await session.commit()
+                except Exception as e:
+                    log.error("solitaire_send_failed", error=str(e))
+
+                # 返回成功消息给创建者
+                keyboard = solitaire_menu_keyboard(target_chat_id if chat.type == "private" else None)
+                await update.effective_message.reply_text(
+                    f"✅ 接龙创建成功！\n\n已发送到群组",
+                    reply_markup=keyboard
+                )
+
+                await clear_user_state(session, chat.id, user.id)
+                await session.commit()
+            else:
+                await update.effective_message.reply_text(f"❌ 创建失败: {result.error or '未知错误'}")
+
+    except Exception as e:
+        log.error("solitaire_create_error", error=str(e))
+        await update.effective_message.reply_text(f"❌ 配置格式错误，请检查后重试\n\n错误: {str(e)}")
+        return WAIT_CONFIG
+
+    return ConversationHandler.END
+
+
+# 删除旧的多步处理函数（保留以便兼容）
 async def solitaire_create_title_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int | None:
     """处理标题输入"""
     if update.effective_message is None or update.effective_user is None or update.effective_chat is None:
@@ -376,13 +640,12 @@ async def solitaire_create_deadline_message(update: Update, context: ContextType
     deadline = None
     if text != "/skip":
         try:
-            import datetime as dt
             # 尝试解析时间格式
             deadline = dt.datetime.strptime(text, "%Y-%m-%d %H:%M")
-            # 转换为UTC
-            import datetime as dt_module
+            # 将本地时间转换为UTC（假设用户使用北京时间 UTC+8）
             if deadline.tzinfo is None:
-                deadline = deadline.replace(tzinfo=dt_module.timezone.utc)
+                local_tz = dt.timezone(dt.timedelta(hours=8))
+                deadline = deadline.replace(tzinfo=local_tz).astimezone(dt.timezone.utc)
         except ValueError:
             await update.effective_message.reply_text("时间格式错误，请使用 YYYY-MM-DD HH:MM 格式或 /skip 跳过")
             return WAIT_DEADLINE
@@ -449,6 +712,212 @@ async def solitaire_cancel_callback(update: Update, context: ContextTypes.DEFAUL
     return ConversationHandler.END
 
 
+async def join_solitaire_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """用户参与接龙回调"""
+    if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
+        return
+
+    q = update.callback_query
+    await q.answer()
+
+    data = q.data or ""
+    if not data.startswith("join_solitaire:"):
+        return
+
+    try:
+        solitaire_id = int(data.split(":")[1])
+    except (ValueError, IndexError):
+        await q.answer("无效的接龙")
+        return
+
+    user_id = update.effective_user.id
+
+    # 生成@用户的文本（使用 HTML 格式）
+    user_mention = update.effective_user.username or f"<a href=\"tg://user?id={user_id}\">@{update.effective_user.first_name or '用户'}</a>"
+
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        solitaire = await get_solitaire(session, solitaire_id)
+        if not solitaire:
+            await q.answer()
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=f"❌ 接龙不存在",
+                parse_mode='HTML'
+            )
+            return
+
+        # 检查是否已关闭
+        if solitaire.status != SolitaireStatus.active.value:
+            await q.answer()
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=f"❌ 接龙已关闭",
+                parse_mode='HTML'
+            )
+            return
+
+        # 检查人数限制
+        if solitaire.max_participants and len(solitaire.entries_rel) >= solitaire.max_participants:
+            await q.answer()
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=f"❌ 接龙已满员",
+                parse_mode='HTML'
+            )
+            return
+
+        # 检查积分限制
+        if solitaire.points_required and solitaire.points_required > 0:
+            from bot.services.points_service import get_balance
+            points = await get_balance(session, solitaire.chat_id, user_id)
+            log.info("checking_points", solitaire_id=solitaire_id, required=solitaire.points_required, user_points=points)
+            if points < solitaire.points_required:
+                # 先 answer 防止按钮加载
+                await q.answer()
+                # 在群组中发送可见的消息提示，@用户
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text=f"{user_mention} ❌ 积分不足\n参与接龙需要 {solitaire.points_required} 积分，你当前有 {points} 积分",
+                    parse_mode='HTML'
+                )
+                return
+
+        # 检查是否已参与（查询数据库）
+        from bot.models.core import SolitaireEntry
+        from sqlalchemy import select
+        existing_stmt = select(SolitaireEntry).where(
+            SolitaireEntry.solitaire_id == solitaire_id,
+            SolitaireEntry.user_id == user_id
+        )
+        existing_result = await session.execute(existing_stmt)
+        if existing_result.scalar_one_or_none():
+            await q.answer()
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=f"{user_mention} ❌ 你已经参与过这个接龙",
+                parse_mode='HTML'
+            )
+            return
+
+        # 参与接龙（使用默认内容）
+        # 优先使用 username，如果没有则使用 first_name
+        username = update.effective_user.username or update.effective_user.first_name or f"用户{user_id}"
+        result = await join_solitaire(
+            session,
+            solitaire_id=solitaire_id,
+            user_id=user_id,
+            username=username,
+            content="✅ 已参与",
+        )
+
+        await session.commit()
+
+        if result.success:
+            # commit 后使用新 session 查询，避免 session 过期问题
+            async with db.session_factory() as new_session:
+                from bot.models.core import Solitaire
+                from sqlalchemy import select
+                from sqlalchemy.orm import selectinload
+
+                stmt = select(Solitaire).options(
+                    selectinload(Solitaire.entries_rel)
+                ).where(Solitaire.id == solitaire_id)
+                query_result = await new_session.execute(stmt)
+                solitaire = query_result.scalar_one()
+
+                if solitaire:
+                    # 刷新接龙消息
+                    text_msg = format_solitaire_message(solitaire)
+
+                    # 更新群组中的原始接龙消息
+                    if solitaire.message_id:
+                        from bot.keyboards.solitaire import get_join_solitaire_keyboard
+                        try:
+                            await context.bot.edit_message_text(
+                                chat_id=solitaire.chat_id,
+                                message_id=solitaire.message_id,
+                                text=text_msg,
+                                reply_markup=get_join_solitaire_keyboard(solitaire_id)
+                            )
+                        except Exception as e:
+                            if "Message is not modified" not in str(e):
+                                log.error("solitaire_group_message_update_failed", error=str(e))
+
+            await q.answer("参与成功！")
+        else:
+            # 服务层返回错误，发送提示消息
+            await q.answer()
+            reason_map = {
+                "full": "❌ 接龙已满员",
+                "closed": "❌ 接龙已关闭",
+                "expired": "❌ 接龙已过期",
+                "insufficient_points": "❌ 积分不足",
+                "already_joined": "❌ 你已经参与过这个接龙",
+            }
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=f"{user_mention} {reason_map.get(result.reason, '❌ 参与失败')}",
+                parse_mode='HTML'
+            )
+
+
+async def edit_solitaire_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """用户修改接龙报名回调"""
+    if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
+        return
+
+    q = update.callback_query
+    await q.answer()
+
+    data = q.data or ""
+    if not data.startswith("edit_solitaire:"):
+        return
+
+    try:
+        solitaire_id = int(data.split(":")[1])
+    except (ValueError, IndexError):
+        await q.answer("无效的接龙")
+        return
+
+    user_id = update.effective_user.id
+
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        solitaire = await get_solitaire(session, solitaire_id)
+        if not solitaire:
+            await q.answer("接龙不存在", show_alert=True)
+            return
+
+        # 检查是否已参与（查询数据库）
+        from bot.models.core import SolitaireEntry
+        from sqlalchemy import select
+        existing_stmt = select(SolitaireEntry).where(
+            SolitaireEntry.solitaire_id == solitaire_id,
+            SolitaireEntry.user_id == user_id
+        )
+        existing_result = await session.execute(existing_stmt)
+        existing_entry = existing_result.scalar_one_or_none()
+
+        if not existing_entry:
+            await q.answer("你还没有参与这个接龙", show_alert=True)
+            return
+
+        # 删除原报名
+        await update_entry(
+            session,
+            solitaire_id=solitaire_id,
+            user_id=user_id,
+            username=update.effective_user.username,
+            delete=True,
+        )
+
+        await session.commit()
+
+    # 重新参与（这里可以提示用户输入新的报名信息）
+    await q.answer("原报名已删除，请点击「参与接龙」重新报名", show_alert=True)
+
+
 async def solitaire_refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """刷新接龙详情"""
     if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
@@ -459,10 +928,6 @@ async def solitaire_refresh_callback(update: Update, context: ContextTypes.DEFAU
     chat = update.effective_chat
     user = update.effective_user
 
-    if not await is_user_admin(context, chat.id, user.id):
-        await q.edit_message_text("仅管理员可使用此功能")
-        return
-
     data = q.data or ""
     parts = data.split(":")
     if len(parts) < 3:
@@ -470,19 +935,69 @@ async def solitaire_refresh_callback(update: Update, context: ContextTypes.DEFAU
 
     solitaire_id = int(parts[2])
 
+    # 解析可选的 chat_id 参数
+    target_chat_id = None
+    if chat.type == "private":
+        # chat_id 可能是负数（群组），所以不能直接用 isdigit()
+        if len(parts) >= 4:
+            try:
+                target_chat_id = int(parts[3])
+            except ValueError:
+                pass
+
+        # 如果无法从 callback_data 获取，回退到数据库
+        if target_chat_id is None:
+            from bot.services.chat_group_service import get_user_current_chat
+            db: Database = context.application.bot_data["db"]
+            target_chat_id = await get_user_current_chat(db, user.id)
+            if target_chat_id is None:
+                await q.edit_message_text("请先选择一个群组")
+                return
+
+        if not await is_user_admin(context, target_chat_id, user.id):
+            await q.edit_message_text("你没有该群组的管理权限")
+            return
+    else:
+        if not await is_user_admin(context, chat.id, user.id):
+            await q.edit_message_text("仅管理员可使用此功能")
+            return
+        target_chat_id = chat.id
+
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
         solitaire = await get_solitaire(session, solitaire_id)
         if not solitaire:
             await session.commit()
-            await q.edit_message_text("接龙不存在", reply_markup=solitaire_menu_keyboard())
+            await q.edit_message_text("接龙不存在", reply_markup=solitaire_menu_keyboard(target_chat_id if chat.type == "private" else None))
             return
+
+        # 检查截止时间，如果过期则自动结束接龙
+        if solitaire.deadline and solitaire.status == SolitaireStatus.active.value:
+            now = dt.datetime.now(dt.timezone.utc)
+            if now > solitaire.deadline:
+                close_result = await close_solitaire(session, solitaire_id)
+                if close_result.success:
+                    solitaire = close_result.solitaire
+                    # 在群组中发送过期通知
+                    try:
+                        await context.bot.send_message(
+                            chat_id=solitaire.chat_id,
+                            text=f"⏰ 接龙已截止\n\n{solitaire.title}\n参与人数: {len(solitaire.entries_rel)} 人"
+                        )
+                    except Exception as e:
+                        log.error("solitaire_expired_notification_failed", error=str(e))
 
         text = format_solitaire_message(solitaire, show_closed=False)
         is_active = solitaire.status == SolitaireStatus.active.value
         await session.commit()
 
-    await q.edit_message_text(text, reply_markup=solitaire_detail_keyboard(solitaire_id, is_active))
+    # 添加异常处理，避免 "Message is not modified" 错误
+    from telegram.error import BadRequest
+    try:
+        await q.edit_message_text(text, reply_markup=solitaire_detail_keyboard(solitaire_id, is_active, target_chat_id if chat.type == "private" else None))
+    except BadRequest as e:
+        if "Message is not modified" not in str(e):
+            log.error("solitaire_refresh_failed", error=str(e))
 
 
 async def solitaire_close_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -495,15 +1010,29 @@ async def solitaire_close_callback(update: Update, context: ContextTypes.DEFAULT
     chat = update.effective_chat
     user = update.effective_user
 
-    # 私聊中的接龙管理 - 从回调中获取目标群组ID
+    data = q.data or ""
+    parts = data.split(":")
+
+    # 私聊中的接龙管理 - 优先从回调中获取目标群组ID
     target_chat_id = None
     if chat.type == "private":
-        from bot.services.chat_group_service import get_user_current_chat
-        db: Database = context.application.bot_data["db"]
-        target_chat_id = await get_user_current_chat(db, user.id)
+        # 优先从 callback_data 提取 chat_id
+        # chat_id 可能是负数（群组），所以不能直接用 isdigit()
+        if len(parts) >= 4:
+            try:
+                target_chat_id = int(parts[3])
+            except ValueError:
+                pass
+
+        # 如果无法从 callback_data 获取，回退到数据库
         if target_chat_id is None:
-            await q.edit_message_text("请先选择一个群组")
-            return
+            from bot.services.chat_group_service import get_user_current_chat
+            db: Database = context.application.bot_data["db"]
+            target_chat_id = await get_user_current_chat(db, user.id)
+            if target_chat_id is None:
+                await q.edit_message_text("请先选择一个群组")
+                return
+
         if not await is_user_admin(context, target_chat_id, user.id):
             await q.edit_message_text("你没有该群组的管理权限")
             return
@@ -513,8 +1042,6 @@ async def solitaire_close_callback(update: Update, context: ContextTypes.DEFAULT
             return
         target_chat_id = chat.id
 
-    data = q.data or ""
-    parts = data.split(":")
     if len(parts) < 3:
         return
 
@@ -523,11 +1050,45 @@ async def solitaire_close_callback(update: Update, context: ContextTypes.DEFAULT
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
         result = await close_solitaire(session, solitaire_id)
-        await session.commit()
 
         if result.success:
+            entries_count = len(result.solitaire.entries_rel)
+
+            await session.commit()
+
+            # 1. 在群组中发送结束通知
+            try:
+                await context.bot.send_message(
+                    chat_id=result.solitaire.chat_id,
+                    text=f"🔴 接龙已结束\n\n{result.solitaire.title}\n参与人数: {entries_count} 人"
+                )
+            except Exception as e:
+                log.error("solitaire_group_notification_failed", error=str(e))
+
+            # 2. 更新群组中的原始接龙消息，移除参与按钮
+            if result.solitaire.message_id:
+                try:
+                    group_text = format_solitaire_message(result.solitaire, show_closed=False)
+                    await context.bot.edit_message_text(
+                        chat_id=result.solitaire.chat_id,
+                        message_id=result.solitaire.message_id,
+                        text=group_text
+                    )
+                except Exception as e:
+                    log.error("solitaire_update_group_message_failed", error=str(e))
+
+            # 3. 通知管理员：接龙已结束（显示完整的参与人员名单）
+            try:
+                admin_text = format_solitaire_message(result.solitaire, show_closed=False)
+                await context.bot.send_message(
+                    chat_id=user.id,
+                    text=admin_text
+                )
+            except Exception as e:
+                log.error("solitaire_close_notification_failed", error=str(e))
+
             text = format_solitaire_message(result.solitaire, show_closed=False)
-            await q.edit_message_text(text, reply_markup=solitaire_detail_keyboard(solitaire_id, False))
+            await q.edit_message_text(text, reply_markup=solitaire_detail_keyboard(solitaire_id, False, target_chat_id if chat.type == "private" else None))
         else:
             reason_text = {
                 "not_found": "接龙不存在",
@@ -548,15 +1109,29 @@ async def solitaire_delete_callback(update: Update, context: ContextTypes.DEFAUL
     chat = update.effective_chat
     user = update.effective_user
 
-    # 私聊中的接龙管理 - 从回调中获取目标群组ID
+    data = q.data or ""
+    parts = data.split(":")
+
+    # 私聊中的接龙管理 - 优先从回调中获取目标群组ID
     target_chat_id = None
     if chat.type == "private":
-        from bot.services.chat_group_service import get_user_current_chat
-        db: Database = context.application.bot_data["db"]
-        target_chat_id = await get_user_current_chat(db, user.id)
+        # 优先从 callback_data 提取 chat_id
+        # chat_id 可能是负数（群组），所以不能直接用 isdigit()
+        if len(parts) >= 4:
+            try:
+                target_chat_id = int(parts[3])
+            except ValueError:
+                pass
+
+        # 如果无法从 callback_data 获取，回退到数据库
         if target_chat_id is None:
-            await q.edit_message_text("请先选择一个群组")
-            return
+            from bot.services.chat_group_service import get_user_current_chat
+            db: Database = context.application.bot_data["db"]
+            target_chat_id = await get_user_current_chat(db, user.id)
+            if target_chat_id is None:
+                await q.edit_message_text("请先选择一个群组")
+                return
+
         if not await is_user_admin(context, target_chat_id, user.id):
             await q.edit_message_text("你没有该群组的管理权限")
             return
@@ -566,8 +1141,6 @@ async def solitaire_delete_callback(update: Update, context: ContextTypes.DEFAUL
             return
         target_chat_id = chat.id
 
-    data = q.data or ""
-    parts = data.split(":")
     if len(parts) < 3:
         return
 
@@ -612,33 +1185,67 @@ async def solitaire_join_message_handler(update: Update, context: ContextTypes.D
         if not target_solitaire:
             return  # 不是接龙消息
 
-        # 检查是否已参与
-        for entry in target_solitaire.entries:
-            if entry.get("user_id") == user.id:
-                # 已参与，更新内容
-                result = await update_entry(session, target_solitaire.id, user.id, message.text)
+        # 检查是否已参与（查询数据库）
+        from bot.models.core import SolitaireEntry
+        from sqlalchemy import select
+        existing_stmt = select(SolitaireEntry).where(
+            SolitaireEntry.solitaire_id == target_solitaire.id,
+            SolitaireEntry.user_id == user.id
+        )
+        existing_result = await session.execute(existing_stmt)
+        if existing_result.scalar_one_or_none():
+            # 已参与，更新内容
+            result = await update_entry(session, target_solitaire.id, user.id, message.text)
+
+            if result.success:
                 await session.commit()
 
-                if result.success:
-                    text = format_solitaire_message(result.solitaire)
+                # 重新查询以获取最新的参与列表
+                solitaire = await get_solitaire(session, target_solitaire.id)
+                if solitaire:
+                    text = format_solitaire_message(solitaire)
                     await message.reply_to_message.edit_text(text)
-                    await message.reply_text("✅ 已更新你的接龙内容")
-                else:
-                    await message.reply_text("❌ 更新失败")
-                return
+                await message.reply_text("✅ 已更新你的接龙内容")
+            else:
+                await session.commit()
+                await message.reply_text("❌ 更新失败")
+            return
 
         # 新参与
         content = message.text
-        username = user.username or user.full_name or f"用户{user.id}"
+        # 构造显示名称：优先 username，否则 first_name + last_name，最后使用 user_id
+        if user.username:
+            display_name = user.username
+        elif user.first_name:
+            display_name = user.first_name
+            if user.last_name:
+                display_name += f" {user.last_name}"
+        else:
+            display_name = f"用户{user.id}"
 
-        result = await join_solitaire(session, target_solitaire.id, user.id, username, content)
-        await session.commit()
+        result = await join_solitaire(session, target_solitaire.id, user.id, display_name, content)
 
         if result.success:
-            text = format_solitaire_message(result.solitaire)
-            await message.reply_to_message.edit_text(text)
+            await session.commit()
+
+            # commit 后使用新 session 查询，避免 session 过期问题
+            async with db.session_factory() as new_session:
+                from bot.models.core import Solitaire
+                from sqlalchemy import select
+                from sqlalchemy.orm import selectinload
+
+                stmt = select(Solitaire).options(
+                    selectinload(Solitaire.entries_rel)
+                ).where(Solitaire.id == target_solitaire.id)
+                query_result = await new_session.execute(stmt)
+                solitaire = query_result.scalar_one()
+
+                if solitaire:
+                    text = format_solitaire_message(solitaire)
+                    await message.reply_to_message.edit_text(text)
             await message.reply_text("✅ 接龙成功！")
         else:
+            await session.commit()
             reason_text = {
                 "not_found": "接龙不存在",
                 "already_closed": "接龙已结束",
@@ -649,3 +1256,70 @@ async def solitaire_join_message_handler(update: Update, context: ContextTypes.D
                 "error": "参与失败",
             }.get(result.reason, "未知错误")
             await message.reply_text(f"❌ {reason_text}")
+
+
+# ============================================
+# 后台任务
+# ============================================
+
+async def check_expired_solitaires_job(app) -> None:
+    """后台任务：定期检查并关闭过期的接龙（每分钟检查一次）"""
+    from sqlalchemy import select
+
+    while True:
+        try:
+            db: Database = app.bot_data["db"]
+            async with db.session_factory() as session:
+                # 查询所有进行中且有截止时间的接龙
+                from bot.models.core import Solitaire
+                stmt = select(Solitaire).where(
+                    Solitaire.status == SolitaireStatus.active.value,
+                    Solitaire.deadline.isnot(None)
+                )
+                result = await session.execute(stmt)
+                solitaires = result.scalars().all()
+
+                now = dt.datetime.now(dt.timezone.utc)
+                closed_count = 0
+
+                for solitaire in solitaires:
+                    # 检查是否过期
+                    if solitaire.deadline and now > solitaire.deadline:
+                        close_result = await close_solitaire(session, solitaire.id)
+                        if close_result.success:
+                            closed_count += 1
+
+                            # 获取参与人数
+                            entries_count = len(close_result.solitaire.entries_rel)
+
+                            # 在群组中发送过期通知
+                            try:
+                                await app.bot.send_message(
+                                    chat_id=solitaire.chat_id,
+                                    text=f"⏰ 接龙已截止\n\n{solitaire.title}\n参与人数: {entries_count} 人"
+                                )
+                            except Exception as e:
+                                log.error("solitaire_expired_notification_failed", solitaire_id=solitaire.id, error=str(e))
+
+                            # 更新群组中的原始接龙消息
+                            if solitaire.message_id:
+                                try:
+                                    group_text = format_solitaire_message(close_result.solitaire, show_closed=False)
+                                    await app.bot.edit_message_text(
+                                        chat_id=solitaire.chat_id,
+                                        message_id=solitaire.message_id,
+                                        text=group_text
+                                    )
+                                except Exception as e:
+                                    log.error("solitaire_update_group_message_failed", solitaire_id=solitaire.id, error=str(e))
+
+                await session.commit()
+
+                if closed_count > 0:
+                    log.info("solitaires_auto_closed", count=closed_count)
+
+        except Exception as e:
+            log.error("check_expired_solitaires_error", error=str(e))
+
+        # 每分钟检查一次
+        await asyncio.sleep(60)

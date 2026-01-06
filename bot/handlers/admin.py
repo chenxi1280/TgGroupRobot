@@ -203,6 +203,9 @@ async def _show_group_selection(update: Update, managed_chats: list, current_cha
 # 私聊管理功能处理器
 async def _handle_private_settings(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> None:
     """处理私聊中的群组设置 - 直接返回主菜单（设置已整合到主菜单）"""
+    # 设置当前管理的群组
+    db: Database = context.application.bot_data["db"]
+    await set_user_current_chat(db, update.effective_user.id, chat_id)
     # 设置功能已整合到主菜单中，这里直接返回主菜单
     await _show_private_admin_menu(update, context, chat_id)
 
@@ -212,7 +215,9 @@ async def _handle_private_lottery(update: Update, context: ContextTypes.DEFAULT_
     from bot.keyboards.lottery import lottery_menu_keyboard
     from bot.services.lottery_service import get_lottery_stats
 
+    # 设置当前管理的群组
     db: Database = context.application.bot_data["db"]
+    await set_user_current_chat(db, update.effective_user.id, chat_id)
 
     async with db.session_factory() as session:
         from bot.models.core import TgChat
@@ -236,28 +241,15 @@ async def _handle_private_lottery(update: Update, context: ContextTypes.DEFAULT_
 
 async def _handle_private_solitaire(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> None:
     """处理私聊中的接龙管理"""
-    from bot.keyboards.solitaire import solitaire_list_keyboard
-    from bot.services.solitaire_service import get_chat_solitaires
+    from bot.keyboards.solitaire import solitaire_menu_keyboard
 
+    # 设置当前管理的群组
     db: Database = context.application.bot_data["db"]
+    await set_user_current_chat(db, update.effective_user.id, chat_id)
 
-    async with db.session_factory() as session:
-        from bot.models.core import TgChat
-        from sqlalchemy import select
+    text = "📋 接龙管理\n\n请选择操作："
 
-        chat_stmt = select(TgChat).where(TgChat.id == chat_id)
-        chat_result = await session.execute(chat_stmt)
-        chat = chat_result.scalar_one_or_none()
-
-        solitaires = await get_chat_solitaires(session, chat_id)
-        await session.commit()
-
-    chat_title = chat.title if chat else f"群组{chat_id}"
-    text = f"📋 [{chat_title}] 接龙管理\n\n"
-    text += f"活跃接龙: {len([s for s in solitaires if s.status == 'active'])}\n"
-    text += f"总接龙数: {len(solitaires)}"
-
-    keyboard = solitaire_list_keyboard(solitaires, chat_id)
+    keyboard = solitaire_menu_keyboard(chat_id)
 
     if update.callback_query:
         await _safe_edit_message(update.callback_query, text, reply_markup=keyboard)
@@ -266,6 +258,10 @@ async def _handle_private_solitaire(update: Update, context: ContextTypes.DEFAUL
 async def _handle_private_invite(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> None:
     """处理私聊中的邀请链接管理"""
     from bot.keyboards.invite_link import invite_link_menu_keyboard
+
+    # 设置当前管理的群组
+    db: Database = context.application.bot_data["db"]
+    await set_user_current_chat(db, update.effective_user.id, chat_id)
 
     text = "🔗 邀请链接管理\n\n请选择操作："
 
@@ -279,6 +275,10 @@ async def _handle_private_autoreply(update: Update, context: ContextTypes.DEFAUL
     """处理私聊中的自动回复管理"""
     from bot.keyboards.auto_reply import auto_reply_menu_keyboard
 
+    # 设置当前管理的群组
+    db: Database = context.application.bot_data["db"]
+    await set_user_current_chat(db, update.effective_user.id, chat_id)
+
     text = "💬 自动回复管理\n\n请选择操作："
 
     keyboard = auto_reply_menu_keyboard(chat_id)
@@ -290,6 +290,10 @@ async def _handle_private_autoreply(update: Update, context: ContextTypes.DEFAUL
 async def _handle_private_keywords(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> None:
     """处理私聊中的违禁词管理"""
     from bot.keyboards.banned_word import banned_word_menu_keyboard
+
+    # 设置当前管理的群组
+    db: Database = context.application.bot_data["db"]
+    await set_user_current_chat(db, update.effective_user.id, chat_id)
 
     text = "🔇 违禁词管理\n\n请选择操作："
 
@@ -303,6 +307,10 @@ async def _handle_private_scheduled(update: Update, context: ContextTypes.DEFAUL
     """处理私聊中的定时消息管理"""
     from bot.keyboards.scheduled import scheduled_menu_keyboard
 
+    # 设置当前管理的群组
+    db: Database = context.application.bot_data["db"]
+    await set_user_current_chat(db, update.effective_user.id, chat_id)
+
     text = "⏰ 定时消息管理\n\n请选择操作："
 
     keyboard = scheduled_menu_keyboard(chat_id)
@@ -314,6 +322,10 @@ async def _handle_private_scheduled(update: Update, context: ContextTypes.DEFAUL
 async def _handle_private_ads(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> None:
     """处理私聊中的广告管理"""
     from bot.keyboards.ads import ads_menu_keyboard
+
+    # 设置当前管理的群组
+    db: Database = context.application.bot_data["db"]
+    await set_user_current_chat(db, update.effective_user.id, chat_id)
 
     text = "📢 广告管理\n\n请选择操作："
 
@@ -327,7 +339,9 @@ async def _handle_private_verification(update: Update, context: ContextTypes.DEF
     """处理私聊中的新人验证设置"""
     from bot.keyboards.admin import verification_mode_menu
 
+    # 设置当前管理的群组
     db: Database = context.application.bot_data["db"]
+    await set_user_current_chat(db, update.effective_user.id, chat_id)
 
     async with db.session_factory() as session:
         from bot.models.core import TgChat
@@ -364,7 +378,9 @@ async def _handle_private_points(update: Update, context: ContextTypes.DEFAULT_T
     """处理私聊中的积分设置"""
     from bot.keyboards.points import points_config_keyboard
 
+    # 设置当前管理的群组
     db: Database = context.application.bot_data["db"]
+    await set_user_current_chat(db, update.effective_user.id, chat_id)
 
     async with db.session_factory() as session:
         from bot.models.core import TgChat
@@ -391,7 +407,9 @@ async def _handle_private_auto_delete(update: Update, context: ContextTypes.DEFA
     """处理私聊中的自动删除配置"""
     from bot.keyboards.auto_delete import auto_delete_config_keyboard
 
+    # 设置当前管理的群组
     db: Database = context.application.bot_data["db"]
+    await set_user_current_chat(db, update.effective_user.id, chat_id)
 
     async with db.session_factory() as session:
         from bot.models.core import TgChat

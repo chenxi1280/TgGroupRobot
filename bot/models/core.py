@@ -528,7 +528,6 @@ class Solitaire(Base):
     max_participants: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 最大参与人数（null=无限制）
     points_required: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 参与所需积分（null=无限制）
     deadline: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # 截止时间（null=无限制）
-    entries: Mapped[list] = mapped_column(JSONB, default=list)  # 参与记录 [{"user_id": 123, "username": "xxx", "content": "xxx", "joined_at": "2024-01-01"}]
     message_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 接龙消息ID（用于更新）
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC))
     updated_at: Mapped[dt.datetime] = mapped_column(
@@ -536,6 +535,35 @@ class Solitaire(Base):
         default=lambda: dt.datetime.now(dt.UTC),
         onupdate=lambda: dt.datetime.now(dt.UTC),
     )
+
+    # 关系：参与记录
+    entries_rel: Mapped[list["SolitaireEntry"]] = relationship(
+        "SolitaireEntry",
+        back_populates="solitaire",
+        cascade="all, delete-orphan",
+        lazy="select"  # 使用 select 策略，需要在查询时显式预加载
+    )
+
+
+class SolitaireEntry(Base):
+    """接龙参与记录"""
+    __tablename__ = "solitaire_entries"
+    __table_args__ = (
+        UniqueConstraint("solitaire_id", "user_id", name="uq_solitaire_entries"),
+        {"schema": "bot"}
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    solitaire_id: Mapped[int] = mapped_column(Integer, ForeignKey("bot.solitaires.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("bot.tg_users.id", ondelete="CASCADE"), index=True)
+    username: Mapped[str | None] = mapped_column(String(255), nullable=True)  # 用户名（用于显示）
+    content: Mapped[str] = mapped_column(Text, nullable=False, default="")  # 参与内容
+    joined_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC))  # 参与时间
+    updated_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # 更新时间
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC))
+
+    # 关系：接龙
+    solitaire: Mapped["Solitaire"] = relationship("Solitaire", back_populates="entries_rel")
 
 
 

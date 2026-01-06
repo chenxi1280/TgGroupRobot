@@ -95,23 +95,40 @@ async def scheduled_create_start(update: Update, context: ContextTypes.DEFAULT_T
 
     chat = update.effective_chat
     user = update.effective_user
+    data = q.data or ""
 
-    # 私聊中的定时消息创建 - 获取目标群组ID
+    # 私聊中的定时消息创建 - 优先从 callback_data 获取目标群组ID
     target_chat_id = None
+    target_chat_title = None
     if chat.type == "private":
-        from bot.services.chat_group_service import get_user_current_chat
-        from bot.models.core import TgChat
-        from sqlalchemy import select
-        db: Database = context.application.bot_data["db"]
-        target_chat_id = await get_user_current_chat(db, user.id)
+        # 优先从 callback_data 提取 chat_id
+        if data.startswith("scheduled:create:"):
+            parts = data.split(":")
+            if len(parts) >= 3:
+                try:
+                    target_chat_id = int(parts[2])
+                except ValueError:
+                    pass
+
+        # 如果 callback_data 中没有 chat_id，从数据库获取
         if target_chat_id is None:
-            await q.edit_message_text("请先选择一个群组")
-            return
+            from bot.services.chat_group_service import get_user_current_chat
+            from bot.models.core import TgChat
+            from sqlalchemy import select
+            db: Database = context.application.bot_data["db"]
+            target_chat_id = await get_user_current_chat(db, user.id)
+            if target_chat_id is None:
+                await q.edit_message_text("请先选择一个群组")
+                return
+
         if not await is_user_admin(context, target_chat_id, user.id):
             await q.edit_message_text("你没有该群组的管理权限")
             return
 
         # 获取群组信息用于后续操作
+        from bot.models.core import TgChat
+        from sqlalchemy import select
+        db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
             chat_stmt = select(TgChat).where(TgChat.id == target_chat_id)
             chat_result = await session.execute(chat_stmt)

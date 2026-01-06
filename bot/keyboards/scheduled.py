@@ -13,7 +13,7 @@ def scheduled_menu_keyboard(chat_id: int | None = None) -> InlineKeyboardMarkup:
 
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("➕ 创建定时消息", callback_data="scheduled:create")],
+            [InlineKeyboardButton("➕ 创建定时消息", callback_data=f"scheduled:create:{chat_id}" if chat_id else "scheduled:create")],
             [InlineKeyboardButton("返回", callback_data=back_callback)],
         ]
     )

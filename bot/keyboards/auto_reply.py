@@ -13,7 +13,7 @@ def auto_reply_menu_keyboard(chat_id: int | None = None) -> InlineKeyboardMarkup
 
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("➕ 创建自动回复规则", callback_data="auto_reply:create")],
+            [InlineKeyboardButton("➕ 创建自动回复规则", callback_data=f"auto_reply:create:{chat_id}" if chat_id else "auto_reply:create")],
             [InlineKeyboardButton("返回", callback_data=back_callback)],
         ]
     )

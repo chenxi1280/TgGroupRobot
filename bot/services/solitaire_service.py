@@ -6,8 +6,9 @@ from typing import Literal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
-from bot.models.core import Solitaire
+from bot.models.core import Solitaire, SolitaireEntry
 from bot.models.enums import SolitaireStatus
 
 
@@ -17,6 +18,8 @@ class CreateResult:
     success: bool
     reason: Literal["ok", "error"]
     solitaire: Solitaire | None = None
+    message_id: int | None = None
+    error: str | None = None
 
 
 @dataclass
@@ -56,10 +59,17 @@ async def create_solitaire(
             max_participants=max_participants,
             points_required=points_required,
             deadline=deadline,
-            entries=[],
         )
         session.add(solitaire)
         await session.flush()
+
+        # 重新查询以正确加载关系
+        stmt = select(Solitaire).options(
+            selectinload(Solitaire.entries_rel)
+        ).where(Solitaire.id == solitaire.id)
+        result = await session.execute(stmt)
+        solitaire = result.scalar_one()
+
         return CreateResult(success=True, reason="ok", solitaire=solitaire)
     except Exception:
         return CreateResult(success=False, reason="error")
@@ -71,7 +81,9 @@ async def get_chat_solitaires(
     active_only: bool = False,
 ) -> list[Solitaire]:
     """获取群组的接龙列表"""
-    stmt = select(Solitaire).where(Solitaire.chat_id == chat_id)
+    stmt = select(Solitaire).options(
+        selectinload(Solitaire.entries_rel)
+    ).where(Solitaire.chat_id == chat_id)
     if active_only:
         stmt = stmt.where(Solitaire.status == SolitaireStatus.active.value)
     stmt = stmt.order_by(Solitaire.created_at.desc())
@@ -84,7 +96,9 @@ async def get_solitaire(
     solitaire_id: int,
 ) -> Solitaire | None:
     """获取接龙"""
-    stmt = select(Solitaire).where(Solitaire.id == solitaire_id)
+    stmt = select(Solitaire).options(
+        selectinload(Solitaire.entries_rel)
+    ).where(Solitaire.id == solitaire_id)
     result = await session.execute(stmt)
     return result.scalar_one_or_none()
 
@@ -106,21 +120,26 @@ async def join_solitaire(
 
     # 检查截止时间
     if solitaire.deadline:
-        now = dt.datetime.now(dt.UTC)
+        now = dt.datetime.now(dt.timezone.utc)
         if now > solitaire.deadline:
             return JoinResult(success=False, reason="expired", solitaire=solitaire)
 
-    # 检查是否已参与
-    for entry in solitaire.entries:
-        if entry.get("user_id") == user_id:
-            return JoinResult(success=False, reason="already_joined", solitaire=solitaire)
+    # 检查是否已参与（查询数据库）
+    existing_stmt = select(SolitaireEntry).where(
+        SolitaireEntry.solitaire_id == solitaire_id,
+        SolitaireEntry.user_id == user_id
+    )
+    existing_result = await session.execute(existing_stmt)
+    if existing_result.scalar_one_or_none():
+        return JoinResult(success=False, reason="already_joined", solitaire=solitaire)
 
     # 检查人数限制
-    if solitaire.max_participants and len(solitaire.entries) >= solitaire.max_participants:
+    current_count = len(solitaire.entries_rel)
+    if solitaire.max_participants and current_count >= solitaire.max_participants:
         return JoinResult(success=False, reason="full", solitaire=solitaire)
 
     # 检查积分限制
-    if solitaire.points_required:
+    if solitaire.points_required and solitaire.points_required > 0:
         from bot.models.core import PointsAccount
         user_points = 0
         points_stmt = select(PointsAccount).where(
@@ -135,14 +154,15 @@ async def join_solitaire(
         if user_points < solitaire.points_required:
             return JoinResult(success=False, reason="insufficient_points", solitaire=solitaire)
 
-    # 添加参与记录
-    entry = {
-        "user_id": user_id,
-        "username": username,
-        "content": content,
-        "joined_at": dt.datetime.now(dt.UTC).isoformat(),
-    }
-    solitaire.entries.append(entry)
+    # 创建参与记录
+    entry = SolitaireEntry(
+        solitaire_id=solitaire_id,
+        user_id=user_id,
+        username=username,
+        content=content,
+        joined_at=dt.datetime.now(dt.UTC),
+    )
+    session.add(entry)
     return JoinResult(success=True, reason="ok", solitaire=solitaire)
 
 
@@ -161,11 +181,17 @@ async def update_entry(
         return JoinResult(success=False, reason="already_closed", solitaire=solitaire)
 
     # 查找并更新
-    for entry in solitaire.entries:
-        if entry.get("user_id") == user_id:
-            entry["content"] = content
-            entry["updated_at"] = dt.datetime.now(dt.UTC).isoformat()
-            return JoinResult(success=True, reason="ok", solitaire=solitaire)
+    stmt = select(SolitaireEntry).where(
+        SolitaireEntry.solitaire_id == solitaire_id,
+        SolitaireEntry.user_id == user_id
+    )
+    result = await session.execute(stmt)
+    entry = result.scalar_one_or_none()
+
+    if entry:
+        entry.content = content
+        entry.updated_at = dt.datetime.now(dt.UTC)
+        return JoinResult(success=True, reason="ok", solitaire=solitaire)
 
     return JoinResult(success=False, reason="not_found", solitaire=solitaire)
 
@@ -184,10 +210,16 @@ async def leave_solitaire(
         return JoinResult(success=False, reason="already_closed", solitaire=solitaire)
 
     # 查找并删除
-    for i, entry in enumerate(solitaire.entries):
-        if entry.get("user_id") == user_id:
-            solitaire.entries.pop(i)
-            return JoinResult(success=True, reason="ok", solitaire=solitaire)
+    stmt = select(SolitaireEntry).where(
+        SolitaireEntry.solitaire_id == solitaire_id,
+        SolitaireEntry.user_id == user_id
+    )
+    result = await session.execute(stmt)
+    entry = result.scalar_one_or_none()
+
+    if entry:
+        await session.delete(entry)
+        return JoinResult(success=True, reason="ok", solitaire=solitaire)
 
     return JoinResult(success=False, reason="not_found", solitaire=solitaire)
 
@@ -226,11 +258,15 @@ async def get_solitaire_stats(
 ) -> dict[str, int]:
     """获取接龙统计"""
     solitaires = await get_chat_solitaires(session, chat_id)
+    total_entries = 0
+    for s in solitaires:
+        # 使用 entries_rel 关系获取参与记录数量
+        total_entries += len(s.entries_rel)
     return {
         "total": len(solitaires),
         "active": sum(1 for s in solitaires if s.status == SolitaireStatus.active.value),
         "closed": sum(1 for s in solitaires if s.status == SolitaireStatus.closed.value),
-        "total_entries": sum(len(s.entries) for s in solitaires),
+        "total_entries": total_entries,
     }
 
 
@@ -241,10 +277,13 @@ def format_solitaire_message(solitaire: Solitaire, show_closed: bool = True) -> 
 
     text = f"{status_emoji} {solitaire.title}\n"
     text += f"状态: {status_text}"
+
+    # 使用 entries_rel 获取参与记录
+    entries_count = len(solitaire.entries_rel)
     if solitaire.max_participants:
-        text += f" ({len(solitaire.entries)}/{solitaire.max_participants}人)"
+        text += f" ({entries_count}/{solitaire.max_participants}人)"
     else:
-        text += f" ({len(solitaire.entries)}人)"
+        text += f" ({entries_count}人)"
     text += "\n"
 
     # 积分限制
@@ -259,12 +298,12 @@ def format_solitaire_message(solitaire: Solitaire, show_closed: bool = True) -> 
     if solitaire.description:
         text += f"\n{solitaire.description}\n"
 
-    if solitaire.entries:
+    # 使用 entries_rel 关系显示参与列表
+    if solitaire.entries_rel:
         text += "\n参与列表:\n"
-        for i, entry in enumerate(solitaire.entries, 1):
-            username = entry.get("username") or f"用户{entry.get('user_id')}"
-            content = entry.get("content", "")
-            text += f"{i}. {username}: {content}\n"
+        for i, entry in enumerate(solitaire.entries_rel, 1):
+            username = entry.username or f"用户{entry.user_id}"
+            text += f"{i}. {username}: {entry.content}\n"
     else:
         text += "\n暂无人参与，快来接龙吧！\n"
 

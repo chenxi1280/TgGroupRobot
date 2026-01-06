@@ -15,7 +15,7 @@ def invite_link_menu_keyboard(chat_id: int | None = None) -> InlineKeyboardMarku
 
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("➕ 创建邀请链接", callback_data="inv:create"),
+            InlineKeyboardButton("➕ 创建邀请链接", callback_data=f"inv:create:{chat_id}" if chat_id else "inv:create"),
         ],
         [
             InlineKeyboardButton("📋 链接列表", callback_data="inv:list"),

@@ -69,7 +69,7 @@ async def auto_delete_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         elif message.proximity_alert_triggered:
             # 附近提醒
             pass
-        elif message.voice_chat_scheduled or voice_chat_started := message.voice_chat_ended or message.voice_chat_participants_invited:
+        elif message.voice_chat_scheduled or message.voice_chat_ended or message.voice_chat_participants_invited:
             # 语音聊天
             pass
 

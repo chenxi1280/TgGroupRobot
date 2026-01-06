@@ -13,7 +13,7 @@ def ads_menu_keyboard(chat_id: int | None = None) -> InlineKeyboardMarkup:
 
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("➕ 创建广告", callback_data="ads:create"),
+            InlineKeyboardButton("➕ 创建广告", callback_data=f"ads:create:{chat_id}" if chat_id else "ads:create"),
         ],
         [
             InlineKeyboardButton("📋 广告列表", callback_data="ads:list"),

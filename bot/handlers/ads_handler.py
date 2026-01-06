@@ -236,13 +236,39 @@ async def ads_create_start_callback(update: Update, context: ContextTypes.DEFAUL
     chat = update.effective_chat
     user = update.effective_user
 
-    if not await is_user_admin(context, chat.id, user.id):
-        await q.edit_message_text("仅管理员可使用此功能")
-        return
+    # 私聊中的广告创建 - 优先从 callback_data 获取目标群组ID
+    target_chat_id = None
+    if chat.type == "private":
+        # 优先从 callback_data 提取 chat_id
+        data = q.data or ""
+        if data.startswith("ads:create:"):
+            parts = data.split(":")
+            if len(parts) >= 3:
+                try:
+                    target_chat_id = int(parts[2])
+                except ValueError:
+                    pass
+
+        # 如果 callback_data 中没有 chat_id，从数据库获取
+        if target_chat_id is None:
+            db: Database = context.application.bot_data["db"]
+            target_chat_id = await get_user_current_chat(db, user.id)
+            if target_chat_id is None:
+                await q.edit_message_text("请先选择一个群组")
+                return
+
+        if not await is_user_admin(context, target_chat_id, user.id):
+            await q.edit_message_text("你没有该群组的管理权限")
+            return
+    else:
+        if not await is_user_admin(context, chat.id, user.id):
+            await q.edit_message_text("仅管理员可使用此功能")
+            return
+        target_chat_id = chat.id
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
-        await set_user_state(session, chat.id, user.id, "ads_create", {})
+        await set_user_state(session, target_chat_id, user.id, "ads_create", {})
         await session.commit()
 
     await q.edit_message_text(

@@ -39,8 +39,14 @@ class Settings(BaseSettings):
         alias="DATABASE_URL",
     )
 
+    # 代理设置（用于连接 Telegram API）
+    proxy_url: str | None = Field(default=None, alias="PROXY_URL")
+
     # 预留：未来 webhook 模式
     webhook_url: str | None = Field(default=None, alias="WEBHOOK_URL")
+
+    # 群聊中 /start 和 /cancel 指令回复消息的自动删除时间（秒）
+    group_guide_message_delete_seconds: int = Field(default=30, alias="GROUP_GUIDE_MESSAGE_DELETE_SECONDS")
 
 
 def get_settings() -> Settings:

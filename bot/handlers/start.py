@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-from telegram import Update
+import asyncio
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
+from bot.config import get_settings
 from bot.db.session import Database
 from bot.i18n.strings import t
-from bot.keyboards.admin import admin_main_menu
 from bot.keyboards.chat_group import chat_group_list_keyboard
 from bot.models.enums import ConversationStateType
-from bot.services.chat_group_service import get_user_current_chat, get_user_managed_chats
+from bot.services.chat_group_service import get_user_current_chat, get_user_managed_chats, set_user_current_chat
 from bot.services.chat_service import ensure_chat, get_chat_settings
 from bot.services.state_service import clear_user_state, get_user_state
 from bot.services.telegram_perm import is_user_admin
@@ -73,30 +74,48 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         # 检查用户是否有对话状态
         state = await get_user_state(session, chat_id=chat.id, user_id=user.id)
 
-        # 如果有状态，清除状态并返回首页
+        # 如果有状态，清除状态
         if state is not None:
             await clear_user_state(session, chat_id=chat.id, user_id=user.id)
-            await session.commit()
-            # 如果是管理员，显示管理面板；否则显示普通提示
-            if await is_user_admin(context, chat.id, user.id):
-                await update.effective_message.reply_text(
-                    f"设置[{chat.title}]群组，选择要更改的项目",
-                    reply_markup=admin_main_menu(),
-                )
-            else:
-                await update.effective_message.reply_text(t(settings.language, "start.group"))
-            return
-
-        # 没有状态：管理员显示管理面板，普通用户显示提示
         await session.commit()
 
-    if await is_user_admin(context, chat.id, user.id):
-        await update.effective_message.reply_text(
-            f"设置[{chat.title}]群组，选择要更改的项目",
-            reply_markup=admin_main_menu(),
-        )
-    else:
-        await update.effective_message.reply_text(t(settings.language, "start.group"))
+    # 设置当前管理的群组
+    await set_user_current_chat(db, user.id, chat.id)
+
+    # 获取配置的删除时间
+    app_settings = get_settings()
+    delete_delay = app_settings.group_guide_message_delete_seconds
+
+    # 创建引导按钮（URL 按钮点击后跳转到私聊）
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🚀 开始", url=f"https://t.me/{context.bot.username}")],
+    ])
+
+    # 发送引导消息（使用 send_message 而不是 reply_text，因为消息会被删除）
+    msg = await context.bot.send_message(
+        chat_id=chat.id,
+        text=f"欢迎使用@{context.bot.username}:\n\n"
+             f"1) 点击下方按钮选择设置（仅限管理员）\n"
+             f"2) 点击机器人对话框底部[开始]按钮\n\n"
+             f"人员按下面的开始按钮调整到私聊机器界面进行管理群聊",
+        reply_markup=keyboard
+    )
+
+    # 删除用户发送的消息
+    try:
+        await update.effective_message.delete()
+    except Exception:
+        pass
+
+    # 延迟后删除机器人消息（保持群组整洁）
+    async def delete_later():
+        try:
+            await asyncio.sleep(delete_delay)
+            await msg.delete()
+        except Exception:
+            pass
+
+    asyncio.create_task(delete_later())
 
 
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -120,14 +139,43 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await clear_user_state(session, chat_id=chat.id, user_id=user.id)
         await session.commit()
 
-    # 返回首页
-    if await is_user_admin(context, chat.id, user.id):
-        await update.effective_message.reply_text(
-            f"设置[{chat.title}]群组，选择要更改的项目",
-            reply_markup=admin_main_menu(),
-        )
-    else:
-        await update.effective_message.reply_text(t(settings.language, "start.group"))
+    # 设置当前管理的群组
+    await set_user_current_chat(db, user.id, chat.id)
+
+    # 获取配置的删除时间
+    app_settings = get_settings()
+    delete_delay = app_settings.group_guide_message_delete_seconds
+
+    # 创建引导按钮（URL 按钮点击后跳转到私聊）
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🚀 开始", url=f"https://t.me/{context.bot.username}")],
+    ])
+
+    # 发送引导消息（使用 send_message 而不是 reply_text，因为消息会被删除）
+    msg = await context.bot.send_message(
+        chat_id=chat.id,
+        text=f"欢迎使用@{context.bot.username}:\n\n"
+             f"1) 点击下方按钮选择设置（仅限管理员）\n"
+             f"2) 点击机器人对话框底部[开始]按钮\n\n"
+             f"人员按下面的开始按钮调整到私聊机器界面进行管理群聊",
+        reply_markup=keyboard
+    )
+
+    # 删除用户发送的消息
+    try:
+        await update.effective_message.delete()
+    except Exception:
+        pass
+
+    # 延迟后删除机器人消息（保持群组整洁）
+    async def delete_later():
+        try:
+            await asyncio.sleep(delete_delay)
+            await msg.delete()
+        except Exception:
+            pass
+
+    asyncio.create_task(delete_later())
 
 
 async def private_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
