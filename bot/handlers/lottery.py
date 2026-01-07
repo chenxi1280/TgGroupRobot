@@ -291,10 +291,22 @@ async def _parse_lottery_config(update: Update, context: ContextTypes.DEFAULT_TY
                 prize_start = True
                 continue
             if prize_start and line:
-                if "," not in line:
+                parts = line.split(",")
+                if len(parts) < 2:
                     raise ValueError(f"奖品格式错误: {line}")
-                prize_name, quantity = line.rsplit(",", 1)
-                prizes.append({"name": prize_name.strip(), "quantity": int(quantity.strip())})
+
+                prize_name = parts[0].strip()
+                quantity = int(parts[1].strip())
+                points_reward = 0
+
+                # 支持第三个参数：积分奖励
+                if len(parts) >= 3:
+                    try:
+                        points_reward = int(parts[2].strip().replace("积分", "").strip())
+                    except ValueError:
+                        raise ValueError(f"积分奖励格式错误: {parts[2]}")
+
+                prizes.append({"name": prize_name, "quantity": quantity, "points_reward": points_reward})
 
         if not prizes:
             raise ValueError("至少需要一个奖品")
@@ -584,50 +596,39 @@ async def draw_lottery_callback(update: Update, context: ContextTypes.DEFAULT_TY
             )
             return
 
-        # 随机开奖模式（原有逻辑）
-        winners_text = f"🎉【{lottery.title}】开奖结果 🎉\n\n"
-        winners_text += f"参与人数: {len(participants)}\n\n"
-        winners_text += "🏆 中奖名单:\n"
+        # 随机开奖模式（使用新的服务方法）
+        from bot.services.lottery_service import (
+            perform_random_draw,
+            generate_lottery_announcement,
+            distribute_lottery_rewards,
+        )
+        from bot.models.core import TgUser
 
-        # 展开奖品列表
-        prize_pool = []
-        for prize in lottery.prizes:
-            for _ in range(prize.get("quantity", 1)):
-                prize_pool.append(prize["name"])
+        # 执行随机开奖
+        winners = await perform_random_draw(session, lottery)
 
-        if not prize_pool:
-            await q.edit_message_text("奖品配置错误。")
+        if winners:
+            # 获取中奖用户信息
+            user_ids = [w.user_id for w in winners]
+            user_stmt = select(TgUser).where(TgUser.id.in_(user_ids))
+            user_result = await session.execute(user_stmt)
+            users = {u.id: u for u in user_result.scalars().all()}
+
+            # 发放积分奖励
+            await distribute_lottery_rewards(session, lottery, winners)
+
+            # 更新抽奖状态
+            lottery.status = "completed"
+            lottery.drawn_at = dt.datetime.now(dt.timezone.utc)
+
+            # 生成开奖公告
+            announcement = generate_lottery_announcement(lottery, winners, users)
+
             await session.commit()
-            return
-
-        # 随机抽取中奖者
-        random.shuffle(participants)
-        random.shuffle(prize_pool)
-
-        win_count = min(len(participants), len(prize_pool))
-
-        for i in range(win_count):
-            participant = participants[i]
-            prize_name = prize_pool[i]
-
-            await create_lottery_winner(
-                session,
-                lottery_id=lottery_id,
-                user_id=participant.user_id,
-                prize_name=prize_name,
-                prize_index=i,
-            )
-
-            winners_text += f"\n{i + 1}. {prize_name}"
-
-        # 更新抽奖状态
-        from bot.models.core import Lottery
-        lottery.status = "completed"
-        lottery.drawn_at = dt.datetime.now(dt.timezone.utc)
-
-        await session.commit()
-
-        await q.edit_message_text(winners_text)
+            await q.edit_message_text(announcement, parse_mode="Markdown")
+        else:
+            await q.edit_message_text("没有人参与抽奖。")
+            await session.commit()
 
 
 # ============================================
@@ -812,38 +813,50 @@ async def manual_draw_complete_callback(update: Update, context: ContextTypes.DE
             await session.commit()
             return
 
-        # 创建中奖记录
-        winners_text = f"🎉【{lottery.title}】开奖结果 🎉\n\n"
-        winners_text += f"参与人数: {len(await get_lottery_participants(session, lottery_id))}\n\n"
-        winners_text += "🏆 中奖名单:\n"
+        # 创建中奖记录并发放积分奖励
+        from bot.services.lottery_service import distribute_lottery_rewards
 
+        # 获取所有中奖用户信息
+        winner_user_ids = [w["user_id"] for w in winners.values()]
+        user_stmt = select(TgUser).where(TgUser.id.in_(winner_user_ids))
+        user_result = await session.execute(user_stmt)
+        users = {u.id: u for u in user_result.scalars().all()}
+
+        winners_list = []
         for prize_index, winner_info in winners.items():
-            await create_lottery_winner(
+            # 查找对应的奖品配置
+            prize_index_int = int(prize_index)
+            original_index = prize_index_int // 10
+            prize_config = lottery.prizes[original_index]
+            points_reward = prize_config.get("points_reward", 0)
+
+            winner = await create_lottery_winner(
                 session,
                 lottery_id=lottery_id,
                 user_id=winner_info["user_id"],
                 prize_name=winner_info["prize_name"],
-                prize_index=int(prize_index),
+                prize_index=prize_index_int,
             )
+            winner.points_reward = points_reward
+            winners_list.append(winner)
 
-            # 获取中奖人名称
-            stmt = select(TgUser).where(TgUser.id == winner_info["user_id"])
-            result = await session.execute(stmt)
-            winner_user = result.scalar_one_or_none()
-            winner_name = winner_user.first_name or winner_user.last_name or winner_user.username or f"用户{winner_user_id}" if winner_user else "未知用户"
-
-            winners_text += f"\n• {winner_info['prize_name']} - {winner_name}"
+        # 发放积分奖励
+        await distribute_lottery_rewards(session, lottery, winners_list)
 
         # 更新抽奖状态
         lottery.status = "completed"
         lottery.drawn_at = dt.datetime.now(dt.UTC)
+
+        # 生成开奖公告（含@）
+        from bot.services.lottery_service import generate_lottery_announcement
+        announcement = generate_lottery_announcement(lottery, winners_list, users)
 
         # 清除状态
         await clear_user_state(session, chat.id, user.id)
 
         await session.commit()
 
-        await q.edit_message_text(winners_text)
+        await q.edit_message_text(announcement, parse_mode="Markdown")
 
 
 async def manual_draw_winner_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

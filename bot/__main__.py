@@ -392,6 +392,7 @@ def main() -> None:
         asyncio.create_task(anti_flood_cleanup_scheduler(app))
         asyncio.create_task(ads_scheduler(app))
         asyncio.create_task(check_expired_solitaires_job(app))
+        asyncio.create_task(check_expired_lotteries_job(app))
         # 启动机器人
         await app.initialize()
         await app.start()
@@ -454,6 +455,93 @@ async def ads_scheduler(app: Application) -> None:
         except Exception as e:
             log.error("ads_scheduler_error", error=str(e))
         await asyncio.sleep(60)  # 1分钟检查一次
+
+
+async def check_expired_lotteries_job(app: Application) -> None:
+    """检查并自动开奖过期的抽奖（每5分钟检查一次）"""
+    from sqlalchemy import select
+    from bot.models.core import Lottery, TgUser
+    from bot.services.lottery_service import (
+        perform_random_draw,
+        generate_lottery_announcement,
+        distribute_lottery_rewards,
+    )
+
+    while True:
+        try:
+            db: Database = app.bot_data["db"]
+            async with db.session_factory() as session:
+                # 查找待开奖且已过期的抽奖
+                now = dt.datetime.now(dt.UTC)
+                stmt = select(Lottery).where(
+                    Lottery.status == "pending",
+                    Lottery.draw_time <= now
+                )
+                result = await session.execute(stmt)
+                lotteries = result.scalars().all()
+
+                for lottery in lotteries:
+                    try:
+                        # 执行随机开奖
+                        winners = await perform_random_draw(session, lottery)
+
+                        if winners:
+                            # 获取中奖用户信息
+                            user_ids = [w.user_id for w in winners]
+                            user_stmt = select(TgUser).where(TgUser.id.in_(user_ids))
+                            user_result = await session.execute(user_stmt)
+                            users = {u.id: u for u in user_result.scalars().all()}
+
+                            # 发放积分奖励
+                            await distribute_lottery_rewards(session, lottery, winners)
+
+                            # 更新抽奖状态
+                            lottery.status = "completed"
+                            lottery.drawn_at = now
+
+                            # 生成开奖公告
+                            announcement = generate_lottery_announcement(lottery, winners, users)
+
+                            # 发送开奖通知到群组
+                            try:
+                                await app.bot.send_message(
+                                    chat_id=lottery.chat_id,
+                                    text=announcement,
+                                    parse_mode="Markdown"
+                                )
+                                log.info(
+                                    "auto_draw_lottery_success",
+                                    lottery_id=lottery.id,
+                                    chat_id=lottery.chat_id,
+                                    winners_count=len(winners),
+                                )
+                            except Exception as e:
+                                log.error("auto_draw_announcement_failed", lottery_id=lottery.id, error=str(e))
+
+                        else:
+                            # 没有参与者，标记为已完成
+                            lottery.status = "completed"
+                            lottery.drawn_at = now
+                            try:
+                                await app.bot.send_message(
+                                    chat_id=lottery.chat_id,
+                                    text=f"🎉 抽奖【{lottery.title}】开奖结果\n\n😔 因无人参与，本次抽奖流拍。"
+                                )
+                            except Exception as e:
+                                log.error("auto_draw_no_participants_failed", lottery_id=lottery.id, error=str(e))
+
+                        await session.commit()
+                        log.info("auto_draw_lottery_success", lottery_id=lottery.id)
+
+                    except Exception as e:
+                        log.error("auto_draw_lottery_failed", lottery_id=lottery.id, error=str(e))
+                        await session.rollback()
+
+        except Exception as e:
+            log.error("check_expired_lotteries_job_error", error=str(e))
+
+        # 每5分钟检查一次
+        await asyncio.sleep(300)
 
 
 def main_polling() -> None:

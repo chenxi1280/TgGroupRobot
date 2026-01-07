@@ -172,12 +172,12 @@ async def sign_in(
     session.add(sign_log)
     await session.flush()
 
-    # 添加积分
+    # 添加基础签到积分
     success, balance = await change_points(
         session,
         chat_id=chat_id,
         user_id=user_id,
-        amount=total_points,
+        amount=points,  # 只添加基础积分，奖励积分在下面单独添加
         txn_type=PointsTxnType.sign_in.value,
         reason="签到奖励",
     )

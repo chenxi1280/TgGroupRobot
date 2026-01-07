@@ -22,6 +22,7 @@ from bot.services.solitaire_service import (
     get_solitaire,
     get_solitaire_stats,
     join_solitaire,
+    leave_solitaire,
     update_entry,
 )
 from bot.services.state_service import clear_user_state, set_user_state, get_user_state
@@ -904,12 +905,10 @@ async def edit_solitaire_callback(update: Update, context: ContextTypes.DEFAULT_
             return
 
         # 删除原报名
-        await update_entry(
+        await leave_solitaire(
             session,
-            solitaire_id=solitaire_id,
-            user_id=user_id,
-            username=update.effective_user.username,
-            delete=True,
+            solitaire_id,
+            user_id,
         )
 
         await session.commit()

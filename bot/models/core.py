@@ -400,6 +400,7 @@ class LotteryWinner(Base):
     user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("bot.tg_users.id", ondelete="CASCADE"), index=True)
     prize_name: Mapped[str] = mapped_column(String(255))  # 中奖奖品名称
     prize_index: Mapped[int] = mapped_column(Integer)  # 奖品索引
+    points_reward: Mapped[int] = mapped_column(Integer, default=0)  # 积分奖励
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC))
 
 
