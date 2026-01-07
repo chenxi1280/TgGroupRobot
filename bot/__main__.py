@@ -348,200 +348,49 @@ def build_application() -> Application:
     return app
 
 
-async def send_scheduled_messages_job(app: Application) -> None:
-    """定时发送消息的后台任务"""
-    db: Database = app.bot_data["db"]
-    while True:
-        try:
-            current_time = dt.datetime.now(dt.UTC)
-            async with db.session_factory() as session:
-                messages = await get_pending_messages(session, current_time)
-                for msg in messages:
-                    try:
-                        await app.bot.send_message(chat_id=msg.chat_id, text=msg.content)
-                        await mark_message_sent(session, msg)
-                        log.info(
-                            "scheduled_message_sent",
-                            message_id=msg.id,
-                            chat_id=msg.chat_id,
-                            schedule_type=msg.schedule_type,
-                        )
-                    except Exception as e:
-                        log.error(
-                            "scheduled_message_send_failed",
-                            message_id=msg.id,
-                            chat_id=msg.chat_id,
-                            error=str(e),
-                        )
-                await session.commit()
-        except Exception as e:
-            log.error("scheduled_messages_job_error", error=str(e))
-
-        # 每分钟检查一次
-        await asyncio.sleep(60)
-
-
 def main() -> None:
     app = build_application()
     log.info("bot_starting")
 
-    # 启动定时消息发送任务和反刷屏清理任务
+    # 启动定时任务调度器
     async def run_bot_with_scheduler():
-        # 启动定时任务
-        asyncio.create_task(send_scheduled_messages_job(app))
-        asyncio.create_task(anti_flood_cleanup_scheduler(app))
-        asyncio.create_task(ads_scheduler(app))
-        asyncio.create_task(check_expired_solitaires_job(app))
-        asyncio.create_task(check_expired_lotteries_job(app))
+        from bot.services.scheduler import Scheduler
+        from bot.tasks import (
+            LotteryTask,
+            SolitaireTask,
+            AdsTask,
+            MessageTask,
+            CleanupTask,
+        )
+
+        # 创建并配置调度器
+        scheduler = Scheduler(app)
+        scheduler.register_tasks([
+            LotteryTask(),
+            SolitaireTask(),
+            AdsTask(),
+            MessageTask(),
+            CleanupTask(),
+        ])
+
+        # 启动调度器
+        await scheduler.start()
+
         # 启动机器人
-        await app.initialize()
-        await app.start()
-        await app.updater.start_polling(drop_pending_updates=True)
-        # 保持运行
-        await asyncio.Event().wait()
+        try:
+            await app.initialize()
+            await app.start()
+            await app.updater.start_polling(drop_pending_updates=True)
+            # 保持运行
+            await asyncio.Event().wait()
+        finally:
+            # 停止调度器
+            await scheduler.stop()
 
     try:
         asyncio.run(run_bot_with_scheduler())
     except KeyboardInterrupt:
         log.info("bot_shutting_down")
-
-
-async def anti_flood_cleanup_scheduler(app: Application) -> None:
-    """反刷屏清理调度器（每5分钟清理一次旧记录）"""
-    while True:
-        try:
-            await anti_flood_cleanup_job(app)
-        except Exception as e:
-            log.error("anti_flood_cleanup_error", error=str(e))
-        await asyncio.sleep(300)  # 5分钟
-
-
-async def ads_scheduler(app: Application) -> None:
-    """广告推送调度器（每分钟检查一次）"""
-    from bot.services.ad_service import get_scheduled_ads, should_send_ad, mark_ad_sent, lock_ad_for_sending
-
-    while True:
-        try:
-            db: Database = app.bot_data["db"]
-            async with db.session_factory() as session:
-                ads = await get_scheduled_ads(session)
-                now = asyncio.get_event_loop().time()
-
-                for ad in ads:
-                    if should_send_ad(ad):
-                        # 尝试锁定广告（防止重复发送）
-                        locked_ad = await lock_ad_for_sending(session, ad.id)
-                        if not locked_ad:
-                            log.info("ad_already_locked", ad_id=ad.id, title=ad.title)
-                            continue
-
-                        try:
-                            # 发送广告
-                            if locked_ad.has_image and locked_ad.image_file_id:
-                                await app.bot.send_photo(locked_ad.chat_id, locked_ad.image_file_id, caption=f"【{locked_ad.title}】\n\n{locked_ad.content}")
-                            else:
-                                await app.bot.send_message(locked_ad.chat_id, f"【{locked_ad.title}】\n\n{locked_ad.content}")
-
-                            # 标记已发送并释放锁
-                            await mark_ad_sent(session, locked_ad.id)
-                            await session.commit()
-
-                            log.info("ad_sent", ad_id=locked_ad.id, title=locked_ad.title, chat_id=locked_ad.chat_id)
-                        except Exception as e:
-                            # 发送失败，释放锁
-                            locked_ad.send_locked = False
-                            await session.commit()
-                            log.error("ad_send_failed", ad_id=locked_ad.id, error=str(e))
-        except Exception as e:
-            log.error("ads_scheduler_error", error=str(e))
-        await asyncio.sleep(60)  # 1分钟检查一次
-
-
-async def check_expired_lotteries_job(app: Application) -> None:
-    """检查并自动开奖过期的抽奖（每5分钟检查一次）"""
-    from sqlalchemy import select
-    from bot.models.core import Lottery, TgUser
-    from bot.services.lottery_service import (
-        perform_random_draw,
-        generate_lottery_announcement,
-        distribute_lottery_rewards,
-    )
-
-    while True:
-        try:
-            db: Database = app.bot_data["db"]
-            async with db.session_factory() as session:
-                # 查找待开奖且已过期的抽奖
-                now = dt.datetime.now(dt.UTC)
-                stmt = select(Lottery).where(
-                    Lottery.status == "pending",
-                    Lottery.draw_time <= now
-                )
-                result = await session.execute(stmt)
-                lotteries = result.scalars().all()
-
-                for lottery in lotteries:
-                    try:
-                        # 执行随机开奖
-                        winners = await perform_random_draw(session, lottery)
-
-                        if winners:
-                            # 获取中奖用户信息
-                            user_ids = [w.user_id for w in winners]
-                            user_stmt = select(TgUser).where(TgUser.id.in_(user_ids))
-                            user_result = await session.execute(user_stmt)
-                            users = {u.id: u for u in user_result.scalars().all()}
-
-                            # 发放积分奖励
-                            await distribute_lottery_rewards(session, lottery, winners)
-
-                            # 更新抽奖状态
-                            lottery.status = "completed"
-                            lottery.drawn_at = now
-
-                            # 生成开奖公告
-                            announcement = generate_lottery_announcement(lottery, winners, users)
-
-                            # 发送开奖通知到群组
-                            try:
-                                await app.bot.send_message(
-                                    chat_id=lottery.chat_id,
-                                    text=announcement,
-                                    parse_mode="Markdown"
-                                )
-                                log.info(
-                                    "auto_draw_lottery_success",
-                                    lottery_id=lottery.id,
-                                    chat_id=lottery.chat_id,
-                                    winners_count=len(winners),
-                                )
-                            except Exception as e:
-                                log.error("auto_draw_announcement_failed", lottery_id=lottery.id, error=str(e))
-
-                        else:
-                            # 没有参与者，标记为已完成
-                            lottery.status = "completed"
-                            lottery.drawn_at = now
-                            try:
-                                await app.bot.send_message(
-                                    chat_id=lottery.chat_id,
-                                    text=f"🎉 抽奖【{lottery.title}】开奖结果\n\n😔 因无人参与，本次抽奖流拍。"
-                                )
-                            except Exception as e:
-                                log.error("auto_draw_no_participants_failed", lottery_id=lottery.id, error=str(e))
-
-                        await session.commit()
-                        log.info("auto_draw_lottery_success", lottery_id=lottery.id)
-
-                    except Exception as e:
-                        log.error("auto_draw_lottery_failed", lottery_id=lottery.id, error=str(e))
-                        await session.rollback()
-
-        except Exception as e:
-            log.error("check_expired_lotteries_job_error", error=str(e))
-
-        # 每5分钟检查一次
-        await asyncio.sleep(300)
 
 
 def main_polling() -> None:
