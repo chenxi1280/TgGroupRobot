@@ -105,7 +105,6 @@ from bot.handlers.invite_link import (
     WAIT_EXPIRE as INV_WAIT_EXPIRE,
 )
 from bot.handlers.solitaire import (
-    check_expired_solitaires_job,
     join_solitaire_callback,
     solitaire_cancel_callback,
     solitaire_close_callback,
@@ -334,8 +333,8 @@ def build_application() -> Application:
     app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND, lottery_message_handler), group=1)
     # 定时消息创建流程的消息处理
     app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND, scheduled_message_handler), group=1)
-    # 自动回复创建流程的消息处理
-    app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND, auto_reply_config_handler), group=1)
+    # 自动回复创建流程的消息处理（优先级高于 private_message_handler）
+    app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND, auto_reply_config_handler), group=0)
     # 违禁词添加流程的消息处理
     app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND, banned_word_config_handler), group=1)
     # 其他私聊消息处理（显示群组列表等）

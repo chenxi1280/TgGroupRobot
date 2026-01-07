@@ -11,6 +11,40 @@ from bot.models.core import Lottery, LotteryParticipant, LotteryWinner, TgUser
 from bot.services.lottery.manager_service import get_lottery_participants
 
 
+async def create_lottery_winner(
+    session: AsyncSession,
+    lottery_id: int,
+    user_id: int,
+    prize_name: str,
+    prize_index: int,
+    points_reward: int = 0,
+) -> LotteryWinner:
+    """
+    创建中奖记录
+
+    Args:
+        session: 数据库会话
+        lottery_id: 抽奖ID
+        user_id: 用户ID
+        prize_name: 奖品名称
+        prize_index: 奖品索引
+        points_reward: 积分奖励
+
+    Returns:
+        创建的中奖记录对象
+    """
+    winner = LotteryWinner(
+        lottery_id=lottery_id,
+        user_id=user_id,
+        prize_name=prize_name,
+        prize_index=prize_index,
+        points_reward=points_reward,
+    )
+    session.add(winner)
+    await session.flush()
+    return winner
+
+
 async def perform_random_draw(
     session: AsyncSession,
     lottery: Lottery,

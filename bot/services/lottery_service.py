@@ -28,6 +28,7 @@ from bot.services.lottery.draw_service import (
     perform_random_draw,
     generate_lottery_announcement,
     distribute_lottery_rewards,
+    create_lottery_winner,
 )
 
 __all__ = [
@@ -48,4 +49,5 @@ __all__ = [
     "perform_random_draw",
     "generate_lottery_announcement",
     "distribute_lottery_rewards",
+    "create_lottery_winner",
 ]

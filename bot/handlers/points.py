@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from telegram import Update
 from telegram.ext import ContextTypes, filters
+from sqlalchemy.orm import selectinload
 
 from bot.db.session import Database
 from bot.services.chat_service import ensure_chat, get_chat_settings
@@ -257,7 +258,10 @@ class PointsAliasHandler:
             from bot.models.core import TgChat
             from sqlalchemy import select
 
-            stmt = select(TgChat).where(TgChat.id == chat_id)
+            # 预加载 settings 关系，避免异步上下文中的懒加载问题
+            stmt = select(TgChat).options(
+                selectinload(TgChat.settings)
+            ).where(TgChat.id == chat_id)
             result = await session.execute(stmt)
             chat = result.scalar_one_or_none()
 

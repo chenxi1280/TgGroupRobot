@@ -76,10 +76,9 @@ async def set_user_current_chat(
     """设置用户当前管理的群组"""
     async with db.session_factory() as session:
         from bot.models.core import ConversationState, TgChat
+        from sqlalchemy import select
 
         # 先确保私聊记录存在于 tg_chats 中
-        from sqlalchemy import select, delete
-
         private_chat_stmt = select(TgChat).where(TgChat.id == user_id)
         private_chat_result = await session.execute(private_chat_stmt)
         private_chat = private_chat_result.scalar_one_or_none()
@@ -94,49 +93,26 @@ async def set_user_current_chat(
             session.add(private_chat)
             await session.flush()
 
-        # 查找私聊中的现有状态
+        # 查找或创建私聊状态（保留它，不删除）
         private_state_stmt = select(ConversationState).where(
             ConversationState.user_id == user_id,
-            ConversationState.chat_id == user_id,  # 私聊中的状态
+            ConversationState.chat_id == user_id,
         )
         private_state_result = await session.execute(private_state_stmt)
         private_state = private_state_result.scalar_one_or_none()
 
-        # 查找目标群组的现有状态
-        group_state_stmt = select(ConversationState).where(
-            ConversationState.user_id == user_id,
-            ConversationState.chat_id == chat_id,  # 目标群组的状态
-        )
-        group_state_result = await session.execute(group_state_stmt)
-        group_state = group_state_result.scalar_one_or_none()
-
-        if group_state:
-            # 目标群组状态已存在，更新它并删除私聊状态
-            group_state.state_type = "selected_chat"
-            group_state.state_data = {"managed_chat_id": chat_id}
-
-            # 删除私聊状态（避免重复）
-            if private_state:
-                await session.execute(
-                    delete(ConversationState).where(
-                        ConversationState.user_id == user_id,
-                        ConversationState.chat_id == user_id,
-                    )
-                )
-        elif private_state:
-            # 只有私聊状态存在，更新它为群组
-            private_state.chat_id = chat_id
-            private_state.state_type = "selected_chat"
-            private_state.state_data = {"managed_chat_id": chat_id}
-        else:
-            # 两者都不存在，创建新状态
-            state = ConversationState(
-                chat_id=chat_id,  # 直接存储为目标群组
+        if private_state is None:
+            # 创建私聊状态，保存 managed_chat_id
+            private_state = ConversationState(
+                chat_id=user_id,  # 保持为私聊ID
                 user_id=user_id,
                 state_type="selected_chat",
                 state_data={"managed_chat_id": chat_id},
             )
-            session.add(state)
+            session.add(private_state)
+        else:
+            # 更新现有私聊状态的 managed_chat_id
+            private_state.state_data = {"managed_chat_id": chat_id}
 
         await session.commit()
         return True

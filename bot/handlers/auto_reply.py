@@ -101,8 +101,8 @@ async def auto_reply_create_start(update: Update, context: ContextTypes.DEFAULT_
     target_chat_title = None
     if chat.type == "private":
         # 优先从 callback_data 提取 chat_id
-        if data.startswith("auto_reply:create:"):
-            parts = data.split(":")
+        if q.data.startswith("auto_reply:create:"):
+            parts = q.data.split(":")
             if len(parts) >= 3:
                 try:
                     target_chat_id = int(parts[2])
@@ -154,9 +154,11 @@ async def auto_reply_create_start(update: Update, context: ContextTypes.DEFAULT_
         )
 
         # 设置状态：等待输入配置，保存目标群组ID
+        # 保存到私聊的 chat.id（避免与其他状态冲突）
+        state_chat_id = chat.id if chat.type == "private" else target_chat_id
         await set_user_state(
             session,
-            chat_id=target_chat_id,  # 使用目标群组ID保存状态
+            chat_id=state_chat_id,
             user_id=user.id,
             state_type=ConversationStateType.auto_reply_create.value,
             state_data={"step": "config", "target_chat_id": target_chat_id},
@@ -281,21 +283,11 @@ async def auto_reply_config_handler(update: Update, context: ContextTypes.DEFAUL
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
-        # 获取用户状态 - 从目标群组获取状态（私聊模式下）
-        if chat.type == "private":
-            # 私聊模式：从用户当前选中的群组获取状态
-            from bot.services.chat_group_service import get_user_current_chat
-            target_chat_id = await get_user_current_chat(db, user.id)
-            if target_chat_id:
-                state = await get_user_state(session, chat_id=target_chat_id, user_id=user.id)
-            else:
-                await session.commit()
-                return
-        else:
-            # 群聊模式：从当前群组获取状态
-            state = await get_user_state(session, chat_id=chat.id, user_id=user.id)
+        # 获取用户状态
+        state = await get_user_state(session, chat_id=chat.id, user_id=user.id)
 
         if state is None or state.state_type != ConversationStateType.auto_reply_create.value:
+            await update.effective_message.reply_text("❌ 无法获取创建状态，请重新从管理菜单选择「创建自动回复」开始。")
             await session.commit()
             return
 
@@ -375,8 +367,9 @@ async def _parse_auto_reply_config(update: Update, session, state: object, text:
             }
             raise ValueError(error_messages.get(result.reason, "创建失败"))
 
-        # 清除状态
-        await clear_user_state(session, chat_id=target_chat_id, user_id=update.effective_user.id)
+        # 清除状态（使用与保存/获取状态相同的 chat_id）
+        state_chat_id = update.effective_chat.id if update.effective_chat.type == "private" else target_chat_id
+        await clear_user_state(session, chat_id=state_chat_id, user_id=update.effective_user.id)
         await session.commit()
 
         # 返回成功消息
