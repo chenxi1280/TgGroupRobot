@@ -1,10 +1,5 @@
-"""
-抽奖服务适配器 - 保持向后兼容
+"""抽奖服务模块 - 拆分后的抽奖管理功能"""
 
-此文件重新导出拆分后的所有函数，确保现有代码无需修改
-"""
-
-# 管理功能
 from bot.services.lottery.manager_service import (
     create_lottery,
     get_lottery,
@@ -16,14 +11,10 @@ from bot.services.lottery.manager_service import (
     get_user_lottery_history,
     JoinResult,
 )
-
-# 验证功能
 from bot.services.lottery.validator_service import (
     can_join_lottery,
     join_lottery,
 )
-
-# 开奖功能
 from bot.services.lottery.draw_service import (
     perform_random_draw,
     generate_lottery_announcement,
