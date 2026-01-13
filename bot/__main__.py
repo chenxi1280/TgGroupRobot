@@ -334,6 +334,25 @@ def build_application() -> Application:
         group=-100
     )
 
+    # 群组消息测试处理器 - 用于诊断
+    async def test_all_group_messages(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """群组消息测试处理器：诊断群组消息处理"""
+        if update.effective_message and (update.effective_message.text or update.effective_message.caption):
+            print(f"🔧 [TEST] 收到群组消息: {(update.effective_message.text or update.effective_message.caption or '')[:50]}")
+            test_log = structlog.get_logger("test_handler")
+            test_log.warning(
+                "=== GROUP MESSAGE RECEIVED ===",
+                user_id=update.effective_user.id if update.effective_user else None,
+                chat_id=update.effective_chat.id if update.effective_chat else None,
+                chat_type=update.effective_chat.type if update.effective_chat else None,
+                text_preview=(update.effective_message.text or update.effective_message.caption or "")[:50],
+            )
+
+    app.add_handler(
+        MessageHandler(filters.ChatType.GROUPS & filters.TEXT & ~filters.COMMAND, test_all_group_messages),
+        group=-100
+    )
+
     # ========================================
     # private chat messages (non-command)
     # 创建流程处理器使用更高优先级（group=0），按注册顺序执行

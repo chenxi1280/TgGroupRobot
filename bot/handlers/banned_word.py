@@ -313,16 +313,40 @@ async def banned_word_toggle_callback(update: Update, context: ContextTypes.DEFA
     await q.answer()
 
     chat = update.effective_chat
-    if chat.type == "private":
-        return
-
     data = q.data
     if not data.startswith("banned_word_toggle_"):
         return
 
+    # 解析 word_id 和可能的 chat_id
+    # 格式：banned_word_toggle_{word_id} 或 banned_word_toggle_{word_id}:{chat_id}
+    parts = data.split("_")[-1].split(":")
     try:
-        word_id = int(data.split("_")[-1])
+        word_id = int(parts[0])
     except (ValueError, IndexError):
+        return
+
+    # 如果在私聊模式，提取目标群组ID
+    target_chat_id = None
+    if chat.type == "private":
+        if len(parts) > 1:
+            try:
+                target_chat_id = int(parts[1])
+            except ValueError:
+                pass
+        # 如果 callback_data 中没有 chat_id，从数据库获取
+        if target_chat_id is None:
+            from bot.services.chat_group_service import get_user_current_chat
+            db: Database = context.application.bot_data["db"]
+            target_chat_id = await get_user_current_chat(db, update.effective_user.id)
+            if target_chat_id is None:
+                await q.answer("请先选择一个群组", show_alert=True)
+                return
+    else:
+        target_chat_id = chat.id
+
+    # 检查权限
+    if not await is_user_admin(context, target_chat_id, update.effective_user.id):
+        await q.answer("没有该群组的管理权限", show_alert=True)
         return
 
     db: Database = context.application.bot_data["db"]
@@ -332,7 +356,30 @@ async def banned_word_toggle_callback(update: Update, context: ContextTypes.DEFA
 
     if success:
         await q.answer("状态已切换")
-        await banned_word_menu_callback(update, context)
+        # 重新显示列表
+        async with db.session_factory() as session:
+            words = await get_chat_banned_words(session, target_chat_id)
+            total_triggers = await get_trigger_stats(session, target_chat_id)
+            await session.commit()
+
+        # 构建列表文本
+        text = f"📋 违禁词列表\n\n"
+        if words:
+            active_count = sum(1 for w in words if w.is_active)
+            text += f"总计: {len(words)} 条  |  激活: {active_count} 条  |  总触发: {total_triggers} 次\n\n"
+
+            for w in words:
+                status = "🟢 激活" if w.is_active else "🔴 暂停"
+                match_type_label = _get_match_type_label(w.match_type)
+                action_label = _get_action_label(w.action)
+                notify_label = "📢" if w.notify else "🔇"
+                text += f"{status} [{w.id}] {w.word[:30]}\n"
+                text += f"   匹配: {match_type_label} | 处罚: {action_label} {notify_label}\n\n"
+        else:
+            text += "暂无违禁词"
+
+        from bot.keyboards.banned_word import banned_word_list_keyboard
+        await q.edit_message_text(text, reply_markup=banned_word_list_keyboard(words, target_chat_id))
     else:
         await q.answer("违禁词不存在", show_alert=True)
 
@@ -346,20 +393,39 @@ async def banned_word_delete_callback(update: Update, context: ContextTypes.DEFA
 
     chat = update.effective_chat
     user = update.effective_user
-    if chat.type == "private":
-        return
-
-    if not await is_user_admin(context, chat.id, user.id):
-        await q.answer("需要管理员权限", show_alert=True)
-        return
-
     data = q.data
     if not data.startswith("banned_word_delete_"):
         return
 
+    # 解析 word_id 和可能的 chat_id
+    # 格式：banned_word_delete_{word_id} 或 banned_word_delete_{word_id}:{chat_id}
+    parts = data.split("_")[-1].split(":")
     try:
-        word_id = int(data.split("_")[-1])
+        word_id = int(parts[0])
     except (ValueError, IndexError):
+        return
+
+    # 如果在私聊模式，提取目标群组ID
+    target_chat_id = None
+    if chat.type == "private":
+        if len(parts) > 1:
+            try:
+                target_chat_id = int(parts[1])
+            except ValueError:
+                pass
+        # 如果 callback_data 中没有 chat_id，从数据库获取
+        if target_chat_id is None:
+            from bot.services.chat_group_service import get_user_current_chat
+            db: Database = context.application.bot_data["db"]
+            target_chat_id = await get_user_current_chat(db, user.id)
+            if target_chat_id is None:
+                await q.answer("请先选择一个群组", show_alert=True)
+                return
+    else:
+        target_chat_id = chat.id
+
+    if not await is_user_admin(context, target_chat_id, user.id):
+        await q.answer("没有该群组的管理权限", show_alert=True)
         return
 
     db: Database = context.application.bot_data["db"]
@@ -369,7 +435,30 @@ async def banned_word_delete_callback(update: Update, context: ContextTypes.DEFA
 
     if success:
         await q.answer("违禁词已删除")
-        await banned_word_menu_callback(update, context)
+        # 重新显示列表
+        async with db.session_factory() as session:
+            words = await get_chat_banned_words(session, target_chat_id)
+            total_triggers = await get_trigger_stats(session, target_chat_id)
+            await session.commit()
+
+        # 构建列表文本
+        text = f"📋 违禁词列表\n\n"
+        if words:
+            active_count = sum(1 for w in words if w.is_active)
+            text += f"总计: {len(words)} 条  |  激活: {active_count} 条  |  总触发: {total_triggers} 次\n\n"
+
+            for w in words:
+                status = "🟢 激活" if w.is_active else "🔴 暂停"
+                match_type_label = _get_match_type_label(w.match_type)
+                action_label = _get_action_label(w.action)
+                notify_label = "📢" if w.notify else "🔇"
+                text += f"{status} [{w.id}] {w.word[:30]}\n"
+                text += f"   匹配: {match_type_label} | 处罚: {action_label} {notify_label}\n\n"
+        else:
+            text += "暂无违禁词"
+
+        from bot.keyboards.banned_word import banned_word_list_keyboard
+        await q.edit_message_text(text, reply_markup=banned_word_list_keyboard(words, target_chat_id))
     else:
         await q.answer("删除失败", show_alert=True)
 

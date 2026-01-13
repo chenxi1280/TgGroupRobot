@@ -30,9 +30,12 @@ def banned_word_list_keyboard(words: list, chat_id: int | None = None) -> Inline
     buttons = []
     for word in words:
         status_text = "🔴 暂停" if word.is_active else "🟢 启用"
+        # 按钮包含 chat_id，用于私聊模式
+        toggle_data = f"banned_word_toggle_{word.id}:{chat_id}" if chat_id else f"banned_word_toggle_{word.id}"
+        delete_data = f"banned_word_delete_{word.id}:{chat_id}" if chat_id else f"banned_word_delete_{word.id}"
         buttons.append([
-            InlineKeyboardButton(f"{status_text} [{word.id}]", callback_data=f"banned_word_toggle_{word.id}"),
-            InlineKeyboardButton("🗑️", callback_data=f"banned_word_delete_{word.id}"),
+            InlineKeyboardButton(f"{status_text} [{word.id}]", callback_data=toggle_data),
+            InlineKeyboardButton("🗑️", callback_data=delete_data),
         ])
     back_callback = f"adm:back_to_menu:{chat_id}" if chat_id else "banned_word:menu"
     buttons.append([InlineKeyboardButton("返回", callback_data=back_callback)])
