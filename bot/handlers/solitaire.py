@@ -38,6 +38,25 @@ WAIT_DEADLINE = 5
 log = structlog.get_logger(__name__)
 
 
+def _parse_config_value(line: str, prefix: str) -> str | None:
+    """解析配置行中的值，支持中英文冒号
+
+    Args:
+        line: 配置行文本
+        prefix: 配置项前缀（如"最大人数"、"参与积分"等）
+
+    Returns:
+        解析出的值，如果解析失败则返回 None
+    """
+    # 尝试两种分隔符
+    for sep in (":", "："):
+        full_prefix = f"{prefix}{sep}"
+        if line.startswith(full_prefix):
+            value = line[len(full_prefix):].strip()
+            return value if value else None
+    return None
+
+
 async def solitaire_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """接龙菜单回调"""
     if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
@@ -391,49 +410,32 @@ async def solitaire_create_config_message(update: Update, context: ContextTypes.
 
             if line.startswith("最大人数:") or line.startswith("最大人数："):
                 try:
-                    max_participants = int(line.split(":")[1].split("：")[1].strip())
-                    if max_participants <= 0:
-                        max_participants = None
-                except (ValueError, IndexError):
+                    value = _parse_config_value(line, "最大人数")
+                    if value:
+                        max_participants = int(value)
+                        if max_participants <= 0:
+                            max_participants = None
+                except ValueError:
                     pass
             elif line.startswith("参与积分:") or line.startswith("参与积分："):
                 try:
-                    # 找到分隔符的位置
-                    separator_pos = -1
-                    for sep in ["参与积分:", "参与积分："]:
-                        pos = line.find(sep)
-                        if pos != -1:
-                            separator_pos = pos + len(sep)
-                            break
-
-                    if separator_pos > 0:
-                        points_str = line[separator_pos:].strip()
-                        if points_str:
-                            points_required = int(points_str)
-                            if points_required < 0:
-                                points_required = None
-                except (ValueError, IndexError):
+                    value = _parse_config_value(line, "参与积分")
+                    if value:
+                        points_required = int(value)
+                        if points_required < 0:
+                            points_required = None
+                except ValueError:
                     pass
             elif line.startswith("截止时间:") or line.startswith("截止时间："):
                 try:
-                    # 找到分隔符的位置
-                    separator_pos = -1
-                    for sep in ["截止时间:", "截止时间："]:
-                        pos = line.find(sep)
-                        if pos != -1:
-                            separator_pos = pos + len(sep)
-                            break
-
-                    if separator_pos > 0:
-                        deadline_str = line[separator_pos:].strip()
-                        if deadline_str:
-                            import datetime as dt
-                            # 解析用户输入的本地时间
-                            deadline_local = dt.datetime.strptime(deadline_str, "%Y-%m-%d %H:%M")
-                            # 将本地时间转换为UTC时间（假设用户使用北京时间 UTC+8）
-                            local_tz = dt.timezone(dt.timedelta(hours=8))
-                            deadline = deadline_local.replace(tzinfo=local_tz).astimezone(dt.timezone.utc)
-                except (ValueError, IndexError):
+                    value = _parse_config_value(line, "截止时间")
+                    if value:
+                        # 解析用户输入的本地时间
+                        deadline_local = dt.datetime.strptime(value, "%Y-%m-%d %H:%M")
+                        # 将本地时间转换为UTC时间（假设用户使用北京时间 UTC+8）
+                        local_tz = dt.timezone(dt.timedelta(hours=8))
+                        deadline = deadline_local.replace(tzinfo=local_tz).astimezone(dt.timezone.utc)
+                except ValueError:
                     pass
             elif line and not line.startswith("最大人数") and not line.startswith("参与积分") and not line.startswith("截止时间"):
                 # 如果不是参数行，就是描述
@@ -486,9 +488,13 @@ async def solitaire_create_config_message(update: Update, context: ContextTypes.
                     log.error("solitaire_send_failed", error=str(e))
 
                 # 返回成功消息给创建者
-                keyboard = solitaire_menu_keyboard(target_chat_id if chat.type == "private" else None)
+                # 只显示一个返回按钮
+                from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+                keyboard = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("« 返回管理菜单", callback_data=f"adm:menu:{target_chat_id}")]
+                ])
                 await update.effective_message.reply_text(
-                    f"✅ 接龙创建成功！\n\n已发送到群组",
+                    f"✅ 接龙创建成功！\n\n已发送到群组\n\n接龙ID: {result.solitaire.id}",
                     reply_markup=keyboard
                 )
 
@@ -825,8 +831,11 @@ async def join_solitaire_callback(update: Update, context: ContextTypes.DEFAULT_
                     selectinload(Solitaire.entries_rel)
                 ).where(Solitaire.id == solitaire_id)
                 query_result = await new_session.execute(stmt)
-                solitaire = query_result.scalar_one()
+                solitaire = query_result.scalar_one_or_none()
 
+                if solitaire is None:
+                    await q.answer("❌ 接龙不存在")
+                    return
                 if solitaire:
                     # 刷新接龙消息
                     text_msg = format_solitaire_message(solitaire)
@@ -1237,8 +1246,11 @@ async def solitaire_join_message_handler(update: Update, context: ContextTypes.D
                     selectinload(Solitaire.entries_rel)
                 ).where(Solitaire.id == target_solitaire.id)
                 query_result = await new_session.execute(stmt)
-                solitaire = query_result.scalar_one()
+                solitaire = query_result.scalar_one_or_none()
 
+                if solitaire is None:
+                    await message.reply_text("❌ 接龙不存在")
+                    return
                 if solitaire:
                     text = format_solitaire_message(solitaire)
                     await message.reply_to_message.edit_text(text)

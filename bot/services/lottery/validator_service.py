@@ -51,12 +51,9 @@ async def can_join_lottery(
     if result.scalar_one_or_none() is not None:
         return JoinResult(success=False, reason="already_joined")
 
-    # 检查积分要求
-    if user_points < lottery.min_points:
-        return JoinResult(success=False, reason="insufficient_points")
-
-    # 检查参与费用
-    if user_points < lottery.participation_cost:
+    # 检查积分要求（最低积分 + 参与费用）
+    total_required = (lottery.min_points or 0) + (lottery.participation_cost or 0)
+    if user_points < total_required:
         return JoinResult(success=False, reason="insufficient_points")
 
     # 检查最大参与人数

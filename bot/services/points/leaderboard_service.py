@@ -56,7 +56,7 @@ async def get_user_rank(
     """
     # 获取用户积分
     user_balance = await get_balance_from_service(session, chat_id, user_id)
-    if user_balance == 0:
+    if user_balance is None or user_balance == 0:
         return None
 
     # 统计比该用户积分高的人数

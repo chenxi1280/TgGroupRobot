@@ -86,6 +86,67 @@ async def scheduled_menu_callback(update: Update, context: ContextTypes.DEFAULT_
     await q.edit_message_text(text, reply_markup=scheduled_menu_keyboard())
 
 
+async def scheduled_list_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """定时消息列表回调"""
+    if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
+        return
+    q = update.callback_query
+    await q.answer()
+
+    chat = update.effective_chat
+    user = update.effective_user
+    data = q.data or ""
+
+    # 获取目标群组ID
+    target_chat_id = None
+    if chat.type == "private":
+        # 从 callback_data 提取 chat_id
+        if data.startswith("scheduled:list:"):
+            parts = data.split(":")
+            if len(parts) >= 3:
+                try:
+                    target_chat_id = int(parts[2])
+                except ValueError:
+                    pass
+
+        # 如果 callback_data 中没有，从数据库获取
+        if target_chat_id is None:
+            db: Database = context.application.bot_data["db"]
+            target_chat_id = await get_user_current_chat(db, user.id)
+            if target_chat_id is None:
+                await q.edit_message_text("请先选择一个群组")
+                return
+    else:
+        target_chat_id = chat.id
+
+    # 获取定时消息列表
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        messages = await get_chat_scheduled_messages(session, target_chat_id)
+        await session.commit()
+
+    # 构建列表文本
+    text = f"📋 定时消息列表\n\n"
+    if messages:
+        active_count = sum(1 for m in messages if m.is_active)
+        text += f"总计: {len(messages)} 条  |  激活: {active_count} 条\n\n"
+
+        for msg in messages:
+            status = "🟢 激活" if msg.is_active else "🔴 暂停"
+            repeat_text = "🔄 重复" if msg.repeat_enabled else "➡️ 一次性"
+            content_preview = msg.content[:30] + "..." if len(msg.content) > 30 else msg.content
+            text += f"{status} {repeat_text} [{msg.id}]\n"
+            text += f"    {content_preview}\n"
+            if msg.schedule_type != ScheduleType.none.value:
+                text += f"    定时: {_get_schedule_label(msg.schedule_type, msg.interval_minutes)}\n"
+            text += "\n"
+    else:
+        text += "暂无定时消息"
+
+    from bot.keyboards.scheduled import scheduled_list_keyboard
+    await q.edit_message_text(text, reply_markup=scheduled_list_keyboard(messages, target_chat_id))
+
+
 async def scheduled_create_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """开始创建定时消息流程"""
     if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
@@ -154,10 +215,15 @@ async def scheduled_create_start(update: Update, context: ContextTypes.DEFAULT_T
             language_code=user.language_code,
         )
 
-        # 设置状态：等待输入配置，保存目标群组ID
+        # 清除旧状态（避免状态冲突）
+        await clear_user_state(session, chat_id=user.id, user_id=user.id)
+
+        # 设置状态：等待输入配置
+        # 注意：使用 user.id (私聊ID) 而不是 target_chat_id 来保存状态
+        # 这样在私聊中发送消息时能正确读取状态
         await set_user_state(
             session,
-            chat_id=target_chat_id,  # 使用目标群组ID保存状态
+            chat_id=user.id,  # 使用私聊ID保存状态
             user_id=user.id,
             state_type=ConversationStateType.scheduled_create.value,
             state_data={"step": "content", "target_chat_id": target_chat_id},
@@ -170,7 +236,13 @@ async def scheduled_create_start(update: Update, context: ContextTypes.DEFAULT_T
     text += "消息内容\n"
     text += "定时类型: every_5_minutes\n"
     text += "初始延迟: 0（分钟，立即开始）\n"
+    text += "是否重复: 是\n"
     text += "```\n\n"
+    text += "参数说明：\n"
+    text += "• 消息内容：要发送的文本内容\n"
+    text += "• 定时类型：指定发送间隔类型\n"
+    text += "• 初始延迟：首次发送前的延迟分钟数\n"
+    text += "• 是否重复：是=重复发送，否=只发送一次\n\n"
     text += "定时类型选项:\n"
     text += "• none - 一次性消息\n"
     text += "• every_minute - 每分钟\n"
@@ -186,9 +258,10 @@ async def scheduled_create_start(update: Update, context: ContextTypes.DEFAULT_T
     text += "大家好，这是定时测试消息！\n"
     text += "定时类型: every_hour\n"
     text += "初始延迟: 5\n"
+    text += "是否重复: 是\n"
     text += "```"
 
-    await q.edit_message_text(text, parse_mode="Markdown")
+    await q.edit_message_text(text)
 
 
 async def scheduled_toggle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -269,6 +342,17 @@ async def scheduled_delete_callback(update: Update, context: ContextTypes.DEFAUL
 
 async def scheduled_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """处理定时消息创建流程中的消息"""
+    # 在函数最开始添加明显的日志，用于诊断处理器是否被调用
+    import structlog
+    log = structlog.get_logger(__name__)
+    log.warning(
+        "=== scheduled_message_handler CALLED ===",
+        user_id=update.effective_user.id if update.effective_user else None,
+        chat_id=update.effective_chat.id if update.effective_chat else None,
+        chat_type=update.effective_chat.type if update.effective_chat else None,
+        text_preview=(update.effective_message.text or "")[:50] if update.effective_message else "",
+    )
+
     if update.effective_chat is None or update.effective_user is None or update.effective_message is None:
         return
 
@@ -282,19 +366,44 @@ async def scheduled_message_handler(update: Update, context: ContextTypes.DEFAUL
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
-        # 获取用户状态 - 从目标群组获取状态（私聊模式下）
+        # 获取用户状态
+        # 注意：状态使用 chat_id=user.id (私聊ID) 保存，所以读取时也使用 user.id
+        state = None
         state_data_dict = None
         if chat.type == "private":
-            # 私聊模式：从用户当前选中的群组获取状态
-            from bot.services.chat_group_service import get_user_current_chat
-            target_chat_id = await get_user_current_chat(db, user.id)
-            if target_chat_id:
-                state = await get_user_state(session, chat_id=target_chat_id, user_id=user.id)
+            # 私聊模式：直接使用 user.id 查询状态
+            state = await get_user_state(session, chat_id=user.id, user_id=user.id)
+
+            # 添加调试日志
+            log.info(
+                "scheduled_message_handler_private",
+                user_id=user.id,
+                chat_id=user.id,
+                state_type=state.state_type if state else None,
+                text_preview=text[:50] if text else ""
+            )
+
+            if state is None:
+                # 用户未开始定时消息创建流程，静默返回让其他处理器处理
+                await session.commit()
+                return
+
+            # 验证状态中是否有目标群组ID
+            target_chat_id = state.state_data.get("target_chat_id")
+            if target_chat_id is None:
+                await update.effective_message.reply_text(
+                    "❌ 状态数据不完整\n\n"
+                    "请重新点击「创建定时消息」按钮开始"
+                )
+                await session.commit()
+                return
         else:
             # 群聊模式：从当前群组获取状态
             state = await get_user_state(session, chat_id=chat.id, user_id=user.id)
 
+        # 只处理定时消息创建流程的状态
         if state is None or state.state_type != ConversationStateType.scheduled_create.value:
+            # 静默返回，让其他处理器有机会处理
             await session.commit()
             return
 
@@ -317,6 +426,7 @@ async def _parse_scheduled_config(update: Update, session, state: object, text: 
         content_lines = []
         schedule_type = None
         initial_delay = 0
+        repeat_enabled = False
 
         i = 0
         while i < len(lines):
@@ -345,6 +455,14 @@ async def _parse_scheduled_config(update: Update, session, state: object, text: 
                         raise ValueError
                 except ValueError:
                     raise ValueError("初始延迟必须是正整数")
+                i += 1
+
+        # 解析是否重复
+        if i < len(lines):
+            repeat_line = lines[i].strip()
+            if repeat_line.startswith("是否重复:"):
+                value = repeat_line.split(":", 1)[1].strip().lower()
+                repeat_enabled = value in ["是", "yes", "true", "1"]
 
         # 获取目标群组ID（从状态数据中获取）
         target_chat_id = state.state_data.get("target_chat_id") or update.effective_chat.id
@@ -357,6 +475,7 @@ async def _parse_scheduled_config(update: Update, session, state: object, text: 
             content=content,
             schedule_type=schedule_type,
             initial_delay_minutes=initial_delay,
+            repeat_enabled=repeat_enabled,
         )
 
         if not result.success:
@@ -368,19 +487,33 @@ async def _parse_scheduled_config(update: Update, session, state: object, text: 
             raise ValueError(error_messages.get(result.reason, "创建失败"))
 
         # 清除状态
-        await clear_user_state(session, chat_id=target_chat_id, user_id=update.effective_user.id)
+        # 注意：在私聊模式下，状态使用 user.id 保存，所以清除时也使用 user.id
+        # 在群聊模式下，状态使用 target_chat_id 保存
+        if update.effective_chat.type == "private":
+            await clear_user_state(session, chat_id=update.effective_user.id, user_id=update.effective_user.id)
+        else:
+            await clear_user_state(session, chat_id=target_chat_id, user_id=update.effective_user.id)
         await session.commit()
 
         # 返回成功消息
-        from bot.keyboards.admin import admin_main_menu
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+        # 转换时间为北京时间（UTC+8）
+        beijing_time = result.message.next_send_time + dt.timedelta(hours=8)
 
         reply_text = f"✅ 定时消息创建成功！\n\n"
         reply_text += f"📝 内容: {content[:50]}{'...' if len(content) > 50 else ''}\n"
         reply_text += f"⏰ 间隔: {_get_schedule_label(schedule_type, None)}\n"
-        reply_text += f"🕐 首次发送: {result.message.next_send_time.strftime('%Y-%m-%d %H:%M:%S UTC')}\n"
+        reply_text += f"🔄 重复: {'是' if repeat_enabled else '否'}\n"
+        reply_text += f"🕐 首次发送: {beijing_time.strftime('%Y-%m-%d %H:%M:%S')}(北京时间)\n"
         reply_text += f"\n消息ID: {result.message.id}"
 
-        await update.effective_message.reply_text(reply_text, reply_markup=admin_main_menu())
+        # 只显示一个返回按钮
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("« 返回管理菜单", callback_data=f"adm:menu:{target_chat_id}")]
+        ])
+
+        await update.effective_message.reply_text(reply_text, reply_markup=keyboard)
 
     except ValueError as e:
         await update.effective_message.reply_text(f"❌ 配置错误: {e}\n\n请重新发送配置，或使用 /cancel 取消。")

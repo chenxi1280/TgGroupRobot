@@ -23,7 +23,7 @@ from bot.services.lottery_service import (
     join_lottery,
     JoinResult,
 )
-from bot.services.points_service import change_points, get_balance
+from bot.services.points.account_service import change_points, get_balance
 from bot.services.state_service import clear_user_state, get_user_state, set_user_state
 from bot.services.telegram_perm import is_user_admin
 from bot.services.user_service import ensure_user
@@ -202,6 +202,11 @@ async def lottery_create_start(update: Update, context: ContextTypes.DEFAULT_TYP
 
 async def lottery_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """处理抽奖创建流程中的消息"""
+    # 诊断日志
+    import structlog
+    log = structlog.get_logger(__name__)
+    log.warning("=== LOTTERY_MESSAGE_HANDLER CALLED ===")
+
     if update.effective_chat is None or update.effective_user is None or update.effective_message is None:
         return
 
@@ -213,20 +218,39 @@ async def lottery_message_handler(update: Update, context: ContextTypes.DEFAULT_
     if not text:
         return
 
-    db: Database = context.application.bot_data["db"]
-    async with db.session_factory() as session:
-        # 获取用户状态
-        state = await get_user_state(session, chat_id=chat.id, user_id=user.id)
-        if state is None or state.state_type != ConversationStateType.lottery_create.value:
-            await session.commit()
-            return
+    try:
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            # 获取用户状态 - 私聊中使用 user.id 查询状态，与其他处理器保持一致
+            state_chat_id = user.id if chat.type == "private" else chat.id
+            state = await get_user_state(session, chat_id=state_chat_id, user_id=user.id)
 
-        step = state.state_data.get("step")
+            # 关键修复：不要 return，让代码继续执行到块结束
+            if state is None or state.state_type != ConversationStateType.lottery_create.value:
+                log.info("lottery_state_not_match", state_type=state.state_type if state else None)
+                # 不要在这里 return，让代码继续执行到块结束
+            else:
+                step = state.state_data.get("step")
+                log.info("lottery_step", step=step)
 
-        if step == "config":
-            await _parse_lottery_config(update, context, session, state, text)
-        else:
-            await session.commit()
+                if step == "config":
+                    await _parse_lottery_config(update, context, session, state, text)
+                else:
+                    await session.commit()
+
+            log.info("lottery_handler_done")
+    except Exception as e:
+        # 确保异常被记录但不会阻止后续处理器
+        import structlog
+        log = structlog.get_logger(__name__)
+        log.exception(
+            "lottery_message_handler_error",
+            error=str(e),
+            error_type=type(e).__name__,
+            traceback=True
+        )
+        # 明确返回，不重新抛出异常，让后续处理器继续执行
+        return
 
 
 async def _parse_lottery_config(update: Update, context: ContextTypes.DEFAULT_TYPE, session, state: object, text: str) -> None:
@@ -274,13 +298,33 @@ async def _parse_lottery_config(update: Update, context: ContextTypes.DEFAULT_TY
         for line in lines[2:6]:
             line = line.strip()
             if line.startswith("最低积分:"):
-                min_points = int(line.split(":", 1)[1].strip())
+                try:
+                    value = int(line.split(":", 1)[1].strip())
+                    min_points = max(0, value)
+                except ValueError:
+                    await q.edit_message_text("❌ 最低积分必须是有效数字")
+                    return
             elif line.startswith("参与费用:"):
-                participation_cost = int(line.split(":", 1)[1].strip())
+                try:
+                    value = int(line.split(":", 1)[1].strip())
+                    participation_cost = max(0, value)
+                except ValueError:
+                    await q.edit_message_text("❌ 参与费用必须是有效数字")
+                    return
             elif line.startswith("最大人数:"):
-                max_participants = int(line.split(":", 1)[1].strip())
+                try:
+                    value = int(line.split(":", 1)[1].strip())
+                    max_participants = max(0, value)
+                except ValueError:
+                    await q.edit_message_text("❌ 最大人数必须是有效数字")
+                    return
             elif line.startswith("入群天数:"):
-                requirement_days = int(line.split(":", 1)[1].strip())
+                try:
+                    value = int(line.split(":", 1)[1].strip())
+                    requirement_days = max(0, value)
+                except ValueError:
+                    await q.edit_message_text("❌ 入群天数必须是有效数字")
+                    return
 
         # 解析奖品
         prizes = []
@@ -369,9 +413,11 @@ async def _parse_lottery_config(update: Update, context: ContextTypes.DEFAULT_TY
             log.error("lottery_announcement_failed", lottery_id=lottery.id, target_chat_id=target_chat_id, error=str(e))
 
         # 返回成功消息给用户
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
         reply_text = f"✅ 抽奖创建成功！\n\n"
         reply_text += f"📢 标题: {title}\n"
-        reply_text += f"🕐 开奖时间: {draw_time.strftime('%Y-%m-%d %H:%M:%S UTC+8')}\n"
+        reply_text += f"🕐 开奖时间: {draw_time.strftime('%Y-%m-%d %H:%M:%S')}\n"
         reply_text += f"🎁 奖品数: {len(prizes)}\n"
         if min_points > 0:
             reply_text += f"💰 最低积分: {min_points}\n"
@@ -383,7 +429,12 @@ async def _parse_lottery_config(update: Update, context: ContextTypes.DEFAULT_TY
             reply_text += f"📅 入群天数: {requirement_days}\n"
         reply_text += f"\n📢 已发送公告到群组"
 
-        await update.effective_message.reply_text(reply_text)
+        # 只显示一个返回按钮
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("« 返回管理菜单", callback_data=f"adm:menu:{target_chat_id}")]
+        ])
+
+        await update.effective_message.reply_text(reply_text, reply_markup=keyboard)
 
     except ValueError as e:
         await update.effective_message.reply_text(f"❌ 配置错误: {e}\n\n请重新发送配置，或使用 /cancel 取消。")

@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import os
 import structlog
+import sys
+import atexit
 import httpx
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ConversationHandler, MessageHandler, filters
 
@@ -11,12 +14,8 @@ from bot.db.session import create_database, Database
 from bot.handlers.admin import admin_command, admin_callback
 from bot.handlers.ads import ad_command
 from bot.handlers.ads_handler import (
-    ads_cancel_callback,
-    ads_create_content_message,
-    ads_create_frequency_callback,
-    ads_create_schedule_message,
+    ads_create_config_message,
     ads_create_start_callback,
-    ads_create_title_message,
     ads_delete_callback,
     ads_detail_callback,
     ads_list_callback,
@@ -24,11 +23,6 @@ from bot.handlers.ads_handler import (
     ads_send_callback,
     ads_stats_callback,
     ads_toggle_callback,
-    WAIT_CONTENT as ADS_WAIT_CONTENT,
-    WAIT_FREQUENCY as ADS_WAIT_FREQUENCY,
-    WAIT_IMAGE as ADS_WAIT_IMAGE,
-    WAIT_SCHEDULE_TIME as ADS_WAIT_SCHEDULE_TIME,
-    WAIT_TITLE as ADS_WAIT_TITLE,
 )
 from bot.handlers.anti_flood import anti_flood_cleanup_job, anti_flood_message_handler
 from bot.handlers.auto_delete import auto_delete_handler
@@ -46,6 +40,7 @@ from bot.handlers.banned_word import (
     banned_word_check_handler,
     banned_word_config_handler,
     banned_word_delete_callback,
+    banned_word_list_callback,
     banned_word_menu_callback,
     banned_word_toggle_callback,
 )
@@ -78,6 +73,7 @@ from bot.handlers.points_config import (
 from bot.handlers.scheduled import (
     scheduled_create_start,
     scheduled_delete_callback,
+    scheduled_list_callback,
     scheduled_message_handler,
     scheduled_menu_callback,
     scheduled_toggle_callback,
@@ -137,6 +133,9 @@ def build_application() -> Application:
     settings = get_settings()
     configure_logging(settings.log_level)
 
+    # 诊断日志：验证新代码被加载
+    log.warning("=== BOT APPLICATION BUILDING - NEW CODE LOADING ===")
+
     db = create_database(settings.database_url)
 
     # 构建应用，如果配置了代理则使用代理
@@ -181,13 +180,13 @@ def build_application() -> Application:
     app.add_handler(CallbackQueryHandler(scheduled_toggle_callback, pattern=r"^scheduled_toggle_"))
     app.add_handler(CallbackQueryHandler(scheduled_delete_callback, pattern=r"^scheduled_delete_"))
     app.add_handler(CallbackQueryHandler(scheduled_menu_callback, pattern=r"^scheduled:menu$"))
+    app.add_handler(CallbackQueryHandler(scheduled_list_callback, pattern=r"^scheduled:list"))
     app.add_handler(CallbackQueryHandler(auto_reply_create_start, pattern=r"^auto_reply:create"))
     app.add_handler(CallbackQueryHandler(auto_reply_toggle_callback, pattern=r"^auto_reply_toggle_"))
     app.add_handler(CallbackQueryHandler(auto_reply_delete_callback, pattern=r"^auto_reply_delete_"))
     app.add_handler(CallbackQueryHandler(auto_reply_menu_callback, pattern=r"^auto_reply:menu$"))
     # 广告回调处理器
     app.add_handler(CallbackQueryHandler(ads_create_start_callback, pattern=r"^ads:create"))
-    app.add_handler(CallbackQueryHandler(ads_create_frequency_callback, pattern=r"^ads:freq:"))
     app.add_handler(CallbackQueryHandler(ads_toggle_callback, pattern=r"^ads:toggle_"))
     app.add_handler(CallbackQueryHandler(ads_delete_callback, pattern=r"^ads:delete_"))
     app.add_handler(CallbackQueryHandler(ads_send_callback, pattern=r"^ads:send_"))
@@ -199,6 +198,7 @@ def build_application() -> Application:
     app.add_handler(CallbackQueryHandler(banned_word_toggle_callback, pattern=r"^banned_word_toggle_"))
     app.add_handler(CallbackQueryHandler(banned_word_delete_callback, pattern=r"^banned_word_delete_"))
     app.add_handler(CallbackQueryHandler(banned_word_menu_callback, pattern=r"^banned_word:menu$"))
+    app.add_handler(CallbackQueryHandler(banned_word_list_callback, pattern=r"^banned_word:list"))
     app.add_handler(CallbackQueryHandler(invite_link_menu_callback, pattern=r"^inv:menu$"))
     app.add_handler(CallbackQueryHandler(invite_link_list_callback, pattern=r"^inv:list"))
     app.add_handler(CallbackQueryHandler(invite_link_stats_callback, pattern=r"^inv:stats$"))
@@ -265,24 +265,6 @@ def build_application() -> Application:
     )
     app.add_handler(solitaire_conv)
 
-    # 广告创建流程对话
-    ads_conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(ads_create_start_callback, pattern=r"^ads:create")],
-        states={
-            ADS_WAIT_TITLE: [MessageHandler((filters.ChatType.GROUPS | filters.ChatType.PRIVATE) & filters.TEXT & ~filters.COMMAND, ads_create_title_message)],
-            ADS_WAIT_CONTENT: [MessageHandler((filters.ChatType.GROUPS | filters.ChatType.PRIVATE) & (filters.TEXT | filters.PHOTO) & ~filters.COMMAND, ads_create_content_message)],
-            ADS_WAIT_IMAGE: [MessageHandler((filters.ChatType.GROUPS | filters.ChatType.PRIVATE) & filters.PHOTO, ads_create_content_message)],
-            ADS_WAIT_FREQUENCY: [MessageHandler((filters.ChatType.GROUPS | filters.ChatType.PRIVATE) & filters.TEXT & ~filters.COMMAND, ads_create_schedule_message)],
-            ADS_WAIT_SCHEDULE_TIME: [MessageHandler((filters.ChatType.GROUPS | filters.ChatType.PRIVATE) & filters.TEXT & ~filters.COMMAND, ads_create_schedule_message)],
-        },
-        fallbacks=[
-            CommandHandler("cancel", ads_cancel_callback),
-            CallbackQueryHandler(ads_cancel_callback, pattern=r"^ads:cancel$"),
-        ],
-        per_chat=True,
-    )
-    app.add_handler(ads_conv)
-
     # 积分配置流程对话
     points_config_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(points_config_callback, pattern=r"^pts:edit:")],
@@ -327,17 +309,42 @@ def build_application() -> Application:
     app.add_handler(MessageHandler(filters.ChatType.GROUPS & filters.ALL, banned_word_check_handler), group=0)
     # 内容审核
     app.add_handler(MessageHandler(filters.ChatType.GROUPS & filters.TEXT & ~filters.COMMAND, moderation_message_handler), group=3)
-    
+
+    # ========================================
+    # 诊断测试处理器 - 必须在所有其他 handler 之前
+    # ========================================
+    async def test_all_private_messages(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """通用测试处理器：捕获所有私聊文本消息用于诊断"""
+        if update.effective_message and update.effective_message.text:
+            # 使用 print 确保输出
+            print(f"🔧 [TEST] 收到私聊消息: {update.effective_message.text[:50]}")
+            # 同时使用 structlog
+            test_log = structlog.get_logger("test_handler")
+            test_log.warning(
+                "=== PRIVATE MESSAGE RECEIVED ===",
+                user_id=update.effective_user.id if update.effective_user else None,
+                chat_id=update.effective_chat.id if update.effective_chat else None,
+                text_preview=(update.effective_message.text or "")[:50],
+            )
+        # 不返回任何值，让消息继续传递给其他处理器
+
+    # 注册测试处理器，使用最高优先级（group=-100）
+    app.add_handler(
+        MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND, test_all_private_messages),
+        group=-100
+    )
+
+    # ========================================
     # private chat messages (non-command)
-    # 抽奖创建流程的消息处理（优先级高于普通消息）
-    app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND, lottery_message_handler), group=1)
-    # 定时消息创建流程的消息处理
-    app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND, scheduled_message_handler), group=1)
-    # 自动回复创建流程的消息处理（优先级高于 private_message_handler）
-    app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND, auto_reply_config_handler), group=0)
-    # 违禁词添加流程的消息处理
-    app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND, banned_word_config_handler), group=1)
-    # 其他私聊消息处理（显示群组列表等）
+    # 创建流程处理器使用更高优先级（group=0），按注册顺序执行
+    app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND, banned_word_config_handler), group=0)
+    app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND, scheduled_message_handler), group=0)
+    app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND, lottery_message_handler), group=0)
+
+    # 其他配置相关处理器使用相同的优先级 (group=1)
+    app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND, auto_reply_config_handler), group=1)
+    app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND, ads_create_config_message), group=1)
+    # 其他私聊消息处理（显示群组列表等）- 最低优先级
     app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND, private_message_handler))
 
     async def on_error(update, context):  # type: ignore[no-untyped-def]
@@ -347,7 +354,53 @@ def build_application() -> Application:
     return app
 
 
+# PID 文件路径
+_PID_FILE = "/tmp/tggrouprobot.pid"
+
+
+def _check_single_instance() -> None:
+    """
+    确保只有一个 bot 实例在运行
+
+    通过 PID 文件检查机制防止多个实例同时启动。
+    如果检测到已有实例在运行，则退出当前进程。
+    """
+    if os.path.exists(_PID_FILE):
+        try:
+            with open(_PID_FILE, 'r') as f:
+                pid = int(f.read().strip())
+            # 检查进程是否存在（发送信号 0 不实际终止进程）
+            os.kill(pid, 0)
+            # 如果进程存在，阻止当前实例启动
+            print(f"错误: bot 已经在运行 (PID: {pid})")
+            print(f"如需重启，请先停止现有实例: kill {pid}")
+            sys.exit(1)
+        except (ValueError, OSError):
+            # 进程不存在或 PID 文件损坏，删除旧 PID 文件
+            try:
+                os.remove(_PID_FILE)
+            except OSError:
+                pass
+
+    # 写入当前进程 PID
+    with open(_PID_FILE, 'w') as f:
+        f.write(str(os.getpid()))
+
+    # 注册退出时清理 PID 文件
+    def _cleanup_pid_file() -> None:
+        try:
+            if os.path.exists(_PID_FILE):
+                os.remove(_PID_FILE)
+        except OSError:
+            pass
+
+    atexit.register(_cleanup_pid_file)
+
+
 def main() -> None:
+    # 检查是否已有实例在运行
+    _check_single_instance()
+
     app = build_application()
     log.info("bot_starting")
 

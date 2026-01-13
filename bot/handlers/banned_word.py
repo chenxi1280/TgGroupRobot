@@ -88,8 +88,8 @@ async def banned_word_menu_callback(update: Update, context: ContextTypes.DEFAUL
     await q.edit_message_text(text, reply_markup=banned_word_menu_keyboard())
 
 
-async def banned_word_add_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """开始添加违禁词流程"""
+async def banned_word_list_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """违禁词列表回调"""
     if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
         return
     q = update.callback_query
@@ -99,12 +99,11 @@ async def banned_word_add_start(update: Update, context: ContextTypes.DEFAULT_TY
     user = update.effective_user
     data = q.data or ""
 
-    # 私聊中的违禁词创建 - 优先从 callback_data 获取目标群组ID
+    # 获取目标群组ID
     target_chat_id = None
-    target_chat_title = None
     if chat.type == "private":
-        # 优先从 callback_data 提取 chat_id
-        if data.startswith("banned_word:add:"):
+        # 从 callback_data 提取 chat_id
+        if data.startswith("banned_word:list:"):
             parts = data.split(":")
             if len(parts) >= 3:
                 try:
@@ -112,59 +111,168 @@ async def banned_word_add_start(update: Update, context: ContextTypes.DEFAULT_TY
                 except ValueError:
                     pass
 
-        # 如果 callback_data 中没有 chat_id，从数据库获取
+        # 如果 callback_data 中没有，从数据库获取
         if target_chat_id is None:
             from bot.services.chat_group_service import get_user_current_chat
-            from bot.models.core import TgChat
-            from sqlalchemy import select
             db: Database = context.application.bot_data["db"]
             target_chat_id = await get_user_current_chat(db, user.id)
             if target_chat_id is None:
                 await q.edit_message_text("请先选择一个群组")
                 return
-
-        if not await is_user_admin(context, target_chat_id, user.id):
-            await q.edit_message_text("你没有该群组的管理权限")
-            return
-
-        # 获取群组信息用于后续操作
-        from bot.models.core import TgChat
-        from sqlalchemy import select
-        db: Database = context.application.bot_data["db"]
-        async with db.session_factory() as session:
-            chat_stmt = select(TgChat).where(TgChat.id == target_chat_id)
-            chat_result = await session.execute(chat_stmt)
-            target_chat_obj = chat_result.scalar_one_or_none()
-            target_chat_title = target_chat_obj.title if target_chat_obj else f"群组{target_chat_id}"
-            await session.commit()
     else:
-        if not await is_user_admin(context, chat.id, user.id):
-            await q.edit_message_text("需要管理员权限。")
-            return
         target_chat_id = chat.id
-        target_chat_title = chat.title
 
+    # 获取违禁词列表
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
-        await ensure_chat(session, chat_id=target_chat_id, chat_type="group", title=target_chat_title)
-        await ensure_user(
-            session,
-            user_id=user.id,
-            username=user.username,
-            first_name=user.first_name,
-            last_name=user.last_name,
-            language_code=user.language_code,
-        )
-
-        # 设置状态，保存目标群组ID
-        await set_user_state(
-            session,
-            chat_id=target_chat_id,  # 使用目标群组ID保存状态
-            user_id=user.id,
-            state_type=ConversationStateType.banned_word_add.value,
-            state_data={"step": "config", "target_chat_id": target_chat_id},
-        )
+        words = await get_chat_banned_words(session, target_chat_id)
+        total_triggers = await get_trigger_stats(session, target_chat_id)
         await session.commit()
+
+    # 构建列表文本
+    text = f"📋 违禁词列表\n\n"
+    if words:
+        active_count = sum(1 for w in words if w.is_active)
+        text += f"总计: {len(words)} 条  |  激活: {active_count} 条  |  总触发: {total_triggers} 次\n\n"
+
+        for w in words:
+            status = "🟢 激活" if w.is_active else "🔴 暂停"
+            match_type_label = _get_match_type_label(w.match_type)
+            action_label = _get_action_label(w.action)
+            notify_label = "📢" if w.notify else "🔇"
+            text += f"{status} [{w.id}] {w.word[:30]}\n"
+            text += f"   匹配: {match_type_label} | 处罚: {action_label} {notify_label}\n\n"
+    else:
+        text += "暂无违禁词"
+
+    from bot.keyboards.banned_word import banned_word_list_keyboard
+    await q.edit_message_text(text, reply_markup=banned_word_list_keyboard(words, target_chat_id))
+
+
+async def banned_word_add_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """开始添加违禁词流程"""
+    log.info("banned_word_add_start_called", user_id=update.effective_user.id if update.effective_user else None)
+
+    if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
+        return
+    q = update.callback_query
+    await q.answer()
+
+    chat = update.effective_chat
+    user = update.effective_user
+    data = q.data or ""
+
+    try:
+        # 私聊中的违禁词创建 - 优先从 callback_data 获取目标群组ID
+        target_chat_id = None
+        target_chat_title = None
+        if chat.type == "private":
+            # 优先从 callback_data 提取 chat_id
+            if data.startswith("banned_word:add:"):
+                parts = data.split(":")
+                if len(parts) >= 3:
+                    try:
+                        target_chat_id = int(parts[2])
+                    except ValueError as e:
+                        log.warning("invalid_chat_id_in_callback", callback_data=data, error=str(e))
+
+            # 如果 callback_data 中没有 chat_id，从数据库获取
+            if target_chat_id is None:
+                from bot.services.chat_group_service import get_user_current_chat
+                from bot.models.core import TgChat
+                from sqlalchemy import select
+                db: Database = context.application.bot_data["db"]
+                target_chat_id = await get_user_current_chat(db, user.id)
+                if target_chat_id is None:
+                    await q.edit_message_text("请先选择一个群组")
+                    return
+
+            if not await is_user_admin(context, target_chat_id, user.id):
+                await q.edit_message_text("你没有该群组的管理权限")
+                return
+
+            # 获取群组信息用于后续操作
+            from bot.models.core import TgChat
+            from sqlalchemy import select
+            db: Database = context.application.bot_data["db"]
+            async with db.session_factory() as session:
+                chat_stmt = select(TgChat).where(TgChat.id == target_chat_id)
+                chat_result = await session.execute(chat_stmt)
+                target_chat_obj = chat_result.scalar_one_or_none()
+                target_chat_title = target_chat_obj.title if target_chat_obj else f"群组{target_chat_id}"
+                await session.commit()
+        else:
+            if not await is_user_admin(context, chat.id, user.id):
+                await q.edit_message_text("需要管理员权限。")
+                return
+            target_chat_id = chat.id
+            target_chat_title = chat.title
+
+        log.info("pre_checks_passed", target_chat_id=target_chat_id)
+
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            # 确保目标群组存在
+            await ensure_chat(session, chat_id=target_chat_id, chat_type="group", title=target_chat_title)
+            log.info("target_chat_ensured", target_chat_id=target_chat_id)
+
+            # 私聊模式下，也要确保私聊 chat 记录存在（用于状态保存）
+            if chat.type == "private":
+                await ensure_chat(session, chat_id=user.id, chat_type="private", title=chat.title)
+                log.info("private_chat_ensured", chat_id=user.id)
+
+            await ensure_user(
+                session,
+                user_id=user.id,
+                username=user.username,
+                first_name=user.first_name,
+                last_name=user.last_name,
+                language_code=user.language_code,
+            )
+            log.info("user_ensured", user_id=user.id)
+
+            # 统一使用目标群组 ID 保存状态（无论私聊还是群聊）
+            # 这样在群里发送消息时，状态查询可以直接匹配
+            state_chat_id = target_chat_id
+
+            # 清除旧状态（避免状态冲突）
+            await clear_user_state(session, chat_id=state_chat_id, user_id=user.id)
+
+            log.info(
+                "banned_word_setting_state",
+                user_id=user.id,
+                state_chat_id=state_chat_id,
+                target_chat_id=target_chat_id,
+            )
+
+            await set_user_state(
+                session,
+                chat_id=state_chat_id,
+                user_id=user.id,
+                state_type=ConversationStateType.banned_word_add.value,
+                state_data={"step": "config", "target_chat_id": target_chat_id},
+            )
+
+            log.info("banned_word_state_set_success")
+            await session.commit()
+            log.info("session_committed")
+
+            # 验证状态是否真的被保存了
+            verification_state = await get_user_state(session, chat_id=state_chat_id, user_id=user.id)
+            log.info(
+                "state_verification",
+                chat_id=state_chat_id,
+                user_id=user.id,
+                state_found=verification_state is not None,
+                state_type=verification_state.state_type if verification_state else None,
+            )
+
+        log.info("banned_word_add_start_success")
+
+    except Exception as e:
+        log.exception("banned_word_add_start_error", error=str(e))
+        await q.edit_message_text(f"❌ 启动失败: {str(e)}")
+        return
 
     text = "🔇 添加违禁词  ( /cancel 取消)\n\n"
     text += "请按以下格式发送配置：\n\n"
@@ -272,6 +380,15 @@ async def banned_word_delete_callback(update: Update, context: ContextTypes.DEFA
 
 async def banned_word_config_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """处理违禁词添加流程中的消息"""
+    # 添加诊断日志
+    log.warning(
+        "=== BANNED_WORD_CONFIG_HANDLER CALLED ===",
+        user_id=update.effective_user.id if update.effective_user else None,
+        chat_id=update.effective_chat.id if update.effective_chat else None,
+        chat_type=update.effective_chat.type if update.effective_chat else None,
+        text_preview=(update.effective_message.text or "")[:50] if update.effective_message else "",
+    )
+
     if update.effective_chat is None or update.effective_user is None or update.effective_message is None:
         return
 
@@ -285,21 +402,75 @@ async def banned_word_config_handler(update: Update, context: ContextTypes.DEFAU
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
-        # 获取用户状态 - 从目标群组获取状态（私聊模式下）
+        # 获取用户状态
         if chat.type == "private":
-            # 私聊模式：从用户当前选中的群组获取状态
+            # 私聊模式：优先从目标群组查询（新版本逻辑）
             from bot.services.chat_group_service import get_user_current_chat
-            target_chat_id = await get_user_current_chat(db, user.id)
+            target_chat_id = await get_user_current_chat(db, user_id=user.id)
+
+            state = None
+            state_source = None
+
             if target_chat_id:
+                # 首先尝试从目标群组查询
                 state = await get_user_state(session, chat_id=target_chat_id, user_id=user.id)
-            else:
+                if state:
+                    state_source = f"target_chat_id:{target_chat_id}"
+
+            # 如果在目标群组找不到，尝试从 user.id 查询（兼容旧版本）
+            if state is None:
+                state = await get_user_state(session, chat_id=user.id, user_id=user.id)
+                if state:
+                    state_source = f"user.id:{user.id}"
+
+            # 添加诊断日志
+            log.info(
+                "banned_word_state_query",
+                user_id=user.id,
+                target_chat_id=target_chat_id,
+                state_source=state_source,
+                state_found=state is not None,
+                state_type=state.state_type if state else None,
+            )
+
+            if state is None:
+                # 用户未开始创建流程，提示用户
+                log.warning("banned_word_state_not_found", user_id=user.id)
+                await update.effective_message.reply_text(
+                    "❌ 未找到创建状态\n\n"
+                    "请先点击「添加违禁词」按钮开始创建流程"
+                )
                 await session.commit()
                 return
+
+            # 验证状态中是否有目标群组ID
+            state_target_chat_id = state.state_data.get("target_chat_id")
+            if state_target_chat_id is None:
+                # 如果状态中没有 target_chat_id，使用当前选择的群组
+                if target_chat_id is None:
+                    await update.effective_message.reply_text(
+                        "❌ 状态数据不完整\n\n"
+                        "请先选择一个群组，然后重新点击「添加违禁词」"
+                    )
+                    await session.commit()
+                    return
+                # 使用当前选择的群组作为目标群组
+                target_chat_id = target_chat_id
+            else:
+                target_chat_id = state_target_chat_id
         else:
             # 群聊模式：从当前群组获取状态
             state = await get_user_state(session, chat_id=chat.id, user_id=user.id)
 
         if state is None or state.state_type != ConversationStateType.banned_word_add.value:
+            log.warning(
+                "no_valid_banned_word_state",
+                chat_id=chat.id,
+                user_id=user.id,
+                chat_type=chat.type,
+                state_exists=state is not None,
+                state_type=state.state_type if state else None,
+            )
             await session.commit()
             return
 
@@ -338,10 +509,13 @@ async def _parse_banned_word_config(update: Update, session, state: object, text
             elif line.startswith("惩罚动作:"):
                 action = line.split(":", 1)[1].strip()
             elif line.startswith("禁言时长:"):
-                try:
-                    mute_duration = int(line.split(":", 1)[1].strip())
-                except ValueError:
-                    raise ValueError("禁言时长必须是数字")
+                duration_str = line.split(":", 1)[1].strip()
+                if duration_str:  # 只有非空时才解析
+                    try:
+                        mute_duration = int(duration_str)
+                    except ValueError:
+                        raise ValueError("禁言时长必须是数字")
+                # 否则使用默认值（对于 delete 和 ban 动作，默认值不会被使用）
             elif line.startswith("删除提醒:"):
                 notify_str = line.split(":", 1)[1].strip().lower()
                 notify = notify_str in ["true", "1", "yes"]
@@ -368,19 +542,19 @@ async def _parse_banned_word_config(update: Update, session, state: object, text
 
         if not result.success:
             error_messages = {
-                "invalid_word": "违禁词格式无效",
-                "invalid_match_type": "匹配类型无效",
-                "invalid_action": "惩罚动作无效",
-                "duplicate": "该违禁词已存在",
+                "invalid_word": "❌ 违禁词格式无效\n\n违禁词不能为空",
+                "invalid_match_type": "❌ 匹配类型无效\n\n有效选项：exact（精确匹配）、contains（包含匹配）、regex（正则表达式）",
+                "invalid_action": "❌ 惩罚动作无效\n\n有效选项：delete（删除消息）、mute（禁言）、ban（封禁）\n\n注意：contains 是匹配类型，不是惩罚动作",
+                "duplicate": "❌ 该违禁词已存在",
             }
-            raise ValueError(error_messages.get(result.reason, "创建失败"))
+            raise ValueError(error_messages.get(result.reason, "❌ 创建失败"))
 
-        # 清除状态
+        # 清除状态 - 统一使用目标群组 ID（与保存逻辑一致）
         await clear_user_state(session, chat_id=target_chat_id, user_id=update.effective_user.id)
         await session.commit()
 
         # 返回成功消息
-        from bot.keyboards.admin import admin_main_menu
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
         reply_text = f"✅ 违禁词添加成功！\n\n"
         reply_text += f"🔇 违禁词: {word}\n"
@@ -393,7 +567,12 @@ async def _parse_banned_word_config(update: Update, session, state: object, text
             reply_text += f"💬 提醒消息: {notify_message}\n"
         reply_text += f"\n违禁词ID: {result.word.id}"
 
-        await update.effective_message.reply_text(reply_text, reply_markup=admin_main_menu())
+        # 只显示一个返回按钮
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("« 返回管理菜单", callback_data=f"adm:menu:{target_chat_id}")]
+        ])
+
+        await update.effective_message.reply_text(reply_text, reply_markup=keyboard)
 
     except ValueError as e:
         await update.effective_message.reply_text(f"❌ 配置错误: {e}\n\n请重新发送配置，或使用 /cancel 取消。")
@@ -405,6 +584,13 @@ async def _parse_banned_word_config(update: Update, session, state: object, text
 
 async def banned_word_check_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """检测消息中的违禁词"""
+    # 强制日志 - 必须在最开始输出，用于诊断 handler 是否被调用
+    log.warning(
+        "=== BANNED_WORD_CHECK_HANDLER ENTRY ===",
+        chat_id=update.effective_chat.id if update.effective_chat else None,
+        user_id=update.effective_user.id if update.effective_user else None,
+    )
+
     if update.effective_chat is None or update.effective_user is None or update.effective_message is None:
         return
 
@@ -415,11 +601,22 @@ async def banned_word_check_handler(update: Update, context: ContextTypes.DEFAUL
     if chat.type == "private":
         return
 
+    # 诊断日志：记录 handler 被调用
+    log.info(
+        "banned_word_check_called",
+        chat_id=chat.id,
+        user_id=user.id,
+        username=user.username,
+        message_text_preview=(message.text or message.caption or "")[:50],
+    )
+
     # 跳过管理员
     try:
         if await is_user_admin(context, chat.id, user.id):
+            log.info("banned_word_check_skipped_admin", chat_id=chat.id, user_id=user.id)
             return
-    except Exception:
+    except Exception as e:
+        log.warning("admin_check_failed", chat_id=chat.id, user_id=user.id, error=str(e))
         return
 
     message_text = message.text or message.caption or ""
@@ -429,6 +626,19 @@ async def banned_word_check_handler(update: Update, context: ContextTypes.DEFAUL
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
         matched_words = await match_banned_words(session, chat.id, message_text)
+
+        # 诊断日志：记录查询结果
+        words = await get_chat_banned_words(session, chat.id)
+        log.info(
+            "banned_word_check_result",
+            chat_id=chat.id,
+            user_id=user.id,
+            message_text_preview=message_text[:50],
+            total_words_count=len(words),
+            active_words_count=sum(1 for w in words if w.is_active),
+            matched_count=len(matched_words),
+        )
+
         await session.commit()
 
     if matched_words:
@@ -447,16 +657,16 @@ async def banned_word_check_handler(update: Update, context: ContextTypes.DEFAUL
         # 删除消息
         try:
             await message.delete()
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("delete_message_failed", chat_id=chat.id, user_id=user.id, error=str(e))
 
         # 发送提醒
         if word.notify:
             notify_msg = word.notify_message or f"🚫 您的消息因包含违禁词「{word.word}」已被删除"
             try:
                 await context.bot.send_message(chat_id=chat.id, text=notify_msg)
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning("send_notify_failed", chat_id=chat.id, error=str(e))
 
         # 执行惩罚
         if word.action == "mute":
@@ -469,13 +679,13 @@ async def banned_word_check_handler(update: Update, context: ContextTypes.DEFAUL
                     permissions={"can_send_messages": False, "can_send_media_messages": False},
                     until_date=until_date,
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning("mute_user_failed", chat_id=chat.id, user_id=user.id, error=str(e))
         elif word.action == "ban":
             try:
                 await context.bot.ban_chat_member(chat_id=chat.id, user_id=user.id)
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning("ban_user_failed", chat_id=chat.id, user_id=user.id, error=str(e))
 
 
 def _get_match_type_label(match_type: str) -> str:

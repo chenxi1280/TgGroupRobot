@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.models.core import ConversationState
+
+log = structlog.get_logger(__name__)
 
 
 async def get_user_state(
@@ -17,7 +20,15 @@ async def get_user_state(
         ConversationState.user_id == user_id,
     )
     result = await session.execute(stmt)
-    return result.scalar_one_or_none()
+    state = result.scalar_one_or_none()
+    log.info(
+        "get_user_state_result",
+        chat_id=chat_id,
+        user_id=user_id,
+        state_found=state is not None,
+        state_type=state.state_type if state else None,
+    )
+    return state
 
 
 async def set_user_state(
@@ -37,9 +48,25 @@ async def set_user_state(
             state_data=state_data or {},
         )
         session.add(state)
+        # 立即 flush 确保 INSERT 语句被执行
+        await session.flush()
+        log.info(
+            "state_created_and_flushed",
+            chat_id=chat_id,
+            user_id=user_id,
+            state_type=state_type,
+        )
     else:
         state.state_type = state_type
         state.state_data = state_data or {}
+        # 立即 flush 确保 UPDATE 语句被执行
+        await session.flush()
+        log.info(
+            "state_updated",
+            chat_id=chat_id,
+            user_id=user_id,
+            state_type=state_type,
+        )
     return state
 
 
@@ -52,4 +79,6 @@ async def clear_user_state(
     state = await get_user_state(session, chat_id, user_id)
     if state is not None:
         await session.delete(state)
+        # 立即 flush 确保 DELETE 语句被执行
+        await session.flush()
 

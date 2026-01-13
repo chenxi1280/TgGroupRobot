@@ -30,8 +30,13 @@ async def ensure_chat(session: AsyncSession, chat_id: int, chat_type: str, title
 
 
 async def get_chat_settings(session: AsyncSession, chat_id: int) -> ChatSettings:
+    """获取群组设置，如果不存在则创建默认设置"""
     res = await session.execute(select(ChatSettings).where(ChatSettings.chat_id == chat_id))
-    settings = res.scalar_one()
+    settings = res.scalar_one_or_none()
+    if settings is None:
+        settings = ChatSettings(chat_id=chat_id)
+        session.add(settings)
+        await session.flush()
     return settings
 
 

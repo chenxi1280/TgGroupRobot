@@ -41,7 +41,9 @@ async def get_or_create_chat_subscription(session: AsyncSession, chat_id: int) -
         return sub
 
     res2 = await session.execute(select(SubscriptionPlan).where(SubscriptionPlan.code == "free"))
-    free = res2.scalar_one()
+    free = res2.scalar_one_or_none()
+    if free is None:
+        raise ValueError("免费套餐不存在，请确保默认套餐已创建")
     sub = ChatSubscription(
         chat_id=chat_id,
         plan_id=free.id,
@@ -54,9 +56,10 @@ async def get_or_create_chat_subscription(session: AsyncSession, chat_id: int) -
     return sub
 
 
-async def get_plan(session: AsyncSession, plan_id: int) -> SubscriptionPlan:
+async def get_plan(session: AsyncSession, plan_id: int) -> SubscriptionPlan | None:
+    """获取订阅套餐"""
     res = await session.execute(select(SubscriptionPlan).where(SubscriptionPlan.id == plan_id))
-    return res.scalar_one()
+    return res.scalar_one_or_none()
 
 
 

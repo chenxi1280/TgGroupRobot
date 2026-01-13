@@ -108,7 +108,12 @@ async def invite_link_list_callback(update: Update, context: ContextTypes.DEFAUL
 
     data = q.data or ""
     parts = data.split(":")
-    page = int(parts[2]) if len(parts) > 2 else 0
+    try:
+        page = int(parts[2]) if len(parts) > 2 else 0
+    except (ValueError, IndexError) as e:
+        log.warning("invalid_page_param", data=q.data, error=str(e))
+        await q.answer("无效的页码参数", show_alert=True)
+        return
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
@@ -195,7 +200,12 @@ async def invite_link_detail_callback(update: Update, context: ContextTypes.DEFA
     if len(parts) < 3:
         return
 
-    link_id = int(parts[2])
+    try:
+        link_id = int(parts[2])
+    except (ValueError, IndexError) as e:
+        log.warning("invalid_link_id", data=q.data, error=str(e))
+        await q.answer("无效的链接ID", show_alert=True)
+        return
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
@@ -248,8 +258,8 @@ async def invite_link_create_start_callback(update: Update, context: ContextType
             if len(parts) >= 3:
                 try:
                     target_chat_id = int(parts[2])
-                except ValueError:
-                    pass
+                except ValueError as e:
+                    log.warning("invalid_chat_id_in_callback", callback_data=q.data, error=str(e))
 
         # 如果 callback_data 中没有 chat_id，从数据库获取
         if target_chat_id is None:
@@ -320,7 +330,8 @@ async def invite_link_create_limit_message(update: Update, context: ContextTypes
                 if member_limit <= 0:
                     await update.effective_message.reply_text("成员数量必须大于0，请重新输入或 /skip 跳过")
                     return WAIT_LIMIT
-            except ValueError:
+            except ValueError as e:
+                log.warning("invalid_member_limit_input", user_input=text, error=str(e))
                 await update.effective_message.reply_text("请输入有效的数字或 /skip 跳过")
                 return WAIT_LIMIT
 
@@ -356,7 +367,8 @@ async def invite_link_create_expire_message(update: Update, context: ContextType
                     await update.effective_message.reply_text("天数必须大于0，请重新输入或 /skip 跳过")
                     return WAIT_EXPIRE
                 expire_date = dt.datetime.now(dt.UTC) + dt.timedelta(days=days)
-            except ValueError:
+            except ValueError as e:
+                log.warning("invalid_expire_days_input", user_input=text, error=str(e))
                 await update.effective_message.reply_text("请输入有效的天数或 /skip 跳过")
                 return WAIT_EXPIRE
 
@@ -436,7 +448,12 @@ async def invite_link_refresh_callback(update: Update, context: ContextTypes.DEF
     if len(parts) < 3:
         return
 
-    link_id = int(parts[2])
+    try:
+        link_id = int(parts[2])
+    except (ValueError, IndexError) as e:
+        log.warning("invalid_link_id", data=q.data, error=str(e))
+        await q.answer("无效的链接ID", show_alert=True)
+        return
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
@@ -492,7 +509,12 @@ async def invite_link_revoke_callback(update: Update, context: ContextTypes.DEFA
     if len(parts) < 3:
         return
 
-    link_id = int(parts[2])
+    try:
+        link_id = int(parts[2])
+    except (ValueError, IndexError) as e:
+        log.warning("invalid_link_id", data=q.data, error=str(e))
+        await q.answer("无效的链接ID", show_alert=True)
+        return
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
@@ -529,7 +551,12 @@ async def invite_link_delete_callback(update: Update, context: ContextTypes.DEFA
     if len(parts) < 3:
         return
 
-    link_id = int(parts[2])
+    try:
+        link_id = int(parts[2])
+    except (ValueError, IndexError) as e:
+        log.warning("invalid_link_id", data=q.data, error=str(e))
+        await q.answer("无效的链接ID", show_alert=True)
+        return
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
@@ -625,7 +652,12 @@ async def user_invite_create_callback(update: Update, context: ContextTypes.DEFA
     parts = data.split(":")
     if len(parts) < 3:
         return
-    chat_id = int(parts[2])
+    try:
+        chat_id = int(parts[2])
+    except (ValueError, IndexError) as e:
+        log.warning("invalid_chat_id", data=q.data, error=str(e))
+        await q.answer("无效的群组ID", show_alert=True)
+        return
 
     from bot.services.invite_service import create_invite_link as user_create_link
 
@@ -672,7 +704,12 @@ async def user_invite_list_callback(update: Update, context: ContextTypes.DEFAUL
     parts = data.split(":")
     if len(parts) < 3:
         return
-    chat_id = int(parts[2])
+    try:
+        chat_id = int(parts[2])
+    except (ValueError, IndexError) as e:
+        log.warning("invalid_chat_id", data=q.data, error=str(e))
+        await q.answer("无效的群组ID", show_alert=True)
+        return
 
     from bot.services.invite_service import get_user_links
 
@@ -716,7 +753,12 @@ async def user_invite_rank_callback(update: Update, context: ContextTypes.DEFAUL
     parts = data.split(":")
     if len(parts) < 3:
         return
-    chat_id = int(parts[2])
+    try:
+        chat_id = int(parts[2])
+    except (ValueError, IndexError) as e:
+        log.warning("invalid_chat_id", data=q.data, error=str(e))
+        await q.answer("无效的群组ID", show_alert=True)
+        return
 
     from bot.services.invite_service import get_invite_leaderboard, get_user_rank
 

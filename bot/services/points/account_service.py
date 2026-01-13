@@ -5,7 +5,7 @@ from __future__ import annotations
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bot.models.core import PointsAccount
+from bot.models.core import PointsAccount, PointsTransaction
 
 
 async def get_balance(session: AsyncSession, chat_id: int, user_id: int) -> int:

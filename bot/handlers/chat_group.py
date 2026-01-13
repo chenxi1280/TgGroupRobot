@@ -27,7 +27,12 @@ async def chat_group_list_callback(update: Update, context: ContextTypes.DEFAULT
 
     data = q.data or ""
     parts = data.split(":")
-    page = int(parts[2]) if len(parts) > 2 else 0
+    try:
+        page = int(parts[2]) if len(parts) > 2 else 0
+    except (ValueError, IndexError) as e:
+        log.warning("invalid_page_param", data=q.data, error=str(e))
+        await q.answer("无效的页码", show_alert=True)
+        return
 
     db: Database = context.application.bot_data["db"]
     chats = await get_user_managed_chats(db, user.id, context.bot)
@@ -70,7 +75,12 @@ async def chat_group_select_callback(update: Update, context: ContextTypes.DEFAU
     if len(parts) < 3:
         return
 
-    chat_id = int(parts[2])
+    try:
+        chat_id = int(parts[2])
+    except (ValueError, IndexError) as e:
+        log.warning("invalid_chat_id", data=q.data, error=str(e))
+        await q.answer("无效的群组ID", show_alert=True)
+        return
 
     # 设置当前选中的群组
     db: Database = context.application.bot_data["db"]
@@ -134,7 +144,12 @@ async def chat_group_admin_callback(update: Update, context: ContextTypes.DEFAUL
     if len(parts) < 3:
         return
 
-    chat_id = int(parts[2])
+    try:
+        chat_id = int(parts[2])
+    except (ValueError, IndexError) as e:
+        log.warning("invalid_chat_id", data=q.data, error=str(e))
+        await q.answer("无效的群组ID", show_alert=True)
+        return
 
     # 直接显示管理菜单
     from bot.handlers.admin import _show_private_admin_menu

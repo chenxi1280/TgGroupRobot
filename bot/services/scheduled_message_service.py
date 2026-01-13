@@ -88,6 +88,7 @@ async def create_scheduled_message(
     schedule_type: str,
     interval_minutes: int | None = None,
     initial_delay_minutes: int = 0,
+    repeat_enabled: bool = False,
 ) -> CreateResult:
     """创建定时消息"""
     # 验证消息内容
@@ -115,6 +116,7 @@ async def create_scheduled_message(
         interval_minutes=interval_minutes,
         is_active=True,
         next_send_time=next_send_time,
+        repeat_enabled=repeat_enabled,
     )
     session.add(message)
     await session.flush()
@@ -224,13 +226,17 @@ async def mark_message_sent(
     message.last_sent_at = dt.datetime.now(dt.UTC)
     message.send_count += 1
 
-    # 一次性消息发送后停用
-    if message.schedule_type == ScheduleType.none.value:
+    # 根据 repeat_enabled 决定是否重复发送
+    if not message.repeat_enabled:
+        # 不重复，发送后停用
         message.is_active = False
-    else:
-        # 计算下次发送时间
+    elif message.schedule_type != ScheduleType.none.value:
+        # 重复发送且不是一次性类型，计算下次发送时间
         message.next_send_time = calculate_next_send_time(
             message.schedule_type,
             message.interval_minutes,
             dt.datetime.now(dt.UTC),
         )
+    else:
+        # 一次性类型，发送后停用
+        message.is_active = False

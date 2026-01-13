@@ -320,6 +320,27 @@ class AdCampaign(Base):
     last_sent_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # 上次发送时间
     send_locked: Mapped[bool] = mapped_column(Boolean, default=False)  # 发送锁定（防重机制）
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    # 高级推送配置（支持自定义间隔和次数）
+    start_time: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="开始推送时间"
+    )
+    interval_hours: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+        comment="推送间隔（小时），如24表示每24小时推送一次"
+    )
+    max_send_count: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+        comment="最大推送次数，null表示无限制"
+    )
+    send_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        comment="已推送次数"
+    )
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC))
     updated_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True),
@@ -419,6 +440,7 @@ class ScheduledMessage(Base):
     next_send_time: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), index=True)  # 下次发送时间
     last_sent_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # 上次发送时间
     send_count: Mapped[int] = mapped_column(Integer, default=0)  # 已发送次数
+    repeat_enabled: Mapped[bool] = mapped_column(Boolean, default=False)  # 是否重复发送
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC))
     updated_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True),

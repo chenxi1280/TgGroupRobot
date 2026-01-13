@@ -162,7 +162,7 @@ async def create_user_invite_link(
 
     # 计算过期时间
     expire_date = None
-    if settings.invite_link_expire_days is not None:
+    if settings.invite_link_expire_days is not None and settings.invite_link_expire_days > 0:
         expire_date = dt.datetime.now(dt.UTC) + dt.timedelta(days=settings.invite_link_expire_days)
 
     try:

@@ -14,6 +14,7 @@ def banned_word_menu_keyboard(chat_id: int | None = None) -> InlineKeyboardMarku
     return InlineKeyboardMarkup(
         [
             [InlineKeyboardButton("➕ 添加违禁词", callback_data=f"banned_word:add:{chat_id}" if chat_id else "banned_word:add")],
+            [InlineKeyboardButton("📋 查看列表", callback_data=f"banned_word:list:{chat_id}" if chat_id else "banned_word:list")],
             [InlineKeyboardButton("返回", callback_data=back_callback)],
         ]
     )

@@ -270,33 +270,57 @@ async def auto_reply_delete_callback(update: Update, context: ContextTypes.DEFAU
 
 async def auto_reply_config_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """处理自动回复创建流程中的消息"""
-    if update.effective_chat is None or update.effective_user is None or update.effective_message is None:
-        return
+    try:
+        # 诊断日志
+        import structlog
+        log = structlog.get_logger(__name__)
+        log.warning("=== AUTO_REPLY_CONFIG_HANDLER CALLED ===")
 
-    chat = update.effective_chat
-    user = update.effective_user
-    text = update.effective_message.text or ""
-
-    # 只在私聊或群聊中处理
-    if not text:
-        return
-
-    db: Database = context.application.bot_data["db"]
-    async with db.session_factory() as session:
-        # 获取用户状态
-        state = await get_user_state(session, chat_id=chat.id, user_id=user.id)
-
-        if state is None or state.state_type != ConversationStateType.auto_reply_create.value:
-            await update.effective_message.reply_text("❌ 无法获取创建状态，请重新从管理菜单选择「创建自动回复」开始。")
-            await session.commit()
+        if update.effective_chat is None or update.effective_user is None or update.effective_message is None:
             return
 
-        step = state.state_data.get("step")
+        chat = update.effective_chat
+        user = update.effective_user
+        text = update.effective_message.text or ""
 
-        if step == "config":
-            await _parse_auto_reply_config(update, session, state, text)
-        else:
-            await session.commit()
+        # 只在私聊或群聊中处理
+        if not text:
+            return
+
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            # 获取用户状态 - 私聊中使用 user.id 查询状态，与其他处理器保持一致
+            state_chat_id = user.id if chat.type == "private" else chat.id
+            state = await get_user_state(session, chat_id=state_chat_id, user_id=user.id)
+
+            # 静默忽略非自动回复创建状态，避免干扰其他功能
+            if state is None or state.state_type != ConversationStateType.auto_reply_create.value:
+                log.info("auto_reply_state_not_match", state_type=state.state_type if state else None)
+                # 不要在这里 return，让代码继续执行到块结束
+            else:
+                step = state.state_data.get("step")
+                log.info("auto_reply_step", step=step)
+
+                if step == "config":
+                    log.info("auto_reply_calling_parse")
+                    await _parse_auto_reply_config(update, session, state, text)
+                    log.info("auto_reply_parse_done")
+                    # 注意：_parse_auto_reply_config 内部已经 commit 了会话，不需要再次 commit
+                else:
+                    await session.commit()
+            log.info("auto_reply_handler_done")
+    except Exception as e:
+        # 确保异常被记录但不会阻止后续处理器
+        import structlog
+        log = structlog.get_logger(__name__)
+        log.exception(
+            "auto_reply_config_handler_error",
+            error=str(e),
+            error_type=type(e).__name__,
+            traceback=True
+        )
+        # 明确返回，不重新抛出异常，让后续处理器继续执行
+        return
 
 
 async def _parse_auto_reply_config(update: Update, session, state: object, text: str) -> None:
@@ -373,7 +397,7 @@ async def _parse_auto_reply_config(update: Update, session, state: object, text:
         await session.commit()
 
         # 返回成功消息
-        from bot.keyboards.admin import admin_main_menu
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
         reply_text = f"✅ 自动回复规则创建成功！\n\n"
         reply_text += f"🔑 关键词: {', '.join(keywords)}\n"
@@ -382,7 +406,12 @@ async def _parse_auto_reply_config(update: Update, session, state: object, text:
         reply_text += f"💬 回复: {reply_content[:50]}{'...' if len(reply_content) > 50 else ''}\n"
         reply_text += f"\n规则ID: {result.rule.id}"
 
-        await update.effective_message.reply_text(reply_text, reply_markup=admin_main_menu())
+        # 只显示一个返回按钮
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("« 返回管理菜单", callback_data=f"adm:menu:{target_chat_id}")]
+        ])
+
+        await update.effective_message.reply_text(reply_text, reply_markup=keyboard)
 
     except ValueError as e:
         await update.effective_message.reply_text(f"❌ 配置错误: {e}\n\n请重新发送配置，或使用 /cancel 取消。")

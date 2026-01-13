@@ -97,3 +97,4 @@ class LotteryTask(ScheduledTask):
                 except Exception as e:
                     log.error("auto_draw_lottery_failed", lottery_id=lottery.id, error=str(e))
                     await session.rollback()
+                    continue  # 继续处理下一个抽奖

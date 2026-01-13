@@ -44,7 +44,12 @@ async def auto_delete_config_callback(update: Update, context: ContextTypes.DEFA
 
     action = parts[1]
     field = parts[2]
-    chat_id = int(parts[3])
+    try:
+        chat_id = int(parts[3])
+    except (ValueError, IndexError) as e:
+        log.warning("invalid_chat_id", data=q.data, error=str(e))
+        await _safe_edit_message(q, "无效的群组ID")
+        return
 
     # 检查管理员权限
     if not await is_user_admin(context, chat_id, update.effective_user.id):

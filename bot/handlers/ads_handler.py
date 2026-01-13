@@ -3,7 +3,7 @@ from __future__ import annotations
 import structlog
 import datetime as dt
 from telegram import Update
-from telegram.ext import ContextTypes, ConversationHandler
+from telegram.ext import ContextTypes
 
 from bot.db.session import Database
 from bot.keyboards.ads import (
@@ -26,13 +26,6 @@ from bot.services.chat_group_service import get_user_current_chat, get_user_mana
 from bot.services.state_service import clear_user_state, set_user_state, get_user_state
 from bot.services.telegram_perm import is_user_admin
 from bot.handlers.admin import _show_private_admin_menu, _safe_edit_message
-
-# 创建流程状态
-WAIT_TITLE = 1
-WAIT_CONTENT = 2
-WAIT_IMAGE = 3
-WAIT_FREQUENCY = 4
-WAIT_SCHEDULE_TIME = 5
 
 log = structlog.get_logger(__name__)
 
@@ -227,7 +220,7 @@ async def ads_detail_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 async def ads_create_start_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """开始创建广告"""
+    """开始创建广告 - 显示配置格式说明"""
     if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
         return
     q = update.callback_query
@@ -268,197 +261,290 @@ async def ads_create_start_callback(update: Update, context: ContextTypes.DEFAUL
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
-        await set_user_state(session, target_chat_id, user.id, "ads_create", {})
+        # 设置状态为一次性创建
+        await set_user_state(session, chat.id, user.id, "ads_create_config", {"target_chat_id": target_chat_id})
         await session.commit()
 
-    await q.edit_message_text(
-        "➕ 创建广告\n\n请输入广告标题",
+    config_help = """➕ 创建广告
+
+请按以下格式输入配置：
+
+<strong>广告标题</strong>
+
+开始时间: 2026-01-09 10:00
+推送间隔: 24小时
+推送次数: 7次
+
+内容:
+这是广告的详细内容
+可以多行显示
+
+<strong>参数说明：</strong>
+• <strong>标题</strong>：第一行必填，最多128字
+• <strong>开始时间</strong>：可选，格式 YYYY-MM-DD HH:MM
+• <strong>推送间隔</strong>：可选，如「24小时」，不填则只推送一次
+• <strong>推送次数</strong>：可选，如「7次」，不填则无限制
+• <strong>内容</strong>：使用「内容:」标记开始
+
+<strong>简化示例：</strong>
+今晚聚餐广告
+
+内容:
+欢迎大家参加今晚的聚餐活动！"""
+
+    await q.edit_message_text(config_help, parse_mode="HTML")
+
+
+async def ads_create_config_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """处理一次性配置输入"""
+    # 添加调试日志
+    import structlog
+    log = structlog.get_logger(__name__)
+    log.warning(
+        "=== ads_create_config_message CALLED ===",
+        user_id=update.effective_user.id if update.effective_user else None,
+        chat_id=update.effective_chat.id if update.effective_chat else None,
+        chat_type=update.effective_chat.type if update.effective_chat else None,
+        text_preview=(update.effective_message.text or "")[:50] if update.effective_message else "",
     )
-    return WAIT_TITLE
 
-
-async def ads_create_title_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int | None:
-    """处理标题输入"""
     if update.effective_message is None or update.effective_user is None or update.effective_chat is None:
-        return ConversationHandler.END
+        return
 
     user = update.effective_user
     chat = update.effective_chat
-    title = update.effective_message.text.strip()[:128]
+    text = update.effective_message.text or ""
 
-    db: Database = context.application.bot_data["db"]
-    async with db.session_factory() as session:
-        state_data = await set_user_state(session, chat.id, user.id, "ads_create", {"title": title})
-        await session.commit()
+    if not text:
+        return
 
-    await update.effective_message.reply_text(
-        f"标题: {state_data.state_data.get('title')}\n\n请输入广告内容",
-    )
-    return WAIT_CONTENT
+    try:
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            # 获取用户状态 - 私聊中使用 user.id 查询状态，与其他处理器保持一致
+            state_chat_id = user.id if chat.type == "private" else chat.id
+            state = await get_user_state(session, state_chat_id, user.id)
+            log.info("ads_state_check", chat_id=state_chat_id, user_id=user.id, state_type=state.state_type if state else None)
 
-
-async def ads_create_content_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int | None:
-    """处理内容输入"""
-    if update.effective_message is None or update.effective_user is None or update.effective_chat is None:
-        return ConversationHandler.END
-
-    user = update.effective_user
-    chat = update.effective_chat
-    content = update.effective_message.text.strip()
-
-    # 检查是否有图片
-    has_photo = update.effective_message.photo is not None
-
-    db: Database = context.application.bot_data["db"]
-    async with db.session_factory() as session:
-        state = await get_user_state(session, chat.id, user.id)
-        state_data = state.state_data if state else {}
-        state_data["content"] = content
-
-        # 保存图片（如果有）
-        image_file_id = None
-        if has_photo and update.effective_message.photo:
-            # 获取最大尺寸的照片
-            photo = update.effective_message.photo[-1]
-            image_file_id = photo.file_id
-            state_data["image_file_id"] = image_file_id
-
-        await set_user_state(session, chat.id, user.id, "ads_create", state_data)
-        await session.commit()
-
-    image_info = "\n🖼️ 已添加图片" if has_photo else ""
-    await update.effective_message.reply_text(
-        f"内容: {content[:50]}...\n{image_info}\n\n请选择推送频次",
-        reply_markup=ads_frequency_keyboard(),
-    )
-    return WAIT_FREQUENCY
-
-
-async def ads_create_frequency_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int | None:
-    """处理频次选择"""
-    if update.callback_query is None or update.effective_user is None or update.effective_chat is None:
-        return ConversationHandler.END
-
-    q = update.callback_query
-    await q.answer()
-
-    user = update.effective_user
-    chat = update.effective_chat
-    data = q.data or ""
-
-    parts = data.split(":")
-    if len(parts) < 3:
-        return ConversationHandler.END
-
-    frequency = parts[2]
-
-    db: Database = context.application.bot_data["db"]
-    async with db.session_factory() as session:
-        state = await get_user_state(session, chat.id, user.id)
-        state_data = state.state_data if state else {}
-        state_data["frequency"] = frequency if frequency != "once" else None
-        await set_user_state(session, chat.id, user.id, "ads_create", state_data)
-        await session.commit()
-
-    # 如果是定时推送，询问时间；否则直接创建
-    if frequency in ["daily", "weekly", "monthly"]:
-        await q.edit_message_text(
-            f"频次: {frequency}\n\n请输入定时推送时间（可选，UTC时区）\n格式: HH:MM 或 /skip 立即创建\n示例: 09:00, 14:30\n⚠️ 注意：使用 UTC 时间（比北京时间晚8小时）",
-        )
-        return WAIT_SCHEDULE_TIME
-    else:
-        # 单次推送，直接创建
-        return await _finalize_ad_creation(update, context, chat.id, user.id)
-
-
-async def ads_create_schedule_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int | None:
-    """处理定时时间输入"""
-    if update.effective_message is None or update.effective_user is None or update.effective_chat is None:
-        return ConversationHandler.END
-
-    user = update.effective_user
-    chat = update.effective_chat
-    text = update.effective_message.text.strip()
-
-    db: Database = context.application.bot_data["db"]
-    async with db.session_factory() as session:
-        state = await get_user_state(session, chat.id, user.id)
-        state_data = state.state_data if state else {}
-
-    schedule_time = None
-    if text != "/skip":
-        try:
-            # 解析时间 HH:MM
-            hour, minute = map(int, text.split(":"))
-            if not (0 <= hour <= 23 and 0 <= minute <= 59):
-                await update.effective_message.reply_text("时间范围错误，小时应在 0-23，分钟应在 0-59")
-                return WAIT_SCHEDULE_TIME
-
-            now = dt.datetime.now(dt.UTC)
-            # 创建今天的调度时间（UTC）
-            schedule_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-            # 如果时间已过，设置为明天
-            if schedule_time < now:
-                schedule_time += dt.timedelta(days=1)
-
-            # 显示给用户的时间信息
-            time_str = schedule_time.strftime('%Y-%m-%d %H:%M UTC')
-        except ValueError:
-            await update.effective_message.reply_text("时间格式错误，请使用 HH:MM 格式（24小时制）或 /skip 立即创建\n示例: 09:00, 14:30")
-            return WAIT_SCHEDULE_TIME
-
-    state_data["schedule_time"] = schedule_time
-
-    async with db.session_factory() as session:
-        await set_user_state(session, chat.id, user.id, "ads_create", state_data)
-        await session.commit()
-
-    return await _finalize_ad_creation(update, context, chat.id, user.id, schedule_time)
-
-
-async def _finalize_ad_creation(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int, schedule_time: dt.datetime | None = None) -> int | None:
-    """完成广告创建"""
-    db: Database = context.application.bot_data["db"]
-
-    async with db.session_factory() as session:
-        state = await get_user_state(session, chat_id, user_id)
-        if not state:
-            await update.effective_message.reply_text("创建失败，请重试")
-            return ConversationHandler.END
-
-        state_data = state.state_data
-
-        result = await create_ad_campaign(
-            session,
-            chat_id=chat_id,
-            created_by_user_id=user_id,
-            title=state_data.get("title"),
-            content=state_data.get("content"),
-            image_file_id=state_data.get("image_file_id"),
-            schedule_time=schedule_time or state_data.get("schedule_time"),
-            frequency=state_data.get("frequency"),
-        )
-
-        await clear_user_state(session, chat_id, user_id)
-        await session.commit()
-
-        if result.success:
-            if result.ad.schedule_time:
-                time_str = result.ad.schedule_time.strftime('%Y-%m-%d %H:%M')
-                freq_str = result.ad.frequency or "单次"
-                await update.effective_message.reply_text(
-                    f"✅ 广告创建成功！\n\n将根据设置定时推送\n时间: {time_str}\n频次: {freq_str}",
-                    reply_markup=ads_menu_keyboard(),
-                )
+            # 静默忽略非广告创建状态，避免干扰其他功能
+            # 关键修复：不要 return，让代码继续执行到块结束
+            if not state or state.state_type != "ads_create_config":
+                log.info("ads_state_not_match", state_type=state.state_type if state else None)
+                # 不要在这里 return，让代码继续执行到块结束
             else:
-                await update.effective_message.reply_text(
-                    "✅ 广告创建成功！\n\n请使用「广告列表」-「立即发送」来推送",
-                    reply_markup=ads_menu_keyboard(),
-                )
-        else:
-            await update.effective_message.reply_text("❌ 创建失败", reply_markup=ads_menu_keyboard())
+                target_chat_id = state.state_data.get("target_chat_id")
+                if not target_chat_id:
+                    await update.effective_message.reply_text("❌ 会话已过期，请重新开始")
+                    await clear_user_state(session, chat.id, user.id)
+                    await session.commit()
+                    return
 
-    return ConversationHandler.END
+                # 解析配置
+                try:
+                    config = _parse_ads_config(text)
+
+                    # 验证标题
+                    if not config.get("title"):
+                        await update.effective_message.reply_text("❌ 标题不能为空\n\n请重新输入配置")
+                        await session.commit()
+                        return
+
+                    # 验证内容
+                    if not config.get("content"):
+                        await update.effective_message.reply_text("❌ 内容不能为空\n\n请重新输入配置")
+                        await session.commit()
+                        return
+
+                    # 创建广告
+                    result = await create_ad_campaign(
+                        session,
+                        chat_id=target_chat_id,
+                        created_by_user_id=user.id,
+                        title=config["title"],
+                        content=config["content"],
+                        start_time=config.get("start_time"),
+                        interval_hours=config.get("interval_hours"),
+                        max_send_count=config.get("max_send_count"),
+                    )
+
+                    if result.success:
+                        ad = result.ad
+
+                        # 构建成功消息
+                        success_msg = f"✅ 广告创建成功！\n\n标题: {ad.title}\n\n"
+                        if ad.start_time:
+                            success_msg += f"开始时间: {ad.start_time.strftime('%Y-%m-%d %H:%M')}\n"
+                        if ad.interval_hours:
+                            success_msg += f"推送间隔: {ad.interval_hours}小时\n"
+                        if ad.max_send_count:
+                            success_msg += f"推送次数: {ad.max_send_count}次\n"
+                        success_msg += f"\n{ad.content[:100]}{'...' if len(ad.content) > 100 else ''}"
+                        success_msg += f"\n\n广告ID: {ad.id}"
+
+                        # 清除状态
+                        await clear_user_state(session, chat.id, user.id)
+                        await session.commit()
+
+                        # 只显示一个返回按钮
+                        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+                        keyboard = InlineKeyboardMarkup([
+                            [InlineKeyboardButton("« 返回管理菜单", callback_data=f"adm:menu:{target_chat_id}")]
+                        ])
+
+                        await update.effective_message.reply_text(success_msg, reply_markup=keyboard)
+                    else:
+                        await update.effective_message.reply_text("❌ 创建失败，请重试")
+                        await session.commit()
+
+                except Exception as e:
+                    log.exception(
+                        "ads_create_error",
+                        error=str(e),
+                        error_type=type(e).__name__,
+                        traceback=True
+                    )
+                    await update.effective_message.reply_text(f"❌ 配置格式错误: {str(e)}\n\n请检查后重试")
+                    await session.commit()
+
+            log.info("ads_handler_done")
+    except Exception as e:
+        # 确保异常被记录但不会阻止后续处理器
+        import structlog
+        log = structlog.get_logger(__name__)
+        log.exception(
+            "ads_create_config_message_error",
+            error=str(e),
+            error_type=type(e).__name__,
+            traceback=True
+        )
+        # 明确返回，不重新抛出异常，让后续处理器继续执行
+        return
+
+
+def _parse_ads_config(text: str) -> dict:
+    """解析广告配置
+
+    Args:
+        text: 配置文本
+
+    Returns:
+        配置字典，包含:
+        - title: 广告标题
+        - content: 广告内容
+        - start_time: 开始时间（可选）
+        - interval_hours: 推送间隔（可选）
+        - max_send_count: 最大推送次数（可选）
+    """
+    lines = text.strip().split("\n")
+
+    if not lines:
+        raise ValueError("配置不能为空")
+
+    # 第一行是标题
+    title = lines[0].strip()
+
+    content = ""
+    start_time = None
+    interval_hours = None
+    max_send_count = None
+
+    # 解析参数
+    content_started = False
+    for line in lines[1:]:
+        line = line.strip()
+        if not line:
+            continue
+
+        # 如果已经开始解析内容，所有行都是内容
+        if content_started:
+            content += line + "\n"
+            continue
+
+        # 检查是否是参数行
+        if line.startswith("开始时间:") or line.startswith("开始时间："):
+            start_time = _parse_start_time(line.split(":")[1].split("：")[1].strip())
+        elif line.startswith("推送间隔:") or line.startswith("推送间隔："):
+            interval_hours = _parse_interval(line.split(":")[1].split("：")[1].strip())
+        elif line.startswith("推送次数:") or line.startswith("推送次数："):
+            max_send_count = _parse_send_count(line.split(":")[1].split("：")[1].strip())
+        elif line.startswith("内容:") or line.startswith("内容："):
+            content_started = True
+            # 提取同行的内容
+            if ":" in line or "：" in line:
+                parts = line.split(":") if ":" in line else line.split("：")
+                if len(parts) > 1:
+                    content += parts[1].strip() + "\n"
+        else:
+            # 不是已知参数，作为描述或内容
+            if not content:
+                content += line + "\n"
+
+    return {
+        "title": title,
+        "content": content.strip(),
+        "start_time": start_time,
+        "interval_hours": interval_hours,
+        "max_send_count": max_send_count,
+    }
+
+
+def _parse_start_time(time_str: str) -> dt.datetime | None:
+    """解析开始时间并转换为 UTC
+
+    Args:
+        time_str: 时间字符串，格式 YYYY-MM-DD HH:MM
+
+    Returns:
+        UTC 时间或 None
+    """
+    try:
+        # 解析用户输入的本地时间（北京时间 UTC+8）
+        local_time = dt.datetime.strptime(time_str, "%Y-%m-%d %H:%M")
+        # 转换为 UTC
+        local_tz = dt.timezone(dt.timedelta(hours=8))
+        return local_time.replace(tzinfo=local_tz).astimezone(dt.timezone.utc)
+    except ValueError:
+        return None
+
+
+def _parse_interval(interval_str: str) -> int | None:
+    """解析推送间隔（小时）
+
+    Args:
+        interval_str: 间隔字符串，如「24小时」
+
+    Returns:
+        间隔小时数或 None
+    """
+    try:
+        # 提取数字
+        import re
+        match = re.search(r'\d+', interval_str)
+        if match:
+            return int(match.group())
+    except (ValueError, AttributeError):
+        pass
+    return None
+
+
+def _parse_send_count(count_str: str) -> int | None:
+    """解析推送次数
+
+    Args:
+        count_str: 次数字符串，如「7次」
+
+    Returns:
+        次数或 None
+    """
+    try:
+        # 提取数字
+        import re
+        match = re.search(r'\d+', count_str)
+        if match:
+            return int(match.group())
+    except (ValueError, AttributeError):
+        pass
+    return None
 
 
 async def ads_send_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -589,22 +675,3 @@ async def ads_delete_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         else:
             await q.edit_message_text("❌ 广告不存在")
 
-
-async def ads_cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int | None:
-    """取消创建流程"""
-    if update.callback_query is None or update.effective_user is None or update.effective_chat is None:
-        return ConversationHandler.END
-
-    q = update.callback_query
-    await q.answer()
-
-    chat = update.effective_chat
-    user = update.effective_user
-
-    db: Database = context.application.bot_data["db"]
-    async with db.session_factory() as session:
-        await clear_user_state(session, chat.id, user.id)
-        await session.commit()
-
-    await q.edit_message_text("已取消创建", reply_markup=ads_menu_keyboard())
-    return ConversationHandler.END

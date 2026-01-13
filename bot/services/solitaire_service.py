@@ -68,7 +68,9 @@ async def create_solitaire(
             selectinload(Solitaire.entries_rel)
         ).where(Solitaire.id == solitaire.id)
         result = await session.execute(stmt)
-        solitaire = result.scalar_one()
+        solitaire = result.scalar_one_or_none()
+        if solitaire is None:
+            return CreateResult(success=False, reason="error", error="接龙创建后查询失败")
 
         return CreateResult(success=True, reason="ok", solitaire=solitaire)
     except Exception:
@@ -141,6 +143,7 @@ async def join_solitaire(
     # 检查积分限制
     if solitaire.points_required and solitaire.points_required > 0:
         from bot.models.core import PointsAccount
+        # 如果用户没有积分账户，user_points 默认为 0
         user_points = 0
         points_stmt = select(PointsAccount).where(
             PointsAccount.chat_id == solitaire.chat_id,

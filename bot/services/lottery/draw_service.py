@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import random
+import structlog
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.models.core import Lottery, LotteryParticipant, LotteryWinner, TgUser
+from bot.models.enums import PointsTxnType
 from bot.services.lottery.manager_service import get_lottery_participants
+
+
+log = structlog.get_logger(__name__)
 
 
 async def create_lottery_winner(
@@ -162,11 +167,18 @@ async def distribute_lottery_rewards(
     for winner in winners:
         if winner.points_reward > 0:
             # 发放积分
-            await change_points(
+            success, new_balance = await change_points(
                 session,
                 lottery.chat_id,
                 winner.user_id,
                 winner.points_reward,
-                "lottery_reward",
+                PointsTxnType.lottery_win.value,
                 f"抽奖【{lottery.title}】中奖奖励"
             )
+            if not success:
+                log.error(
+                    "lottery_reward_failed",
+                    lottery_id=lottery.id,
+                    winner_id=winner.user_id,
+                    reward_amount=winner.points_reward,
+                )
