@@ -7,9 +7,17 @@ from sqlalchemy.orm import selectinload
 
 from bot.db.session import Database
 from bot.handlers.base.base_handler import BaseHandler
-from bot.services.core.chat_service import ensure_chat, get_chat_settings
+from bot.services.core.chat_service import (
+    build_points_alias_patterns,
+    ensure_chat,
+    get_chat_settings,
+)
 from bot.services.activity.points_service import (
     add_message_points,
+    format_balance_message,
+    format_leaderboard_message,
+    format_sign_in_already_message,
+    format_sign_in_success_message,
     get_balance,
     get_leaderboard,
     get_user_rank,
@@ -78,20 +86,20 @@ class PointsHandler(BaseHandler):
             )
             await session.commit()
 
+        # 使用 service 层格式化消息
         if result.success:
-            msg = f"✅ 签到成功！\n"
-            msg += f"获得 {settings.sign_points} 积分\n"
-            msg += f"当前余额：{result.balance} 积分"
-            if result.consecutive_days > 1:
-                msg += f"\n连续签到：{result.consecutive_days} 天"
-            if result.bonus_points > 0:
-                msg += f"\n🎉 连续签到奖励：+{result.bonus_points} 积分"
+            msg = format_sign_in_success_message(
+                points=settings.sign_points,
+                balance=result.balance,
+                consecutive_days=result.consecutive_days,
+                bonus_points=result.bonus_points,
+            )
             await update.effective_message.reply_text(msg)
         else:
-            msg = f"❌ 今日已签到\n"
-            msg += f"当前余额：{result.balance} 积分"
-            if result.consecutive_days > 0:
-                msg += f"\n连续签到：{result.consecutive_days} 天"
+            msg = format_sign_in_already_message(
+                balance=result.balance,
+                consecutive_days=result.consecutive_days,
+            )
             await update.effective_message.reply_text(msg)
 
     async def handle_balance(
@@ -125,9 +133,8 @@ class PointsHandler(BaseHandler):
             rank = await get_user_rank(session, chat.id, user.id)
             await session.commit()
 
-        msg = f"💰 你的积分：{balance}"
-        if rank:
-            msg += f"\n🏆 排名：第 {rank} 名"
+        # 使用 service 层格式化消息
+        msg = format_balance_message(balance, rank)
         await update.effective_message.reply_text(msg)
 
     async def handle_leaderboard(
@@ -150,14 +157,8 @@ class PointsHandler(BaseHandler):
             leaderboard = await get_leaderboard(session, chat.id, limit=10)
             await session.commit()
 
-        if not leaderboard:
-            await update.effective_message.reply_text("暂无积分排行数据")
-            return
-
-        msg = "🏆 积分排行榜（前10名）\n\n"
-        for i, (user_id, balance, username) in enumerate(leaderboard, 1):
-            name = username or f"用户{user_id}"
-            msg += f"{i}. {name} - {balance} 积分\n"
+        # 使用 service 层格式化消息
+        msg = format_leaderboard_message(leaderboard)
         await update.effective_message.reply_text(msg)
 
     async def handle_message_points(
@@ -278,10 +279,8 @@ class PointsAliasHandler:
                 return {}
 
             settings = chat.settings
-            self._patterns_cache[chat_id] = {
-                "points": re.compile(rf"^{re.escape(settings.points_alias)}$"),
-                "rank": re.compile(rf"^{re.escape(settings.points_rank_alias)}$"),
-            }
+            # 使用 service 层构建正则
+            self._patterns_cache[chat_id] = build_points_alias_patterns(settings)
             return self._patterns_cache[chat_id]
 
     def clear_cache(self, chat_id: int | None = None) -> None:

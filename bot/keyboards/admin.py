@@ -3,6 +3,100 @@ from __future__ import annotations
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 
+# ==================== 格式化函数 ====================
+
+
+def format_verification_menu_text(
+    chat_title: str,
+    verification_mode: str,
+    timeout_seconds: int,
+    restrict_can_send: bool,
+) -> str:
+    """
+    格式化验证菜单文本
+
+    Args:
+        chat_title: 群组标题
+        verification_mode: 验证模式
+        timeout_seconds: 超时时间（秒）
+        restrict_can_send: 是否限制发言
+
+    Returns:
+        格式化后的验证菜单文本
+    """
+    mode_labels = {
+        "button": "🔘 按钮验证",
+        "math": "🔢 数学题验证",
+        "captcha": "🔢 验证码验证",
+    }
+    mode_label = mode_labels.get(verification_mode, verification_mode)
+
+    text = f"🤖 [{chat_title}] 新人验证\n\n"
+    text += f"当前验证模式: {mode_label}\n"
+    text += f"超时时间: {timeout_seconds} 秒\n"
+    text += f"限制发言: {'是' if restrict_can_send else '否'}\n\n"
+    text += f"💡 点击下方按钮切换验证模式"
+    return text
+
+
+def format_admin_main_menu_text(chat_title: str) -> str:
+    """
+    格式化管理主菜单文本
+
+    Args:
+        chat_title: 群组标题
+
+    Returns:
+        格式化后的主菜单文本
+    """
+    text = f"🎛️ 群组管理\n\n"
+    text += f"📍 当前群组: {chat_title}\n\n"
+    text += f"请选择要管理的内容："
+    return text
+
+
+def create_group_selection_keyboard(
+    managed_chats: list[tuple[int, str, bool]],
+    current_chat_id: int | None,
+) -> InlineKeyboardMarkup:
+    """
+    创建群组选择键盘
+
+    Args:
+        managed_chats: 管理的群组列表 [(chat_id, title, is_admin), ...]
+        current_chat_id: 当前选中的群组ID
+
+    Returns:
+        群组选择键盘
+    """
+    buttons = []
+
+    for chat_id, title, is_admin in managed_chats:
+        is_current = "✅ " if chat_id == current_chat_id else ""
+        buttons.append([
+            InlineKeyboardButton(f"{is_current}{title}", callback_data=f"adm:select_group:{chat_id}")
+        ])
+
+    buttons.append([InlineKeyboardButton("🔙 返回", callback_data=f"adm:back_to_main")])
+
+    return InlineKeyboardMarkup(buttons)
+
+
+def create_guide_keyboard(bot_username: str) -> InlineKeyboardMarkup:
+    """
+    创建引导按钮键盘
+
+    Args:
+        bot_username: 机器人用户名
+
+    Returns:
+        引导按钮键盘
+    """
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🎛️ 前往设置", url=f"https://t.me/{bot_username}")],
+    ])
+
+
 def admin_main_menu(chat_id: int | None = None) -> InlineKeyboardMarkup:
     """管理员主菜单（参考 WeGroupBot 样式）
 

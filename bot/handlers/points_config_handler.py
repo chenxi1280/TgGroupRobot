@@ -172,12 +172,14 @@ async def points_config_callback(update: Update, context: ContextTypes.DEFAULT_T
 
     q = update.callback_query
     data = q.data or ""
-    parts = data.split(":")
+    cb = CallbackParser.parse(data)
 
-    if len(parts) < 4:
+    if cb.length() < 4:
         return
 
-    chat_id = int(parts[3])
+    chat_id = cb.get_int(3)
+    if chat_id == 0:
+        return
 
     # 检查管理员权限
     from bot.services.core.permission_service import is_user_admin

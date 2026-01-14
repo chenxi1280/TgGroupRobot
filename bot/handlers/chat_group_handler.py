@@ -7,6 +7,7 @@ from telegram.ext import ContextTypes
 from bot.db.session import Database
 from bot.keyboards.chat_group import chat_group_list_keyboard
 from bot.services.integration.chat_group_service import get_user_current_chat, get_user_managed_chats, set_user_current_chat
+from bot.utils.callback_parser import CallbackParser
 
 log = structlog.get_logger(__name__)
 
@@ -26,13 +27,8 @@ async def chat_group_list_callback(update: Update, context: ContextTypes.DEFAULT
         return
 
     data = q.data or ""
-    parts = data.split(":")
-    try:
-        page = int(parts[2]) if len(parts) > 2 else 0
-    except (ValueError, IndexError) as e:
-        log.warning("invalid_page_param", data=q.data, error=str(e))
-        await q.answer("无效的页码", show_alert=True)
-        return
+    cb = CallbackParser.parse(data)
+    page = cb.get_int(2, default=0)
 
     db: Database = context.application.bot_data["db"]
     chats = await get_user_managed_chats(db, user.id, context.bot)
@@ -71,14 +67,10 @@ async def chat_group_select_callback(update: Update, context: ContextTypes.DEFAU
         return
 
     data = q.data or ""
-    parts = data.split(":")
-    if len(parts) < 3:
-        return
-
-    try:
-        chat_id = int(parts[2])
-    except (ValueError, IndexError) as e:
-        log.warning("invalid_chat_id", data=q.data, error=str(e))
+    cb = CallbackParser.parse(data)
+    chat_id = cb.get_int(2)
+    if chat_id == 0:
+        log.warning("invalid_chat_id", data=q.data)
         await q.answer("无效的群组ID", show_alert=True)
         return
 
@@ -140,14 +132,10 @@ async def chat_group_admin_callback(update: Update, context: ContextTypes.DEFAUL
         return
 
     data = q.data or ""
-    parts = data.split(":")
-    if len(parts) < 3:
-        return
-
-    try:
-        chat_id = int(parts[2])
-    except (ValueError, IndexError) as e:
-        log.warning("invalid_chat_id", data=q.data, error=str(e))
+    cb = CallbackParser.parse(data)
+    chat_id = cb.get_int(2)
+    if chat_id == 0:
+        log.warning("invalid_chat_id", data=q.data)
         await q.answer("无效的群组ID", show_alert=True)
         return
 

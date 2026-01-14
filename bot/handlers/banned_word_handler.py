@@ -20,6 +20,7 @@ from bot.services.core.chat_service import ensure_chat, get_chat_settings
 from bot.services.state.state_service import clear_user_state, get_user_state, set_user_state
 from bot.services.core.permission_service import is_user_admin
 from bot.services.core.user_service import ensure_user
+from bot.utils.callback_parser import CallbackParser
 
 
 log = structlog.get_logger(__name__)
@@ -187,15 +188,11 @@ async def banned_word_list_callback(update: Update, context: ContextTypes.DEFAUL
     if chat.type == "private":
         # 从 callback_data 提取 chat_id
         if data.startswith("banned_word:list:"):
-            parts = data.split(":")
-            if len(parts) >= 3:
-                try:
-                    target_chat_id = int(parts[2])
-                except ValueError:
-                    pass
+            cb = CallbackParser.parse(data)
+            target_chat_id = cb.get_int(2)
 
         # 如果 callback_data 中没有，从数据库获取
-        if target_chat_id is None:
+        if target_chat_id == 0:
             from bot.services.integration.chat_group_service import get_user_current_chat
             db: Database = context.application.bot_data["db"]
             target_chat_id = await get_user_current_chat(db, user.id)
@@ -252,15 +249,11 @@ async def banned_word_add_start(update: Update, context: ContextTypes.DEFAULT_TY
         if chat.type == "private":
             # 优先从 callback_data 提取 chat_id
             if data.startswith("banned_word:add:"):
-                parts = data.split(":")
-                if len(parts) >= 3:
-                    try:
-                        target_chat_id = int(parts[2])
-                    except ValueError as e:
-                        log.warning("invalid_chat_id_in_callback", callback_data=data, error=str(e))
+                cb = CallbackParser.parse(data)
+                target_chat_id = cb.get_int(2)
 
             # 如果 callback_data 中没有 chat_id，从数据库获取
-            if target_chat_id is None:
+            if target_chat_id == 0:
                 from bot.services.integration.chat_group_service import get_user_current_chat
                 from bot.models.core import TgChat
                 from sqlalchemy import select
@@ -533,22 +526,18 @@ async def banned_word_delete_callback(update: Update, context: ContextTypes.DEFA
 
     # 解析 word_id 和可能的 chat_id
     # 格式：banned_word_delete_{word_id} 或 banned_word_delete_{word_id}:{chat_id}
-    parts = data.split("_")[-1].split(":")
-    try:
-        word_id = int(parts[0])
-    except (ValueError, IndexError):
+    params = data.split("_")[-1]
+    cb = CallbackParser.parse(params, separator=":")
+    word_id = cb.get_int(0)
+    if word_id == 0:
         return
 
     # 如果在私聊模式，提取目标群组ID
     target_chat_id = None
     if chat.type == "private":
-        if len(parts) > 1:
-            try:
-                target_chat_id = int(parts[1])
-            except ValueError:
-                pass
+        target_chat_id = cb.get_int(1)
         # 如果 callback_data 中没有 chat_id，从数据库获取
-        if target_chat_id is None:
+        if target_chat_id == 0:
             from bot.services.integration.chat_group_service import get_user_current_chat
             db: Database = context.application.bot_data["db"]
             target_chat_id = await get_user_current_chat(db, user.id)

@@ -25,6 +25,7 @@ from bot.services.integration.invite_service import (
     update_invite_link_info,
 )
 from bot.services.state.state_service import clear_user_state, get_user_state, set_user_state
+from bot.utils.callback_parser import CallbackParser
 
 # 创建流程状态
 WAIT_NAME = 1
@@ -184,13 +185,8 @@ async def invite_link_list_callback(update: Update, context: ContextTypes.DEFAUL
         target_chat_id = chat.id
 
     data = q.data or ""
-    parts = data.split(":")
-    try:
-        page = int(parts[2]) if len(parts) > 2 else 0
-    except (ValueError, IndexError) as e:
-        log.warning("invalid_page_param", data=q.data, error=str(e))
-        await q.answer("无效的页码参数", show_alert=True)
-        return
+    cb = CallbackParser.parse(data)
+    page = cb.get_int(2, default=0)
 
     # 使用 Handler 处理
     await _invite_link_handler.show_list(update, context, target_chat_id, page)
@@ -243,14 +239,13 @@ async def invite_link_detail_callback(update: Update, context: ContextTypes.DEFA
         return
 
     data = q.data or ""
-    parts = data.split(":")
-    if len(parts) < 3:
+    cb = CallbackParser.parse(data)
+    if cb.length() < 3:
         return
 
-    try:
-        link_id = int(parts[2])
-    except (ValueError, IndexError) as e:
-        log.warning("invalid_link_id", data=q.data, error=str(e))
+    link_id = cb.get_int(2)
+    if link_id == 0:
+        log.warning("invalid_link_id", data=q.data)
         await q.answer("无效的链接ID", show_alert=True)
         return
 
@@ -301,15 +296,11 @@ async def invite_link_create_start_callback(update: Update, context: ContextType
         # 优先从 callback_data 提取 chat_id
         data = q.data or ""
         if data.startswith("inv:create:"):
-            parts = data.split(":")
-            if len(parts) >= 3:
-                try:
-                    target_chat_id = int(parts[2])
-                except ValueError as e:
-                    log.warning("invalid_chat_id_in_callback", callback_data=q.data, error=str(e))
+            cb = CallbackParser.parse(data)
+            target_chat_id = cb.get_int(2)
 
         # 如果 callback_data 中没有 chat_id，从数据库获取
-        if target_chat_id is None:
+        if target_chat_id == 0:
             from bot.services.integration.chat_group_service import get_user_current_chat
             db: Database = context.application.bot_data["db"]
             target_chat_id = await get_user_current_chat(db, user.id)
@@ -493,14 +484,13 @@ async def invite_link_refresh_callback(update: Update, context: ContextTypes.DEF
         return
 
     data = q.data or ""
-    parts = data.split(":")
-    if len(parts) < 3:
+    cb = CallbackParser.parse(data)
+    if cb.length() < 3:
         return
 
-    try:
-        link_id = int(parts[2])
-    except (ValueError, IndexError) as e:
-        log.warning("invalid_link_id", data=q.data, error=str(e))
+    link_id = cb.get_int(2)
+    if link_id == 0:
+        log.warning("invalid_link_id", data=q.data)
         await q.answer("无效的链接ID", show_alert=True)
         return
 
@@ -554,14 +544,13 @@ async def invite_link_revoke_callback(update: Update, context: ContextTypes.DEFA
         return
 
     data = q.data or ""
-    parts = data.split(":")
-    if len(parts) < 3:
+    cb = CallbackParser.parse(data)
+    if cb.length() < 3:
         return
 
-    try:
-        link_id = int(parts[2])
-    except (ValueError, IndexError) as e:
-        log.warning("invalid_link_id", data=q.data, error=str(e))
+    link_id = cb.get_int(2)
+    if link_id == 0:
+        log.warning("invalid_link_id", data=q.data)
         await q.answer("无效的链接ID", show_alert=True)
         return
 
@@ -596,14 +585,13 @@ async def invite_link_delete_callback(update: Update, context: ContextTypes.DEFA
         return
 
     data = q.data or ""
-    parts = data.split(":")
-    if len(parts) < 3:
+    cb = CallbackParser.parse(data)
+    if cb.length() < 3:
         return
 
-    try:
-        link_id = int(parts[2])
-    except (ValueError, IndexError) as e:
-        log.warning("invalid_link_id", data=q.data, error=str(e))
+    link_id = cb.get_int(2)
+    if link_id == 0:
+        log.warning("invalid_link_id", data=q.data)
         await q.answer("无效的链接ID", show_alert=True)
         return
 
@@ -698,13 +686,13 @@ async def user_invite_create_callback(update: Update, context: ContextTypes.DEFA
 
     # 从回调数据中获取 chat_id
     data = q.data or ""
-    parts = data.split(":")
-    if len(parts) < 3:
+    cb = CallbackParser.parse(data)
+    if cb.length() < 3:
         return
-    try:
-        chat_id = int(parts[2])
-    except (ValueError, IndexError) as e:
-        log.warning("invalid_chat_id", data=q.data, error=str(e))
+
+    chat_id = cb.get_int(2)
+    if chat_id == 0:
+        log.warning("invalid_chat_id", data=q.data)
         await q.answer("无效的群组ID", show_alert=True)
         return
 
@@ -750,13 +738,13 @@ async def user_invite_list_callback(update: Update, context: ContextTypes.DEFAUL
 
     # 从回调数据中获取 chat_id
     data = q.data or ""
-    parts = data.split(":")
-    if len(parts) < 3:
+    cb = CallbackParser.parse(data)
+    if cb.length() < 3:
         return
-    try:
-        chat_id = int(parts[2])
-    except (ValueError, IndexError) as e:
-        log.warning("invalid_chat_id", data=q.data, error=str(e))
+
+    chat_id = cb.get_int(2)
+    if chat_id == 0:
+        log.warning("invalid_chat_id", data=q.data)
         await q.answer("无效的群组ID", show_alert=True)
         return
 
@@ -799,13 +787,13 @@ async def user_invite_rank_callback(update: Update, context: ContextTypes.DEFAUL
 
     # 从回调数据中获取 chat_id
     data = q.data or ""
-    parts = data.split(":")
-    if len(parts) < 3:
+    cb = CallbackParser.parse(data)
+    if cb.length() < 3:
         return
-    try:
-        chat_id = int(parts[2])
-    except (ValueError, IndexError) as e:
-        log.warning("invalid_chat_id", data=q.data, error=str(e))
+
+    chat_id = cb.get_int(2)
+    if chat_id == 0:
+        log.warning("invalid_chat_id", data=q.data)
         await q.answer("无效的群组ID", show_alert=True)
         return
 

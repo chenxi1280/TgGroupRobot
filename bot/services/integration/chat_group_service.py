@@ -7,6 +7,87 @@ from bot.db.session import Database
 from bot.models.core import TgChat
 
 
+# ==================== 格式化函数 ====================
+
+
+def format_private_chat_welcome(bot_username: str, has_chats: bool = False) -> str:
+    """
+    格式化私聊欢迎消息
+
+    Args:
+        bot_username: 机器人用户名
+        has_chats: 是否有可用群组
+
+    Returns:
+        格式化后的欢迎消息文本
+    """
+    if not has_chats:
+        return (
+            "👋 欢迎使用群管理 Bot！\n\n"
+            "暂无群组，请先将 bot 添加到群组中，并确保你具有管理员权限。\n\n"
+            "💡 添加 bot 到群组后，发送 /start 或点击下方按钮刷新列表。"
+        )
+    return "👋 欢迎使用群管理 Bot！\n\n"
+
+
+def format_private_chat_current_title(chat_title: str) -> str:
+    """
+    格式化私聊中当前管理群组的信息
+
+    Args:
+        chat_title: 当前管理的群组标题
+
+    Returns:
+        格式化后的群组信息文本
+    """
+    return f"👋 欢迎回来！\n\n📌 当前管理: {chat_title}\n\n可以选择其他群组或进入群组设置。"
+
+
+def format_private_chat_list(chat_count: int) -> str:
+    """
+    格式化私聊群组列表消息
+
+    Args:
+        chat_count: 群组数量
+
+    Returns:
+        格式化后的群组列表文本
+    """
+    return f"👋 欢迎使用群管理 Bot！\n\n共 {chat_count} 个群组\n请选择要管理的群组："
+
+
+def format_group_guide_message(bot_username: str) -> str:
+    """
+    格式化群组引导消息
+
+    Args:
+        bot_username: 机器人用户名
+
+    Returns:
+        格式化后的引导消息文本
+    """
+    return (
+        f"欢迎使用@{bot_username}:\n\n"
+        f"1) 点击下方按钮选择设置（仅限管理员）\n"
+        f"2) 点击机器人对话框底部[开始]按钮\n\n"
+        f"人员按下面的开始按钮调整到私聊机器界面进行管理群聊"
+    )
+
+
+def format_empty_chat_list_hint() -> str:
+    """
+    格式化空群组列表提示消息
+
+    Returns:
+        格式化后的提示消息文本
+    """
+    return (
+        "📋 群组管理\n\n"
+        "暂无群组，请先将 bot 添加到群组中。\n\n"
+        "💡 提示：添加 bot 到群组后，发送 /start 刷新列表。"
+    )
+
+
 async def get_user_managed_chats(
     db: Database,
     user_id: int,

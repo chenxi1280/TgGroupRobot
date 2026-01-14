@@ -22,6 +22,7 @@ from bot.services.automation.scheduled_service import (
 from bot.services.state.state_service import clear_user_state, get_user_state, set_user_state
 from bot.services.core.permission_service import is_user_admin
 from bot.services.core.user_service import ensure_user
+from bot.utils.callback_parser import CallbackParser
 
 
 # ============================================
@@ -197,15 +198,11 @@ async def scheduled_list_callback(update: Update, context: ContextTypes.DEFAULT_
     if chat.type == "private":
         # 从 callback_data 提取 chat_id
         if data.startswith("scheduled:list:"):
-            parts = data.split(":")
-            if len(parts) >= 3:
-                try:
-                    target_chat_id = int(parts[2])
-                except ValueError:
-                    pass
+            cb = CallbackParser.parse(data)
+            target_chat_id = cb.get_int(2)
 
         # 如果 callback_data 中没有，从数据库获取
-        if target_chat_id is None:
+        if target_chat_id == 0:
             db: Database = context.application.bot_data["db"]
             target_chat_id = await get_user_current_chat(db, user.id)
             if target_chat_id is None:
@@ -259,15 +256,11 @@ async def scheduled_create_start(update: Update, context: ContextTypes.DEFAULT_T
     if chat.type == "private":
         # 优先从 callback_data 提取 chat_id
         if data.startswith("scheduled:create:"):
-            parts = data.split(":")
-            if len(parts) >= 3:
-                try:
-                    target_chat_id = int(parts[2])
-                except ValueError:
-                    pass
+            cb = CallbackParser.parse(data)
+            target_chat_id = cb.get_int(2)
 
         # 如果 callback_data 中没有 chat_id，从数据库获取
-        if target_chat_id is None:
+        if target_chat_id == 0:
             from bot.services.integration.chat_group_service import get_user_current_chat
             from bot.models.core import TgChat
             from sqlalchemy import select

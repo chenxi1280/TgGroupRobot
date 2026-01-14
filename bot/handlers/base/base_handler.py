@@ -9,6 +9,7 @@ from abc import ABC, abstractmethod
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from bot.db.session import Database
 from bot.handlers.base.chat_resolver import ChatResolver
 from bot.handlers.base.message_helper import MessageHelper
 from bot.handlers.base.permission import PermissionHelper
@@ -34,6 +35,7 @@ class BaseHandler(ABC):
         self.permission = PermissionHelper()
         self.chat_resolver = ChatResolver()
         self.message_helper = MessageHelper()
+        self.permission_helper = PermissionHelper()  # 兼容旧代码
 
     async def handle_callback(
         self,
@@ -177,3 +179,58 @@ class BaseHandler(ABC):
             StateHelper: 状态助手实例
         """
         return StateHelper(session, chat_id, user_id)
+
+    async def resolve_target_chat_id(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        allow_none: bool = False,
+    ) -> int | None:
+        """解析目标群组 ID（统一处理私聊/群聊场景）
+
+        这是对 ChatResolver.resolve_target_chat 的便捷包装，
+        子类可以直接调用此方法而无需访问 self.chat_resolver。
+
+        Args:
+            update: Telegram 更新对象
+            context: Bot 上下文
+            allow_none: 是否允许返回 None
+
+        Returns:
+            int | None: 目标群组 ID，如果无法解析且 allow_none=True 则返回 None
+
+        Example:
+            >>> target_chat_id = await self.resolve_target_chat_id(update, context)
+            >>> if target_chat_id:
+            ...     # 处理逻辑
+        """
+        target_chat_id = await self.chat_resolver.resolve_target_chat(update, context)
+        if not allow_none and target_chat_id is None:
+            # 如果不允许 None 且解析失败，已经由 resolve_target_chat 发送错误消息
+            return None
+        return target_chat_id
+
+    async def require_target_chat_id(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        error_message: str = "请先选择一个群组",
+    ) -> int | None:
+        """获取目标群组 ID（必须存在，否则发送错误消息）
+
+        这是对 ChatResolver.require_target_chat 的便捷包装。
+
+        Args:
+            update: Telegram 更新对象
+            context: Bot 上下文
+            error_message: 未选择群组时的错误提示
+
+        Returns:
+            int | None: 目标群组 ID，如果解析失败返回 None
+
+        Example:
+            >>> target_chat_id = await self.require_target_chat_id(update, context)
+            >>> if target_chat_id is None:
+            ...     return  # 错误消息已发送
+        """
+        return await self.chat_resolver.require_target_chat(update, context, error_message)

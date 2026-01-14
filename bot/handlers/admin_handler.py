@@ -10,24 +10,18 @@ from bot.config import get_settings
 from bot.db.session import Database
 from bot.handlers.base.base_handler import BaseHandler
 from bot.i18n.strings import t
-from bot.keyboards.admin import admin_main_menu, toggle_menu, verification_mode_menu
+from bot.keyboards.admin import (
+    admin_main_menu,
+    create_group_selection_keyboard,
+    create_guide_keyboard,
+    format_admin_main_menu_text,
+    format_verification_menu_text,
+    toggle_menu,
+    verification_mode_menu,
+)
 from bot.services.integration.chat_group_service import get_user_current_chat, get_user_managed_chats, set_user_current_chat
-from bot.services.core.chat_service import ensure_chat, get_chat_settings
+from bot.services.core.chat_service import ensure_chat, get_chat_settings, get_settings_toggle_rows
 from bot.utils.callback_parser import CallbackParser
-
-
-def _settings_toggle_rows(settings) -> list[tuple[str, str, bool]]:
-    """生成设置开关行数据"""
-    return [
-        ("签到", "sign_enabled", settings.sign_enabled),
-        ("进群欢迎", "welcome_enabled", settings.welcome_enabled),
-        ("新人验证", "verification_enabled", settings.verification_enabled),
-        ("内容审核", "moderation_enabled", settings.moderation_enabled),
-        ("屏蔽链接", "moderation_block_links", settings.moderation_block_links),
-        ("反刷屏", "anti_flood_enabled", settings.anti_flood_enabled),
-        ("广告", "ads_enabled", settings.ads_enabled),
-        ("商业化", "monetization_enabled", settings.monetization_enabled),
-    ]
 
 
 log = structlog.get_logger(__name__)
@@ -216,10 +210,8 @@ class AdminHandler(BaseHandler):
         db: Database = context.application.bot_data["db"]
         chat_title = await self._get_chat_title(db, chat_id)
 
-        text = f"🎛️ 群组管理\n\n"
-        text += f"📍 当前群组: {chat_title}\n\n"
-        text += f"请选择要管理的内容："
-
+        # 使用 keyboards 层格式化消息
+        text = format_admin_main_menu_text(chat_title)
         keyboard = admin_main_menu(chat_id)
 
         await self.message_helper.safe_edit(
@@ -385,18 +377,13 @@ class AdminHandler(BaseHandler):
 
         chat_title = await self._get_chat_title(db, chat_id)
 
-        mode_labels = {
-            "button": "🔘 按钮验证",
-            "math": "🔢 数学题验证",
-            "captcha": "🔢 验证码验证",
-        }
-        mode_label = mode_labels.get(settings.verification_mode, settings.verification_mode)
-        text = f"🤖 [{chat_title}] 新人验证\n\n"
-        text += f"当前验证模式: {mode_label}\n"
-        text += f"超时时间: {settings.verification_timeout_seconds} 秒\n"
-        text += f"限制发言: {'是' if settings.verification_restrict_can_send else '否'}\n\n"
-        text += f"💡 点击下方按钮切换验证模式"
-
+        # 使用 keyboards 层格式化消息
+        text = format_verification_menu_text(
+            chat_title=chat_title,
+            verification_mode=settings.verification_mode,
+            timeout_seconds=settings.verification_timeout_seconds,
+            restrict_can_send=settings.verification_restrict_can_send,
+        )
         keyboard = verification_mode_menu(settings.verification_mode, chat_id)
 
         await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
@@ -456,22 +443,14 @@ class AdminHandler(BaseHandler):
         current_chat_id: int | None,
     ) -> None:
         """显示群组选择列表"""
-        buttons = []
-
-        for chat_id, title, is_admin in managed_chats:
-            is_current = "✅ " if chat_id == current_chat_id else ""
-            buttons.append([
-                InlineKeyboardButton(f"{is_current}{title}", callback_data=f"adm:select_group:{chat_id}")
-            ])
-
-        buttons.append([InlineKeyboardButton("🔙 返回", callback_data=f"adm:back_to_main")])
-
+        # 使用 keyboards 层创建键盘
+        keyboard = create_group_selection_keyboard(managed_chats, current_chat_id)
         text = "🔄 选择要管理的群组："
 
         await self.message_helper.safe_edit(
             update,
             text=text,
-            reply_markup=InlineKeyboardMarkup(buttons)
+            reply_markup=keyboard
         )
 
 
@@ -519,10 +498,8 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             await ensure_chat(session, chat_id=chat.id, chat_type=chat.type, title=chat.title)
             await session.commit()
 
-        # 发送引导按钮，点击后跳转到私聊
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🎛️ 前往设置", url=f"https://t.me/{context.bot.username}")],
-        ])
+        # 使用 keyboards 层创建引导按钮
+        keyboard = create_guide_keyboard(context.bot.username)
 
         # 发送消息
         msg = await update.effective_message.reply_text(
@@ -597,18 +574,13 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     # 私聊中的管理回调 - 使用 Handler 处理
     if update.effective_chat.type == "private":
-        parts = data.split(":")
-        if len(parts) >= 3 and parts[0] == "adm":
+        cb = CallbackParser.parse(data)
+        if cb.length() >= 3 and cb.get(0) == "adm":
             # 提取 target_chat_id（如果有）
-            target_chat_id = None
-            if len(parts) >= 4:
-                try:
-                    target_chat_id = int(parts[3])
-                except (ValueError, IndexError):
-                    target_chat_id = None
+            target_chat_id = cb.get_int(3)
 
             # 检查管理员权限
-            if target_chat_id:
+            if target_chat_id != 0:
                 is_admin = await _admin_handler.permission_helper.is_user_admin(
                     context, target_chat_id, update.effective_user.id
                 )
@@ -619,7 +591,7 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     return
 
             # 使用 Handler 处理
-            if target_chat_id:
+            if target_chat_id != 0:
                 await _admin_handler.process(update, context, target_chat_id)
             else:
                 # 对于不需要 target_chat_id 的操作（如 switch_group, back_to_main）
@@ -641,9 +613,9 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await ensure_chat(session, chat_id=chat.id, chat_type=chat.type, title=chat.title)
         settings = await get_chat_settings(session, chat.id)
 
-        parts = data.split(":")
-        if parts[1] == "menu":
-            menu = parts[2]
+        cb = CallbackParser.parse(data)
+        if cb.get(1) == "menu":
+            menu = cb.get(2)
             if menu == "main":
                 await session.commit()
                 await _admin_handler.message_helper.safe_edit(q, t(settings.language, "admin.title"), reply_markup=admin_main_menu())
@@ -654,22 +626,18 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 await _admin_handler.message_helper.safe_edit(
                     q,
                     "开关设置：",
-                    reply_markup=toggle_menu(_settings_toggle_rows(settings), back_to="main"),
+                    reply_markup=toggle_menu(get_settings_toggle_rows(settings), back_to="main"),
                 )
                 return
 
             if menu == "verification":
-                mode_labels = {
-                    "button": "🔘 按钮验证",
-                    "math": "🔢 数学题验证",
-                    "captcha": "🔢 验证码验证",
-                }
-                mode_label = mode_labels.get(settings.verification_mode, settings.verification_mode)
-                text = f"🤖 新人验证\n\n"
-                text += f"当前验证模式: {mode_label}\n"
-                text += f"超时时间: {settings.verification_timeout_seconds} 秒\n"
-                text += f"限制发言: {'是' if settings.verification_restrict_can_send else '否'}\n\n"
-                text += f"💡 点击下方按钮切换验证模式"
+                # 使用 keyboards 层格式化消息
+                text = format_verification_menu_text(
+                    chat_title="群组",
+                    verification_mode=settings.verification_mode,
+                    timeout_seconds=settings.verification_timeout_seconds,
+                    restrict_can_send=settings.verification_restrict_can_send,
+                )
                 await session.commit()
                 await _admin_handler.message_helper.safe_edit(q, text, reply_markup=verification_mode_menu(settings.verification_mode))
                 return
@@ -683,7 +651,7 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 await _admin_handler.message_helper.safe_edit(
                     q,
                     "开关设置：",
-                    reply_markup=toggle_menu(_settings_toggle_rows(settings), back_to="main"),
+                    reply_markup=toggle_menu(get_settings_toggle_rows(settings), back_to="main"),
                 )
                 return
 
@@ -694,17 +662,13 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 settings.verification_mode = selected_mode
                 await session.commit()
 
-            mode_labels = {
-                "button": "🔘 按钮验证",
-                "math": "🔢 数学题验证",
-                "captcha": "🔢 验证码验证",
-            }
-            mode_label = mode_labels.get(settings.verification_mode, settings.verification_mode)
-            text = f"🤖 新人验证\n\n"
-            text += f"当前验证模式: {mode_label}\n"
-            text += f"超时时间: {settings.verification_timeout_seconds} 秒\n"
-            text += f"限制发言: {'是' if settings.verification_restrict_can_send else '否'}\n\n"
-            text += f"💡 点击下方按钮切换验证模式"
+            # 使用 keyboards 层格式化消息
+            text = format_verification_menu_text(
+                chat_title="群组",
+                verification_mode=settings.verification_mode,
+                timeout_seconds=settings.verification_timeout_seconds,
+                restrict_can_send=settings.verification_restrict_can_send,
+            )
             await _admin_handler.message_helper.safe_edit(q, text, reply_markup=verification_mode_menu(settings.verification_mode))
             return
 

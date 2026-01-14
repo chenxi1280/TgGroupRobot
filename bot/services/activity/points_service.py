@@ -12,6 +12,94 @@ from bot.models.core import PointsAccount, PointsTransaction, SignInLog, TgUser,
 from bot.models.enums import PointsTxnType
 
 
+# ==================== 格式化函数 ====================
+
+
+def format_sign_in_success_message(
+    points: int,
+    balance: int,
+    consecutive_days: int = 0,
+    bonus_points: int = 0,
+) -> str:
+    """
+    格式化签到成功消息
+
+    Args:
+        points: 获得的积分
+        balance: 当前余额
+        consecutive_days: 连续签到天数
+        bonus_points: 奖励积分
+
+    Returns:
+        格式化后的签到成功消息文本
+    """
+    msg = f"✅ 签到成功！\n"
+    msg += f"获得 {points} 积分\n"
+    msg += f"当前余额：{balance} 积分"
+    if consecutive_days > 1:
+        msg += f"\n连续签到：{consecutive_days} 天"
+    if bonus_points > 0:
+        msg += f"\n🎉 连续签到奖励：+{bonus_points} 积分"
+    return msg
+
+
+def format_sign_in_already_message(balance: int, consecutive_days: int = 0) -> str:
+    """
+    格式化已签到消息
+
+    Args:
+        balance: 当前余额
+        consecutive_days: 连续签到天数
+
+    Returns:
+        格式化后的已签到消息文本
+    """
+    msg = f"❌ 今日已签到\n"
+    msg += f"当前余额：{balance} 积分"
+    if consecutive_days > 0:
+        msg += f"\n连续签到：{consecutive_days} 天"
+    return msg
+
+
+def format_balance_message(balance: int, rank: int | None = None) -> str:
+    """
+    格式化积分余额消息
+
+    Args:
+        balance: 积分余额
+        rank: 排名（可选）
+
+    Returns:
+        格式化后的积分余额消息文本
+    """
+    msg = f"💰 你的积分：{balance}"
+    if rank:
+        msg += f"\n🏆 排名：第 {rank} 名"
+    return msg
+
+
+def format_leaderboard_message(
+    leaderboard: list[tuple[int, int, str | None]],
+) -> str:
+    """
+    格式化积分排行榜消息
+
+    Args:
+        leaderboard: 排行榜数据 [(user_id, balance, username), ...]
+
+    Returns:
+        格式化后的积分排行榜消息文本
+    """
+    if not leaderboard:
+        return "暂无积分排行数据"
+
+    msg = "🏆 积分排行榜（前10名）\n\n"
+    for i, (user_id, balance, username) in enumerate(leaderboard, 1):
+        name = username or f"用户{user_id}"
+        msg += f"{i}. {name} - {balance} 积分\n"
+    return msg
+
+
 # ==================== 数据类 ====================
 
 class PointsResult(NamedTuple):

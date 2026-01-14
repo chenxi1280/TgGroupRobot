@@ -9,6 +9,7 @@ from bot.db.session import Database
 from bot.keyboards.auto_delete import auto_delete_config_keyboard
 from bot.services.core.chat_service import get_chat_settings
 from bot.services.core.permission_service import is_user_admin
+from bot.utils.callback_parser import CallbackParser
 
 log = structlog.get_logger(__name__)
 
@@ -37,17 +38,16 @@ async def auto_delete_config_callback(update: Update, context: ContextTypes.DEFA
         return
 
     data = q.data or ""
-    parts = data.split(":")
+    cb = CallbackParser.parse(data)
 
-    if len(parts) < 4:
+    if cb.length() < 4:
         return
 
-    action = parts[1]
-    field = parts[2]
-    try:
-        chat_id = int(parts[3])
-    except (ValueError, IndexError) as e:
-        log.warning("invalid_chat_id", data=q.data, error=str(e))
+    action = cb.get(1)
+    field = cb.get(2)
+    chat_id = cb.get_int(3)
+    if chat_id == 0:
+        log.warning("invalid_chat_id", data=q.data)
         await _safe_edit_message(q, "无效的群组ID")
         return
 

@@ -12,6 +12,50 @@ from bot.models.core import Solitaire, SolitaireEntry
 from bot.models.enums import SolitaireStatus
 
 
+# ==================== 配置解析 ====================
+
+
+def parse_config_value(line: str, prefix: str) -> str | None:
+    """
+    解析配置行中的值，支持中英文冒号
+
+    Args:
+        line: 配置行文本
+        prefix: 配置项前缀（如"最大人数"、"参与积分"等）
+
+    Returns:
+        解析出的值，如果解析失败则返回 None
+    """
+    # 尝试两种分隔符
+    for sep in (":", "："):
+        full_prefix = f"{prefix}{sep}"
+        if line.startswith(full_prefix):
+            value = line[len(full_prefix):].strip()
+            return value if value else None
+    return None
+
+
+# ==================== 格式化函数 ====================
+
+
+def format_solitaire_stats_message(stats: dict[str, int]) -> str:
+    """
+    格式化接龙统计消息
+
+    Args:
+        stats: 统计数据字典，包含 total, active, closed, total_entries
+
+    Returns:
+        格式化后的接龙统计消息文本
+    """
+    return (
+        f"📊 接龙统计\n\n"
+        f"创建的接龙次数: {stats['total']}\n"
+        f"进行中: {stats['active']}       已结束: {stats['closed']}\n"
+        f"总参与人数: {stats['total_entries']}"
+    )
+
+
 @dataclass
 class CreateResult:
     """创建接龙结果"""

@@ -19,14 +19,17 @@ from bot.services.activity.solitaire_service import (
     create_solitaire,
     delete_solitaire,
     format_solitaire_message,
+    format_solitaire_stats_message,
     get_chat_solitaires,
     get_solitaire,
     get_solitaire_stats,
     join_solitaire,
     leave_solitaire,
+    parse_config_value,
     update_entry,
 )
 from bot.services.state.state_service import clear_user_state, set_user_state, get_user_state
+from bot.utils.callback_parser import CallbackParser
 
 # 创建流程状态
 WAIT_CONFIG = 1
@@ -36,25 +39,6 @@ WAIT_POINTS_REQUIRED = 4
 WAIT_DEADLINE = 5
 
 log = structlog.get_logger(__name__)
-
-
-def _parse_config_value(line: str, prefix: str) -> str | None:
-    """解析配置行中的值，支持中英文冒号
-
-    Args:
-        line: 配置行文本
-        prefix: 配置项前缀（如"最大人数"、"参与积分"等）
-
-    Returns:
-        解析出的值，如果解析失败则返回 None
-    """
-    # 尝试两种分隔符
-    for sep in (":", "："):
-        full_prefix = f"{prefix}{sep}"
-        if line.startswith(full_prefix):
-            value = line[len(full_prefix):].strip()
-            return value if value else None
-    return None
 
 
 class SolitaireHandler(BaseHandler):
@@ -126,11 +110,8 @@ class SolitaireHandler(BaseHandler):
             stats = await get_solitaire_stats(session, target_chat_id)
             await session.commit()
 
-        text = f"📊 接龙统计\n\n"
-        text += f"总接龙数: {stats['total']}\n"
-        text += f"进行中: {stats['active']}\n"
-        text += f"已结束: {stats['closed']}\n"
-        text += f"总参与人次: {stats['total_entries']}"
+        # 使用 service 层格式化消息
+        text = format_solitaire_stats_message(stats)
 
         keyboard = solitaire_menu_keyboard(target_chat_id)
         await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
@@ -219,31 +200,22 @@ async def solitaire_list_callback(update: Update, context: ContextTypes.DEFAULT_
     user = update.effective_user
 
     data = q.data or ""
-    parts = data.split(":")
+    cb = CallbackParser.parse(data)
 
     # 优先从 callback_data 获取目标群组ID
     target_chat_id = None
     page = 0
     if chat.type == "private":
         # sol:list:{chat_id}:{page} 格式
-        if len(parts) >= 3:
-            try:
-                target_chat_id = int(parts[2])
-                if len(parts) >= 4:
-                    page = int(parts[3])
-            except ValueError:
-                pass
+        target_chat_id = cb.get_int(2)
+        page = cb.get_int(3, default=0)
 
         # 如果无法从 callback_data 获取，回退到数据库
-        if target_chat_id is None:
+        if target_chat_id == 0:
             from bot.services.integration.chat_group_service import get_user_current_chat
             db: Database = context.application.bot_data["db"]
             target_chat_id = await get_user_current_chat(db, user.id)
-            if len(parts) >= 4:
-                try:
-                    page = int(parts[3])
-                except ValueError:
-                    pass
+            page = cb.get_int(3, default=0)
 
         if target_chat_id is None:
             await _solitaire_handler.message_helper.safe_edit(update, "请先选择一个群组")
@@ -253,7 +225,7 @@ async def solitaire_list_callback(update: Update, context: ContextTypes.DEFAULT_
             return
     else:
         # 群聊场景：sol:list 或 sol:list:{page}
-        page = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
+        page = cb.get_int(2, default=0) if cb.get(2).isdigit() else 0
         if not await _solitaire_handler.permission_helper.is_user_admin(context, chat.id, user.id):
             await _solitaire_handler.message_helper.safe_edit(update, "仅管理员可使用此功能")
             return
@@ -274,25 +246,20 @@ async def solitaire_stats_callback(update: Update, context: ContextTypes.DEFAULT
     user = update.effective_user
 
     data = q.data or ""
-    parts = data.split(":")
+    cb = CallbackParser.parse(data)
 
     # 优先从 callback_data 获取目标群组ID
     target_chat_id = None
     if chat.type == "private":
         # sol:stats:{chat_id} 格式
-        if len(parts) >= 3:
-            try:
-                target_chat_id = int(parts[2])
-            except ValueError:
-                pass
-
-        # 如果无法从 callback_data 获取，回退到数据库
-        if target_chat_id is None:
+        target_chat_id = cb.get_int(2)
+        if target_chat_id == 0:
+            # 如果无法从 callback_data 获取，回退到数据库
             from bot.services.integration.chat_group_service import get_user_current_chat
             db: Database = context.application.bot_data["db"]
             target_chat_id = await get_user_current_chat(db, user.id)
 
-        if target_chat_id is None:
+        if target_chat_id is None or target_chat_id == 0:
             await _solitaire_handler.message_helper.safe_edit(update, "请先选择一个群组")
             return
         if not await _solitaire_handler.permission_helper.is_user_admin(context, target_chat_id, user.id):
@@ -319,24 +286,22 @@ async def solitaire_detail_callback(update: Update, context: ContextTypes.DEFAUL
     user = update.effective_user
 
     data = q.data or ""
-    parts = data.split(":")
-    if len(parts) < 3:
+    cb = CallbackParser.parse(data)
+    if cb.length() < 3:
         return
 
-    solitaire_id = int(parts[2])
+    solitaire_id = cb.get_int(2)
+    if solitaire_id == 0:
+        return
 
     # 解析可选的 chat_id 参数
     target_chat_id = None
     if chat.type == "private":
         # chat_id 可能是负数（群组），所以不能直接用 isdigit()
-        if len(parts) >= 4:
-            try:
-                target_chat_id = int(parts[3])
-            except ValueError:
-                pass
+        target_chat_id = cb.get_int(3)
 
         # 如果无法从 callback_data 获取，回退到数据库
-        if target_chat_id is None:
+        if target_chat_id == 0:
             from bot.services.integration.chat_group_service import get_user_current_chat
             db: Database = context.application.bot_data["db"]
             target_chat_id = await get_user_current_chat(db, user.id)
@@ -373,15 +338,11 @@ async def solitaire_create_start_callback(update: Update, context: ContextTypes.
         # 优先从 callback_data 提取 chat_id
         data = q.data or ""
         if data.startswith("sol:create:"):
-            parts = data.split(":")
-            if len(parts) >= 3:
-                try:
-                    target_chat_id = int(parts[2])
-                except ValueError:
-                    pass
+            cb = CallbackParser.parse(data)
+            target_chat_id = cb.get_int(2)
 
         # 如果 callback_data 中没有 chat_id，从数据库获取
-        if target_chat_id is None:
+        if target_chat_id == 0:
             from bot.services.integration.chat_group_service import get_user_current_chat
             db: Database = context.application.bot_data["db"]
             target_chat_id = await get_user_current_chat(db, user.id)
@@ -992,24 +953,22 @@ async def solitaire_refresh_callback(update: Update, context: ContextTypes.DEFAU
     user = update.effective_user
 
     data = q.data or ""
-    parts = data.split(":")
-    if len(parts) < 3:
+    cb = CallbackParser.parse(data)
+    if cb.length() < 3:
         return
 
-    solitaire_id = int(parts[2])
+    solitaire_id = cb.get_int(2)
+    if solitaire_id == 0:
+        return
 
     # 解析可选的 chat_id 参数
     target_chat_id = None
     if chat.type == "private":
         # chat_id 可能是负数（群组），所以不能直接用 isdigit()
-        if len(parts) >= 4:
-            try:
-                target_chat_id = int(parts[3])
-            except ValueError:
-                pass
+        target_chat_id = cb.get_int(3)
 
         # 如果无法从 callback_data 获取，回退到数据库
-        if target_chat_id is None:
+        if target_chat_id == 0:
             from bot.services.integration.chat_group_service import get_user_current_chat
             db: Database = context.application.bot_data["db"]
             target_chat_id = await get_user_current_chat(db, user.id)
@@ -1074,21 +1033,17 @@ async def solitaire_close_callback(update: Update, context: ContextTypes.DEFAULT
     user = update.effective_user
 
     data = q.data or ""
-    parts = data.split(":")
+    cb = CallbackParser.parse(data)
 
     # 私聊中的接龙管理 - 优先从回调中获取目标群组ID
     target_chat_id = None
     if chat.type == "private":
         # 优先从 callback_data 提取 chat_id
         # chat_id 可能是负数（群组），所以不能直接用 isdigit()
-        if len(parts) >= 4:
-            try:
-                target_chat_id = int(parts[3])
-            except ValueError:
-                pass
+        target_chat_id = cb.get_int(3)
 
         # 如果无法从 callback_data 获取，回退到数据库
-        if target_chat_id is None:
+        if target_chat_id == 0:
             from bot.services.integration.chat_group_service import get_user_current_chat
             db: Database = context.application.bot_data["db"]
             target_chat_id = await get_user_current_chat(db, user.id)
@@ -1105,10 +1060,12 @@ async def solitaire_close_callback(update: Update, context: ContextTypes.DEFAULT
             return
         target_chat_id = chat.id
 
-    if len(parts) < 3:
+    if cb.length() < 3:
         return
 
-    solitaire_id = int(parts[2])
+    solitaire_id = cb.get_int(2)
+    if solitaire_id == 0:
+        return
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
@@ -1173,21 +1130,17 @@ async def solitaire_delete_callback(update: Update, context: ContextTypes.DEFAUL
     user = update.effective_user
 
     data = q.data or ""
-    parts = data.split(":")
+    cb = CallbackParser.parse(data)
 
     # 私聊中的接龙管理 - 优先从回调中获取目标群组ID
     target_chat_id = None
     if chat.type == "private":
         # 优先从 callback_data 提取 chat_id
         # chat_id 可能是负数（群组），所以不能直接用 isdigit()
-        if len(parts) >= 4:
-            try:
-                target_chat_id = int(parts[3])
-            except ValueError:
-                pass
+        target_chat_id = cb.get_int(3)
 
         # 如果无法从 callback_data 获取，回退到数据库
-        if target_chat_id is None:
+        if target_chat_id == 0:
             from bot.services.integration.chat_group_service import get_user_current_chat
             db: Database = context.application.bot_data["db"]
             target_chat_id = await get_user_current_chat(db, user.id)
@@ -1204,10 +1157,12 @@ async def solitaire_delete_callback(update: Update, context: ContextTypes.DEFAUL
             return
         target_chat_id = chat.id
 
-    if len(parts) < 3:
+    if cb.length() < 3:
         return
 
-    solitaire_id = int(parts[2])
+    solitaire_id = cb.get_int(2)
+    if solitaire_id == 0:
+        return
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:

@@ -27,6 +27,7 @@ from bot.services.integration.chat_group_service import get_user_current_chat, g
 from bot.services.state.state_service import clear_user_state, set_user_state, get_user_state
 from bot.services.core.chat_service import ensure_chat, get_chat_settings
 from bot.models.core import AdCampaign
+from bot.utils.callback_parser import CallbackParser
 
 log = structlog.get_logger(__name__)
 
@@ -212,8 +213,8 @@ async def ads_list_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     user = update.effective_user
 
     data = q.data or ""
-    parts = data.split(":")
-    page = int(parts[2]) if len(parts) > 2 else 0
+    cb = CallbackParser.parse(data)
+    page = cb.get_int(2, default=0)
 
     # 私聊中的广告管理 - 从回调中获取目标群组ID
     target_chat_id = None
@@ -282,11 +283,10 @@ async def ads_detail_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
     data = q.data or ""
-    parts = data.split(":")
-    if len(parts) < 3:
+    cb = CallbackParser.parse(data)
+    ad_id = cb.get_int(2)
+    if ad_id == 0:
         return
-
-    ad_id = int(parts[2])
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
@@ -334,12 +334,8 @@ async def ads_create_start_callback(update: Update, context: ContextTypes.DEFAUL
         # 优先从 callback_data 提取 chat_id
         data = q.data or ""
         if data.startswith("ads:create:"):
-            parts = data.split(":")
-            if len(parts) >= 3:
-                try:
-                    target_chat_id = int(parts[2])
-                except ValueError:
-                    pass
+            cb = CallbackParser.parse(data)
+            target_chat_id = cb.get_int(2)
 
         # 如果 callback_data 中没有 chat_id，从数据库获取
         if target_chat_id is None:
@@ -657,11 +653,10 @@ async def ads_send_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     user = update.effective_user
 
     data = q.data or ""
-    parts = data.split(":")
-    if len(parts) < 3:
+    cb = CallbackParser.parse(data)
+    ad_id = cb.get_int(2)
+    if ad_id == 0:
         return
-
-    ad_id = int(parts[2])
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
@@ -715,11 +710,10 @@ async def ads_toggle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     await q.answer()
 
     data = q.data or ""
-    parts = data.split(":")
-    if len(parts) < 3:
+    cb = CallbackParser.parse(data)
+    ad_id = cb.get_int(2)
+    if ad_id == 0:
         return
-
-    ad_id = int(parts[2])
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
@@ -758,11 +752,10 @@ async def ads_delete_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     await q.answer()
 
     data = q.data or ""
-    parts = data.split(":")
-    if len(parts) < 3:
+    cb = CallbackParser.parse(data)
+    ad_id = cb.get_int(2)
+    if ad_id == 0:
         return
-
-    ad_id = int(parts[2])
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:

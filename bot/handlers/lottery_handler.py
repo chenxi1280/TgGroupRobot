@@ -16,6 +16,8 @@ from bot.services.core.chat_service import ensure_chat, get_chat_settings
 from bot.services.activity.lottery_service import (
     create_lottery,
     create_lottery_winner,
+    format_lottery_announcement_text,
+    format_lottery_stats_message,
     get_lottery,
     get_lottery_participant_count,
     get_lottery_participants,
@@ -23,6 +25,8 @@ from bot.services.activity.lottery_service import (
     get_lottery_winners,
     join_lottery,
     JoinResult,
+    parse_lottery_config_text,
+    ParsedLotteryConfig,
 )
 from bot.services.activity.points_service import change_points, get_balance
 from bot.services.state.state_service import clear_user_state, get_user_state, set_user_state
@@ -79,9 +83,8 @@ class LotteryHandler(BaseHandler):
             await session.commit()
 
         chat_title = target_chat.title if target_chat else f"群组{target_chat_id}"
-        text = f"🎁[{chat_title}]抽奖\n\n"
-        text += f"创建的抽奖次数:{stats['total']}\n\n"
-        text += f"已开奖:{stats['completed']}       未开奖:{stats['pending']}       取消:{stats['cancelled']}"
+        # 使用 service 层格式化消息
+        text = f"🎁[{chat_title}]抽奖\n\n{format_lottery_stats_message(stats)}"
 
         from bot.keyboards.lottery import lottery_menu_keyboard
 
@@ -373,9 +376,8 @@ async def lottery_menu_callback(update: Update, context: ContextTypes.DEFAULT_TY
     data = q.data or ""
     target_chat_id = None
     if data.startswith("lot:menu:"):
-        parts = data.split(":")
-        if len(parts) >= 3:
-            target_chat_id = int(parts[2])
+        cb = CallbackParser.parse(data)
+        target_chat_id = cb.get_int(2)
 
     # 如果没有指定群组ID，使用当前群组
     if target_chat_id is None:
@@ -411,9 +413,8 @@ async def lottery_create_start(update: Update, context: ContextTypes.DEFAULT_TYP
         data = q.data or ""
         target_chat_id = None
         if data.startswith("lot:create:"):
-            parts = data.split(":")
-            if len(parts) >= 3:
-                target_chat_id = int(parts[2])
+            cb = CallbackParser.parse(data)
+            target_chat_id = cb.get_int(2)
 
         log.info("lottery_create_start_called", callback_data=data, target_chat_id=target_chat_id, user_id=user.id, chat_type=chat.type)
 
@@ -506,106 +507,10 @@ async def lottery_message_handler(update: Update, context: ContextTypes.DEFAULT_
 
 
 async def _parse_lottery_config(update: Update, context: ContextTypes.DEFAULT_TYPE, session, state: object, text: str) -> None:
-    """解析抽奖配置"""
+    """解析抽奖配置（使用 service 层解析）"""
     try:
-        lines = text.strip().split("\n")
-        if len(lines) < 7:
-            raise ValueError("配置格式不完整")
-
-        # 解析标题和描述
-        title_line = lines[0].strip()
-        if "|" in title_line:
-            title, description = title_line.split("|", 1)
-            title = title.strip()
-            description = description.strip()
-        else:
-            title = title_line.strip()
-            description = None
-
-        if not title:
-            raise ValueError("标题不能为空")
-
-        # 解析开奖时间
-        draw_time_line = lines[1].strip()
-        if not draw_time_line.startswith("开奖时间:"):
-            raise ValueError("开奖时间格式错误，应为: 开奖时间: 2025-12-30 12:00")
-        time_pattern = r"(\d{4})-(\d{1,2})-(\d{1,2})\s+(\d{1,2}):(\d{1,2})"
-        match = re.search(time_pattern, draw_time_line)
-        if not match:
-            raise ValueError("开奖时间格式错误，请使用: YYYY-MM-DD HH:MM")
-        year, month, day, hour, minute = map(int, match.groups())
-        local_tz = dt.timezone(dt.timedelta(hours=8))
-        draw_time = dt.datetime(year, month, day, hour, minute, tzinfo=local_tz)
-        draw_time_utc = draw_time.astimezone(dt.timezone.utc)
-
-        if draw_time_utc <= dt.datetime.now(dt.timezone.utc):
-            raise ValueError("开奖时间必须是未来时间")
-
-        # 解析参与条件
-        min_points = 0
-        participation_cost = 0
-        max_participants = 0
-        requirement_days = 0
-
-        for line in lines[2:6]:
-            line = line.strip()
-            if line.startswith("最低积分:"):
-                try:
-                    value = int(line.split(":", 1)[1].strip())
-                    min_points = max(0, value)
-                except ValueError:
-                    await update.effective_message.reply_text("❌ 最低积分必须是有效数字")
-                    return
-            elif line.startswith("参与费用:"):
-                try:
-                    value = int(line.split(":", 1)[1].strip())
-                    participation_cost = max(0, value)
-                except ValueError:
-                    await update.effective_message.reply_text("❌ 参与费用必须是有效数字")
-                    return
-            elif line.startswith("最大人数:"):
-                try:
-                    value = int(line.split(":", 1)[1].strip())
-                    max_participants = max(0, value)
-                except ValueError:
-                    await update.effective_message.reply_text("❌ 最大人数必须是有效数字")
-                    return
-            elif line.startswith("入群天数:"):
-                try:
-                    value = int(line.split(":", 1)[1].strip())
-                    requirement_days = max(0, value)
-                except ValueError:
-                    await update.effective_message.reply_text("❌ 入群天数必须是有效数字")
-                    return
-
-        # 解析奖品
-        prizes = []
-        prize_start = False
-        for line in lines[6:]:
-            line = line.strip()
-            if line == "奖品:":
-                prize_start = True
-                continue
-            if prize_start and line:
-                parts = line.split(",")
-                if len(parts) < 2:
-                    raise ValueError(f"奖品格式错误: {line}")
-
-                prize_name = parts[0].strip()
-                quantity = int(parts[1].strip())
-                points_reward = 0
-
-                # 支持第三个参数：积分奖励
-                if len(parts) >= 3:
-                    try:
-                        points_reward = int(parts[2].strip().replace("积分", "").strip())
-                    except ValueError:
-                        raise ValueError(f"积分奖励格式错误: {parts[2]}")
-
-                prizes.append({"name": prize_name, "quantity": quantity, "points_reward": points_reward})
-
-        if not prizes:
-            raise ValueError("至少需要一个奖品")
+        # 使用 service 层解析配置
+        config: ParsedLotteryConfig = parse_lottery_config_text(text)
 
         # 从状态中获取目标群组ID
         target_chat_id = state.state_data.get("target_chat_id")
@@ -617,14 +522,14 @@ async def _parse_lottery_config(update: Update, context: ContextTypes.DEFAULT_TY
             session,
             chat_id=target_chat_id,
             created_by_user_id=update.effective_user.id,
-            title=title,
-            draw_time=draw_time_utc,
-            prizes=prizes,
-            description=description,
-            min_points=min_points,
-            max_participants=max_participants,
-            participation_cost=participation_cost,
-            requirement_days=requirement_days,
+            title=config.title,
+            draw_time=config.draw_time,
+            prizes=config.prizes,
+            description=config.description,
+            min_points=config.min_points,
+            max_participants=config.max_participants,
+            participation_cost=config.participation_cost,
+            requirement_days=config.requirement_days,
         )
 
         # 清除状态
@@ -632,24 +537,8 @@ async def _parse_lottery_config(update: Update, context: ContextTypes.DEFAULT_TY
         await clear_user_state(session, chat_id=update.effective_chat.id, user_id=update.effective_user.id)
         await session.commit()
 
-        # 构建抽奖公告消息
-        announcement_text = f"🎁【抽奖活动】\n\n"
-        announcement_text += f"📢 {title}"
-        if description:
-            announcement_text += f"\n\n{description}"
-        announcement_text += f"\n\n🕐 开奖时间: {draw_time.strftime('%Y-%m-%d %H:%M')}"
-        if min_points > 0:
-            announcement_text += f"\n💰 最低积分: {min_points}"
-        if participation_cost > 0:
-            announcement_text += f"\n💸 参与费用: {participation_cost} 积分"
-        if max_participants > 0:
-            announcement_text += f"\n👥 最大人数: {max_participants}"
-        if requirement_days > 0:
-            announcement_text += f"\n📅 入群天数: {requirement_days}"
-        announcement_text += f"\n\n🎁 奖品:"
-        for prize in prizes:
-            announcement_text += f"\n  • {prize['name']} x {prize['quantity']}"
-        announcement_text += f"\n\n💡 点击下方按钮参与抽奖！"
+        # 使用 service 层格式化公告文本
+        announcement_text = format_lottery_announcement_text(config)
 
         # 向目标群组发送抽奖公告
         try:
@@ -668,17 +557,17 @@ async def _parse_lottery_config(update: Update, context: ContextTypes.DEFAULT_TY
         from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
         reply_text = f"✅ 抽奖创建成功！\n\n"
-        reply_text += f"📢 标题: {title}\n"
-        reply_text += f"🕐 开奖时间: {draw_time.strftime('%Y-%m-%d %H:%M:%S')}\n"
-        reply_text += f"🎁 奖品数: {len(prizes)}\n"
-        if min_points > 0:
-            reply_text += f"💰 最低积分: {min_points}\n"
-        if participation_cost > 0:
-            reply_text += f"💸 参与费用: {participation_cost} 积分\n"
-        if max_participants > 0:
-            reply_text += f"👥 最大人数: {max_participants}\n"
-        if requirement_days > 0:
-            reply_text += f"📅 入群天数: {requirement_days}\n"
+        reply_text += f"📢 标题: {config.title}\n"
+        reply_text += f"🕐 开奖时间: {config.draw_time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+        reply_text += f"🎁 奖品数: {len(config.prizes)}\n"
+        if config.min_points > 0:
+            reply_text += f"💰 最低积分: {config.min_points}\n"
+        if config.participation_cost > 0:
+            reply_text += f"💸 参与费用: {config.participation_cost} 积分\n"
+        if config.max_participants > 0:
+            reply_text += f"👥 最大人数: {config.max_participants}\n"
+        if config.requirement_days > 0:
+            reply_text += f"📅 入群天数: {config.requirement_days}\n"
         reply_text += f"\n📢 已发送公告到群组"
 
         # 只显示一个返回按钮
@@ -788,13 +677,13 @@ async def manual_draw_select_prize_callback(update: Update, context: ContextType
         return
 
     data = q.data or ""
-    parts = data.split(":")
-    if len(parts) < 4:
+    cb = CallbackParser.parse(data)
+    if cb.length() < 5:
         return
 
-    lottery_id = int(parts[2])
-    prize_index = int(parts[3])
-    prize_name = parts[4]
+    lottery_id = cb.get_int(2)
+    prize_index = cb.get_int(3)
+    prize_name = cb.get(4)
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
@@ -846,14 +735,14 @@ async def manual_draw_select_winner_callback(update: Update, context: ContextTyp
         return
 
     data = q.data or ""
-    parts = data.split(":")
-    if len(parts) < 6:
+    cb = CallbackParser.parse(data)
+    if cb.length() < 6:
         return
 
-    lottery_id = int(parts[2])
-    prize_index = int(parts[3])
-    winner_user_id = int(parts[4])
-    prize_name = parts[5]
+    lottery_id = cb.get_int(2)
+    prize_index = cb.get_int(3)
+    winner_user_id = cb.get_int(4)
+    prize_name = cb.get(5)
 
     # 保存中奖人信息到状态
     db: Database = context.application.bot_data["db"]
@@ -909,8 +798,8 @@ async def manual_draw_complete_callback(update: Update, context: ContextTypes.DE
         return
 
     data = q.data or ""
-    parts = data.split(":")
-    lottery_id = int(parts[2]) if len(parts) > 2 else 0
+    cb = CallbackParser.parse(data)
+    lottery_id = cb.get_int(2, default=0)
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
@@ -1017,13 +906,13 @@ async def manual_draw_winner_page_callback(update: Update, context: ContextTypes
         return
 
     data = q.data or ""
-    parts = data.split(":")
-    if len(parts) < 4:
+    cb = CallbackParser.parse(data)
+    if cb.length() < 5:
         return
 
-    lottery_id = int(parts[2])
-    prize_index = int(parts[3])
-    page = int(parts[4])
+    lottery_id = cb.get_int(2)
+    prize_index = cb.get_int(3)
+    page = cb.get_int(4)
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
@@ -1081,8 +970,8 @@ async def manual_draw_menu_callback(update: Update, context: ContextTypes.DEFAUL
         return
 
     data = q.data or ""
-    parts = data.split(":")
-    lottery_id = int(parts[2]) if len(parts) > 2 else 0
+    cb = CallbackParser.parse(data)
+    lottery_id = cb.get_int(2, default=0)
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:

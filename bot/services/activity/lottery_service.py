@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 import random
+import re
 from dataclasses import dataclass
 from typing import Literal
 
@@ -18,6 +19,20 @@ log = structlog.get_logger(__name__)
 
 
 # ==================== 数据类 ====================
+
+
+@dataclass
+class ParsedLotteryConfig:
+    """解析后的抽奖配置"""
+    title: str
+    description: str | None
+    draw_time: dt.datetime
+    min_points: int
+    participation_cost: int
+    max_participants: int
+    requirement_days: int
+    prizes: list[dict]
+
 
 @dataclass
 class JoinResult:
@@ -35,6 +50,179 @@ class JoinResult:
         "not_member_long_enough",
         "outside_join_time",
     ]
+
+
+# ==================== 格式化函数 ====================
+
+
+def format_lottery_stats_message(stats: dict[str, int]) -> str:
+    """
+    格式化抽奖统计消息
+
+    Args:
+        stats: 统计数据字典，包含 total, pending, completed, cancelled
+
+    Returns:
+        格式化后的抽奖统计消息文本
+    """
+    return (
+        f"🎁 抽奖统计\n\n"
+        f"创建的抽奖次数: {stats['total']}\n\n"
+        f"已开奖: {stats['completed']}       未开奖: {stats['pending']}"
+    )
+
+
+# ==================== 配置解析 ====================
+
+
+def parse_lottery_config_text(text: str) -> ParsedLotteryConfig:
+    """
+    解析抽奖配置文本
+
+    Args:
+        text: 配置文本
+
+    Returns:
+        ParsedLotteryConfig: 解析后的配置对象
+
+    Raises:
+        ValueError: 配置格式错误
+    """
+    lines = text.strip().split("\n")
+    if len(lines) < 7:
+        raise ValueError("配置格式不完整")
+
+    # 解析标题和描述
+    title_line = lines[0].strip()
+    if "|" in title_line:
+        title, description = title_line.split("|", 1)
+        title = title.strip()
+        description = description.strip()
+    else:
+        title = title_line.strip()
+        description = None
+
+    if not title:
+        raise ValueError("标题不能为空")
+
+    # 解析开奖时间
+    draw_time_line = lines[1].strip()
+    if not draw_time_line.startswith("开奖时间:"):
+        raise ValueError("开奖时间格式错误，应为: 开奖时间: 2025-12-30 12:00")
+    time_pattern = r"(\d{4})-(\d{1,2})-(\d{1,2})\s+(\d{1,2}):(\d{1,2})"
+    match = re.search(time_pattern, draw_time_line)
+    if not match:
+        raise ValueError("开奖时间格式错误，请使用: YYYY-MM-DD HH:MM")
+    year, month, day, hour, minute = map(int, match.groups())
+    local_tz = dt.timezone(dt.timedelta(hours=8))
+    draw_time = dt.datetime(year, month, day, hour, minute, tzinfo=local_tz)
+    draw_time_utc = draw_time.astimezone(dt.timezone.utc)
+
+    if draw_time_utc <= dt.datetime.now(dt.timezone.utc):
+        raise ValueError("开奖时间必须是未来时间")
+
+    # 解析参与条件
+    min_points = 0
+    participation_cost = 0
+    max_participants = 0
+    requirement_days = 0
+
+    for line in lines[2:6]:
+        line = line.strip()
+        if line.startswith("最低积分:"):
+            try:
+                value = int(line.split(":", 1)[1].strip())
+                min_points = max(0, value)
+            except ValueError:
+                raise ValueError("最低积分必须是有效数字")
+        elif line.startswith("参与费用:"):
+            try:
+                value = int(line.split(":", 1)[1].strip())
+                participation_cost = max(0, value)
+            except ValueError:
+                raise ValueError("参与费用必须是有效数字")
+        elif line.startswith("最大人数:"):
+            try:
+                value = int(line.split(":", 1)[1].strip())
+                max_participants = max(0, value)
+            except ValueError:
+                raise ValueError("最大人数必须是有效数字")
+        elif line.startswith("入群天数:"):
+            try:
+                value = int(line.split(":", 1)[1].strip())
+                requirement_days = max(0, value)
+            except ValueError:
+                raise ValueError("入群天数必须是有效数字")
+
+    # 解析奖品
+    prizes = []
+    prize_start = False
+    for line in lines[6:]:
+        line = line.strip()
+        if line == "奖品:":
+            prize_start = True
+            continue
+        if prize_start and line:
+            parts = line.split(",")
+            if len(parts) < 2:
+                raise ValueError(f"奖品格式错误: {line}")
+
+            prize_name = parts[0].strip()
+            quantity = int(parts[1].strip())
+            points_reward = 0
+
+            # 支持第三个参数：积分奖励
+            if len(parts) >= 3:
+                try:
+                    points_reward = int(parts[2].strip().replace("积分", "").strip())
+                except ValueError:
+                    raise ValueError(f"积分奖励格式错误: {parts[2]}")
+
+            prizes.append({"name": prize_name, "quantity": quantity, "points_reward": points_reward})
+
+    if not prizes:
+        raise ValueError("至少需要一个奖品")
+
+    return ParsedLotteryConfig(
+        title=title,
+        description=description,
+        draw_time=draw_time_utc,
+        min_points=min_points,
+        participation_cost=participation_cost,
+        max_participants=max_participants,
+        requirement_days=requirement_days,
+        prizes=prizes,
+    )
+
+
+def format_lottery_announcement_text(config: ParsedLotteryConfig) -> str:
+    """
+    格式化抽奖公告文本
+
+    Args:
+        config: 解析后的抽奖配置
+
+    Returns:
+        格式化后的公告文本
+    """
+    text = f"🎁【抽奖活动】\n\n"
+    text += f"📢 {config.title}"
+    if config.description:
+        text += f"\n\n{config.description}"
+    text += f"\n\n🕐 开奖时间: {config.draw_time.strftime('%Y-%m-%d %H:%M')}"
+    if config.min_points > 0:
+        text += f"\n💰 最低积分: {config.min_points}"
+    if config.participation_cost > 0:
+        text += f"\n💸 参与费用: {config.participation_cost} 积分"
+    if config.max_participants > 0:
+        text += f"\n👥 最大人数: {config.max_participants}"
+    if config.requirement_days > 0:
+        text += f"\n📅 入群天数: {config.requirement_days}"
+    text += f"\n\n🎁 奖品:"
+    for prize in config.prizes:
+        text += f"\n  • {prize['name']} x {prize['quantity']}"
+    text += f"\n\n💡 点击下方按钮参与抽奖！"
+    return text
 
 
 # ==================== 抽奖管理 ====================
