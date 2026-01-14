@@ -1,7 +1,7 @@
 from __future__ import annotations
 import structlog
 from telegram.ext import Application, CallbackQueryHandler, MessageHandler, filters
-from bot.handlers.scheduled import (
+from bot.handlers.scheduled_handler import (
     scheduled_create_start,
     scheduled_delete_callback,
     scheduled_list_callback,

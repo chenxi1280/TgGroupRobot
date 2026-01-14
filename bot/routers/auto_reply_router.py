@@ -1,7 +1,7 @@
 from __future__ import annotations
 import structlog
 from telegram.ext import Application, CallbackQueryHandler, MessageHandler, filters
-from bot.handlers.auto_reply import (
+from bot.handlers.auto_reply_handler import (
     auto_reply_config_handler,
     auto_reply_create_start,
     auto_reply_delete_callback,

@@ -3,7 +3,7 @@ from __future__ import annotations
 import structlog
 from telegram.ext import Application, CallbackQueryHandler, MessageHandler, filters
 
-from bot.handlers.lottery import (
+from bot.handlers.lottery_handler import (
     draw_lottery_callback,
     join_lottery_callback,
     lottery_create_start,

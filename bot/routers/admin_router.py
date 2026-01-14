@@ -1,7 +1,7 @@
 from __future__ import annotations
 import structlog
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler
-from bot.handlers.admin import admin_callback
+from bot.handlers.admin_handler import admin_callback
 from bot.routers.base import BaseRouter
 
 log = structlog.get_logger(__name__)

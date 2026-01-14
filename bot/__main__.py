@@ -11,12 +11,12 @@ from telegram.ext import Application, CallbackQueryHandler, MessageHandler, filt
 
 from bot.config import get_settings
 from bot.db.session import create_database, Database
-from bot.handlers.anti_flood import anti_flood_cleanup_job
-from bot.handlers.auto_delete import auto_delete_handler
-from bot.handlers.auto_delete_config import auto_delete_config_callback
-from bot.handlers.moderation import moderation_message_handler
-from bot.handlers.start import cancel_command as cancel_callback, private_message_handler, start_command as start_callback
-from bot.handlers.verification import new_members_handler, verify_callback, verify_message_handler
+from bot.handlers.anti_flood_handler import anti_flood_cleanup_job
+from bot.handlers.auto_delete_handler import auto_delete_handler
+from bot.handlers.auto_delete_config_handler import auto_delete_config_callback
+from bot.handlers.moderation_handler import moderation_message_handler
+from bot.handlers.start_handler import cancel_command as cancel_callback, private_message_handler, start_command as start_callback
+from bot.handlers.verification_handler import new_members_handler, verify_callback, verify_message_handler
 from bot.logging_config import configure_logging
 from bot.routers import (
     AdminRouter,
@@ -118,7 +118,7 @@ def _register_common_handlers(app: Application) -> None:
     app.add_handler(MessageHandler(filters.ChatType.GROUPS & filters.ALL, auto_delete_handler), group=0)
 
     # 反刷屏检测
-    from bot.handlers.anti_flood import anti_flood_message_handler
+    from bot.handlers.anti_flood_handler import anti_flood_message_handler
     app.add_handler(MessageHandler(filters.ChatType.GROUPS & filters.ALL, anti_flood_message_handler), group=0)
 
     # 自动删除配置

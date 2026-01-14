@@ -1,7 +1,7 @@
 from __future__ import annotations
 import structlog
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ConversationHandler, MessageHandler, filters
-from bot.handlers.invite_link import (
+from bot.handlers.invite_link_handler import (
     invite_link_cancel_callback,
     invite_link_create_expire_message,
     invite_link_create_limit_message,

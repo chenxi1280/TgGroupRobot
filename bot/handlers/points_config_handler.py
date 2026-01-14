@@ -6,9 +6,10 @@ from telegram.ext import ContextTypes, ConversationHandler
 from telegram.error import BadRequest
 
 from bot.db.session import Database
+from bot.handlers.base.base_handler import BaseHandler
 from bot.keyboards.points import back_button, points_config_keyboard
 from bot.services.core.chat_service import get_chat_settings
-from bot.services.core.permission_service import is_user_admin
+from bot.utils.callback_parser import CallbackParser
 
 log = structlog.get_logger(__name__)
 
@@ -27,37 +28,52 @@ async def _safe_edit_message(q, text: str, **kwargs) -> None:
             raise
 
 
-async def points_config_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """积分配置回调处理器"""
-    if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
-        return
+class PointsConfigHandler(BaseHandler):
+    """积分配置 Handler"""
 
-    q = update.callback_query
-    await q.answer()
+    def __init__(self) -> None:
+        super().__init__()
+        # 关闭默认权限检查，因为我们在 process 中自己处理
+        self._require_admin_permission = False
 
-    if update.effective_chat.type != "private":
-        await q.edit_message_text("请在私聊中使用此功能")
-        return
+    async def process(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        target_chat_id: int,
+    ) -> None:
+        """处理积分配置回调"""
+        q = update.callback_query
+        await q.answer()
 
-    data = q.data or ""
-    parts = data.split(":")
+        # 只在私聊中处理
+        if not self.chat_resolver.is_private_chat(update):
+            await self.message_helper.safe_edit(update, "请在私聊中使用此功能")
+            return
 
-    if len(parts) < 4:
-        return
+        # 解析 callback data
+        callback_data = CallbackParser.parse(q.data)
+        action = callback_data.get_str(1)
+        field = callback_data.get_str(2)
 
-    action = parts[1]
-    field = parts[2]
-    chat_id = int(parts[3])
+        # 根据操作类型分发
+        if action == "toggle":
+            await self._handle_toggle(update, context, target_chat_id, field)
+        elif action == "edit":
+            await self._handle_edit(update, context, target_chat_id, field)
+        elif action == "cancel":
+            await self._handle_cancel(update, context, target_chat_id)
 
-    # 检查管理员权限
-    if not await is_user_admin(context, chat_id, update.effective_user.id):
-        await _safe_edit_message(q, "你没有该群组的管理权限")
-        return
+    async def _handle_toggle(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+        field: str,
+    ) -> None:
+        """处理开关切换"""
+        db: Database = context.application.bot_data["db"]
 
-    db: Database = context.application.bot_data["db"]
-
-    # 处理开关切换
-    if action == "toggle":
         async with db.session_factory() as session:
             settings = await get_chat_settings(session, chat_id)
             if hasattr(settings, field):
@@ -70,11 +86,21 @@ async def points_config_callback(update: Update, context: ContextTypes.DEFAULT_T
             await session.commit()
 
         keyboard = points_config_keyboard(settings, chat_id)
-        await _safe_edit_message(q, "💰 积分配置\n\n配置已更新", reply_markup=keyboard)
-        return
+        await self.message_helper.safe_edit(
+            update,
+            text="💰 积分配置\n\n配置已更新",
+            reply_markup=keyboard
+        )
 
-    # 处理数值编辑 - 进入对话状态
-    if action == "edit":
+    async def _handle_edit(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+        field: str,
+    ) -> None:
+        """处理数值编辑 - 进入对话状态"""
+        db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
             settings = await get_chat_settings(session, chat_id)
             await session.commit()
@@ -99,9 +125,72 @@ async def points_config_callback(update: Update, context: ContextTypes.DEFAULT_T
         prompt = prompts.get(field, "请输入新值：")
 
         keyboard = back_button(chat_id)
-        await _safe_edit_message(q, prompt, reply_markup=keyboard)
+        await self.message_helper.safe_edit(
+            update,
+            text=prompt,
+            reply_markup=keyboard
+        )
 
+        # 返回 WAIT_VALUE 状态，让 ConversationHandler 继续监听
+        # 注意：这里我们需要返回状态值，但由于使用了 BaseHandler 模式
+        # 状态值需要通过其他方式传递
         return WAIT_VALUE
+
+    async def _handle_cancel(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+    ) -> None:
+        """处理取消配置"""
+        # 清除编辑状态
+        context.user_data.pop("points_edit_field", None)
+        context.user_data.pop("points_edit_chat_id", None)
+
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            settings = await get_chat_settings(session, chat_id)
+            await session.commit()
+
+        keyboard = points_config_keyboard(settings, chat_id)
+        await self.message_helper.safe_edit(
+            update,
+            text="💰 积分配置",
+            reply_markup=keyboard
+        )
+
+
+# 创建单例实例
+_points_config_handler = PointsConfigHandler()
+
+
+# 适配器函数（供 Router 注册）
+async def points_config_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """积分配置回调处理器（适配器函数）"""
+    if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
+        return
+
+    q = update.callback_query
+    data = q.data or ""
+    parts = data.split(":")
+
+    if len(parts) < 4:
+        return
+
+    chat_id = int(parts[3])
+
+    # 检查管理员权限
+    from bot.services.core.permission_service import is_user_admin
+    if not await is_user_admin(context, chat_id, update.effective_user.id):
+        await _safe_edit_message(q, "你没有该群组的管理权限")
+        return
+
+    # 调用 Handler 处理
+    result = await _points_config_handler.process(update, context, chat_id)
+
+    # 如果返回了 WAIT_VALUE，返回 ConversationHandler 继续
+    if result == WAIT_VALUE:
+        return result
 
 
 async def points_config_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int | None:

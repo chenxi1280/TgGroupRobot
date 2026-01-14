@@ -87,7 +87,7 @@ async def chat_group_select_callback(update: Update, context: ContextTypes.DEFAU
     await set_user_current_chat(db, user.id, chat_id)
 
     # 直接显示管理菜单（调用 admin.py 的 _show_private_admin_menu）
-    from bot.handlers.admin import _show_private_admin_menu
+    from bot.handlers.admin_handler import _show_private_admin_menu
 
     await _show_private_admin_menu(update, context, chat_id)
 
@@ -152,6 +152,6 @@ async def chat_group_admin_callback(update: Update, context: ContextTypes.DEFAUL
         return
 
     # 直接显示管理菜单
-    from bot.handlers.admin import _show_private_admin_menu
+    from bot.handlers.admin_handler import _show_private_admin_menu
 
     await _show_private_admin_menu(update, context, chat_id)

@@ -7,6 +7,7 @@ from telegram import Update
 from telegram.ext import ContextTypes, ConversationHandler
 
 from bot.db.session import Database
+from bot.handlers.base.base_handler import BaseHandler
 from bot.keyboards.solitaire import (
     solitaire_detail_keyboard,
     solitaire_list_keyboard,
@@ -26,7 +27,6 @@ from bot.services.activity.solitaire_service import (
     update_entry,
 )
 from bot.services.state.state_service import clear_user_state, set_user_state, get_user_state
-from bot.services.core.permission_service import is_user_admin
 
 # 创建流程状态
 WAIT_CONFIG = 1
@@ -57,6 +57,119 @@ def _parse_config_value(line: str, prefix: str) -> str | None:
     return None
 
 
+class SolitaireHandler(BaseHandler):
+    """接龙 Handler"""
+
+    def __init__(self) -> None:
+        super().__init__()
+        # 关闭默认权限检查，因为我们在各个方法中自己处理
+        self._require_admin_permission = False
+
+    async def process(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        target_chat_id: int,
+    ) -> None:
+        """处理接龙回调（用于 BaseHandler 抽象方法）"""
+        # SolitaireHandler 不使用 process 方法，直接调用各个方法
+        # 适配器函数会直接调用 show_menu, show_list 等方法
+        pass
+
+    async def show_menu(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        target_chat_id: int,
+        chat_title: str | None = None,
+    ) -> None:
+        """显示接龙管理菜单"""
+        text = f"📋 [{chat_title or target_chat_id}] 接龙管理\n\n管理群内接龙活动"
+        keyboard = solitaire_menu_keyboard()
+        await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
+
+    async def show_list(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        target_chat_id: int,
+        page: int = 0,
+    ) -> None:
+        """显示接龙列表"""
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            solitaires = await get_chat_solitaires(session, target_chat_id)
+            await session.commit()
+
+        if not solitaires:
+            keyboard = solitaire_menu_keyboard(target_chat_id)
+            await self.message_helper.safe_edit(
+                update,
+                text="📋 接龙列表\n\n暂无接龙，点击「创建接龙」开始",
+                reply_markup=keyboard,
+            )
+            return
+
+        text = f"📋 接龙列表\n\n共 {len(solitaires)} 个接龙"
+        keyboard = solitaire_list_keyboard(solitaires, target_chat_id, page)
+        await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
+
+    async def show_stats(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        target_chat_id: int,
+    ) -> None:
+        """显示接龙统计"""
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            stats = await get_solitaire_stats(session, target_chat_id)
+            await session.commit()
+
+        text = f"📊 接龙统计\n\n"
+        text += f"总接龙数: {stats['total']}\n"
+        text += f"进行中: {stats['active']}\n"
+        text += f"已结束: {stats['closed']}\n"
+        text += f"总参与人次: {stats['total_entries']}"
+
+        keyboard = solitaire_menu_keyboard(target_chat_id)
+        await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
+
+    async def show_detail(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        solitaire_id: int,
+        target_chat_id: int,
+    ) -> None:
+        """显示接龙详情"""
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            solitaire = await get_solitaire(session, solitaire_id)
+            if not solitaire:
+                await session.commit()
+                keyboard = solitaire_menu_keyboard(target_chat_id)
+                await self.message_helper.safe_edit(
+                    update,
+                    text="接龙不存在",
+                    reply_markup=keyboard
+                )
+                return
+
+            text = format_solitaire_message(solitaire, show_closed=False)
+            is_active = solitaire.status == SolitaireStatus.active.value
+            await session.commit()
+
+        keyboard = solitaire_detail_keyboard(solitaire_id, is_active, target_chat_id)
+        await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
+
+
+# 创建单例实例
+_solitaire_handler = SolitaireHandler()
+
+
+# ==================== 适配器函数（供 Router 注册）====================
+
 async def solitaire_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """接龙菜单回调"""
     if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
@@ -70,32 +183,29 @@ async def solitaire_menu_callback(update: Update, context: ContextTypes.DEFAULT_
     # 私聊中的接龙管理 - 从回调中获取目标群组ID
     target_chat_id = None
     if chat.type == "private":
-        from bot.services.integration.chat_group_service import get_user_current_chat
-        from bot.services.integration.chat_group_service import get_user_managed_chats
+        from bot.services.integration.chat_group_service import get_user_current_chat, get_user_managed_chats
         db: Database = context.application.bot_data["db"]
         target_chat_id = await get_user_current_chat(db, user.id)
         if target_chat_id is None:
-            await q.edit_message_text("请先选择一个群组")
+            await _solitaire_handler.message_helper.safe_edit(update, "请先选择一个群组")
             return
-        if not await is_user_admin(context, target_chat_id, user.id):
-            await q.edit_message_text("你没有该群组的管理权限")
+        if not await _solitaire_handler.permission_helper.is_user_admin(context, target_chat_id, user.id):
+            await _solitaire_handler.message_helper.safe_edit(update, "你没有该群组的管理权限")
             return
 
         # 返回到管理面板
         chats = await get_user_managed_chats(db, user.id, context.bot)
-        from bot.handlers.admin import _show_private_admin_menu
+        from bot.handlers.admin_handler import _show_private_admin_menu
         await _show_private_admin_menu(update, context, target_chat_id, chats)
         return
     else:
-        if not await is_user_admin(context, chat.id, user.id):
-            await q.edit_message_text("仅管理员可使用此功能")
+        if not await _solitaire_handler.permission_helper.is_user_admin(context, chat.id, user.id):
+            await _solitaire_handler.message_helper.safe_edit(update, "仅管理员可使用此功能")
             return
         target_chat_id = chat.id
 
-    await q.edit_message_text(
-        f"📋 [{chat.title}] 接龙管理\n\n管理群内接龙活动",
-        reply_markup=solitaire_menu_keyboard(),
-    )
+    # 使用 Handler 处理
+    await _solitaire_handler.show_menu(update, context, target_chat_id, chat.title)
 
 
 async def solitaire_list_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -116,7 +226,6 @@ async def solitaire_list_callback(update: Update, context: ContextTypes.DEFAULT_
     page = 0
     if chat.type == "private":
         # sol:list:{chat_id}:{page} 格式
-        # chat_id 可能是负数（群组），所以不能直接用 isdigit()
         if len(parts) >= 3:
             try:
                 target_chat_id = int(parts[2])
@@ -130,7 +239,6 @@ async def solitaire_list_callback(update: Update, context: ContextTypes.DEFAULT_
             from bot.services.integration.chat_group_service import get_user_current_chat
             db: Database = context.application.bot_data["db"]
             target_chat_id = await get_user_current_chat(db, user.id)
-            # 尝试从 parts[3] 获取页码
             if len(parts) >= 4:
                 try:
                     page = int(parts[3])
@@ -138,39 +246,21 @@ async def solitaire_list_callback(update: Update, context: ContextTypes.DEFAULT_
                     pass
 
         if target_chat_id is None:
-            await q.edit_message_text("请先选择一个群组")
+            await _solitaire_handler.message_helper.safe_edit(update, "请先选择一个群组")
             return
-        if not await is_user_admin(context, target_chat_id, user.id):
-            await q.edit_message_text("你没有该群组的管理权限")
+        if not await _solitaire_handler.permission_helper.is_user_admin(context, target_chat_id, user.id):
+            await _solitaire_handler.message_helper.safe_edit(update, "你没有该群组的管理权限")
             return
     else:
         # 群聊场景：sol:list 或 sol:list:{page}
         page = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
-        if not await is_user_admin(context, chat.id, user.id):
-            await q.edit_message_text("仅管理员可使用此功能")
+        if not await _solitaire_handler.permission_helper.is_user_admin(context, chat.id, user.id):
+            await _solitaire_handler.message_helper.safe_edit(update, "仅管理员可使用此功能")
             return
         target_chat_id = chat.id
 
-    db: Database = context.application.bot_data["db"]
-    async with db.session_factory() as session:
-        solitaires = await get_chat_solitaires(session, target_chat_id)
-        await session.commit()
-
-    if not solitaires:
-        keyboard = solitaire_menu_keyboard(target_chat_id if chat.type == "private" else None)
-        await q.edit_message_text(
-            "📋 接龙列表\n\n暂无接龙，点击「创建接龙」开始",
-            reply_markup=keyboard,
-        )
-        return
-
-    text = f"📋 接龙列表\n\n共 {len(solitaires)} 个接龙"
-    keyboard = solitaire_list_keyboard(
-        solitaires,
-        target_chat_id if chat.type == "private" else None,
-        page
-    )
-    await q.edit_message_text(text, reply_markup=keyboard)
+    # 使用 Handler 处理
+    await _solitaire_handler.show_list(update, context, target_chat_id, page)
 
 
 async def solitaire_stats_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -190,7 +280,6 @@ async def solitaire_stats_callback(update: Update, context: ContextTypes.DEFAULT
     target_chat_id = None
     if chat.type == "private":
         # sol:stats:{chat_id} 格式
-        # chat_id 可能是负数（群组），所以不能直接用 isdigit()
         if len(parts) >= 3:
             try:
                 target_chat_id = int(parts[2])
@@ -204,36 +293,19 @@ async def solitaire_stats_callback(update: Update, context: ContextTypes.DEFAULT
             target_chat_id = await get_user_current_chat(db, user.id)
 
         if target_chat_id is None:
-            await q.edit_message_text("请先选择一个群组")
+            await _solitaire_handler.message_helper.safe_edit(update, "请先选择一个群组")
             return
-        if not await is_user_admin(context, target_chat_id, user.id):
-            await q.edit_message_text("你没有该群组的管理权限")
+        if not await _solitaire_handler.permission_helper.is_user_admin(context, target_chat_id, user.id):
+            await _solitaire_handler.message_helper.safe_edit(update, "你没有该群组的管理权限")
             return
     else:
-        if not await is_user_admin(context, chat.id, user.id):
-            await q.edit_message_text("仅管理员可使用此功能")
+        if not await _solitaire_handler.permission_helper.is_user_admin(context, chat.id, user.id):
+            await _solitaire_handler.message_helper.safe_edit(update, "仅管理员可使用此功能")
             return
         target_chat_id = chat.id
 
-    db: Database = context.application.bot_data["db"]
-    async with db.session_factory() as session:
-        stats = await get_solitaire_stats(session, target_chat_id)
-        await session.commit()
-
-    text = f"📊 接龙统计\n\n"
-    text += f"总接龙数: {stats['total']}\n"
-    text += f"进行中: {stats['active']}\n"
-    text += f"已结束: {stats['closed']}\n"
-    text += f"总参与人次: {stats['total_entries']}"
-
-    keyboard = solitaire_menu_keyboard(target_chat_id if chat.type == "private" else None)
-    # 添加异常处理，避免 "Message is not modified" 错误
-    from telegram.error import BadRequest
-    try:
-        await q.edit_message_text(text, reply_markup=keyboard)
-    except BadRequest as e:
-        if "Message is not modified" not in str(e):
-            log.error("solitaire_stats_failed", error=str(e))
+    # 使用 Handler 处理
+    await _solitaire_handler.show_stats(update, context, target_chat_id)
 
 
 async def solitaire_detail_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -269,37 +341,20 @@ async def solitaire_detail_callback(update: Update, context: ContextTypes.DEFAUL
             db: Database = context.application.bot_data["db"]
             target_chat_id = await get_user_current_chat(db, user.id)
             if target_chat_id is None:
-                await q.edit_message_text("请先选择一个群组")
+                await _solitaire_handler.message_helper.safe_edit(update, "请先选择一个群组")
                 return
 
-        if not await is_user_admin(context, target_chat_id, user.id):
-            await q.edit_message_text("你没有该群组的管理权限")
+        if not await _solitaire_handler.permission_helper.is_user_admin(context, target_chat_id, user.id):
+            await _solitaire_handler.message_helper.safe_edit(update, "你没有该群组的管理权限")
             return
     else:
-        if not await is_user_admin(context, chat.id, user.id):
-            await q.edit_message_text("仅管理员可使用此功能")
+        if not await _solitaire_handler.permission_helper.is_user_admin(context, chat.id, user.id):
+            await _solitaire_handler.message_helper.safe_edit(update, "仅管理员可使用此功能")
             return
         target_chat_id = chat.id
 
-    db: Database = context.application.bot_data["db"]
-    async with db.session_factory() as session:
-        solitaire = await get_solitaire(session, solitaire_id)
-        if not solitaire:
-            await session.commit()
-            await q.edit_message_text("接龙不存在", reply_markup=solitaire_menu_keyboard(target_chat_id if chat.type == "private" else None))
-            return
-
-        text = format_solitaire_message(solitaire, show_closed=False)
-        is_active = solitaire.status == SolitaireStatus.active.value
-        await session.commit()
-
-    # 添加异常处理，避免 "Message is not modified" 错误
-    from telegram.error import BadRequest
-    try:
-        await q.edit_message_text(text, reply_markup=solitaire_detail_keyboard(solitaire_id, is_active, target_chat_id if chat.type == "private" else None))
-    except BadRequest as e:
-        if "Message is not modified" not in str(e):
-            log.error("solitaire_detail_failed", error=str(e))
+    # 使用 Handler 处理
+    await _solitaire_handler.show_detail(update, context, solitaire_id, target_chat_id)
 
 
 async def solitaire_create_start_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

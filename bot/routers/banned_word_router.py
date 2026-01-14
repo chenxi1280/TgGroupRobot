@@ -1,7 +1,7 @@
 from __future__ import annotations
 import structlog
 from telegram.ext import Application, CallbackQueryHandler, MessageHandler, filters
-from bot.handlers.banned_word import (
+from bot.handlers.banned_word_handler import (
     banned_word_add_start,
     banned_word_check_handler,
     banned_word_config_handler,

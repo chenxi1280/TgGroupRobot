@@ -10,7 +10,7 @@ from telegram.ext import (
     filters,
 )
 
-from bot.handlers.solitaire import (
+from bot.handlers.solitaire_handler import (
     solitaire_cancel_callback,
     solitaire_close_callback,
     solitaire_create_config_message,
@@ -24,7 +24,7 @@ from bot.handlers.solitaire import (
     solitaire_stats_callback,
     join_solitaire_callback,
 )
-from bot.handlers.solitaire import solitaire_create_start_callback as solitaire_create_start
+from bot.handlers.solitaire_handler import solitaire_create_start_callback as solitaire_create_start
 from bot.routers.base import BaseRouter
 
 # ConversationHandler 状态常量

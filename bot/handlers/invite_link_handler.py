@@ -6,6 +6,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes, ConversationHandler
 
 from bot.db.session import Database
+from bot.handlers.base.base_handler import BaseHandler
 from bot.keyboards.invite_link import (
     invite_link_create_keyboard,
     invite_link_detail_keyboard,
@@ -24,7 +25,6 @@ from bot.services.integration.invite_service import (
     update_invite_link_info,
 )
 from bot.services.state.state_service import clear_user_state, get_user_state, set_user_state
-from bot.services.core.permission_service import is_user_admin
 
 # 创建流程状态
 WAIT_NAME = 1
@@ -33,6 +33,91 @@ WAIT_EXPIRE = 3
 
 log = structlog.get_logger(__name__)
 
+
+class InviteLinkHandler(BaseHandler):
+    """邀请链接 Handler"""
+
+    def __init__(self) -> None:
+        super().__init__()
+        # 关闭默认权限检查，因为我们在各个方法中自己处理
+        self._require_admin_permission = False
+
+    async def process(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        target_chat_id: int,
+    ) -> None:
+        """处理邀请链接回调（用于 BaseHandler 抽象方法）"""
+        # InviteLinkHandler 不使用 process 方法，直接调用各个方法
+        pass
+
+    async def show_menu(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        target_chat_id: int,
+        chat_title: str | None = None,
+    ) -> None:
+        """显示邀请链接管理菜单"""
+        text = f"🔗 [{chat_title or target_chat_id}] 邀请链接管理\n\n管理群组邀请链接"
+        keyboard = invite_link_menu_keyboard()
+        await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
+
+    async def show_list(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        target_chat_id: int,
+        page: int = 0,
+    ) -> None:
+        """显示邀请链接列表"""
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            links = await get_chat_invite_links(session, target_chat_id)
+            await session.commit()
+
+        if not links:
+            keyboard = invite_link_menu_keyboard(target_chat_id)
+            await self.message_helper.safe_edit(
+                update,
+                text="🔗 邀请链接列表\n\n暂无邀请链接，点击「创建邀请链接」开始",
+                reply_markup=keyboard,
+            )
+            return
+
+        text = f"🔗 邀请链接列表\n\n共 {len(links)} 个链接"
+        keyboard = invite_link_list_keyboard(links, target_chat_id, page)
+        await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
+
+    async def show_stats(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        target_chat_id: int,
+    ) -> None:
+        """显示邀请链接统计"""
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            stats = await get_link_stats(session, target_chat_id)
+            await session.commit()
+
+        text = f"📊 邀请链接统计\n\n"
+        text += f"总链接数: {stats['total']}\n"
+        text += f"激活中: {stats['active']}\n"
+        text += f"已撤销: {stats['revoked']}\n"
+        text += f"已过期: {stats['expired']}\n"
+        text += f"总成员数: {stats['total_members']}"
+
+        keyboard = invite_link_menu_keyboard(target_chat_id)
+        await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
+
+
+# 创建单例实例
+_invite_link_handler = InviteLinkHandler()
+
+
+# ==================== 适配器函数（供 Router 注册）====================
 
 async def invite_link_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """邀请链接菜单回调"""
@@ -46,36 +131,28 @@ async def invite_link_menu_callback(update: Update, context: ContextTypes.DEFAUL
 
     # 私聊中的邀请链接管理 - 返回到管理面板
     if chat.type == "private":
-        from bot.services.integration.chat_group_service import get_user_current_chat
-        from bot.services.integration.chat_group_service import get_user_managed_chats
+        from bot.services.integration.chat_group_service import get_user_current_chat, get_user_managed_chats
         db: Database = context.application.bot_data["db"]
         target_chat_id = await get_user_current_chat(db, user.id)
         if target_chat_id is None:
-            await q.edit_message_text("请先选择一个群组")
+            await _invite_link_handler.message_helper.safe_edit(update, "请先选择一个群组")
             return
-        if not await is_user_admin(context, target_chat_id, user.id):
-            await q.edit_message_text("你没有该群组的管理权限")
+        if not await _invite_link_handler.permission_helper.is_user_admin(context, target_chat_id, user.id):
+            await _invite_link_handler.message_helper.safe_edit(update, "你没有该群组的管理权限")
             return
 
         # 返回到管理面板
         chats = await get_user_managed_chats(db, user.id, context.bot)
-        from bot.handlers.admin import _show_private_admin_menu
+        from bot.handlers.admin_handler import _show_private_admin_menu
         await _show_private_admin_menu(update, context, target_chat_id, chats)
         return
 
-    if not await is_user_admin(context, chat.id, user.id):
-        await q.edit_message_text("仅管理员可使用此功能")
+    if not await _invite_link_handler.permission_helper.is_user_admin(context, chat.id, user.id):
+        await _invite_link_handler.message_helper.safe_edit(update, "仅管理员可使用此功能")
         return
 
-    db: Database = context.application.bot_data["db"]
-    async with db.session_factory() as session:
-        settings = await get_chat_settings(session, chat.id)
-        await session.commit()
-
-    await q.edit_message_text(
-        f"🔗 [{chat.title}] 邀请链接管理\n\n管理群组邀请链接",
-        reply_markup=invite_link_menu_keyboard(),
-    )
+    # 使用 Handler 处理
+    await _invite_link_handler.show_menu(update, context, chat.id, chat.title)
 
 
 async def invite_link_list_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -95,14 +172,14 @@ async def invite_link_list_callback(update: Update, context: ContextTypes.DEFAUL
         db: Database = context.application.bot_data["db"]
         target_chat_id = await get_user_current_chat(db, user.id)
         if target_chat_id is None:
-            await q.edit_message_text("请先选择一个群组")
+            await _invite_link_handler.message_helper.safe_edit(update, "请先选择一个群组")
             return
-        if not await is_user_admin(context, target_chat_id, user.id):
-            await q.edit_message_text("你没有该群组的管理权限")
+        if not await _invite_link_handler.permission_helper.is_user_admin(context, target_chat_id, user.id):
+            await _invite_link_handler.message_helper.safe_edit(update, "你没有该群组的管理权限")
             return
     else:
-        if not await is_user_admin(context, chat.id, user.id):
-            await q.edit_message_text("仅管理员可使用此功能")
+        if not await _invite_link_handler.permission_helper.is_user_admin(context, chat.id, user.id):
+            await _invite_link_handler.message_helper.safe_edit(update, "仅管理员可使用此功能")
             return
         target_chat_id = chat.id
 
@@ -115,26 +192,8 @@ async def invite_link_list_callback(update: Update, context: ContextTypes.DEFAUL
         await q.answer("无效的页码参数", show_alert=True)
         return
 
-    db: Database = context.application.bot_data["db"]
-    async with db.session_factory() as session:
-        links = await get_chat_invite_links(session, target_chat_id)
-        await session.commit()
-
-    if not links:
-        keyboard = invite_link_menu_keyboard(target_chat_id if chat.type == "private" else None)
-        await q.edit_message_text(
-            "🔗 邀请链接列表\n\n暂无邀请链接，点击「创建邀请链接」开始",
-            reply_markup=keyboard,
-        )
-        return
-
-    text = f"🔗 邀请链接列表\n\n共 {len(links)} 个链接"
-    keyboard = invite_link_list_keyboard(
-        links,
-        target_chat_id if chat.type == "private" else None,
-        page
-    )
-    await q.edit_message_text(text, reply_markup=keyboard)
+    # 使用 Handler 处理
+    await _invite_link_handler.show_list(update, context, target_chat_id, page)
 
 
 async def invite_link_stats_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -154,31 +213,19 @@ async def invite_link_stats_callback(update: Update, context: ContextTypes.DEFAU
         db: Database = context.application.bot_data["db"]
         target_chat_id = await get_user_current_chat(db, user.id)
         if target_chat_id is None:
-            await q.edit_message_text("请先选择一个群组")
+            await _invite_link_handler.message_helper.safe_edit(update, "请先选择一个群组")
             return
-        if not await is_user_admin(context, target_chat_id, user.id):
-            await q.edit_message_text("你没有该群组的管理权限")
+        if not await _invite_link_handler.permission_helper.is_user_admin(context, target_chat_id, user.id):
+            await _invite_link_handler.message_helper.safe_edit(update, "你没有该群组的管理权限")
             return
     else:
-        if not await is_user_admin(context, chat.id, user.id):
-            await q.edit_message_text("仅管理员可使用此功能")
+        if not await _invite_link_handler.permission_helper.is_user_admin(context, chat.id, user.id):
+            await _invite_link_handler.message_helper.safe_edit(update, "仅管理员可使用此功能")
             return
         target_chat_id = chat.id
 
-    db: Database = context.application.bot_data["db"]
-    async with db.session_factory() as session:
-        stats = await get_link_stats(session, target_chat_id)
-        await session.commit()
-
-    text = f"📊 邀请链接统计\n\n"
-    text += f"总链接数: {stats['total']}\n"
-    text += f"激活中: {stats['active']}\n"
-    text += f"已撤销: {stats['revoked']}\n"
-    text += f"已过期: {stats['expired']}\n"
-    text += f"总成员数: {stats['total_members']}"
-
-    keyboard = invite_link_menu_keyboard(target_chat_id if chat.type == "private" else None)
-    await q.edit_message_text(text, reply_markup=keyboard)
+    # 使用 Handler 处理
+    await _invite_link_handler.show_stats(update, context, target_chat_id)
 
 
 async def invite_link_detail_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

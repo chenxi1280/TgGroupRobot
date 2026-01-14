@@ -6,6 +6,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from bot.db.session import Database
+from bot.handlers.base.base_handler import BaseHandler
 from bot.models.enums import ConversationStateType, ScheduleType
 from bot.models.core import ScheduledMessage
 from bot.services.core.chat_service import ensure_chat, get_chat_settings
@@ -27,63 +28,157 @@ from bot.services.core.user_service import ensure_user
 # 回调处理器
 # ============================================
 
-async def scheduled_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """定时消息菜单回调"""
-    if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
-        return
-    q = update.callback_query
-    await q.answer()
+# Handler 类定义（使用 BaseHandler）
+class ScheduledMenuHandler(BaseHandler):
+    """定时消息菜单 Handler"""
 
-    chat = update.effective_chat
-    user = update.effective_user
+    async def process(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        target_chat_id: int,
+    ) -> None:
+        """处理定时消息菜单"""
+        q = update.callback_query
+        await q.answer()
 
-    # 私聊中的定时消息管理 - 返回到管理面板
-    if chat.type == "private":
-        from bot.services.integration.chat_group_service import get_user_current_chat
+        chat = update.effective_chat
+
+        # 私聊场景：返回到管理面板
+        if self.chat_resolver.is_private_chat(update):
+            await self._handle_private_chat(update, context, target_chat_id)
+            return
+
+        # 群组场景：显示菜单
+        await self._handle_group_chat(update, context, target_chat_id, chat)
+
+    async def _handle_private_chat(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        target_chat_id: int,
+    ) -> None:
+        """处理私聊场景 - 返回管理面板"""
+        from bot.handlers.admin_handler import _show_private_admin_menu
         from bot.services.integration.chat_group_service import get_user_managed_chats
-        db: Database = context.application.bot_data["db"]
-        target_chat_id = await get_user_current_chat(db, user.id)
-        if target_chat_id is None:
-            await q.edit_message_text("请先选择一个群组")
-            return
-        if not await is_user_admin(context, target_chat_id, user.id):
-            await q.edit_message_text("你没有该群组的管理权限")
-            return
 
-        # 返回到管理面板
-        chats = await get_user_managed_chats(db, user.id, context.bot)
-        from bot.handlers.admin import _show_private_admin_menu
+        db = context.application.bot_data["db"]
+        chats = await get_user_managed_chats(db, update.effective_user.id, context.bot)
         await _show_private_admin_menu(update, context, target_chat_id, chats)
-        return
 
-    if not await is_user_admin(context, chat.id, user.id):
-        await q.edit_message_text("需要管理员权限。")
-        return
+    async def _handle_group_chat(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        target_chat_id: int,
+        chat,
+    ) -> None:
+        """处理群组场景 - 显示菜单"""
+        # 获取数据
+        messages = await self._fetch_data(context, target_chat_id, chat)
 
-    db: Database = context.application.bot_data["db"]
-    async with db.session_factory() as session:
-        await ensure_chat(session, chat_id=chat.id, chat_type=chat.type, title=chat.title)
-        messages = await get_chat_scheduled_messages(session, chat.id)
-        await session.commit()
+        # 发送响应
+        await self.message_helper.safe_edit(
+            update,
+            text=self._format_menu_text(chat.title, messages),
+            reply_markup=self._get_menu_keyboard(),
+        )
 
-    text = f"⏰ [{chat.title}] 定时消息\n\n"
-    if messages:
-        active_count = sum(1 for m in messages if m.is_active)
-        text += f"总计: {len(messages)} 条消息  |  激活: {active_count} 条\n\n"
-        for msg in messages[:10]:
-            status = "🟢" if msg.is_active else "🔴"
-            content_preview = msg.content[:30] + "..." if len(msg.content) > 30 else msg.content
-            text += f"{status} [{msg.id}] {content_preview}\n"
-            if msg.schedule_type != ScheduleType.none.value:
-                text += f"    间隔: {_get_schedule_label(msg.schedule_type, msg.interval_minutes)}\n"
-        if len(messages) > 10:
-            text += f"\n... 还有 {len(messages) - 10} 条"
-    else:
-        text += "暂无定时消息"
+    async def _fetch_data(
+        self,
+        context: ContextTypes.DEFAULT_TYPE,
+        target_chat_id: int,
+        chat,
+    ) -> list:
+        """获取定时消息数据
 
-    from bot.keyboards.scheduled import scheduled_menu_keyboard
+        Returns:
+            list: 定时消息列表
+        """
+        db = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            await ensure_chat(session, chat_id=target_chat_id, chat_type=chat.type, title=chat.title)
+            messages = await get_chat_scheduled_messages(session, target_chat_id)
+            await session.commit()
+        return messages
 
-    await q.edit_message_text(text, reply_markup=scheduled_menu_keyboard())
+    def _format_menu_text(
+        self,
+        chat_title: str,
+        messages: list,
+    ) -> str:
+        """格式化菜单文本
+
+        Args:
+            chat_title: 群组标题
+            messages: 定时消息列表
+
+        Returns:
+            str: 格式化后的菜单文本
+        """
+        text = f"⏰ [{chat_title}] 定时消息\n\n"
+
+        if messages:
+            active_count = sum(1 for m in messages if m.is_active)
+            text += f"总计: {len(messages)} 条消息  |  激活: {active_count} 条\n\n"
+
+            for msg in messages[:10]:
+                text += self._format_message_item(msg)
+            if len(messages) > 10:
+                text += f"\n... 还有 {len(messages) - 10} 条"
+        else:
+            text += "暂无定时消息"
+
+        return text
+
+    def _format_message_item(self, msg) -> str:
+        """格式化单个消息项
+
+        Args:
+            msg: 定时消息对象
+
+        Returns:
+            str: 格式化后的消息项文本
+        """
+        status = "🟢" if msg.is_active else "🔴"
+        content_preview = self._truncate_text(msg.content, 30)
+
+        text = f"{status} [{msg.id}] {content_preview}\n"
+        if msg.schedule_type != ScheduleType.none.value:
+            text += f"    间隔: {_get_schedule_label(msg.schedule_type, msg.interval_minutes)}\n"
+        return text
+
+    @staticmethod
+    def _truncate_text(text: str, max_length: int) -> str:
+        """截断文本
+
+        Args:
+            text: 原始文本
+            max_length: 最大长度
+
+        Returns:
+            str: 截断后的文本
+        """
+        return text[:max_length] + "..." if len(text) > max_length else text
+
+    def _get_menu_keyboard(self):
+        """获取菜单键盘
+
+        Returns:
+            InlineKeyboardMarkup: 菜单键盘
+        """
+        from bot.keyboards.scheduled import scheduled_menu_keyboard
+        return scheduled_menu_keyboard()
+
+
+# Handler 实例
+_scheduled_menu_handler = ScheduledMenuHandler()
+
+
+# 适配器函数（保持 Router 兼容）
+async def scheduled_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """定时消息菜单回调（适配器函数）"""
+    await _scheduled_menu_handler.handle_callback(update, context)
 
 
 async def scheduled_list_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

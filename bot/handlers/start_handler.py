@@ -12,8 +12,57 @@ from bot.models.enums import ConversationStateType
 from bot.services.integration.chat_group_service import get_user_current_chat, get_user_managed_chats, set_user_current_chat
 from bot.services.core.chat_service import ensure_chat, get_chat_settings
 from bot.services.state.state_service import clear_user_state, get_user_state
-from bot.services.core.permission_service import is_user_admin
 from bot.services.core.user_service import ensure_user
+
+
+async def _send_guide_message(update: Update, context: ContextTypes.DEFAULT_TYPE, chat, user) -> None:
+    """发送群组引导消息（共享逻辑）
+
+    Args:
+        update: Telegram 更新对象
+        context: Bot 上下文
+        chat: 群组聊天对象
+        user: 用户对象
+    """
+    db: Database = context.application.bot_data["db"]
+
+    # 设置当前管理的群组
+    await set_user_current_chat(db, user.id, chat.id)
+
+    # 获取配置的删除时间
+    app_settings = get_settings()
+    delete_delay = app_settings.group_guide_message_delete_seconds
+
+    # 创建引导按钮（URL 按钮点击后跳转到私聊）
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🚀 开始", url=f"https://t.me/{context.bot.username}")],
+    ])
+
+    # 发送引导消息（使用 send_message 而不是 reply_text，因为消息会被删除）
+    msg = await context.bot.send_message(
+        chat_id=chat.id,
+        text=f"欢迎使用@{context.bot.username}:\n\n"
+             f"1) 点击下方按钮选择设置（仅限管理员）\n"
+             f"2) 点击机器人对话框底部[开始]按钮\n\n"
+             f"人员按下面的开始按钮调整到私聊机器界面进行管理群聊",
+        reply_markup=keyboard
+    )
+
+    # 删除用户发送的消息
+    try:
+        await update.effective_message.delete()
+    except Exception:
+        pass
+
+    # 延迟后删除机器人消息（保持群组整洁）
+    async def delete_later():
+        try:
+            await asyncio.sleep(delete_delay)
+            await msg.delete()
+        except Exception:
+            pass
+
+    asyncio.create_task(delete_later())
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -79,43 +128,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             await clear_user_state(session, chat_id=chat.id, user_id=user.id)
         await session.commit()
 
-    # 设置当前管理的群组
-    await set_user_current_chat(db, user.id, chat.id)
-
-    # 获取配置的删除时间
-    app_settings = get_settings()
-    delete_delay = app_settings.group_guide_message_delete_seconds
-
-    # 创建引导按钮（URL 按钮点击后跳转到私聊）
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🚀 开始", url=f"https://t.me/{context.bot.username}")],
-    ])
-
-    # 发送引导消息（使用 send_message 而不是 reply_text，因为消息会被删除）
-    msg = await context.bot.send_message(
-        chat_id=chat.id,
-        text=f"欢迎使用@{context.bot.username}:\n\n"
-             f"1) 点击下方按钮选择设置（仅限管理员）\n"
-             f"2) 点击机器人对话框底部[开始]按钮\n\n"
-             f"人员按下面的开始按钮调整到私聊机器界面进行管理群聊",
-        reply_markup=keyboard
-    )
-
-    # 删除用户发送的消息
-    try:
-        await update.effective_message.delete()
-    except Exception:
-        pass
-
-    # 延迟后删除机器人消息（保持群组整洁）
-    async def delete_later():
-        try:
-            await asyncio.sleep(delete_delay)
-            await msg.delete()
-        except Exception:
-            pass
-
-    asyncio.create_task(delete_later())
+    # 发送引导消息
+    await _send_guide_message(update, context, chat, user)
 
 
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -123,7 +137,6 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if update.effective_chat is None or update.effective_user is None or update.effective_message is None:
         return
 
-    db: Database = context.application.bot_data["db"]
     chat = update.effective_chat
     user = update.effective_user
 
@@ -131,6 +144,7 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.effective_message.reply_text("请在群里使用该指令。")
         return
 
+    db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
         await ensure_chat(session, chat_id=chat.id, chat_type=chat.type, title=chat.title)
         settings = await get_chat_settings(session, chat.id)
@@ -139,43 +153,8 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await clear_user_state(session, chat_id=chat.id, user_id=user.id)
         await session.commit()
 
-    # 设置当前管理的群组
-    await set_user_current_chat(db, user.id, chat.id)
-
-    # 获取配置的删除时间
-    app_settings = get_settings()
-    delete_delay = app_settings.group_guide_message_delete_seconds
-
-    # 创建引导按钮（URL 按钮点击后跳转到私聊）
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🚀 开始", url=f"https://t.me/{context.bot.username}")],
-    ])
-
-    # 发送引导消息（使用 send_message 而不是 reply_text，因为消息会被删除）
-    msg = await context.bot.send_message(
-        chat_id=chat.id,
-        text=f"欢迎使用@{context.bot.username}:\n\n"
-             f"1) 点击下方按钮选择设置（仅限管理员）\n"
-             f"2) 点击机器人对话框底部[开始]按钮\n\n"
-             f"人员按下面的开始按钮调整到私聊机器界面进行管理群聊",
-        reply_markup=keyboard
-    )
-
-    # 删除用户发送的消息
-    try:
-        await update.effective_message.delete()
-    except Exception:
-        pass
-
-    # 延迟后删除机器人消息（保持群组整洁）
-    async def delete_later():
-        try:
-            await asyncio.sleep(delete_delay)
-            await msg.delete()
-        except Exception:
-            pass
-
-    asyncio.create_task(delete_later())
+    # 发送引导消息
+    await _send_guide_message(update, context, chat, user)
 
 
 async def private_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -192,8 +171,6 @@ async def private_message_handler(update: Update, context: ContextTypes.DEFAULT_
     # 先检查用户是否有对话状态（如抽奖创建流程）
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
-        from bot.services.state.state_service import get_user_state
-
         state = await get_user_state(session, chat_id=chat.id, user_id=user.id)
         await session.commit()
 
@@ -219,8 +196,3 @@ async def private_message_handler(update: Update, context: ContextTypes.DEFAULT_
             text,
             reply_markup=chat_group_list_keyboard(chats, current_chat_id),
         )
-
-
-
-
-

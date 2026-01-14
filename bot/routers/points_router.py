@@ -1,14 +1,14 @@
 from __future__ import annotations
 import structlog
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ConversationHandler, MessageHandler, filters
-from bot.handlers.points import (
+from bot.handlers.points_handler import (
     get_points_alias_handler,
     message_points_handler,
     points_command,
     points_rank_command,
     sign_command,
 )
-from bot.handlers.points_config import (
+from bot.handlers.points_config_handler import (
     points_config_cancel_callback,
     points_config_callback,
     points_config_message_handler,

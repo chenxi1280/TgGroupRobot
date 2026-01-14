@@ -4,6 +4,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from bot.db.session import Database
+from bot.handlers.base.base_handler import BaseHandler
 from bot.models.enums import AutoReplyMatchType, ConversationStateType
 from bot.services.moderation.auto_reply_service import (
     create_auto_reply_rule,
@@ -11,6 +12,7 @@ from bot.services.moderation.auto_reply_service import (
     get_chat_auto_reply_rules,
     get_match_count,
     match_auto_reply,
+    toggle_auto_reply_rule,
     CreateResult,
 )
 from bot.services.core.chat_service import ensure_chat, get_chat_settings
@@ -23,67 +25,176 @@ from bot.services.core.user_service import ensure_user
 # 回调处理器
 # ============================================
 
-async def auto_reply_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """自动回复菜单回调"""
-    if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
-        return
-    q = update.callback_query
-    await q.answer()
+# Handler 类定义（使用 BaseHandler）
+class AutoReplyMenuHandler(BaseHandler):
+    """自动回复菜单 Handler"""
 
-    chat = update.effective_chat
-    user = update.effective_user
+    async def process(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        target_chat_id: int,
+    ) -> None:
+        """处理自动回复菜单"""
+        q = update.callback_query
+        await q.answer()
 
-    # 私聊中的自动回复管理 - 返回到管理面板
-    if chat.type == "private":
-        from bot.services.integration.chat_group_service import get_user_current_chat
+        chat = update.effective_chat
+
+        # 私聊场景：返回到管理面板
+        if self.chat_resolver.is_private_chat(update):
+            await self._handle_private_chat(update, context, target_chat_id)
+            return
+
+        # 群组场景：显示菜单
+        await self._handle_group_chat(update, context, target_chat_id, chat)
+
+    async def _handle_private_chat(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        target_chat_id: int,
+    ) -> None:
+        """处理私聊场景 - 返回管理面板"""
+        from bot.handlers.admin_handler import _show_private_admin_menu
         from bot.services.integration.chat_group_service import get_user_managed_chats
-        db: Database = context.application.bot_data["db"]
-        target_chat_id = await get_user_current_chat(db, user.id)
-        if target_chat_id is None:
-            await q.edit_message_text("请先选择一个群组")
-            return
-        if not await is_user_admin(context, target_chat_id, user.id):
-            await q.edit_message_text("你没有该群组的管理权限")
-            return
 
-        # 返回到管理面板
-        chats = await get_user_managed_chats(db, user.id, context.bot)
-        from bot.handlers.admin import _show_private_admin_menu
+        db = context.application.bot_data["db"]
+        chats = await get_user_managed_chats(db, update.effective_user.id, context.bot)
         await _show_private_admin_menu(update, context, target_chat_id, chats)
-        return
 
-    if not await is_user_admin(context, chat.id, user.id):
-        await q.edit_message_text("需要管理员权限。")
-        return
+    async def _handle_group_chat(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        target_chat_id: int,
+        chat,
+    ) -> None:
+        """处理群组场景 - 显示菜单"""
+        # 获取数据
+        rules, total_matches = await self._fetch_data(context, target_chat_id, chat)
 
-    db: Database = context.application.bot_data["db"]
-    async with db.session_factory() as session:
-        await ensure_chat(session, chat_id=chat.id, chat_type=chat.type, title=chat.title)
-        rules = await get_chat_auto_reply_rules(session, chat.id)
-        total_matches = await get_match_count(session, chat.id)
-        await session.commit()
+        # 发送响应
+        await self.message_helper.safe_edit(
+            update,
+            text=self._format_menu_text(chat.title, rules, total_matches),
+            reply_markup=self._get_menu_keyboard(),
+        )
 
-    text = f"💬 [{chat.title}] 自动回复\n\n"
-    text += f"规则总数: {len(rules)}  |  总匹配次数: {total_matches}\n\n"
-    if rules:
-        for rule in rules[:10]:
-            status = "🟢" if rule.is_active else "🔴"
-            match_type_label = _get_match_type_label(rule.match_type)
-            keywords_preview = ", ".join(rule.keywords[:3])
-            if len(rule.keywords) > 3:
-                keywords_preview += f" ...(+{len(rule.keywords) - 3})"
-            reply_preview = rule.reply_content[:30] + "..." if len(rule.reply_content) > 30 else rule.reply_content
-            text += f"{status} [{rule.id}] {match_type_label}\n"
-            text += f"   关键词: {keywords_preview}\n"
-            text += f"   回复: {reply_preview}\n\n"
-        if len(rules) > 10:
-            text += f"\n... 还有 {len(rules) - 10} 条规则"
-    else:
-        text += "暂无自动回复规则"
+    async def _fetch_data(
+        self,
+        context: ContextTypes.DEFAULT_TYPE,
+        target_chat_id: int,
+        chat,
+    ) -> tuple[list, int]:
+        """获取自动回复数据
 
-    from bot.keyboards.auto_reply import auto_reply_menu_keyboard
+        Returns:
+            tuple[list, int]: (规则列表, 总匹配次数)
+        """
+        db = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            await ensure_chat(session, chat_id=target_chat_id, chat_type=chat.type, title=chat.title)
+            rules = await get_chat_auto_reply_rules(session, target_chat_id)
+            total_matches = await get_match_count(session, target_chat_id)
+            await session.commit()
+        return rules, total_matches
 
-    await q.edit_message_text(text, reply_markup=auto_reply_menu_keyboard())
+    def _format_menu_text(
+        self,
+        chat_title: str,
+        rules: list,
+        total_matches: int,
+    ) -> str:
+        """格式化菜单文本
+
+        Args:
+            chat_title: 群组标题
+            rules: 自动回复规则列表
+            total_matches: 总匹配次数
+
+        Returns:
+            str: 格式化后的菜单文本
+        """
+        text = f"💬 [{chat_title}] 自动回复\n\n"
+        text += f"规则总数: {len(rules)}  |  总匹配次数: {total_matches}\n\n"
+
+        if rules:
+            for rule in rules[:10]:
+                text += self._format_rule_item(rule)
+            if len(rules) > 10:
+                text += f"\n... 还有 {len(rules) - 10} 条规则"
+        else:
+            text += "暂无自动回复规则"
+
+        return text
+
+    def _format_rule_item(self, rule) -> str:
+        """格式化单个规则项
+
+        Args:
+            rule: 自动回复规则对象
+
+        Returns:
+            str: 格式化后的规则项文本
+        """
+        status = "🟢" if rule.is_active else "🔴"
+        match_type_label = _get_match_type_label(rule.match_type)
+        keywords_preview = self._truncate_keywords(rule.keywords)
+        reply_preview = self._truncate_text(rule.reply_content, 30)
+
+        text = f"{status} [{rule.id}] {match_type_label}\n"
+        text += f"   关键词: {keywords_preview}\n"
+        text += f"   回复: {reply_preview}\n\n"
+        return text
+
+    @staticmethod
+    def _truncate_keywords(keywords: list[str], max_show: int = 3) -> str:
+        """截断关键词列表
+
+        Args:
+            keywords: 关键词列表
+            max_show: 最多显示的关键词数量
+
+        Returns:
+            str: 截断后的关键词字符串
+        """
+        preview = ", ".join(keywords[:max_show])
+        if len(keywords) > max_show:
+            preview += f" ...(+{len(keywords) - max_show})"
+        return preview
+
+    @staticmethod
+    def _truncate_text(text: str, max_length: int) -> str:
+        """截断文本
+
+        Args:
+            text: 原始文本
+            max_length: 最大长度
+
+        Returns:
+            str: 截断后的文本
+        """
+        return text[:max_length] + "..." if len(text) > max_length else text
+
+    def _get_menu_keyboard(self):
+        """获取菜单键盘
+
+        Returns:
+            InlineKeyboardMarkup: 菜单键盘
+        """
+        from bot.keyboards.auto_reply import auto_reply_menu_keyboard
+        return auto_reply_menu_keyboard()
+
+
+# Handler 实例
+_auto_reply_menu_handler = AutoReplyMenuHandler()
+
+
+# 适配器函数（保持 Router 兼容）
+async def auto_reply_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """自动回复菜单回调（适配器函数）"""
+    await _auto_reply_menu_handler.handle_callback(update, context)
 
 
 async def auto_reply_create_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -193,75 +304,134 @@ async def auto_reply_create_start(update: Update, context: ContextTypes.DEFAULT_
     await q.edit_message_text(text, parse_mode="Markdown")
 
 
+# Handler 类定义（使用 BaseHandler）
+class AutoReplyToggleHandler(BaseHandler):
+    """自动回复切换状态 Handler"""
+
+    def __init__(self) -> None:
+        super().__init__()
+        # 不需要管理员权限检查，因为这是在群组内的操作
+        self._require_admin_permission = False
+
+    async def process(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        target_chat_id: int,
+    ) -> None:
+        """处理自动回复规则状态切换"""
+        from bot.utils.callback_parser import CallbackParser
+
+        q = update.callback_query
+
+        # 解析规则 ID
+        callback_data = CallbackParser.parse(q.data)
+        rule_id = callback_data.get_int(2)
+
+        if rule_id == 0:
+            await self.message_helper.safe_answer(update, "规则不存在", show_alert=True)
+            return
+
+        # 切换规则状态
+        success = await self._toggle_rule(context, rule_id)
+
+        if success:
+            await self.message_helper.safe_answer(update, "状态已切换")
+            # 刷新菜单
+            await _auto_reply_menu_handler.handle_callback(update, context, require_admin=False)
+        else:
+            await self.message_helper.safe_answer(update, "规则不存在", show_alert=True)
+
+    async def _toggle_rule(self, context: ContextTypes.DEFAULT_TYPE, rule_id: int) -> bool:
+        """切换规则状态
+
+        Args:
+            context: Bot 上下文
+            rule_id: 规则 ID
+
+        Returns:
+            bool: 是否成功
+        """
+        db = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            success = await toggle_auto_reply_rule(session, rule_id)
+            await session.commit()
+        return success
+
+
+# Handler 实例
+_auto_reply_toggle_handler = AutoReplyToggleHandler()
+
+
+# 适配器函数（保持 Router 兼容）
 async def auto_reply_toggle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """切换自动回复规则状态回调"""
-    if update.callback_query is None or update.effective_chat is None:
-        return
-    q = update.callback_query
-    await q.answer()
-
-    chat = update.effective_chat
-    if chat.type == "private":
-        return
-
-    # 解析规则ID
-    data = q.data
-    if not data.startswith("auto_reply_toggle_"):
-        return
-
-    try:
-        rule_id = int(data.split("_")[-1])
-    except (ValueError, IndexError):
-        return
-
-    db: Database = context.application.bot_data["db"]
-    async with db.session_factory() as session:
-        success = await toggle_auto_reply_rule(session, rule_id)
-        await session.commit()
-
-    if success:
-        await q.answer("状态已切换")
-        await auto_reply_menu_callback(update, context)
-    else:
-        await q.answer("规则不存在", show_alert=True)
+    """切换自动回复规则状态回调（适配器函数）"""
+    await _auto_reply_toggle_handler.handle_callback(update, context, require_admin=False)
 
 
+# Handler 类定义（使用 BaseHandler）
+class AutoReplyDeleteHandler(BaseHandler):
+    """自动回复删除规则 Handler"""
+
+    async def process(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        target_chat_id: int,
+    ) -> None:
+        """处理自动回复规则删除"""
+        from bot.utils.callback_parser import CallbackParser
+
+        q = update.callback_query
+        await q.answer()
+
+        # 只在群组中处理
+        if self.chat_resolver.is_private_chat(update):
+            return
+
+        # 解析规则 ID
+        callback_data = CallbackParser.parse(q.data)
+        rule_id = callback_data.get_int(2)
+
+        if rule_id == 0:
+            await self.message_helper.safe_answer(update, "删除失败", show_alert=True)
+            return
+
+        # 删除规则
+        success = await self._delete_rule(context, rule_id)
+
+        if success:
+            await self.message_helper.safe_answer(update, "规则已删除")
+            # 刷新菜单（不需要权限检查，因为已经检查过了）
+            await _auto_reply_menu_handler.handle_callback(update, context, require_admin=False)
+        else:
+            await self.message_helper.safe_answer(update, "删除失败", show_alert=True)
+
+    async def _delete_rule(self, context: ContextTypes.DEFAULT_TYPE, rule_id: int) -> bool:
+        """删除规则
+
+        Args:
+            context: Bot 上下文
+            rule_id: 规则 ID
+
+        Returns:
+            bool: 是否成功
+        """
+        db = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            success = await delete_auto_reply_rule(session, rule_id)
+            await session.commit()
+        return success
+
+
+# Handler 实例
+_auto_reply_delete_handler = AutoReplyDeleteHandler()
+
+
+# 适配器函数（保持 Router 兼容）
 async def auto_reply_delete_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """删除自动回复规则回调"""
-    if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
-        return
-    q = update.callback_query
-    await q.answer()
-
-    chat = update.effective_chat
-    user = update.effective_user
-    if chat.type == "private":
-        return
-
-    if not await is_user_admin(context, chat.id, user.id):
-        await q.answer("需要管理员权限", show_alert=True)
-        return
-
-    # 解析规则ID
-    data = q.data
-    if not data.startswith("auto_reply_delete_"):
-        return
-
-    try:
-        rule_id = int(data.split("_")[-1])
-    except (ValueError, IndexError):
-        return
-
-    db: Database = context.application.bot_data["db"]
-    async with db.session_factory() as session:
-        success = await delete_auto_reply_rule(session, rule_id)
-        await session.commit()
-
-    if success:
-        await q.answer("规则已删除")
-        await auto_reply_menu_callback(update, context)
-    else:
-        await q.answer("删除失败", show_alert=True)
+    """删除自动回复规则回调（适配器函数）"""
+    await _auto_reply_delete_handler.handle_callback(update, context)
 
 
 # ============================================

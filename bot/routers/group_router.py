@@ -1,7 +1,7 @@
 from __future__ import annotations
 import structlog
 from telegram.ext import Application, CallbackQueryHandler
-from bot.handlers.chat_group import (
+from bot.handlers.chat_group_handler import (
     chat_group_admin_callback,
     chat_group_list_callback,
     chat_group_refresh_callback,

@@ -9,6 +9,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from bot.db.session import Database
+from bot.handlers.base.base_handler import BaseHandler
 from bot.models.enums import ConversationStateType, LotteryDrawMode, PointsTxnType
 from bot.models.core import ChatMember, TgUser
 from bot.services.core.chat_service import ensure_chat, get_chat_settings
@@ -25,119 +26,85 @@ from bot.services.activity.lottery_service import (
 )
 from bot.services.activity.points_service import change_points, get_balance
 from bot.services.state.state_service import clear_user_state, get_user_state, set_user_state
-from bot.services.core.permission_service import is_user_admin
-from bot.services.core.user_service import ensure_user
 from bot.keyboards.lottery import (
     manual_draw_prize_keyboard,
     manual_draw_summary_keyboard,
     manual_draw_summary_keyboard_with_winners,
 )
+from bot.utils.callback_parser import CallbackParser
 
 from sqlalchemy import select
 
 log = structlog.get_logger(__name__)
 
 
-# ============================================
-# 回调处理器
-# ============================================
+class LotteryHandler(BaseHandler):
+    """抽奖 Handler"""
 
-async def lottery_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """抽奖菜单回调"""
-    if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
-        return
-    q = update.callback_query
-    await q.answer()
+    def __init__(self) -> None:
+        super().__init__()
+        # 关闭默认权限检查，因为我们在各个方法中自己处理
+        self._require_admin_permission = False
 
-    chat = update.effective_chat
-    user = update.effective_user
+    async def process(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        target_chat_id: int,
+    ) -> None:
+        """处理抽奖回调（用于 BaseHandler 抽象方法）"""
+        # LotteryHandler 不使用 process 方法，直接调用各个方法
+        # 适配器函数会直接调用 show_menu, handle_join 等方法
+        pass
 
-    # 从回调数据中提取目标群组ID
-    data = q.data or ""
-    target_chat_id = None
-    if data.startswith("lot:menu:"):
-        parts = data.split(":")
-        if len(parts) >= 3:
-            target_chat_id = int(parts[2])
+    # ==================== 菜单显示 ====================
 
-    # 如果没有指定群组ID，使用当前群组
-    if target_chat_id is None:
-        if chat.type == "private":
-            await q.edit_message_text("请在群里使用。")
-            return
-        target_chat_id = chat.id
+    async def show_menu(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        target_chat_id: int,
+    ) -> None:
+        """显示抽奖菜单"""
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            from bot.models.core import TgChat
 
-    # 检查管理员权限
-    if not await is_user_admin(context, target_chat_id, user.id):
-        await q.edit_message_text("需要管理员权限。")
-        return
+            # 获取群组信息
+            chat_stmt = select(TgChat).where(TgChat.id == target_chat_id)
+            chat_result = await session.execute(chat_stmt)
+            target_chat = chat_result.scalar_one_or_none()
 
-    db: Database = context.application.bot_data["db"]
-    async with db.session_factory() as session:
-        from bot.models.core import TgChat
-        from sqlalchemy import select
+            stats = await get_lottery_stats(session, target_chat_id)
+            await session.commit()
 
-        # 获取群组信息
-        chat_stmt = select(TgChat).where(TgChat.id == target_chat_id)
-        chat_result = await session.execute(chat_stmt)
-        target_chat = chat_result.scalar_one_or_none()
+        chat_title = target_chat.title if target_chat else f"群组{target_chat_id}"
+        text = f"🎁[{chat_title}]抽奖\n\n"
+        text += f"创建的抽奖次数:{stats['total']}\n\n"
+        text += f"已开奖:{stats['completed']}       未开奖:{stats['pending']}       取消:{stats['cancelled']}"
 
-        stats = await get_lottery_stats(session, target_chat_id)
-        await session.commit()
+        from bot.keyboards.lottery import lottery_menu_keyboard
 
-    chat_title = target_chat.title if target_chat else f"群组{target_chat_id}"
-    text = f"🎁[{chat_title}]抽奖\n\n"
-    text += f"创建的抽奖次数:{stats['total']}\n\n"
-    text += f"已开奖:{stats['completed']}       未开奖:{stats['pending']}       取消:{stats['cancelled']}"
+        await self.message_helper.safe_edit(
+            update,
+            text=text,
+            reply_markup=lottery_menu_keyboard(target_chat_id)
+        )
 
-    from bot.keyboards.lottery import lottery_menu_keyboard
-
-    await q.edit_message_text(text, reply_markup=lottery_menu_keyboard(target_chat_id))
-
-
-async def lottery_create_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """开始创建抽奖流程"""
-    try:
-        log.info("lottery_create_start_entered")
-
-        if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
-            log.warning("lottery_create_start_missing_data")
-            return
+    async def start_create_flow(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        target_chat_id: int,
+    ) -> None:
+        """开始创建抽奖流程"""
         q = update.callback_query
-        await q.answer()
-
-        chat = update.effective_chat
         user = update.effective_user
-
-        # 从回调数据中提取目标群组ID
-        data = q.data or ""
-        target_chat_id = None
-        if data.startswith("lot:create:"):
-            parts = data.split(":")
-            if len(parts) >= 3:
-                target_chat_id = int(parts[2])
-
-        log.info("lottery_create_start_called", callback_data=data, target_chat_id=target_chat_id, user_id=user.id, chat_type=chat.type)
-
-        # 如果没有指定群组ID，使用当前群组
-        if target_chat_id is None:
-            if chat.type == "private":
-                await q.edit_message_text("请在群里使用。")
-                return
-            target_chat_id = chat.id
-
-        # 检查管理员权限
-        log.info("lottery_create_checking_admin", target_chat_id=target_chat_id, user_id=user.id)
-        is_admin = await is_user_admin(context, target_chat_id, user.id)
-        log.info("lottery_create_admin_check_result", target_chat_id=target_chat_id, user_id=user.id, is_admin=is_admin)
-        if not is_admin:
-            log.warning("lottery_create_permission_denied", target_chat_id=target_chat_id, user_id=user.id)
-            await q.edit_message_text(f"需要管理员权限。\n\n请确保你是群组 {target_chat_id} 的管理员，且 Bot 已加入该群组。")
-            return
 
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
             await ensure_chat(session, chat_id=target_chat_id, chat_type="supergroup", title=None)
+            from bot.services.core.user_service import ensure_user
             await ensure_user(
                 session,
                 user_id=user.id,
@@ -150,7 +117,7 @@ async def lottery_create_start(update: Update, context: ContextTypes.DEFAULT_TYP
             # 设置状态：等待输入配置，保存目标群组ID
             await set_user_state(
                 session,
-                chat_id=chat.id,  # 使用当前聊天（私聊）存储状态
+                chat_id=q.message.chat.id,  # 使用当前聊天（私聊）存储状态
                 user_id=user.id,
                 state_type=ConversationStateType.lottery_create.value,
                 state_data={"step": "config", "target_chat_id": target_chat_id},
@@ -185,7 +152,292 @@ async def lottery_create_start(update: Update, context: ContextTypes.DEFAULT_TYP
         text += "三等奖:10U,10\n"
         text += "```"
 
-        await q.edit_message_text(text, parse_mode="Markdown")
+        await self.message_helper.safe_edit(update, text=text, parse_mode="Markdown")
+
+    async def handle_join(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        lottery_id: int,
+    ) -> None:
+        """处理用户参与抽奖"""
+        q = update.callback_query
+        chat = update.effective_chat
+        user = update.effective_user
+
+        if chat.type == "private":
+            await self.message_helper.safe_edit(update, "请在群里使用。")
+            return
+
+        db: Database = context.application.bot_data["db"]
+        participant_count = 0
+        error_msg = None
+
+        async with db.session_factory() as session:
+            # 获取抽奖信息
+            lottery = await get_lottery(session, lottery_id)
+            if not lottery:
+                error_msg = "抽奖不存在。"
+            elif lottery.chat_id != chat.id:
+                error_msg = "此抽奖不属于当前群组。"
+            else:
+                # 获取用户积分
+                user_points = await get_balance(session, chat.id, user.id)
+
+                # 获取用户入群时间
+                stmt = select(ChatMember).where(
+                    ChatMember.chat_id == chat.id,
+                    ChatMember.user_id == user.id
+                )
+                result = await session.execute(stmt)
+                member = result.scalar_one_or_none()
+                member_joined_at = member.joined_at if member else None
+
+                # 检查是否可以参与并扣费
+                result = await join_lottery(
+                    session,
+                    lottery_id=lottery_id,
+                    user_id=user.id,
+                    points_balance=user_points,
+                    member_joined_at=member_joined_at,
+                )
+
+                if not result.success:
+                    error_messages = {
+                        "already_joined": "你已经参与过此抽奖了",
+                        "lottery_not_open": "抽奖尚未开始",
+                        "lottery_closed": "抽奖已结束",
+                        "lottery_completed": "抽奖已开奖",
+                        "insufficient_points": f"积分不足，需要至少 {lottery.min_points} 积分",
+                        "max_participants_reached": "参与人数已满",
+                        "not_member_long_enough": f"入群天数不足，需要 {lottery.requirement_days} 天以上",
+                        "outside_join_time": "不在参与时间内",
+                    }
+                    error_msg = error_messages.get(result.reason, "无法参与抽奖")
+                else:
+                    # 扣除参与费用
+                    if lottery.participation_cost > 0:
+                        success, new_balance = await change_points(
+                            session,
+                            chat_id=chat.id,
+                            user_id=user.id,
+                            amount=-lottery.participation_cost,
+                            txn_type=PointsTxnType.lottery_join.value,
+                            reason=f"参与抽奖: {lottery.title}",
+                        )
+                        if not success:
+                            error_msg = "积分不足，无法参与"
+                            await session.rollback()
+
+                if not error_msg:
+                    participant_count = await get_lottery_participant_count(session, lottery_id)
+                else:
+                    await session.rollback()
+
+            await session.commit()
+
+        # 显示结果
+        if error_msg:
+            await q.answer(error_msg, show_alert=True)
+        else:
+            await q.answer(f"🎉 参与成功！当前人数: {participant_count}", show_alert=True)
+
+    async def handle_draw(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        lottery_id: int,
+    ) -> None:
+        """处理开奖"""
+        q = update.callback_query
+        chat = update.effective_chat
+
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            lottery = await get_lottery(session, lottery_id)
+            if not lottery:
+                await self.message_helper.safe_edit(update, "抽奖不存在。")
+                await session.commit()
+                return
+
+            if lottery.chat_id != chat.id:
+                await self.message_helper.safe_edit(update, "此抽奖不属于当前群组。")
+                await session.commit()
+                return
+
+            if lottery.status != "pending":
+                await self.message_helper.safe_edit(update, "抽奖已开奖或已取消。")
+                await session.commit()
+                return
+
+            # 获取参与者
+            participants = await get_lottery_participants(session, lottery_id)
+            if not participants:
+                await self.message_helper.safe_edit(update, "没有人参与抽奖。")
+                await session.commit()
+                return
+
+            # 检查开奖模式
+            if lottery.draw_mode == LotteryDrawMode.manual.value:
+                # 手动开奖模式
+                await session.commit()
+
+                # 获取参与者用户信息
+                user_ids = [p.user_id for p in participants]
+                stmt = select(TgUser).where(TgUser.id.in_(user_ids))
+                result = await session.execute(stmt)
+                users = {u.id: u for u in result.scalars().all()}
+
+                # 为每个参与者添加用户信息
+                for p in participants:
+                    p.user_info = users.get(p.user_id)
+
+                # 构建奖品列表
+                prize_list = []
+                for i, prize in enumerate(lottery.prizes):
+                    quantity = prize.get("quantity", 1)
+                    for j in range(quantity):
+                        prize_list.append({
+                            "prize_index": i * 10 + j,
+                            "name": prize["name"],
+                            "original_index": i,
+                        })
+
+                text = f"📋 手动选择中奖人\n\n"
+                text += f"抽奖: {lottery.title}\n"
+                text += f"参与人数: {len(participants)}\n"
+                text += f"奖品数量: {len(prize_list)}\n\n"
+                text += f"请为每个奖项选择中奖人："
+
+                await self.message_helper.safe_edit(
+                    update,
+                    text=text,
+                    reply_markup=manual_draw_summary_keyboard(lottery_id, prize_list),
+                )
+                return
+
+            # 随机开奖模式
+            from bot.services.activity.lottery_service import (
+                perform_random_draw,
+                generate_lottery_announcement,
+                distribute_lottery_rewards,
+            )
+
+            winners = await perform_random_draw(session, lottery)
+
+            if winners:
+                # 获取中奖用户信息
+                user_ids = [w.user_id for w in winners]
+                user_stmt = select(TgUser).where(TgUser.id.in_(user_ids))
+                user_result = await session.execute(user_stmt)
+                users = {u.id: u for u in user_result.scalars().all()}
+
+                # 发放积分奖励
+                await distribute_lottery_rewards(session, lottery, winners)
+
+                # 更新抽奖状态
+                lottery.status = "completed"
+                lottery.drawn_at = dt.datetime.now(dt.timezone.utc)
+
+                # 生成开奖公告
+                announcement = generate_lottery_announcement(lottery, winners, users)
+
+                await session.commit()
+                await self.message_helper.safe_edit(update, text=announcement, parse_mode="Markdown")
+            else:
+                await self.message_helper.safe_edit(update, "没有人参与抽奖。")
+                await session.commit()
+
+
+# 创建单例实例
+_lottery_handler = LotteryHandler()
+
+
+# ==================== 适配器函数（供 Router 注册）====================
+
+# ============================================
+# 回调处理器
+# ============================================
+
+async def lottery_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """抽奖菜单回调"""
+    if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
+        return
+    q = update.callback_query
+    await q.answer()
+
+    chat = update.effective_chat
+    user = update.effective_user
+
+    # 从回调数据中提取目标群组ID
+    data = q.data or ""
+    target_chat_id = None
+    if data.startswith("lot:menu:"):
+        parts = data.split(":")
+        if len(parts) >= 3:
+            target_chat_id = int(parts[2])
+
+    # 如果没有指定群组ID，使用当前群组
+    if target_chat_id is None:
+        if chat.type == "private":
+            await _lottery_handler.message_helper.safe_edit(update, "请在群里使用。")
+            return
+        target_chat_id = chat.id
+
+    # 检查管理员权限
+    if not await _lottery_handler.permission_helper.is_user_admin(context, target_chat_id, user.id):
+        await _lottery_handler.message_helper.safe_edit(update, "需要管理员权限。")
+        return
+
+    # 使用 Handler 处理
+    await _lottery_handler.show_menu(update, context, target_chat_id)
+
+
+async def lottery_create_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """开始创建抽奖流程"""
+    try:
+        log.info("lottery_create_start_entered")
+
+        if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
+            log.warning("lottery_create_start_missing_data")
+            return
+        q = update.callback_query
+        await q.answer()
+
+        chat = update.effective_chat
+        user = update.effective_user
+
+        # 从回调数据中提取目标群组ID
+        data = q.data or ""
+        target_chat_id = None
+        if data.startswith("lot:create:"):
+            parts = data.split(":")
+            if len(parts) >= 3:
+                target_chat_id = int(parts[2])
+
+        log.info("lottery_create_start_called", callback_data=data, target_chat_id=target_chat_id, user_id=user.id, chat_type=chat.type)
+
+        # 如果没有指定群组ID，使用当前群组
+        if target_chat_id is None:
+            if chat.type == "private":
+                await _lottery_handler.message_helper.safe_edit(update, "请在群里使用。")
+                return
+            target_chat_id = chat.id
+
+        # 检查管理员权限
+        log.info("lottery_create_checking_admin", target_chat_id=target_chat_id, user_id=user.id)
+        is_admin = await _lottery_handler.permission_helper.is_user_admin(context, target_chat_id, user.id)
+        log.info("lottery_create_admin_check_result", target_chat_id=target_chat_id, user_id=user.id, is_admin=is_admin)
+        if not is_admin:
+            log.warning("lottery_create_permission_denied", target_chat_id=target_chat_id, user_id=user.id)
+            await _lottery_handler.message_helper.safe_edit(
+                update,
+                f"需要管理员权限。\n\n请确保你是群组 {target_chat_id} 的管理员，且 Bot 已加入该群组。"
+            )
+            return
+
+        # 使用 Handler 处理
+        await _lottery_handler.start_create_flow(update, context, target_chat_id)
         log.info("lottery_create_start_success")
     except Exception as e:
         log.exception("lottery_create_start_error", error=str(e))
@@ -302,28 +554,28 @@ async def _parse_lottery_config(update: Update, context: ContextTypes.DEFAULT_TY
                     value = int(line.split(":", 1)[1].strip())
                     min_points = max(0, value)
                 except ValueError:
-                    await q.edit_message_text("❌ 最低积分必须是有效数字")
+                    await update.effective_message.reply_text("❌ 最低积分必须是有效数字")
                     return
             elif line.startswith("参与费用:"):
                 try:
                     value = int(line.split(":", 1)[1].strip())
                     participation_cost = max(0, value)
                 except ValueError:
-                    await q.edit_message_text("❌ 参与费用必须是有效数字")
+                    await update.effective_message.reply_text("❌ 参与费用必须是有效数字")
                     return
             elif line.startswith("最大人数:"):
                 try:
                     value = int(line.split(":", 1)[1].strip())
                     max_participants = max(0, value)
                 except ValueError:
-                    await q.edit_message_text("❌ 最大人数必须是有效数字")
+                    await update.effective_message.reply_text("❌ 最大人数必须是有效数字")
                     return
             elif line.startswith("入群天数:"):
                 try:
                     value = int(line.split(":", 1)[1].strip())
                     requirement_days = max(0, value)
                 except ValueError:
-                    await q.edit_message_text("❌ 入群天数必须是有效数字")
+                    await update.effective_message.reply_text("❌ 入群天数必须是有效数字")
                     return
 
         # 解析奖品
@@ -460,7 +712,7 @@ async def join_lottery_callback(update: Update, context: ContextTypes.DEFAULT_TY
     user = update.effective_user
 
     if chat.type == "private":
-        await q.edit_message_text("请在群里使用。")
+        await _lottery_handler.message_helper.safe_edit(update, "请在群里使用。")
         return
 
     # 解析抽奖ID
@@ -471,83 +723,11 @@ async def join_lottery_callback(update: Update, context: ContextTypes.DEFAULT_TY
     try:
         lottery_id = int(data.split("_")[-1])
     except (ValueError, IndexError):
-        await q.edit_message_text("无效的抽奖。")
+        await _lottery_handler.message_helper.safe_edit(update, "无效的抽奖。")
         return
 
-    db: Database = context.application.bot_data["db"]
-    participant_count = 0
-    error_msg = None
-
-    async with db.session_factory() as session:
-        # 获取抽奖信息
-        lottery = await get_lottery(session, lottery_id)
-        if not lottery:
-            error_msg = "抽奖不存在。"
-        elif lottery.chat_id != chat.id:
-            error_msg = "此抽奖不属于当前群组。"
-        else:
-            # 获取用户积分
-            user_points = await get_balance(session, chat.id, user.id)
-
-            # 获取用户入群时间
-            stmt = select(ChatMember).where(
-                ChatMember.chat_id == chat.id,
-                ChatMember.user_id == user.id
-            )
-            result = await session.execute(stmt)
-            member = result.scalar_one_or_none()
-            member_joined_at = member.joined_at if member else None
-
-            # 检查是否可以参与并扣费
-            result = await join_lottery(
-                session,
-                lottery_id=lottery_id,
-                user_id=user.id,
-                points_balance=user_points,
-                member_joined_at=member_joined_at,
-            )
-
-            if not result.success:
-                error_messages = {
-                    "already_joined": "你已经参与过此抽奖了",
-                    "lottery_not_open": "抽奖尚未开始",
-                    "lottery_closed": "抽奖已结束",
-                    "lottery_completed": "抽奖已开奖",
-                    "insufficient_points": f"积分不足，需要至少 {lottery.min_points} 积分",
-                    "max_participants_reached": "参与人数已满",
-                    "not_member_long_enough": f"入群天数不足，需要 {lottery.requirement_days} 天以上",
-                    "outside_join_time": "不在参与时间内",
-                }
-                error_msg = error_messages.get(result.reason, "无法参与抽奖")
-            else:
-                # 扣除参与费用（在 join_lottery 之外单独处理，因为需要检查余额）
-                if lottery.participation_cost > 0:
-                    success, new_balance = await change_points(
-                        session,
-                        chat_id=chat.id,
-                        user_id=user.id,
-                        amount=-lottery.participation_cost,
-                        txn_type=PointsTxnType.lottery_join.value,
-                        reason=f"参与抽奖: {lottery.title}",
-                    )
-                    if not success:
-                        error_msg = "积分不足，无法参与"
-                        await session.rollback()
-
-                if not error_msg:
-                    # 获取当前参与人数
-                    participant_count = await get_lottery_participant_count(session, lottery_id)
-                else:
-                    # 扣费失败，确保不提交任何更改
-                    await session.rollback()
-
-        await session.commit()
-
-    # 显示结果
-    if error_msg:
-        await q.answer(error_msg, show_alert=True)
-    else:
-        await q.answer(f"🎉 参与成功！当前人数: {participant_count}", show_alert=True)
+    # 使用 Handler 处理
+    await _lottery_handler.handle_join(update, context, lottery_id)
 
 
 # ============================================
@@ -566,11 +746,11 @@ async def draw_lottery_callback(update: Update, context: ContextTypes.DEFAULT_TY
     user = update.effective_user
 
     if chat.type == "private":
-        await q.edit_message_text("请在群里使用。")
+        await _lottery_handler.message_helper.safe_edit(update, "请在群里使用。")
         return
 
-    if not await is_user_admin(context, chat.id, user.id):
-        await q.edit_message_text("需要管理员权限。")
+    if not await _lottery_handler.permission_helper.is_user_admin(context, chat.id, user.id):
+        await _lottery_handler.message_helper.safe_edit(update, "需要管理员权限。")
         return
 
     # 解析抽奖ID
@@ -581,105 +761,11 @@ async def draw_lottery_callback(update: Update, context: ContextTypes.DEFAULT_TY
     try:
         lottery_id = int(data.split("_")[-1])
     except (ValueError, IndexError):
-        await q.edit_message_text("无效的抽奖。")
+        await _lottery_handler.message_helper.safe_edit(update, "无效的抽奖。")
         return
 
-    db: Database = context.application.bot_data["db"]
-    async with db.session_factory() as session:
-        lottery = await get_lottery(session, lottery_id)
-        if not lottery:
-            await q.edit_message_text("抽奖不存在。")
-            await session.commit()
-            return
-
-        if lottery.chat_id != chat.id:
-            await q.edit_message_text("此抽奖不属于当前群组。")
-            await session.commit()
-            return
-
-        if lottery.status != "pending":
-            await q.edit_message_text("抽奖已开奖或已取消。")
-            await session.commit()
-            return
-
-        # 获取参与者
-        participants = await get_lottery_participants(session, lottery_id)
-        if not participants:
-            await q.edit_message_text("没有人参与抽奖。")
-            await session.commit()
-            return
-
-        # 检查开奖模式
-        if lottery.draw_mode == LotteryDrawMode.manual.value:
-            # 手动开奖模式 - 进入选择中奖人流程
-            await session.commit()
-
-            # 获取参与者用户信息
-            user_ids = [p.user_id for p in participants]
-            stmt = select(TgUser).where(TgUser.id.in_(user_ids))
-            result = await session.execute(stmt)
-            users = {u.id: u for u in result.scalars().all()}
-
-            # 为每个参与者添加用户信息
-            for p in participants:
-                p.user_info = users.get(p.user_id)
-
-            # 构建奖品列表
-            prize_list = []
-            for i, prize in enumerate(lottery.prizes):
-                quantity = prize.get("quantity", 1)
-                for j in range(quantity):
-                    prize_list.append({
-                        "prize_index": i * 10 + j,
-                        "name": prize["name"],
-                        "original_index": i,
-                    })
-
-            text = f"📋 手动选择中奖人\n\n"
-            text += f"抽奖: {lottery.title}\n"
-            text += f"参与人数: {len(participants)}\n"
-            text += f"奖品数量: {len(prize_list)}\n\n"
-            text += f"请为每个奖项选择中奖人："
-
-            await q.edit_message_text(
-                text,
-                reply_markup=manual_draw_summary_keyboard(lottery_id, prize_list),
-            )
-            return
-
-        # 随机开奖模式（使用新的服务方法）
-        from bot.services.activity.lottery_service import (
-            perform_random_draw,
-            generate_lottery_announcement,
-            distribute_lottery_rewards,
-        )
-        from bot.models.core import TgUser
-
-        # 执行随机开奖
-        winners = await perform_random_draw(session, lottery)
-
-        if winners:
-            # 获取中奖用户信息
-            user_ids = [w.user_id for w in winners]
-            user_stmt = select(TgUser).where(TgUser.id.in_(user_ids))
-            user_result = await session.execute(user_stmt)
-            users = {u.id: u for u in user_result.scalars().all()}
-
-            # 发放积分奖励
-            await distribute_lottery_rewards(session, lottery, winners)
-
-            # 更新抽奖状态
-            lottery.status = "completed"
-            lottery.drawn_at = dt.datetime.now(dt.timezone.utc)
-
-            # 生成开奖公告
-            announcement = generate_lottery_announcement(lottery, winners, users)
-
-            await session.commit()
-            await q.edit_message_text(announcement, parse_mode="Markdown")
-        else:
-            await q.edit_message_text("没有人参与抽奖。")
-            await session.commit()
+    # 使用 Handler 处理
+    await _lottery_handler.handle_draw(update, context, lottery_id)
 
 
 # ============================================
@@ -697,8 +783,8 @@ async def manual_draw_select_prize_callback(update: Update, context: ContextType
     chat = update.effective_chat
     user = update.effective_user
 
-    if not await is_user_admin(context, chat.id, user.id):
-        await q.edit_message_text("需要管理员权限。")
+    if not await _lottery_handler.permission_helper.is_user_admin(context, chat.id, user.id):
+        await _lottery_handler.message_helper.safe_edit(update, "需要管理员权限。")
         return
 
     data = q.data or ""
@@ -714,7 +800,7 @@ async def manual_draw_select_prize_callback(update: Update, context: ContextType
     async with db.session_factory() as session:
         lottery = await get_lottery(session, lottery_id)
         if not lottery:
-            await q.edit_message_text("抽奖不存在。")
+            await _lottery_handler.message_helper.safe_edit(update, "抽奖不存在。")
             await session.commit()
             return
 
@@ -737,8 +823,9 @@ async def manual_draw_select_prize_callback(update: Update, context: ContextType
     text += f"参与人数: {len(participants)}\n\n"
     text += f"请选择中奖者："
 
-    await q.edit_message_text(
-        text,
+    await _lottery_handler.message_helper.safe_edit(
+        update,
+        text=text,
         reply_markup=manual_draw_prize_keyboard(lottery_id, prize_index, prize_name, participants),
     )
 
@@ -754,8 +841,8 @@ async def manual_draw_select_winner_callback(update: Update, context: ContextTyp
     chat = update.effective_chat
     user = update.effective_user
 
-    if not await is_user_admin(context, chat.id, user.id):
-        await q.edit_message_text("需要管理员权限。")
+    if not await _lottery_handler.permission_helper.is_user_admin(context, chat.id, user.id):
+        await _lottery_handler.message_helper.safe_edit(update, "需要管理员权限。")
         return
 
     data = q.data or ""
@@ -796,8 +883,9 @@ async def manual_draw_select_winner_callback(update: Update, context: ContextTyp
     winner_user = result.scalar_one_or_none()
     winner_name = winner_user.first_name or winner_user.last_name or winner_user.username or f"用户{winner_user_id}" if winner_user else "未知用户"
 
-    await q.edit_message_text(
-        f"✅ 已选择中奖人\n\n"
+    await _lottery_handler.message_helper.safe_edit(
+        update,
+        text=f"✅ 已选择中奖人\n\n"
         f"奖项: {prize_name}\n"
         f"中奖人: {winner_name}\n\n"
         f"请继续选择其他奖项或完成开奖。",
@@ -816,8 +904,8 @@ async def manual_draw_complete_callback(update: Update, context: ContextTypes.DE
     chat = update.effective_chat
     user = update.effective_user
 
-    if not await is_user_admin(context, chat.id, user.id):
-        await q.edit_message_text("需要管理员权限。")
+    if not await _lottery_handler.permission_helper.is_user_admin(context, chat.id, user.id):
+        await _lottery_handler.message_helper.safe_edit(update, "需要管理员权限。")
         return
 
     data = q.data or ""
@@ -829,24 +917,24 @@ async def manual_draw_complete_callback(update: Update, context: ContextTypes.DE
         # 获取中奖人信息
         state = await get_user_state(session, chat.id, user.id)
         if not state or state.state_type != "manual_draw":
-            await q.edit_message_text("未找到开奖信息，请重新开始。")
+            await _lottery_handler.message_helper.safe_edit(update, "未找到开奖信息，请重新开始。")
             await session.commit()
             return
 
         winners = state.state_data.get("winners", {})
         if not winners:
-            await q.edit_message_text("请先为所有奖项选择中奖人。")
+            await _lottery_handler.message_helper.safe_edit(update, "请先为所有奖项选择中奖人。")
             await session.commit()
             return
 
         lottery = await get_lottery(session, lottery_id)
         if not lottery:
-            await q.edit_message_text("抽奖不存在。")
+            await _lottery_handler.message_helper.safe_edit(update, "抽奖不存在。")
             await session.commit()
             return
 
         if lottery.status != "pending":
-            await q.edit_message_text("抽奖已开奖或已取消。")
+            await _lottery_handler.message_helper.safe_edit(update, "抽奖已开奖或已取消。")
             await session.commit()
             return
 
@@ -860,7 +948,10 @@ async def manual_draw_complete_callback(update: Update, context: ContextTypes.DE
         total_prizes = len(prize_pool)
         selected_prizes = len(winners)
         if selected_prizes < total_prizes:
-            await q.edit_message_text(f"还有 {total_prizes - selected_prizes} 个奖项未选择中奖人，请先完成选择。")
+            await _lottery_handler.message_helper.safe_edit(
+                update,
+                f"还有 {total_prizes - selected_prizes} 个奖项未选择中奖人，请先完成选择。"
+            )
             await session.commit()
             return
 
@@ -907,7 +998,7 @@ async def manual_draw_complete_callback(update: Update, context: ContextTypes.DE
 
         await session.commit()
 
-        await q.edit_message_text(announcement, parse_mode="Markdown")
+        await _lottery_handler.message_helper.safe_edit(update, text=announcement, parse_mode="Markdown")
 
 
 async def manual_draw_winner_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -921,8 +1012,8 @@ async def manual_draw_winner_page_callback(update: Update, context: ContextTypes
     chat = update.effective_chat
     user = update.effective_user
 
-    if not await is_user_admin(context, chat.id, user.id):
-        await q.edit_message_text("需要管理员权限。")
+    if not await _lottery_handler.permission_helper.is_user_admin(context, chat.id, user.id):
+        await _lottery_handler.message_helper.safe_edit(update, "需要管理员权限。")
         return
 
     data = q.data or ""
@@ -938,7 +1029,7 @@ async def manual_draw_winner_page_callback(update: Update, context: ContextTypes
     async with db.session_factory() as session:
         lottery = await get_lottery(session, lottery_id)
         if not lottery:
-            await q.edit_message_text("抽奖不存在。")
+            await _lottery_handler.message_helper.safe_edit(update, "抽奖不存在。")
             await session.commit()
             return
 
@@ -967,8 +1058,9 @@ async def manual_draw_winner_page_callback(update: Update, context: ContextTypes
     text += f"参与人数: {len(participants)}\n\n"
     text += f"请选择中奖者："
 
-    await q.edit_message_text(
-        text,
+    await _lottery_handler.message_helper.safe_edit(
+        update,
+        text=text,
         reply_markup=manual_draw_prize_keyboard(lottery_id, prize_index, prize_name, participants, page),
     )
 
@@ -984,8 +1076,8 @@ async def manual_draw_menu_callback(update: Update, context: ContextTypes.DEFAUL
     chat = update.effective_chat
     user = update.effective_user
 
-    if not await is_user_admin(context, chat.id, user.id):
-        await q.edit_message_text("需要管理员权限。")
+    if not await _lottery_handler.permission_helper.is_user_admin(context, chat.id, user.id):
+        await _lottery_handler.message_helper.safe_edit(update, "需要管理员权限。")
         return
 
     data = q.data or ""
@@ -999,7 +1091,7 @@ async def manual_draw_menu_callback(update: Update, context: ContextTypes.DEFAUL
 
         lottery = await get_lottery(session, lottery_id)
         if not lottery:
-            await q.edit_message_text("抽奖不存在。")
+            await _lottery_handler.message_helper.safe_edit(update, "抽奖不存在。")
             await session.commit()
             return
 
@@ -1008,15 +1100,17 @@ async def manual_draw_menu_callback(update: Update, context: ContextTypes.DEFAUL
         await session.commit()
 
     if winners:
-        await q.edit_message_text(
-            f"📋 手动选择中奖人\n\n"
+        await _lottery_handler.message_helper.safe_edit(
+            update,
+            text=f"📋 手动选择中奖人\n\n"
             f"抽奖: {lottery.title}\n"
             f"已选择: {len(winners)}/{len(prizes)} 个奖项",
             reply_markup=manual_draw_summary_keyboard_with_winners(lottery_id, prizes, winners),
         )
     else:
-        await q.edit_message_text(
-            f"📋 手动选择中奖人\n\n"
+        await _lottery_handler.message_helper.safe_edit(
+            update,
+            text=f"📋 手动选择中奖人\n\n"
             f"抽奖: {lottery.title}\n"
             f"请为每个奖项选择中奖人：",
             reply_markup=manual_draw_summary_keyboard(lottery_id, prizes),
