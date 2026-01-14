@@ -95,3 +95,42 @@ class CloseResult(ServiceResult):
 
     entity: Any = None
     """被关闭的实体对象"""
+
+
+@dataclass
+class MatchResult(ServiceResult):
+    """
+    匹配操作结果
+
+    用于内容匹配操作（如自动回复、违禁词检测）
+    """
+
+    rule: Any = None
+    """匹配的规则"""
+
+    reply_content: str | None = None
+    """回复内容"""
+
+
+@dataclass
+class ToggleResult(ServiceResult):
+    """
+    切换操作结果
+
+    用于切换状态（如启用/禁用）
+    """
+
+    entity: Any = None
+    """被切换的实体"""
+
+
+@dataclass
+class UpdateResult(ServiceResult):
+    """
+    更新操作结果
+
+    用于更新资源的操作
+    """
+
+    entity: Any = None
+    """更新后的实体对象"""

@@ -1,35 +1,13 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
-from typing import Literal
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.models.core import AutoReplyRule
 from bot.models.enums import AutoReplyMatchType
-
-
-@dataclass
-class CreateResult:
-    """创建自动回复规则结果"""
-    success: bool
-    reason: Literal[
-        "ok",
-        "invalid_keywords",
-        "invalid_reply",
-        "invalid_match_type",
-    ]
-    rule: AutoReplyRule | None = None
-
-
-@dataclass
-class MatchResult:
-    """匹配结果"""
-    matched: bool
-    rule: AutoReplyRule | None = None
-    reply_content: str | None = None
+from bot.services.base import ServiceBase
+from bot.services.shared.result import CreateResult, MatchResult
 
 
 async def create_auto_reply_rule(
@@ -41,7 +19,21 @@ async def create_auto_reply_rule(
     match_type: str = AutoReplyMatchType.contains.value,
     case_sensitive: bool = False,
 ) -> CreateResult:
-    """创建自动回复规则"""
+    """
+    创建自动回复规则
+
+    Args:
+        session: 数据库会话
+        chat_id: 群组 ID
+        created_by_user_id: 创建者用户 ID
+        keywords: 关键词列表
+        reply_content: 回复内容
+        match_type: 匹配类型
+        case_sensitive: 是否区分大小写
+
+    Returns:
+        CreateResult: 创建结果
+    """
     # 验证关键词
     if not keywords or not all(k.strip() for k in keywords):
         return CreateResult(success=False, reason="invalid_keywords")
@@ -73,14 +65,21 @@ async def create_auto_reply_rule(
     )
     session.add(rule)
     await session.flush()
-    return CreateResult(success=True, reason="ok", rule=rule)
+    return CreateResult(success=True, reason="ok", entity=rule, entity_id=rule.id)
 
 
 async def get_auto_reply_rule(session: AsyncSession, rule_id: int) -> AutoReplyRule | None:
-    """获取自动回复规则"""
-    stmt = select(AutoReplyRule).where(AutoReplyRule.id == rule_id)
-    result = await session.execute(stmt)
-    return result.scalar_one_or_none()
+    """
+    获取自动回复规则
+
+    Args:
+        session: 数据库会话
+        rule_id: 规则 ID
+
+    Returns:
+        AutoReplyRule: 规则对象，如果不存在则返回 None
+    """
+    return await ServiceBase._get_by_id(session, AutoReplyRule, rule_id)
 
 
 async def get_chat_auto_reply_rules(
@@ -88,24 +87,49 @@ async def get_chat_auto_reply_rules(
     chat_id: int,
     active_only: bool = False,
 ) -> list[AutoReplyRule]:
-    """获取群组的自动回复规则列表"""
-    stmt = select(AutoReplyRule).where(AutoReplyRule.chat_id == chat_id)
-    if active_only:
-        stmt = stmt.where(AutoReplyRule.is_active == True)
-    stmt = stmt.order_by(AutoReplyRule.created_at.desc())
-    result = await session.execute(stmt)
-    return list(result.scalars().all())
+    """
+    获取群组的自动回复规则列表
+
+    Args:
+        session: 数据库会话
+        chat_id: 群组 ID
+        active_only: 是否只返回激活的规则
+
+    Returns:
+        自动回复规则列表
+    """
+    return await ServiceBase._get_list(
+        session,
+        AutoReplyRule,
+        filters={"chat_id": chat_id},
+        active_only=active_only,
+        order_by="created_at",
+        descending=True,
+    )
 
 
 async def toggle_auto_reply_rule(
     session: AsyncSession,
     rule_id: int,
 ) -> bool:
-    """切换自动回复规则激活状态"""
+    """
+    切换自动回复规则激活状态
+
+    Args:
+        session: 数据库会话
+        rule_id: 规则 ID
+
+    Returns:
+        是否切换成功
+    """
     rule = await get_auto_reply_rule(session, rule_id)
     if not rule:
         return False
-    rule.is_active = not rule.is_active
+    await ServiceBase._update_entity(
+        session,
+        rule,
+        {"is_active": not rule.is_active},
+    )
     return True
 
 
@@ -113,11 +137,20 @@ async def delete_auto_reply_rule(
     session: AsyncSession,
     rule_id: int,
 ) -> bool:
-    """删除自动回复规则"""
+    """
+    删除自动回复规则
+
+    Args:
+        session: 数据库会话
+        rule_id: 规则 ID
+
+    Returns:
+        是否删除成功
+    """
     rule = await get_auto_reply_rule(session, rule_id)
     if not rule:
         return False
-    await session.delete(rule)
+    await ServiceBase._delete_entity(session, rule)
     return True
 
 
@@ -126,24 +159,53 @@ async def match_auto_reply(
     chat_id: int,
     message_text: str,
 ) -> MatchResult:
-    """匹配自动回复规则"""
+    """
+    匹配自动回复规则
+
+    Args:
+        session: 数据库会话
+        chat_id: 群组 ID
+        message_text: 消息文本
+
+    Returns:
+        MatchResult: 匹配结果
+    """
     rules = await get_chat_auto_reply_rules(session, chat_id, active_only=True)
 
     for rule in rules:
         if _match_rule(rule, message_text):
             # 增加匹配计数
-            rule.match_count += 1
+            await ServiceBase._update_entity(
+                session,
+                rule,
+                {"match_count": rule.match_count + 1},
+            )
             return MatchResult(
-                matched=True,
+                success=True,
+                reason="matched",
                 rule=rule,
                 reply_content=rule.reply_content,
             )
 
-    return MatchResult(matched=False, rule=None, reply_content=None)
+    return MatchResult(
+        success=False,
+        reason="no_match",
+        rule=None,
+        reply_content=None,
+    )
 
 
 def _match_rule(rule: AutoReplyRule, text: str) -> bool:
-    """检查消息是否匹配规则"""
+    """
+    检查消息是否匹配规则
+
+    Args:
+        rule: 自动回复规则
+        text: 消息文本
+
+    Returns:
+        是否匹配
+    """
     if not rule.case_sensitive:
         text = text.lower()
 
@@ -177,8 +239,19 @@ async def get_match_count(
     session: AsyncSession,
     chat_id: int,
 ) -> int:
-    """获取群组自动回复总匹配次数"""
-    stmt = select(AutoReplyRule).where(AutoReplyRule.chat_id == chat_id)
-    result = await session.execute(stmt)
-    rules = result.scalars().all()
+    """
+    获取群组自动回复总匹配次数
+
+    Args:
+        session: 数据库会话
+        chat_id: 群组 ID
+
+    Returns:
+        总匹配次数
+    """
+    rules = await ServiceBase._get_list(
+        session,
+        AutoReplyRule,
+        filters={"chat_id": chat_id},
+    )
     return sum(rule.match_count for rule in rules)

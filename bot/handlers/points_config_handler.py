@@ -7,7 +7,7 @@ from telegram.error import BadRequest
 
 from bot.db.session import Database
 from bot.handlers.base.base_handler import BaseHandler
-from bot.keyboards.points import back_button, points_config_keyboard
+from bot.keyboards.admin.points import back_button, points_config_keyboard
 from bot.services.core.chat_service import get_chat_settings
 from bot.utils.callback_parser import CallbackParser
 
@@ -255,7 +255,7 @@ async def points_config_message_handler(update: Update, context: ContextTypes.DE
             await session.commit()
 
         # 显示更新后的键盘
-        from bot.keyboards.points import points_config_keyboard
+        from bot.keyboards.admin.points import points_config_keyboard
 
         keyboard = points_config_keyboard(settings, chat_id)
         await update.effective_message.reply_text("✅ 配置已更新", reply_markup=keyboard)
@@ -286,7 +286,7 @@ async def points_config_cancel_callback(update: Update, context: ContextTypes.DE
         chat_id = context.user_data.get("points_edit_chat_id")
 
         if chat_id:
-            from bot.keyboards.points import points_config_keyboard
+            from bot.keyboards.admin.points import points_config_keyboard
 
             db: Database = context.application.bot_data["db"]
             async with db.session_factory() as session:

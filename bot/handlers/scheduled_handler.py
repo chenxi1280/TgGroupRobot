@@ -169,7 +169,7 @@ class ScheduledMenuHandler(BaseHandler):
         Returns:
             InlineKeyboardMarkup: 菜单键盘
         """
-        from bot.keyboards.scheduled import scheduled_menu_keyboard
+        from bot.keyboards.integration.scheduled import scheduled_menu_keyboard
         return scheduled_menu_keyboard()
 
 
@@ -219,7 +219,7 @@ async def scheduled_list_callback(update: Update, context: ContextTypes.DEFAULT_
     else:
         text += "暂无定时消息"
 
-    from bot.keyboards.scheduled import scheduled_list_keyboard
+    from bot.keyboards.integration.scheduled import scheduled_list_keyboard
     await q.edit_message_text(text, reply_markup=scheduled_list_keyboard(messages, target_chat_id))
 
 

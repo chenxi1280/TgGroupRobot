@@ -22,7 +22,6 @@ from bot.services.activity.lottery_service import (
     get_lottery_participant_count,
     get_lottery_participants,
     get_lottery_stats,
-    get_lottery_winners,
     join_lottery,
     JoinResult,
     parse_lottery_config_text,
@@ -30,7 +29,7 @@ from bot.services.activity.lottery_service import (
 )
 from bot.services.activity.points_service import change_points, get_balance
 from bot.services.state.state_service import clear_user_state, get_user_state, set_user_state
-from bot.keyboards.lottery import (
+from bot.keyboards.activity.lottery import (
     manual_draw_prize_keyboard,
     manual_draw_summary_keyboard,
     manual_draw_summary_keyboard_with_winners,
@@ -86,7 +85,7 @@ class LotteryHandler(BaseHandler):
         # 使用 service 层格式化消息
         text = f"🎁[{chat_title}]抽奖\n\n{format_lottery_stats_message(stats)}"
 
-        from bot.keyboards.lottery import lottery_menu_keyboard
+        from bot.keyboards.activity.lottery import lottery_menu_keyboard
 
         await self.message_helper.safe_edit(
             update,
@@ -542,7 +541,7 @@ async def _parse_lottery_config(update: Update, context: ContextTypes.DEFAULT_TY
 
         # 向目标群组发送抽奖公告
         try:
-            from bot.keyboards.lottery import get_join_keyboard
+            from bot.keyboards.activity.lottery import get_join_keyboard
             keyboard = get_join_keyboard(lottery.id)
             await context.bot.send_message(
                 chat_id=target_chat_id,

@@ -6,7 +6,7 @@ from telegram.ext import ContextTypes
 from telegram.error import BadRequest
 
 from bot.db.session import Database
-from bot.keyboards.auto_delete import auto_delete_config_keyboard
+from bot.keyboards.admin.auto_delete import auto_delete_config_keyboard
 from bot.services.core.chat_service import get_chat_settings
 from bot.services.core.permission_service import is_user_admin
 from bot.utils.callback_parser import CallbackParser

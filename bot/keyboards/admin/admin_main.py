@@ -1,9 +1,10 @@
+"""管理员主菜单键盘
+
+提供管理员主菜单、验证模式选择等功能。
+"""
 from __future__ import annotations
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-
-
-# ==================== 格式化函数 ====================
 
 
 def format_verification_menu_text(
@@ -12,8 +13,7 @@ def format_verification_menu_text(
     timeout_seconds: int,
     restrict_can_send: bool,
 ) -> str:
-    """
-    格式化验证菜单文本
+    """格式化验证菜单文本
 
     Args:
         chat_title: 群组标题
@@ -40,8 +40,7 @@ def format_verification_menu_text(
 
 
 def format_admin_main_menu_text(chat_title: str) -> str:
-    """
-    格式化管理主菜单文本
+    """格式化管理主菜单文本
 
     Args:
         chat_title: 群组标题
@@ -59,12 +58,11 @@ def create_group_selection_keyboard(
     managed_chats: list[tuple[int, str, bool]],
     current_chat_id: int | None,
 ) -> InlineKeyboardMarkup:
-    """
-    创建群组选择键盘
+    """创建群组选择键盘
 
     Args:
         managed_chats: 管理的群组列表 [(chat_id, title, is_admin), ...]
-        current_chat_id: 当前选中的群组ID
+        current_chat_id: 当前选中的群组 ID
 
     Returns:
         群组选择键盘
@@ -83,8 +81,7 @@ def create_group_selection_keyboard(
 
 
 def create_guide_keyboard(bot_username: str) -> InlineKeyboardMarkup:
-    """
-    创建引导按钮键盘
+    """创建引导按钮键盘
 
     Args:
         bot_username: 机器人用户名
@@ -101,11 +98,10 @@ def admin_main_menu(chat_id: int | None = None) -> InlineKeyboardMarkup:
     """管理员主菜单（参考 WeGroupBot 样式）
 
     Args:
-        chat_id: 群组ID，用于私聊管理场景。如果提供，callback_data 会包含 chat_id
+        chat_id: 群组 ID，用于私聊管理场景。如果提供，callback_data 会包含 chat_id
     """
     if chat_id is not None:
         # 私聊管理场景：callback_data 包含 chat_id
-        # 第一行：功能入口
         buttons = [
             [
                 InlineKeyboardButton("🎁抽奖", callback_data=f"adm:menu:lottery:{chat_id}"),
@@ -134,41 +130,40 @@ def admin_main_menu(chat_id: int | None = None) -> InlineKeyboardMarkup:
             ],
         ]
         return InlineKeyboardMarkup(buttons)
+
     # 群聊场景：原格式
-    return InlineKeyboardMarkup(
+    return InlineKeyboardMarkup([
         [
-            [
-                InlineKeyboardButton("🎁抽奖", callback_data="adm:menu:lottery"),
-                InlineKeyboardButton("🔗邀请链接", callback_data="adm:menu:invite"),
-            ],
-            [
-                InlineKeyboardButton("👋欢迎", callback_data="adm:menu:welcome"),
-                InlineKeyboardButton("🤖验证", callback_data="adm:menu:verification"),
-            ],
-            [
-                InlineKeyboardButton("💬自动回复", callback_data="adm:menu:autoreply"),
-                InlineKeyboardButton("⏰定时消息", callback_data="adm:menu:scheduled"),
-            ],
-            [
-                InlineKeyboardButton("🚫反垃圾", callback_data="adm:menu:antispam"),
-                InlineKeyboardButton("🔇违禁词", callback_data="adm:menu:keywords"),
-            ],
-            [
-                InlineKeyboardButton("💰积分", callback_data="adm:menu:points"),
-                InlineKeyboardButton("📊统计", callback_data="adm:menu:stats"),
-            ],
-            [
-                InlineKeyboardButton("⚙️群设置", callback_data="adm:menu:settings"),
-            ],
-        ]
-    )
+            InlineKeyboardButton("🎁抽奖", callback_data="adm:menu:lottery"),
+            InlineKeyboardButton("🔗邀请链接", callback_data="adm:menu:invite"),
+        ],
+        [
+            InlineKeyboardButton("👋欢迎", callback_data="adm:menu:welcome"),
+            InlineKeyboardButton("🤖验证", callback_data="adm:menu:verification"),
+        ],
+        [
+            InlineKeyboardButton("💬自动回复", callback_data="adm:menu:autoreply"),
+            InlineKeyboardButton("⏰定时消息", callback_data="adm:menu:scheduled"),
+        ],
+        [
+            InlineKeyboardButton("🚫反垃圾", callback_data="adm:menu:antispam"),
+            InlineKeyboardButton("🔇违禁词", callback_data="adm:menu:keywords"),
+        ],
+        [
+            InlineKeyboardButton("💰积分", callback_data="adm:menu:points"),
+            InlineKeyboardButton("📊统计", callback_data="adm:menu:stats"),
+        ],
+        [InlineKeyboardButton("⚙️群设置", callback_data="adm:menu:settings")],
+    ])
 
 
 def back_button(to_menu: str = "main") -> InlineKeyboardMarkup:
+    """返回按钮"""
     return InlineKeyboardMarkup([[InlineKeyboardButton("返回", callback_data=f"adm:menu:{to_menu}")]])
 
 
 def toggle_menu(rows: list[tuple[str, str, bool]], back_to: str) -> InlineKeyboardMarkup:
+    """开关菜单"""
     kb: list[list[InlineKeyboardButton]] = []
     for label, key, enabled in rows:
         prefix = "✅" if enabled else "❌"
@@ -182,7 +177,7 @@ def verification_mode_menu(current_mode: str, chat_id: int | None = None) -> Inl
 
     Args:
         current_mode: 当前验证模式
-        chat_id: 群组ID，用于私聊管理场景
+        chat_id: 群组 ID，用于私聊管理场景
     """
     if chat_id is not None:
         # 私聊管理场景：callback_data 包含 chat_id
@@ -201,16 +196,9 @@ def verification_mode_menu(current_mode: str, chat_id: int | None = None) -> Inl
             "adm:vfy_mode:captcha",
         ]
 
-    return InlineKeyboardMarkup(
-        [
-            [InlineKeyboardButton("🔘 按钮验证", callback_data=button_callbacks[0])],
-            [InlineKeyboardButton("🔢 数学题验证", callback_data=button_callbacks[1])],
-            [InlineKeyboardButton("🔢 验证码验证", callback_data=button_callbacks[2])],
-            [InlineKeyboardButton("返回", callback_data=back_callback)],
-        ]
-    )
-
-
-
-
-
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔘 按钮验证", callback_data=button_callbacks[0])],
+        [InlineKeyboardButton("🔢 数学题验证", callback_data=button_callbacks[1])],
+        [InlineKeyboardButton("🔢 验证码验证", callback_data=button_callbacks[2])],
+        [InlineKeyboardButton("返回", callback_data=back_callback)],
+    ])

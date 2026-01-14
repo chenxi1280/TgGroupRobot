@@ -3,10 +3,10 @@ from __future__ import annotations
 import datetime as dt
 import re
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.models.core import ChatSettings, TgChat
+from bot.services.base import ServiceBase
 
 
 # ==================== 辅助函数 ====================
@@ -51,30 +51,66 @@ def build_points_alias_patterns(settings: ChatSettings) -> dict[str, re.Pattern]
 
 
 async def ensure_chat(session: AsyncSession, chat_id: int, chat_type: str, title: str | None) -> TgChat:
-    res = await session.execute(select(TgChat).where(TgChat.id == chat_id))
-    chat = res.scalar_one_or_none()
+    """
+    确保群组存在，不存在则创建，存在则更新信息
+
+    同时确保群组设置存在。
+
+    Args:
+        session: 数据库会话
+        chat_id: Telegram 群组 ID
+        chat_type: 群组类型
+        title: 群组标题
+
+    Returns:
+        TgChat: 群组对象
+    """
+    chat = await ServiceBase._get_by_id(session, TgChat, chat_id)
     if chat is None:
         chat = TgChat(id=chat_id, type=chat_type, title=title)
         session.add(chat)
         await session.flush()
     else:
-        chat.title = title
-        chat.type = chat_type
-        chat.updated_at = dt.datetime.now(dt.UTC)
+        await ServiceBase._update_entity(
+            session,
+            chat,
+            {
+                "title": title,
+                "type": chat_type,
+                "updated_at": dt.datetime.now(dt.UTC),
+            },
+        )
 
-    res2 = await session.execute(select(ChatSettings).where(ChatSettings.chat_id == chat_id))
-    settings = res2.scalar_one_or_none()
+    # 确保设置存在
+    settings = await ServiceBase._get_by_filters(
+        session,
+        ChatSettings,
+        {"chat_id": chat_id},
+    )
     if settings is None:
         settings = ChatSettings(chat_id=chat_id)
         session.add(settings)
         await session.flush()
+
     return chat
 
 
 async def get_chat_settings(session: AsyncSession, chat_id: int) -> ChatSettings:
-    """获取群组设置，如果不存在则创建默认设置"""
-    res = await session.execute(select(ChatSettings).where(ChatSettings.chat_id == chat_id))
-    settings = res.scalar_one_or_none()
+    """
+    获取群组设置，如果不存在则创建默认设置
+
+    Args:
+        session: 数据库会话
+        chat_id: Telegram 群组 ID
+
+    Returns:
+        ChatSettings: 群组设置对象
+    """
+    settings = await ServiceBase._get_by_filters(
+        session,
+        ChatSettings,
+        {"chat_id": chat_id},
+    )
     if settings is None:
         settings = ChatSettings(chat_id=chat_id)
         session.add(settings)

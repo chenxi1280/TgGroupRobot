@@ -327,20 +327,6 @@ async def track_and_award_invite(
         return True, False, result.reason
 
 
-async def clear_invite_data(session: AsyncSession, chat_id: int) -> int:
-    """清空群组的所有邀请数据"""
-    result = await session.execute(
-        select(func.count(InviteTracking.id)).where(InviteTracking.chat_id == chat_id)
-    )
-    count = result.scalar() or 0
-
-    await session.execute(
-        delete(InviteTracking).where(InviteTracking.chat_id == chat_id)
-    )
-
-    return count
-
-
 # 邀请统计
 async def get_user_invite_stats(
     session: AsyncSession,

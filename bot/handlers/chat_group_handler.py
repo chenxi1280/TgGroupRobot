@@ -5,7 +5,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from bot.db.session import Database
-from bot.keyboards.chat_group import chat_group_list_keyboard
+from bot.keyboards.common.chat_group import chat_group_list_keyboard
 from bot.services.integration.chat_group_service import get_user_current_chat, get_user_managed_chats, set_user_current_chat
 from bot.utils.callback_parser import CallbackParser
 

@@ -1,37 +1,47 @@
+"""接龙键盘
+
+提供接龙管理的键盘生成。
+"""
 from __future__ import annotations
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-from bot.models.enums import SolitaireStatus
+from bot.keyboards.base.helpers import create_back_button
+from bot.keyboards.formatters import StatusIcons, format_participant_count
 
 
 def solitaire_menu_keyboard(chat_id: int | None = None) -> InlineKeyboardMarkup:
     """接龙管理主菜单
 
     Args:
-        chat_id: 群组ID，用于在私聊中操作群组时指定目标群组
+        chat_id: 群组 ID，用于在私聊中操作群组时指定目标群组
     """
-    back_callback = f"adm:back_to_menu:{chat_id}" if chat_id else "adm:menu:main"
+    create_callback = f"sol:create:{chat_id}" if chat_id else "sol:create"
+    list_callback = f"sol:list:{chat_id}:0" if chat_id else "sol:list"
+    stats_callback = f"sol:stats:{chat_id}" if chat_id else "sol:stats"
+    back_button = create_back_button(chat_id, "back_to_menu")
+
     return InlineKeyboardMarkup([
+        [InlineKeyboardButton("➕ 创建接龙", callback_data=create_callback)],
         [
-            InlineKeyboardButton("➕ 创建接龙", callback_data=f"sol:create:{chat_id}" if chat_id else "sol:create"),
+            InlineKeyboardButton("📋 接龙列表", callback_data=list_callback),
+            InlineKeyboardButton("📊 统计", callback_data=stats_callback),
         ],
-        [
-            InlineKeyboardButton("📋 接龙列表", callback_data=f"sol:list:{chat_id}:0" if chat_id else "sol:list"),
-            InlineKeyboardButton("📊 统计", callback_data=f"sol:stats:{chat_id}" if chat_id else "sol:stats"),
-        ],
-        [
-            InlineKeyboardButton("🔙 返回", callback_data=back_callback),
-        ],
+        [back_button],
     ])
 
 
-def solitaire_list_keyboard(solitaires: list, chat_id: int | None = None, page: int = 0, page_size: int = 5) -> InlineKeyboardMarkup:
+def solitaire_list_keyboard(
+    solitaires: list,
+    chat_id: int | None = None,
+    page: int = 0,
+    page_size: int = 5,
+) -> InlineKeyboardMarkup:
     """接龙列表键盘
 
     Args:
         solitaires: 接龙列表
-        chat_id: 群组ID，用于在私聊中操作群组时指定目标群组
+        chat_id: 群组 ID
         page: 当前页码
         page_size: 每页数量
     """
@@ -40,17 +50,17 @@ def solitaire_list_keyboard(solitaires: list, chat_id: int | None = None, page: 
     end_idx = start_idx + page_size
 
     for solitaire in solitaires[start_idx:end_idx]:
-        status_emoji = {
-            SolitaireStatus.active.value: "🟢",
-            SolitaireStatus.closed.value: "🔴",
-        }.get(solitaire.status, "⚪")
+        # 使用 StatusIcons 获取状态图标
+        icon_set = StatusIcons.for_solitaire()
+        status_icon = icon_set.get(solitaire.status)
 
-        count = f"({len(solitaire.entries_rel)}"
-        if solitaire.max_participants:
-            count += f"/{solitaire.max_participants}"
-        count += "人)"
+        # 使用 format_participant_count 格式化参与人数
+        count = format_participant_count(
+            len(solitaire.entries_rel),
+            solitaire.max_participants,
+        )
 
-        label = f"{status_emoji} {solitaire.title} {count}"
+        label = f"{status_icon} {solitaire.title} {count}"
 
         # 在私聊场景下，包含 chat_id 参数
         detail_callback = f"sol:detail:{solitaire.id}:{chat_id}" if chat_id else f"sol:detail:{solitaire.id}"
@@ -73,13 +83,17 @@ def solitaire_list_keyboard(solitaires: list, chat_id: int | None = None, page: 
     return InlineKeyboardMarkup(buttons)
 
 
-def solitaire_detail_keyboard(solitaire_id: int, is_active: bool, chat_id: int | None = None) -> InlineKeyboardMarkup:
+def solitaire_detail_keyboard(
+    solitaire_id: int,
+    is_active: bool,
+    chat_id: int | None = None,
+) -> InlineKeyboardMarkup:
     """接龙详情键盘
 
     Args:
-        solitaire_id: 接龙ID
+        solitaire_id: 接龙 ID
         is_active: 接龙是否活跃
-        chat_id: 群组ID，用于在私聊中操作群组时指定目标群组
+        chat_id: 群组 ID
     """
     buttons = []
 
@@ -104,12 +118,8 @@ def solitaire_detail_keyboard(solitaire_id: int, is_active: bool, chat_id: int |
 def solitaire_create_keyboard() -> InlineKeyboardMarkup:
     """创建接龙确认键盘"""
     return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("✅ 确认创建", callback_data="sol:create_confirm"),
-        ],
-        [
-            InlineKeyboardButton("❌ 取消", callback_data="sol:menu"),
-        ],
+        [InlineKeyboardButton("✅ 确认创建", callback_data="sol:create_confirm")],
+        [InlineKeyboardButton("❌ 取消", callback_data="sol:menu")],
     ])
 
 
@@ -117,13 +127,11 @@ def get_join_solitaire_keyboard(solitaire_id: int) -> InlineKeyboardMarkup:
     """获取参与接龙的键盘
 
     Args:
-        solitaire_id: 接龙ID
+        solitaire_id: 接龙 ID
 
     Returns:
         参与接龙的按钮键盘
     """
     return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("✅ 参与接龙", callback_data=f"join_solitaire:{solitaire_id}"),
-        ],
+        [InlineKeyboardButton("✅ 参与接龙", callback_data=f"join_solitaire:{solitaire_id}")],
     ])

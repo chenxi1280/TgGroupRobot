@@ -5,26 +5,39 @@ import random
 import secrets
 import string
 
-from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.models.core import VerificationChallenge
 from bot.models.enums import VerificationMode
+from bot.services.base import ServiceBase
 
 
 def new_token() -> str:
+    """生成新的验证 token"""
     return secrets.token_urlsafe(24)
 
 
 def generate_captcha(length: int = 4) -> tuple[str, str]:
-    """生成验证码 (code, image_text)"""
-    # 生成数字验证码
+    """
+    生成验证码
+
+    Args:
+        length: 验证码长度
+
+    Returns:
+        (code, image_text) - 验证码和显示文本
+    """
     code = "".join(random.choices(string.digits, k=length))
     return code, code
 
 
 def generate_math_question() -> tuple[str, str]:
-    """生成数学题 (question, answer)"""
+    """
+    生成数学题
+
+    Returns:
+        (question, answer) - 问题和答案
+    """
     ops = ["+", "-", "*"]
     op = random.choice(ops)
 
@@ -54,19 +67,27 @@ async def create_or_replace_challenge(
     ttl_seconds: int,
     verification_type: str = VerificationMode.button.value,
 ) -> VerificationChallenge:
-    """创建或替换验证挑战"""
-    res = await session.execute(
-        select(VerificationChallenge).where(
-            and_(
-                VerificationChallenge.chat_id == chat_id,
-                VerificationChallenge.user_id == user_id,
-            )
-        )
+    """
+    创建或替换验证挑战
+
+    Args:
+        session: 数据库会话
+        chat_id: 群组 ID
+        user_id: 用户 ID
+        ttl_seconds: 过期时间（秒）
+        verification_type: 验证类型
+
+    Returns:
+        VerificationChallenge: 验证挑战对象
+    """
+    # 删除现有挑战
+    existing = await ServiceBase._get_by_filters(
+        session,
+        VerificationChallenge,
+        {"chat_id": chat_id, "user_id": user_id},
     )
-    existing = res.scalar_one_or_none()
     if existing is not None:
-        await session.delete(existing)
-        await session.flush()
+        await ServiceBase._delete_entity(session, existing)
 
     token = new_token()
     question = None
@@ -95,17 +116,29 @@ async def create_or_replace_challenge(
 
 
 async def solve_by_token(session: AsyncSession, token: str) -> VerificationChallenge | None:
-    """通过token验证（按钮模式）"""
-    res = await session.execute(select(VerificationChallenge).where(VerificationChallenge.token == token))
-    ch = res.scalar_one_or_none()
+    """
+    通过 token 验证（按钮模式）
+
+    Args:
+        session: 数据库会话
+        token: 验证 token
+
+    Returns:
+        VerificationChallenge: 验证挑战对象，验证失败则返回 None
+    """
+    ch = await ServiceBase._get_by_filters(
+        session,
+        VerificationChallenge,
+        {"token": token},
+    )
     if ch is None:
         return None
     if ch.solved:
         return ch
     if dt.datetime.now(dt.UTC) > ch.expires_at:
         return ch
-    ch.solved = True
-    await session.flush()
+
+    await ServiceBase._update_entity(session, ch, {"solved": True})
     return ch
 
 
@@ -115,16 +148,23 @@ async def solve_by_answer(
     user_id: int,
     answer: str,
 ) -> VerificationChallenge | None:
-    """通过答案验证（数学题/验证码模式）"""
-    res = await session.execute(
-        select(VerificationChallenge).where(
-            and_(
-                VerificationChallenge.chat_id == chat_id,
-                VerificationChallenge.user_id == user_id,
-            )
-        )
+    """
+    通过答案验证（数学题/验证码模式）
+
+    Args:
+        session: 数据库会话
+        chat_id: 群组 ID
+        user_id: 用户 ID
+        answer: 用户答案
+
+    Returns:
+        VerificationChallenge: 验证挑战对象，验证失败则返回 None
+    """
+    ch = await ServiceBase._get_by_filters(
+        session,
+        VerificationChallenge,
+        {"chat_id": chat_id, "user_id": user_id},
     )
-    ch = res.scalar_one_or_none()
     if ch is None:
         return None
     if ch.solved:
@@ -134,8 +174,7 @@ async def solve_by_answer(
 
     # 验证答案
     if ch.answer and ch.answer.lower() == answer.lower().strip():
-        ch.solved = True
-        await session.flush()
+        await ServiceBase._update_entity(session, ch, {"solved": True})
         return ch
 
     return None
@@ -146,23 +185,19 @@ async def get_challenge(
     chat_id: int,
     user_id: int,
 ) -> VerificationChallenge | None:
-    """获取用户的验证挑战"""
-    res = await session.execute(
-        select(VerificationChallenge).where(
-            and_(
-                VerificationChallenge.chat_id == chat_id,
-                VerificationChallenge.user_id == user_id,
-            )
-        )
+    """
+    获取用户的验证挑战
+
+    Args:
+        session: 数据库会话
+        chat_id: 群组 ID
+        user_id: 用户 ID
+
+    Returns:
+        VerificationChallenge: 验证挑战对象，如果不存在则返回 None
+    """
+    return await ServiceBase._get_by_filters(
+        session,
+        VerificationChallenge,
+        {"chat_id": chat_id, "user_id": user_id},
     )
-    return res.scalar_one_or_none()
-
-
-async def is_verified(
-    session: AsyncSession,
-    chat_id: int,
-    user_id: int,
-) -> bool:
-    """检查用户是否已验证"""
-    ch = await get_challenge(session, chat_id, user_id)
-    return ch is not None and ch.solved

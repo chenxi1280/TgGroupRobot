@@ -8,7 +8,7 @@ from telegram.ext import ContextTypes, ConversationHandler
 
 from bot.db.session import Database
 from bot.handlers.base.base_handler import BaseHandler
-from bot.keyboards.solitaire import (
+from bot.keyboards.activity.solitaire import (
     solitaire_detail_keyboard,
     solitaire_list_keyboard,
     solitaire_menu_keyboard,
@@ -414,7 +414,7 @@ async def solitaire_create_config_message(update: Update, context: ContextTypes.
 
                 # 向目标群组发送接龙（带一键接龙按钮）
                 try:
-                    from bot.keyboards.solitaire import get_join_solitaire_keyboard
+                    from bot.keyboards.activity.solitaire import get_join_solitaire_keyboard
                     keyboard = get_join_solitaire_keyboard(result.solitaire.id)
                     group_message = await context.bot.send_message(
                         chat_id=target_chat_id,
@@ -782,7 +782,7 @@ async def join_solitaire_callback(update: Update, context: ContextTypes.DEFAULT_
 
                     # 更新群组中的原始接龙消息
                     if solitaire.message_id:
-                        from bot.keyboards.solitaire import get_join_solitaire_keyboard
+                        from bot.keyboards.activity.solitaire import get_join_solitaire_keyboard
                         try:
                             await context.bot.edit_message_text(
                                 chat_id=solitaire.chat_id,

@@ -10,7 +10,7 @@ from bot.config import get_settings
 from bot.db.session import Database
 from bot.handlers.base.base_handler import BaseHandler
 from bot.i18n.strings import t
-from bot.keyboards.admin import (
+from bot.keyboards.admin.admin_main import (
     admin_main_menu,
     create_group_selection_keyboard,
     create_guide_keyboard,
@@ -238,7 +238,7 @@ class AdminHandler(BaseHandler):
         chat_id: int,
     ) -> None:
         """显示抽奖管理菜单"""
-        from bot.keyboards.lottery import lottery_menu_keyboard
+        from bot.keyboards.activity.lottery import lottery_menu_keyboard
         from bot.services.activity.lottery_service import get_lottery_stats
 
         db: Database = context.application.bot_data["db"]
@@ -264,7 +264,7 @@ class AdminHandler(BaseHandler):
         chat_id: int,
     ) -> None:
         """显示接龙管理菜单"""
-        from bot.keyboards.solitaire import solitaire_menu_keyboard
+        from bot.keyboards.activity.solitaire import solitaire_menu_keyboard
 
         db: Database = context.application.bot_data["db"]
         await self._set_current_chat(db, update.effective_user.id, chat_id)
@@ -281,7 +281,7 @@ class AdminHandler(BaseHandler):
         chat_id: int,
     ) -> None:
         """显示邀请链接管理菜单"""
-        from bot.keyboards.invite_link import invite_link_menu_keyboard
+        from bot.keyboards.integration.invite_link import invite_link_menu_keyboard
 
         db: Database = context.application.bot_data["db"]
         await self._set_current_chat(db, update.effective_user.id, chat_id)
@@ -298,7 +298,7 @@ class AdminHandler(BaseHandler):
         chat_id: int,
     ) -> None:
         """显示自动回复管理菜单"""
-        from bot.keyboards.auto_reply import auto_reply_menu_keyboard
+        from bot.keyboards.content.auto_reply import auto_reply_menu_keyboard
 
         db: Database = context.application.bot_data["db"]
         await self._set_current_chat(db, update.effective_user.id, chat_id)
@@ -315,7 +315,7 @@ class AdminHandler(BaseHandler):
         chat_id: int,
     ) -> None:
         """显示违禁词管理菜单"""
-        from bot.keyboards.banned_word import banned_word_menu_keyboard
+        from bot.keyboards.content.banned_word import banned_word_menu_keyboard
 
         db: Database = context.application.bot_data["db"]
         await self._set_current_chat(db, update.effective_user.id, chat_id)
@@ -332,7 +332,7 @@ class AdminHandler(BaseHandler):
         chat_id: int,
     ) -> None:
         """显示定时消息管理菜单"""
-        from bot.keyboards.scheduled import scheduled_menu_keyboard
+        from bot.keyboards.integration.scheduled import scheduled_menu_keyboard
 
         db: Database = context.application.bot_data["db"]
         await self._set_current_chat(db, update.effective_user.id, chat_id)
@@ -349,7 +349,7 @@ class AdminHandler(BaseHandler):
         chat_id: int,
     ) -> None:
         """显示广告管理菜单"""
-        from bot.keyboards.ads import ads_menu_keyboard
+        from bot.keyboards.content.ads import ads_menu_keyboard
 
         db: Database = context.application.bot_data["db"]
         await self._set_current_chat(db, update.effective_user.id, chat_id)
@@ -366,7 +366,7 @@ class AdminHandler(BaseHandler):
         chat_id: int,
     ) -> None:
         """显示新人验证设置菜单"""
-        from bot.keyboards.admin import verification_mode_menu
+        from bot.keyboards.admin.admin_main import verification_mode_menu
 
         db: Database = context.application.bot_data["db"]
         await self._set_current_chat(db, update.effective_user.id, chat_id)
@@ -395,7 +395,7 @@ class AdminHandler(BaseHandler):
         chat_id: int,
     ) -> None:
         """显示积分设置菜单"""
-        from bot.keyboards.points import points_config_keyboard
+        from bot.keyboards.admin.points import points_config_keyboard
 
         db: Database = context.application.bot_data["db"]
         await self._set_current_chat(db, update.effective_user.id, chat_id)
@@ -419,7 +419,7 @@ class AdminHandler(BaseHandler):
         chat_id: int,
     ) -> None:
         """显示自动删除配置菜单"""
-        from bot.keyboards.auto_delete import auto_delete_config_keyboard
+        from bot.keyboards.admin.auto_delete import auto_delete_config_keyboard
 
         db: Database = context.application.bot_data["db"]
         await self._set_current_chat(db, update.effective_user.id, chat_id)

@@ -1,6 +1,12 @@
+"""自动删除配置键盘
+
+提供自动删除管理的键盘生成。
+"""
 from __future__ import annotations
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+from bot.keyboards.base.helpers import create_separator
 
 
 def auto_delete_config_keyboard(settings, chat_id: int) -> InlineKeyboardMarkup:
@@ -16,11 +22,13 @@ def auto_delete_config_keyboard(settings, chat_id: int) -> InlineKeyboardMarkup:
     title_status = "✅" if settings.auto_delete_title else "❌"
     anon_status = "✅" if settings.auto_delete_anonymous else "❌"
 
+    separator = create_separator()
+
     buttons = [
         # 主开关
         [InlineKeyboardButton(f"🧹 自动删除: {main_status}", callback_data=f"autodel:toggle:enabled:{chat_id}")],
         # 分隔线
-        [InlineKeyboardButton("━" * 15, callback_data="autodel:separator")],
+        [separator],
         # 各项开关
         [InlineKeyboardButton(f"{join_status} 进群消息", callback_data=f"autodel:toggle:join:{chat_id}")],
         [InlineKeyboardButton(f"{left_status} 退群消息", callback_data=f"autodel:toggle:left:{chat_id}")],

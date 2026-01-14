@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import structlog
-from sqlalchemy import select
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.models.core import ConversationState
+from bot.services.base import ServiceBase
 
 log = structlog.get_logger(__name__)
 
@@ -14,13 +15,22 @@ async def get_user_state(
     chat_id: int,
     user_id: int,
 ) -> ConversationState | None:
-    """获取用户的当前对话状态"""
-    stmt = select(ConversationState).where(
-        ConversationState.chat_id == chat_id,
-        ConversationState.user_id == user_id,
+    """
+    获取用户的当前对话状态
+
+    Args:
+        session: 数据库会话
+        chat_id: 群组 ID
+        user_id: 用户 ID
+
+    Returns:
+        对话状态对象，如果不存在则返回 None
+    """
+    state = await ServiceBase._get_by_filters(
+        session,
+        ConversationState,
+        {"chat_id": chat_id, "user_id": user_id},
     )
-    result = await session.execute(stmt)
-    state = result.scalar_one_or_none()
     log.info(
         "get_user_state_result",
         chat_id=chat_id,
@@ -38,7 +48,19 @@ async def set_user_state(
     state_type: str,
     state_data: dict | None = None,
 ) -> ConversationState:
-    """设置用户的对话状态"""
+    """
+    设置用户的对话状态
+
+    Args:
+        session: 数据库会话
+        chat_id: 群组 ID
+        user_id: 用户 ID
+        state_type: 状态类型
+        state_data: 状态数据
+
+    Returns:
+        对话状态对象
+    """
     state = await get_user_state(session, chat_id, user_id)
     if state is None:
         state = ConversationState(
@@ -57,10 +79,11 @@ async def set_user_state(
             state_type=state_type,
         )
     else:
-        state.state_type = state_type
-        state.state_data = state_data or {}
-        # 立即 flush 确保 UPDATE 语句被执行
-        await session.flush()
+        await ServiceBase._update_entity(
+            session,
+            state,
+            {"state_type": state_type, "state_data": state_data or {}},
+        )
         log.info(
             "state_updated",
             chat_id=chat_id,
@@ -75,10 +98,15 @@ async def clear_user_state(
     chat_id: int,
     user_id: int,
 ) -> None:
-    """清除用户的对话状态"""
+    """
+    清除用户的对话状态
+
+    Args:
+        session: 数据库会话
+        chat_id: 群组 ID
+        user_id: 用户 ID
+    """
     state = await get_user_state(session, chat_id, user_id)
     if state is not None:
-        await session.delete(state)
-        # 立即 flush 确保 DELETE 语句被执行
-        await session.flush()
+        await ServiceBase._delete_entity(session, state)
 

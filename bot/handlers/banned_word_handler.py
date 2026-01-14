@@ -159,7 +159,7 @@ class BannedWordMenuHandler(BaseHandler):
         Returns:
             InlineKeyboardMarkup: 菜单键盘
         """
-        from bot.keyboards.banned_word import banned_word_menu_keyboard
+        from bot.keyboards.content.banned_word import banned_word_menu_keyboard
         return banned_word_menu_keyboard()
 
 
@@ -208,7 +208,7 @@ async def banned_word_list_callback(update: Update, context: ContextTypes.DEFAUL
     else:
         text += "暂无违禁词"
 
-    from bot.keyboards.banned_word import banned_word_list_keyboard
+    from bot.keyboards.content.banned_word import banned_word_list_keyboard
     await q.edit_message_text(text, reply_markup=banned_word_list_keyboard(words, target_chat_id))
 
 
@@ -480,7 +480,7 @@ class BannedWordToggleHandler(BaseHandler):
         Returns:
             InlineKeyboardMarkup: 列表键盘
         """
-        from bot.keyboards.banned_word import banned_word_list_keyboard
+        from bot.keyboards.content.banned_word import banned_word_list_keyboard
         return banned_word_list_keyboard(words, target_chat_id)
 
 
@@ -563,7 +563,7 @@ async def banned_word_delete_callback(update: Update, context: ContextTypes.DEFA
         else:
             text += "暂无违禁词"
 
-        from bot.keyboards.banned_word import banned_word_list_keyboard
+        from bot.keyboards.content.banned_word import banned_word_list_keyboard
         await q.edit_message_text(text, reply_markup=banned_word_list_keyboard(words, target_chat_id))
     else:
         await q.answer("删除失败", show_alert=True)

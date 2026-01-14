@@ -7,8 +7,8 @@ from telegram.ext import ContextTypes
 from bot.config import get_settings
 from bot.db.session import Database
 from bot.i18n.strings import t
-from bot.keyboards.chat_group import chat_group_list_keyboard
-from bot.keyboards.start import create_start_guide_keyboard
+from bot.keyboards.common.chat_group import chat_group_list_keyboard
+from bot.keyboards.common.start import create_start_guide_keyboard
 from bot.models.enums import ConversationStateType
 from bot.services.integration.chat_group_service import (
     format_empty_chat_list_hint,

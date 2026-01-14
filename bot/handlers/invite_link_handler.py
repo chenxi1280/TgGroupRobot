@@ -7,7 +7,7 @@ from telegram.ext import ContextTypes, ConversationHandler
 
 from bot.db.session import Database
 from bot.handlers.base.base_handler import BaseHandler
-from bot.keyboards.invite_link import (
+from bot.keyboards.integration.invite_link import (
     invite_link_create_keyboard,
     invite_link_detail_keyboard,
     invite_link_list_keyboard,
@@ -613,7 +613,7 @@ async def link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 async def _show_user_invite_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int) -> None:
     """显示用户邀请链接菜单"""
     from bot.services.integration.invite_service import get_user_invite_stats
-    from bot.keyboards.invite_link import user_invite_menu_keyboard
+    from bot.keyboards.integration.invite_link import user_invite_menu_keyboard
 
     db: Database = context.application.bot_data["db"]
 

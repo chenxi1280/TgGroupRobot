@@ -1,35 +1,13 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
-from typing import Literal
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.models.core import BannedWord
 from bot.models.enums import BannedWordMatchType
-
-
-@dataclass
-class CreateResult:
-    """创建违禁词结果"""
-    success: bool
-    reason: Literal[
-        "ok",
-        "invalid_word",
-        "invalid_match_type",
-        "invalid_action",
-        "duplicate",
-    ]
-    word: BannedWord | None = None
-
-
-@dataclass
-class MatchResult:
-    """匹配结果"""
-    matched: bool
-    word: BannedWord | None = None
+from bot.services.base import ServiceBase
+from bot.services.shared.result import CreateResult, MatchResult
 
 
 async def create_banned_word(
@@ -44,7 +22,24 @@ async def create_banned_word(
     notify_message: str | None = None,
     case_sensitive: bool = False,
 ) -> CreateResult:
-    """创建违禁词"""
+    """
+    创建违禁词
+
+    Args:
+        session: 数据库会话
+        chat_id: 群组 ID
+        created_by_user_id: 创建者用户 ID
+        word: 违禁词内容
+        match_type: 匹配类型
+        action: 处罚动作
+        mute_duration: 禁言时长（秒）
+        notify: 是否通知
+        notify_message: 自定义通知消息
+        case_sensitive: 是否区分大小写
+
+    Returns:
+        CreateResult: 创建结果
+    """
     # 验证违禁词
     if not word or not word.strip():
         return CreateResult(success=False, reason="invalid_word")
@@ -86,14 +81,21 @@ async def create_banned_word(
     )
     session.add(banned_word)
     await session.flush()
-    return CreateResult(success=True, reason="ok", word=banned_word)
+    return CreateResult(success=True, reason="ok", entity=banned_word, entity_id=banned_word.id)
 
 
 async def get_banned_word(session: AsyncSession, word_id: int) -> BannedWord | None:
-    """获取违禁词"""
-    stmt = select(BannedWord).where(BannedWord.id == word_id)
-    result = await session.execute(stmt)
-    return result.scalar_one_or_none()
+    """
+    获取违禁词
+
+    Args:
+        session: 数据库会话
+        word_id: 违禁词 ID
+
+    Returns:
+        BannedWord: 违禁词对象，如果不存在则返回 None
+    """
+    return await ServiceBase._get_by_id(session, BannedWord, word_id)
 
 
 async def get_banned_word_by_content(
@@ -101,13 +103,22 @@ async def get_banned_word_by_content(
     chat_id: int,
     word: str,
 ) -> BannedWord | None:
-    """根据内容获取违禁词"""
-    stmt = select(BannedWord).where(
-        BannedWord.chat_id == chat_id,
-        BannedWord.word == word,
+    """
+    根据内容获取违禁词
+
+    Args:
+        session: 数据库会话
+        chat_id: 群组 ID
+        word: 违禁词内容
+
+    Returns:
+        BannedWord: 违禁词对象，如果不存在则返回 None
+    """
+    return await ServiceBase._get_by_filters(
+        session,
+        BannedWord,
+        {"chat_id": chat_id, "word": word},
     )
-    result = await session.execute(stmt)
-    return result.scalar_one_or_none()
 
 
 async def get_chat_banned_words(
@@ -115,24 +126,49 @@ async def get_chat_banned_words(
     chat_id: int,
     active_only: bool = False,
 ) -> list[BannedWord]:
-    """获取群组的违禁词列表"""
-    stmt = select(BannedWord).where(BannedWord.chat_id == chat_id)
-    if active_only:
-        stmt = stmt.where(BannedWord.is_active == True)
-    stmt = stmt.order_by(BannedWord.created_at.desc())
-    result = await session.execute(stmt)
-    return list(result.scalars().all())
+    """
+    获取群组的违禁词列表
+
+    Args:
+        session: 数据库会话
+        chat_id: 群组 ID
+        active_only: 是否只返回激活的违禁词
+
+    Returns:
+        违禁词列表
+    """
+    return await ServiceBase._get_list(
+        session,
+        BannedWord,
+        filters={"chat_id": chat_id},
+        active_only=active_only,
+        order_by="created_at",
+        descending=True,
+    )
 
 
 async def toggle_banned_word(
     session: AsyncSession,
     word_id: int,
 ) -> bool:
-    """切换违禁词激活状态"""
+    """
+    切换违禁词激活状态
+
+    Args:
+        session: 数据库会话
+        word_id: 违禁词 ID
+
+    Returns:
+        是否切换成功
+    """
     word = await get_banned_word(session, word_id)
     if not word:
         return False
-    word.is_active = not word.is_active
+    await ServiceBase._update_entity(
+        session,
+        word,
+        {"is_active": not word.is_active},
+    )
     return True
 
 
@@ -140,11 +176,20 @@ async def delete_banned_word(
     session: AsyncSession,
     word_id: int,
 ) -> bool:
-    """删除违禁词"""
+    """
+    删除违禁词
+
+    Args:
+        session: 数据库会话
+        word_id: 违禁词 ID
+
+    Returns:
+        是否删除成功
+    """
     word = await get_banned_word(session, word_id)
     if not word:
         return False
-    await session.delete(word)
+    await ServiceBase._delete_entity(session, word)
     return True
 
 
@@ -153,20 +198,43 @@ async def match_banned_words(
     chat_id: int,
     text: str,
 ) -> list[BannedWord]:
-    """匹配违禁词，返回所有匹配的违禁词"""
+    """
+    匹配违禁词，返回所有匹配的违禁词
+
+    Args:
+        session: 数据库会话
+        chat_id: 群组 ID
+        text: 待检查的文本
+
+    Returns:
+        匹配的违禁词列表
+    """
     words = await get_chat_banned_words(session, chat_id, active_only=True)
 
     matched = []
     for word in words:
         if _match_word(word, text):
-            word.trigger_count += 1
+            await ServiceBase._update_entity(
+                session,
+                word,
+                {"trigger_count": word.trigger_count + 1},
+            )
             matched.append(word)
 
     return matched
 
 
 def _match_word(banned_word: BannedWord, text: str) -> bool:
-    """检查文本是否匹配违禁词"""
+    """
+    检查文本是否匹配违禁词
+
+    Args:
+        banned_word: 违禁词对象
+        text: 待检查的文本
+
+    Returns:
+        是否匹配
+    """
     word = banned_word.word
     if not banned_word.case_sensitive:
         text = text.lower()
@@ -190,8 +258,19 @@ async def get_trigger_stats(
     session: AsyncSession,
     chat_id: int,
 ) -> int:
-    """获取群组违禁词总触发次数"""
-    stmt = select(BannedWord).where(BannedWord.chat_id == chat_id)
-    result = await session.execute(stmt)
-    words = result.scalars().all()
+    """
+    获取群组违禁词总触发次数
+
+    Args:
+        session: 数据库会话
+        chat_id: 群组 ID
+
+    Returns:
+        总触发次数
+    """
+    words = await ServiceBase._get_list(
+        session,
+        BannedWord,
+        filters={"chat_id": chat_id},
+    )
     return sum(word.trigger_count for word in words)

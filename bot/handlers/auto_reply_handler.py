@@ -183,7 +183,7 @@ class AutoReplyMenuHandler(BaseHandler):
         Returns:
             InlineKeyboardMarkup: 菜单键盘
         """
-        from bot.keyboards.auto_reply import auto_reply_menu_keyboard
+        from bot.keyboards.content.auto_reply import auto_reply_menu_keyboard
         return auto_reply_menu_keyboard()
 
 

@@ -390,25 +390,6 @@ async def get_lottery_participant_count(
     return result.scalar() or 0
 
 
-async def get_lottery_winners(
-    session: AsyncSession,
-    lottery_id: int,
-) -> list[LotteryWinner]:
-    """
-    获取抽奖中奖记录
-
-    Args:
-        session: 数据库会话
-        lottery_id: 抽奖ID
-
-    Returns:
-        中奖记录列表
-    """
-    stmt = select(LotteryWinner).where(LotteryWinner.lottery_id == lottery_id)
-    result = await session.execute(stmt)
-    return list(result.scalars().all())
-
-
 async def get_user_lottery_history(
     session: AsyncSession,
     user_id: int,

@@ -7,7 +7,7 @@ from telegram.ext import ContextTypes
 
 from bot.db.session import Database
 from bot.handlers.base.base_handler import BaseHandler
-from bot.keyboards.ads import (
+from bot.keyboards.content.ads import (
     ads_create_keyboard,
     ads_detail_keyboard,
     ads_frequency_keyboard,
