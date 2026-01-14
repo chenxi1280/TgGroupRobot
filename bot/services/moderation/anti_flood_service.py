@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import structlog
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Literal
 
 from telegram import Bot
+
+
+log = structlog.get_logger(__name__)
 
 
 @dataclass
@@ -188,8 +192,8 @@ async def execute_flood_punishment(
             for msg_id in message_ids:
                 try:
                     await bot.delete_message(chat_id=chat_id, message_id=msg_id)
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.warning("delete_message_failed", chat_id=chat_id, message_id=msg_id, error=str(e))
             return True
 
         elif action == "mute":
@@ -198,8 +202,8 @@ async def execute_flood_punishment(
             for msg_id in message_ids:
                 try:
                     await bot.delete_message(chat_id=chat_id, message_id=msg_id)
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.warning("delete_message_failed", chat_id=chat_id, message_id=msg_id, error=str(e))
 
             # 检查是否已经禁言，避免重复
             if await _tracker.is_muted(chat_id, user_id):
@@ -214,7 +218,8 @@ async def execute_flood_punishment(
                 )
                 await _tracker.mark_muted(chat_id, user_id, True)
                 return True
-            except Exception:
+            except Exception as e:
+                log.warning("ban_chat_member_failed", chat_id=chat_id, user_id=user_id, error=str(e))
                 return False
 
         elif action == "ban":
@@ -223,16 +228,33 @@ async def execute_flood_punishment(
             for msg_id in message_ids:
                 try:
                     await bot.delete_message(chat_id=chat_id, message_id=msg_id)
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.warning("delete_message_failed", chat_id=chat_id, message_id=msg_id, error=str(e))
 
             try:
                 await bot.ban_chat_member(chat_id=chat_id, user_id=user_id)
                 return True
-            except Exception:
+            except Exception as e:
+                log.warning("ban_chat_member_failed", chat_id=chat_id, user_id=user_id, error=str(e))
                 return False
 
     except Exception:
         return False
 
     return False
+
+
+async def anti_flood_cleanup_job(app) -> None:
+    """清理反刷屏追踪器中的旧记录
+
+    Args:
+        app: Telegram Bot 应用实例
+    """
+    import structlog
+
+    log = structlog.get_logger(__name__)
+    try:
+        await _tracker.cleanup_old_records(max_age_seconds=300)
+        log.info("anti_flood_cleanup_completed")
+    except Exception as e:
+        log.error("anti_flood_cleanup_failed", error=str(e))

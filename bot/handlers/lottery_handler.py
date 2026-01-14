@@ -13,6 +13,7 @@ from bot.handlers.base.base_handler import BaseHandler
 from bot.models.enums import ConversationStateType, LotteryDrawMode, PointsTxnType
 from bot.models.core import ChatMember, TgUser
 from bot.services.core.chat_service import ensure_chat, get_chat_settings
+from bot.services.core.permission_service import is_user_admin
 from bot.services.activity.lottery_service import (
     create_lottery,
     create_lottery_winner,
@@ -386,7 +387,7 @@ async def lottery_menu_callback(update: Update, context: ContextTypes.DEFAULT_TY
         target_chat_id = chat.id
 
     # 检查管理员权限
-    if not await _lottery_handler.permission_helper.is_user_admin(context, target_chat_id, user.id):
+    if not await is_user_admin(context, target_chat_id, user.id):
         await _lottery_handler.message_helper.safe_edit(update, "需要管理员权限。")
         return
 
@@ -426,7 +427,7 @@ async def lottery_create_start(update: Update, context: ContextTypes.DEFAULT_TYP
 
         # 检查管理员权限
         log.info("lottery_create_checking_admin", target_chat_id=target_chat_id, user_id=user.id)
-        is_admin = await _lottery_handler.permission_helper.is_user_admin(context, target_chat_id, user.id)
+        is_admin = await is_user_admin(context, target_chat_id, user.id)
         log.info("lottery_create_admin_check_result", target_chat_id=target_chat_id, user_id=user.id, is_admin=is_admin)
         if not is_admin:
             log.warning("lottery_create_permission_denied", target_chat_id=target_chat_id, user_id=user.id)
@@ -444,8 +445,8 @@ async def lottery_create_start(update: Update, context: ContextTypes.DEFAULT_TYP
         if update.callback_query:
             try:
                 await update.callback_query.edit_message_text(f"发生错误: {str(e)}")
-            except:
-                pass
+            except Exception as e:
+                log.warning("edit_message_failed", error=str(e))
 
 
 # ============================================
@@ -637,7 +638,7 @@ async def draw_lottery_callback(update: Update, context: ContextTypes.DEFAULT_TY
         await _lottery_handler.message_helper.safe_edit(update, "请在群里使用。")
         return
 
-    if not await _lottery_handler.permission_helper.is_user_admin(context, chat.id, user.id):
+    if not await is_user_admin(context, chat.id, user.id):
         await _lottery_handler.message_helper.safe_edit(update, "需要管理员权限。")
         return
 
@@ -671,7 +672,7 @@ async def manual_draw_select_prize_callback(update: Update, context: ContextType
     chat = update.effective_chat
     user = update.effective_user
 
-    if not await _lottery_handler.permission_helper.is_user_admin(context, chat.id, user.id):
+    if not await is_user_admin(context, chat.id, user.id):
         await _lottery_handler.message_helper.safe_edit(update, "需要管理员权限。")
         return
 
@@ -729,7 +730,7 @@ async def manual_draw_select_winner_callback(update: Update, context: ContextTyp
     chat = update.effective_chat
     user = update.effective_user
 
-    if not await _lottery_handler.permission_helper.is_user_admin(context, chat.id, user.id):
+    if not await is_user_admin(context, chat.id, user.id):
         await _lottery_handler.message_helper.safe_edit(update, "需要管理员权限。")
         return
 
@@ -792,7 +793,7 @@ async def manual_draw_complete_callback(update: Update, context: ContextTypes.DE
     chat = update.effective_chat
     user = update.effective_user
 
-    if not await _lottery_handler.permission_helper.is_user_admin(context, chat.id, user.id):
+    if not await is_user_admin(context, chat.id, user.id):
         await _lottery_handler.message_helper.safe_edit(update, "需要管理员权限。")
         return
 
@@ -900,7 +901,7 @@ async def manual_draw_winner_page_callback(update: Update, context: ContextTypes
     chat = update.effective_chat
     user = update.effective_user
 
-    if not await _lottery_handler.permission_helper.is_user_admin(context, chat.id, user.id):
+    if not await is_user_admin(context, chat.id, user.id):
         await _lottery_handler.message_helper.safe_edit(update, "需要管理员权限。")
         return
 
@@ -964,7 +965,7 @@ async def manual_draw_menu_callback(update: Update, context: ContextTypes.DEFAUL
     chat = update.effective_chat
     user = update.effective_user
 
-    if not await _lottery_handler.permission_helper.is_user_admin(context, chat.id, user.id):
+    if not await is_user_admin(context, chat.id, user.id):
         await _lottery_handler.message_helper.safe_edit(update, "需要管理员权限。")
         return
 

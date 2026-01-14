@@ -574,7 +574,7 @@ async def _parse_auto_reply_config(update: Update, session, state: object, text:
         reply_text += f"📋 匹配类型: {_get_match_type_label(match_type)}\n"
         reply_text += f"🔤 区分大小写: {'是' if case_sensitive else '否'}\n"
         reply_text += f"💬 回复: {reply_content[:50]}{'...' if len(reply_content) > 50 else ''}\n"
-        reply_text += f"\n规则ID: {result.rule.id}"
+        reply_text += f"\n规则ID: {result.entity.id}"
 
         # 只显示一个返回按钮
         keyboard = InlineKeyboardMarkup([
@@ -610,8 +610,8 @@ async def auto_reply_message_handler(update: Update, context: ContextTypes.DEFAU
     if result.matched and result.reply_content:
         try:
             await update.effective_message.reply_text(result.reply_content)
-        except Exception:
-            pass  # 静默失败，避免循环
+        except Exception as e:
+            log.debug("auto_reply_send_failed", error=str(e))  # 静默失败，避免循环
 
 
 def _get_match_type_label(match_type: str) -> str:

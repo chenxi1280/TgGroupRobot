@@ -15,6 +15,7 @@ from bot.keyboards.integration.invite_link import (
 )
 from bot.models.enums import InviteLinkStatus
 from bot.services.core.chat_service import ensure_chat, get_chat_settings
+from bot.services.core.permission_service import is_user_admin
 from bot.services.integration.invite_service import (
     create_invite_link,
     delete_invite_link,
@@ -139,7 +140,7 @@ async def invite_link_menu_callback(update: Update, context: ContextTypes.DEFAUL
         if target_chat_id is None:
             await _invite_link_handler.message_helper.safe_edit(update, "请先选择一个群组")
             return
-        if not await _invite_link_handler.permission_helper.is_user_admin(context, target_chat_id, user.id):
+        if not await is_user_admin(context, target_chat_id, user.id):
             await _invite_link_handler.message_helper.safe_edit(update, "你没有该群组的管理权限")
             return
 
@@ -149,7 +150,7 @@ async def invite_link_menu_callback(update: Update, context: ContextTypes.DEFAUL
         await _show_private_admin_menu(update, context, target_chat_id, chats)
         return
 
-    if not await _invite_link_handler.permission_helper.is_user_admin(context, chat.id, user.id):
+    if not await is_user_admin(context, chat.id, user.id):
         await _invite_link_handler.message_helper.safe_edit(update, "仅管理员可使用此功能")
         return
 

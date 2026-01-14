@@ -26,6 +26,7 @@ from bot.services.automation.ad_service import (
 from bot.services.integration.chat_group_service import get_user_current_chat, get_user_managed_chats
 from bot.services.state.state_service import clear_user_state, set_user_state, get_user_state
 from bot.services.core.chat_service import ensure_chat, get_chat_settings
+from bot.services.core.permission_service import is_user_admin
 from bot.models.core import AdCampaign
 from bot.utils.callback_parser import CallbackParser
 from bot.utils.chat_context import PrivateChatContext
@@ -183,7 +184,7 @@ async def ads_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         if target_chat_id is None:
             await _ads_handler.message_helper.safe_edit(update, "请先选择一个群组")
             return
-        if not await _ads_handler.permission_helper.is_user_admin(context, target_chat_id, user.id):
+        if not await is_user_admin(context, target_chat_id, user.id):
             await _ads_handler.message_helper.safe_edit(update, "你没有该群组的管理权限")
             return
 
@@ -194,7 +195,7 @@ async def ads_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             await _show_private_admin_menu(update, context, target_chat_id)
             return
     else:
-        if not await _ads_handler.permission_helper.is_user_admin(context, chat.id, user.id):
+        if not await is_user_admin(context, chat.id, user.id):
             await _ads_handler.message_helper.safe_edit(update, "仅管理员可使用此功能")
             return
         target_chat_id = chat.id
@@ -438,7 +439,7 @@ async def ads_create_config_message(update: Update, context: ContextTypes.DEFAUL
                     )
 
                     if result.success:
-                        ad = result.ad
+                        ad = result.entity
 
                         # 构建成功消息
                         success_msg = f"✅ 广告创建成功！\n\n标题: {ad.title}\n\n"

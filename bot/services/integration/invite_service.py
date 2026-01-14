@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import structlog
 from dataclasses import dataclass
 from typing import Literal, NamedTuple
 
@@ -12,6 +13,9 @@ from telegram import Bot
 
 from bot.models.core import ChatSettings, InviteLink, InviteTracking, TgUser
 from bot.models.enums import InviteLinkStatus
+
+
+log = structlog.get_logger(__name__)
 
 
 @dataclass
@@ -102,6 +106,7 @@ async def create_invite_link(
         return CreateResult(success=True, reason="ok", invite_link=invite_link)
 
     except Exception as e:
+        log.error("create_invite_link_failed", chat_id=chat_id, error=str(e))
         error_msg = str(e).lower()
         if "limit" in error_msg or "reached" in error_msg:
             return CreateResult(success=False, reason="limit_reached")
@@ -159,6 +164,7 @@ async def create_user_invite_link(
 
         return True, link, None
     except Exception as e:
+        log.error("create_user_invite_link_failed", chat_id=chat_id, user_id=user_id, error=str(e))
         return False, None, f"创建链接失败: {str(e)}"
 
 

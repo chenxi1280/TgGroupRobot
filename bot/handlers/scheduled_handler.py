@@ -563,14 +563,14 @@ async def _parse_scheduled_config(update: Update, session, state: object, text: 
         from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
         # 转换时间为北京时间（UTC+8）
-        beijing_time = result.message.next_send_time + dt.timedelta(hours=8)
+        beijing_time = result.entity.next_send_time + dt.timedelta(hours=8)
 
         reply_text = f"✅ 定时消息创建成功！\n\n"
         reply_text += f"📝 内容: {content[:50]}{'...' if len(content) > 50 else ''}\n"
         reply_text += f"⏰ 间隔: {_get_schedule_label(schedule_type, None)}\n"
         reply_text += f"🔄 重复: {'是' if repeat_enabled else '否'}\n"
         reply_text += f"🕐 首次发送: {beijing_time.strftime('%Y-%m-%d %H:%M:%S')}(北京时间)\n"
-        reply_text += f"\n消息ID: {result.message.id}"
+        reply_text += f"\n消息ID: {result.entity.id}"
 
         # 只显示一个返回按钮
         keyboard = InlineKeyboardMarkup([

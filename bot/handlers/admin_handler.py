@@ -21,6 +21,7 @@ from bot.keyboards.admin.admin_main import (
 )
 from bot.services.integration.chat_group_service import get_user_current_chat, get_user_managed_chats, set_user_current_chat
 from bot.services.core.chat_service import ensure_chat, get_chat_settings, get_settings_toggle_rows
+from bot.services.core.permission_service import is_user_admin
 from bot.utils.callback_parser import CallbackParser
 
 
@@ -47,7 +48,7 @@ class AdminHandler(BaseHandler):
 
         # 解析 callback data
         callback_data = CallbackParser.parse(q.data)
-        action = callback_data.get_str(1)
+        action = callback_data.get(1)
 
         # 根据操作类型分发
         if action == "menu":
@@ -73,7 +74,7 @@ class AdminHandler(BaseHandler):
         callback_data: CallbackParser,
     ) -> None:
         """处理菜单操作"""
-        menu_action = callback_data.get_str(2)
+        menu_action = callback_data.get(2)
 
         # 分发到不同的子菜单处理器
         handlers = {
@@ -147,7 +148,7 @@ class AdminHandler(BaseHandler):
         callback_data: CallbackParser,
     ) -> None:
         """处理开关切换操作"""
-        field = callback_data.get_str(3) if callback_data.length >= 4 else callback_data.get_str(2)
+        field = callback_data.get(3) if callback_data.length() >= 4 else callback_data.get(2)
 
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
@@ -167,7 +168,7 @@ class AdminHandler(BaseHandler):
         callback_data: CallbackParser,
     ) -> None:
         """处理验证模式切换操作"""
-        selected_mode = callback_data.get_str(3)
+        selected_mode = callback_data.get(3)
 
         if selected_mode in ["button", "math", "captcha"]:
             db: Database = context.application.bot_data["db"]
@@ -478,7 +479,7 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         log.info("admin_command_group_chat")
         # 检查管理员权限
         try:
-            is_admin = await _admin_handler.permission_helper.is_user_admin(context, chat.id, user.id)
+            is_admin = await is_user_admin(context, chat.id, user.id)
         except TelegramError as e:
             log.error("admin_command_get_chat_member_failed", error=str(e))
             await update.effective_message.reply_text("无法获取管理员信息，请确保 bot 有读取群成员的权限")
@@ -581,7 +582,7 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
             # 检查管理员权限
             if target_chat_id != 0:
-                is_admin = await _admin_handler.permission_helper.is_user_admin(
+                is_admin = await is_user_admin(
                     context, target_chat_id, update.effective_user.id
                 )
                 if not is_admin:
@@ -601,7 +602,7 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # 群聊中的回调（保持向后兼容，用于其他功能模块）
     user = update.effective_user
     chat = update.effective_chat
-    is_admin = await _admin_handler.permission_helper.is_user_admin(context, chat.id, user.id)
+    is_admin = await is_user_admin(context, chat.id, user.id)
     log.info("admin_permission_check", chat_id=chat.id, user_id=user.id, is_admin=is_admin)
     if not is_admin:
         log.warning("admin_permission_denied", callback_data=data, chat_id=chat.id, user_id=user.id)
@@ -642,8 +643,8 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 await _admin_handler.message_helper.safe_edit(q, text, reply_markup=verification_mode_menu(settings.verification_mode))
                 return
 
-        if parts[1] == "toggle":
-            field = parts[2]
+        if cb.get(1) == "toggle":
+            field = cb.get(2)
             if hasattr(settings, field):
                 current = bool(getattr(settings, field))
                 setattr(settings, field, not current)
@@ -655,9 +656,9 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 )
                 return
 
-        if parts[1] == "vfy_mode":
+        if cb.get(1) == "vfy_mode":
             # 验证模式选择
-            selected_mode = parts[2]
+            selected_mode = cb.get(2)
             if selected_mode in ["button", "math", "captcha"]:
                 settings.verification_mode = selected_mode
                 await session.commit()

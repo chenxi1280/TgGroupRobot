@@ -29,6 +29,7 @@ from bot.services.activity.solitaire_service import (
     update_entry,
 )
 from bot.services.state.state_service import clear_user_state, set_user_state, get_user_state
+from bot.services.core.permission_service import is_user_admin
 from bot.utils.callback_parser import CallbackParser
 from bot.utils.chat_context import PrivateChatContext
 
@@ -171,7 +172,7 @@ async def solitaire_menu_callback(update: Update, context: ContextTypes.DEFAULT_
         if target_chat_id is None:
             await _solitaire_handler.message_helper.safe_edit(update, "请先选择一个群组")
             return
-        if not await _solitaire_handler.permission_helper.is_user_admin(context, target_chat_id, user.id):
+        if not await is_user_admin(context, target_chat_id, user.id):
             await _solitaire_handler.message_helper.safe_edit(update, "你没有该群组的管理权限")
             return
 
@@ -181,7 +182,7 @@ async def solitaire_menu_callback(update: Update, context: ContextTypes.DEFAULT_
         await _show_private_admin_menu(update, context, target_chat_id, chats)
         return
     else:
-        if not await _solitaire_handler.permission_helper.is_user_admin(context, chat.id, user.id):
+        if not await is_user_admin(context, chat.id, user.id):
             await _solitaire_handler.message_helper.safe_edit(update, "仅管理员可使用此功能")
             return
         target_chat_id = chat.id
@@ -410,19 +411,19 @@ async def solitaire_create_config_message(update: Update, context: ContextTypes.
 
             if result.success:
                 # 构建接龙消息
-                text_msg = format_solitaire_message(result.solitaire)
+                text_msg = format_solitaire_message(result.entity)
 
                 # 向目标群组发送接龙（带一键接龙按钮）
                 try:
                     from bot.keyboards.activity.solitaire import get_join_solitaire_keyboard
-                    keyboard = get_join_solitaire_keyboard(result.solitaire.id)
+                    keyboard = get_join_solitaire_keyboard(result.entity.id)
                     group_message = await context.bot.send_message(
                         chat_id=target_chat_id,
                         text=text_msg,
                         reply_markup=keyboard
                     )
                     # 保存消息ID
-                    result.solitaire.message_id = group_message.message_id
+                    result.entity.message_id = group_message.message_id
                     await session.commit()
                 except Exception as e:
                     log.error("solitaire_send_failed", error=str(e))
@@ -434,7 +435,7 @@ async def solitaire_create_config_message(update: Update, context: ContextTypes.
                     [InlineKeyboardButton("« 返回管理菜单", callback_data=f"adm:menu:{target_chat_id}")]
                 ])
                 await update.effective_message.reply_text(
-                    f"✅ 接龙创建成功！\n\n已发送到群组\n\n接龙ID: {result.solitaire.id}",
+                    f"✅ 接龙创建成功！\n\n已发送到群组\n\n接龙ID: {result.entity.id}",
                     reply_markup=keyboard
                 )
 
@@ -617,11 +618,11 @@ async def solitaire_create_deadline_message(update: Update, context: ContextType
         await session.commit()
 
         if result.success:
-            text_msg = format_solitaire_message(result.solitaire)
+            text_msg = format_solitaire_message(result.entity)
             message = await update.effective_message.reply_text(text_msg, reply_markup=solitaire_menu_keyboard())
 
             # 保存消息ID
-            result.solitaire.message_id = message.message_id
+            result.entity.message_id = message.message_id
             await session.commit()
         else:
             await update.effective_message.reply_text("❌ 创建失败", reply_markup=solitaire_menu_keyboard())
@@ -905,7 +906,7 @@ async def solitaire_refresh_callback(update: Update, context: ContextTypes.DEFAU
             if now > solitaire.deadline:
                 close_result = await close_solitaire(session, solitaire_id)
                 if close_result.success:
-                    solitaire = close_result.solitaire
+                    solitaire = close_result.entity
                     # 在群组中发送过期通知
                     try:
                         await context.bot.send_message(
@@ -960,26 +961,26 @@ async def solitaire_close_callback(update: Update, context: ContextTypes.DEFAULT
         result = await close_solitaire(session, solitaire_id)
 
         if result.success:
-            entries_count = len(result.solitaire.entries_rel)
+            entries_count = len(result.entity.entries_rel)
 
             await session.commit()
 
             # 1. 在群组中发送结束通知
             try:
                 await context.bot.send_message(
-                    chat_id=result.solitaire.chat_id,
-                    text=f"🔴 接龙已结束\n\n{result.solitaire.title}\n参与人数: {entries_count} 人"
+                    chat_id=result.entity.chat_id,
+                    text=f"🔴 接龙已结束\n\n{result.entity.title}\n参与人数: {entries_count} 人"
                 )
             except Exception as e:
                 log.error("solitaire_group_notification_failed", error=str(e))
 
             # 2. 更新群组中的原始接龙消息，移除参与按钮
-            if result.solitaire.message_id:
+            if result.entity.message_id:
                 try:
-                    group_text = format_solitaire_message(result.solitaire, show_closed=False)
+                    group_text = format_solitaire_message(result.entity, show_closed=False)
                     await context.bot.edit_message_text(
-                        chat_id=result.solitaire.chat_id,
-                        message_id=result.solitaire.message_id,
+                        chat_id=result.entity.chat_id,
+                        message_id=result.entity.message_id,
                         text=group_text
                     )
                 except Exception as e:
@@ -987,7 +988,7 @@ async def solitaire_close_callback(update: Update, context: ContextTypes.DEFAULT
 
             # 3. 通知管理员：接龙已结束（显示完整的参与人员名单）
             try:
-                admin_text = format_solitaire_message(result.solitaire, show_closed=False)
+                admin_text = format_solitaire_message(result.entity, show_closed=False)
                 await context.bot.send_message(
                     chat_id=user.id,
                     text=admin_text
@@ -995,7 +996,7 @@ async def solitaire_close_callback(update: Update, context: ContextTypes.DEFAULT
             except Exception as e:
                 log.error("solitaire_close_notification_failed", error=str(e))
 
-            text = format_solitaire_message(result.solitaire, show_closed=False)
+            text = format_solitaire_message(result.entity, show_closed=False)
             await q.edit_message_text(text, reply_markup=solitaire_detail_keyboard(solitaire_id, False, target_chat_id if chat.type == "private" else None))
         else:
             reason_text = {

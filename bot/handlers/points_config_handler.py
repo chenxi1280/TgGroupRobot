@@ -53,8 +53,8 @@ class PointsConfigHandler(BaseHandler):
 
         # 解析 callback data
         callback_data = CallbackParser.parse(q.data)
-        action = callback_data.get_str(1)
-        field = callback_data.get_str(2)
+        action = callback_data.get(1)
+        field = callback_data.get(2)
 
         # 根据操作类型分发
         if action == "toggle":

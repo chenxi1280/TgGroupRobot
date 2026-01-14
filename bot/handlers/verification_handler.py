@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import structlog
 from telegram import ChatPermissions, Update
 from telegram.ext import ContextTypes
 
@@ -15,6 +16,9 @@ from bot.services.verification_service import (
     solve_by_token,
 )
 from bot.services.integration.invite_service import track_and_award_invite
+
+
+log = structlog.get_logger(__name__)
 
 
 async def new_members_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -45,8 +49,8 @@ async def new_members_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
                         text=welcome_text,
                         parse_mode="HTML",
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.warning("send_welcome_message_failed", chat_id=chat.id, error=str(e))
 
         # 如果未启用验证，直接返回
         if not settings.verification_enabled:
@@ -95,8 +99,8 @@ async def new_members_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
                                     chat_id=link.created_by_user_id,
                                     text=f"🎉 恭喜！您邀请的 {u.first_name or u.username or '用户'} 加入了群组 {chat.title}"
                                 )
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                log.warning("invite_notification_failed", inviter_id=link.created_by_user_id, error=str(e))
 
             ch = await create_or_replace_challenge(
                 session,

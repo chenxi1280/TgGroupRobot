@@ -760,7 +760,7 @@ async def _parse_banned_word_config(update: Update, session, state: object, text
         reply_text += f"📢 删除提醒: {'是' if notify else '否'}\n"
         if notify_message:
             reply_text += f"💬 提醒消息: {notify_message}\n"
-        reply_text += f"\n违禁词ID: {result.word.id}"
+        reply_text += f"\n违禁词ID: {result.entity.id}"
 
         # 只显示一个返回按钮
         keyboard = InlineKeyboardMarkup([
