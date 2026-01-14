@@ -4,13 +4,13 @@ import structlog
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from bot.services.anti_flood_service import (
+from bot.services.moderation.anti_flood_service import (
     execute_flood_punishment,
     get_tracker,
     FloodDetectionResult,
 )
-from bot.services.chat_service import get_chat_settings
-from bot.services.telegram_perm import is_user_admin
+from bot.services.core.chat_service import get_chat_settings
+from bot.services.core.permission_service import is_user_admin
 
 
 log = structlog.get_logger(__name__)

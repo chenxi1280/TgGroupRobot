@@ -6,7 +6,7 @@ from telegram.ext import ContextTypes
 
 from bot.db.session import Database
 from bot.models.enums import BannedWordMatchType, ConversationStateType
-from bot.services.banned_word_service import (
+from bot.services.moderation.banned_word_service import (
     create_banned_word,
     delete_banned_word,
     get_chat_banned_words,
@@ -15,10 +15,10 @@ from bot.services.banned_word_service import (
     toggle_banned_word,
     CreateResult,
 )
-from bot.services.chat_service import ensure_chat, get_chat_settings
-from bot.services.state_service import clear_user_state, get_user_state, set_user_state
-from bot.services.telegram_perm import is_user_admin
-from bot.services.user_service import ensure_user
+from bot.services.core.chat_service import ensure_chat, get_chat_settings
+from bot.services.state.state_service import clear_user_state, get_user_state, set_user_state
+from bot.services.core.permission_service import is_user_admin
+from bot.services.core.user_service import ensure_user
 
 
 log = structlog.get_logger(__name__)
@@ -40,8 +40,8 @@ async def banned_word_menu_callback(update: Update, context: ContextTypes.DEFAUL
 
     # 私聊中的违禁词管理 - 返回到管理面板
     if chat.type == "private":
-        from bot.services.chat_group_service import get_user_current_chat
-        from bot.services.chat_group_service import get_user_managed_chats
+        from bot.services.integration.chat_group_service import get_user_current_chat
+        from bot.services.integration.chat_group_service import get_user_managed_chats
         db: Database = context.application.bot_data["db"]
         target_chat_id = await get_user_current_chat(db, user.id)
         if target_chat_id is None:
@@ -113,7 +113,7 @@ async def banned_word_list_callback(update: Update, context: ContextTypes.DEFAUL
 
         # 如果 callback_data 中没有，从数据库获取
         if target_chat_id is None:
-            from bot.services.chat_group_service import get_user_current_chat
+            from bot.services.integration.chat_group_service import get_user_current_chat
             db: Database = context.application.bot_data["db"]
             target_chat_id = await get_user_current_chat(db, user.id)
             if target_chat_id is None:
@@ -178,7 +178,7 @@ async def banned_word_add_start(update: Update, context: ContextTypes.DEFAULT_TY
 
             # 如果 callback_data 中没有 chat_id，从数据库获取
             if target_chat_id is None:
-                from bot.services.chat_group_service import get_user_current_chat
+                from bot.services.integration.chat_group_service import get_user_current_chat
                 from bot.models.core import TgChat
                 from sqlalchemy import select
                 db: Database = context.application.bot_data["db"]
@@ -335,7 +335,7 @@ async def banned_word_toggle_callback(update: Update, context: ContextTypes.DEFA
                 pass
         # 如果 callback_data 中没有 chat_id，从数据库获取
         if target_chat_id is None:
-            from bot.services.chat_group_service import get_user_current_chat
+            from bot.services.integration.chat_group_service import get_user_current_chat
             db: Database = context.application.bot_data["db"]
             target_chat_id = await get_user_current_chat(db, update.effective_user.id)
             if target_chat_id is None:
@@ -415,7 +415,7 @@ async def banned_word_delete_callback(update: Update, context: ContextTypes.DEFA
                 pass
         # 如果 callback_data 中没有 chat_id，从数据库获取
         if target_chat_id is None:
-            from bot.services.chat_group_service import get_user_current_chat
+            from bot.services.integration.chat_group_service import get_user_current_chat
             db: Database = context.application.bot_data["db"]
             target_chat_id = await get_user_current_chat(db, user.id)
             if target_chat_id is None:
@@ -494,7 +494,7 @@ async def banned_word_config_handler(update: Update, context: ContextTypes.DEFAU
         # 获取用户状态
         if chat.type == "private":
             # 私聊模式：优先从目标群组查询（新版本逻辑）
-            from bot.services.chat_group_service import get_user_current_chat
+            from bot.services.integration.chat_group_service import get_user_current_chat
             target_chat_id = await get_user_current_chat(db, user_id=user.id)
 
             state = None

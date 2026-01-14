@@ -9,9 +9,9 @@ from telegram.error import BadRequest, TelegramError
 from bot.db.session import Database
 from bot.i18n.strings import t
 from bot.keyboards.admin import admin_main_menu, toggle_menu, verification_mode_menu
-from bot.services.chat_group_service import get_user_current_chat, get_user_managed_chats, set_user_current_chat
-from bot.services.chat_service import ensure_chat, get_chat_settings
-from bot.services.telegram_perm import is_user_admin
+from bot.services.integration.chat_group_service import get_user_current_chat, get_user_managed_chats, set_user_current_chat
+from bot.services.core.chat_service import ensure_chat, get_chat_settings
+from bot.services.core.permission_service import is_user_admin
 
 
 def _settings_toggle_rows(settings) -> list[tuple[str, str, bool]]:
@@ -213,7 +213,7 @@ async def _handle_private_settings(update: Update, context: ContextTypes.DEFAULT
 async def _handle_private_lottery(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> None:
     """处理私聊中的抽奖管理"""
     from bot.keyboards.lottery import lottery_menu_keyboard
-    from bot.services.lottery_service import get_lottery_stats
+    from bot.services.activity.lottery_service import get_lottery_stats
 
     # 设置当前管理的群组
     db: Database = context.application.bot_data["db"]

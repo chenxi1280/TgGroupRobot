@@ -7,8 +7,8 @@ from telegram.error import BadRequest
 
 from bot.db.session import Database
 from bot.keyboards.points import back_button, points_config_keyboard
-from bot.services.chat_service import get_chat_settings
-from bot.services.telegram_perm import is_user_admin
+from bot.services.core.chat_service import get_chat_settings
+from bot.services.core.permission_service import is_user_admin
 
 log = structlog.get_logger(__name__)
 

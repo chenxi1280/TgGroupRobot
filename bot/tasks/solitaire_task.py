@@ -1,7 +1,7 @@
 """接龙自动结束任务"""
 
-from bot.services.scheduler.core import ScheduledTask
-from bot.services.scheduler.task_config import TASK_CONFIG
+from bot.services.automation.scheduler.core import ScheduledTask
+from bot.services.automation.scheduler.task_config import TASK_CONFIG
 
 
 class SolitaireTask(ScheduledTask):
@@ -21,7 +21,7 @@ class SolitaireTask(ScheduledTask):
         from sqlalchemy import select
         from bot.models.core import Solitaire
         from bot.models.enums import SolitaireStatus
-        from bot.services.solitaire_service import close_solitaire, format_solitaire_message
+        from bot.services.activity.solitaire_service import close_solitaire, format_solitaire_message
         import datetime as dt
         import structlog
 

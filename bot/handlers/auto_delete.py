@@ -5,7 +5,7 @@ from telegram import Update
 from telegram.ext import ContextTypes, filters
 
 from bot.db.session import Database
-from bot.services.chat_service import get_chat_settings
+from bot.services.core.chat_service import get_chat_settings
 
 log = structlog.get_logger(__name__)
 

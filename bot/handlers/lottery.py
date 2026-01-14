@@ -11,8 +11,8 @@ from telegram.ext import ContextTypes
 from bot.db.session import Database
 from bot.models.enums import ConversationStateType, LotteryDrawMode, PointsTxnType
 from bot.models.core import ChatMember, TgUser
-from bot.services.chat_service import ensure_chat, get_chat_settings
-from bot.services.lottery_service import (
+from bot.services.core.chat_service import ensure_chat, get_chat_settings
+from bot.services.activity.lottery_service import (
     create_lottery,
     create_lottery_winner,
     get_lottery,
@@ -23,10 +23,10 @@ from bot.services.lottery_service import (
     join_lottery,
     JoinResult,
 )
-from bot.services.points.account_service import change_points, get_balance
-from bot.services.state_service import clear_user_state, get_user_state, set_user_state
-from bot.services.telegram_perm import is_user_admin
-from bot.services.user_service import ensure_user
+from bot.services.activity.points_service import change_points, get_balance
+from bot.services.state.state_service import clear_user_state, get_user_state, set_user_state
+from bot.services.core.permission_service import is_user_admin
+from bot.services.core.user_service import ensure_user
 from bot.keyboards.lottery import (
     manual_draw_prize_keyboard,
     manual_draw_summary_keyboard,
@@ -376,7 +376,7 @@ async def _parse_lottery_config(update: Update, context: ContextTypes.DEFAULT_TY
         )
 
         # 清除状态
-        from bot.services.state_service import clear_user_state
+        from bot.services.state.state_service import clear_user_state
         await clear_user_state(session, chat_id=update.effective_chat.id, user_id=update.effective_user.id)
         await session.commit()
 
@@ -648,7 +648,7 @@ async def draw_lottery_callback(update: Update, context: ContextTypes.DEFAULT_TY
             return
 
         # 随机开奖模式（使用新的服务方法）
-        from bot.services.lottery_service import (
+        from bot.services.activity.lottery_service import (
             perform_random_draw,
             generate_lottery_announcement,
             distribute_lottery_rewards,
@@ -865,7 +865,7 @@ async def manual_draw_complete_callback(update: Update, context: ContextTypes.DE
             return
 
         # 创建中奖记录并发放积分奖励
-        from bot.services.lottery_service import distribute_lottery_rewards
+        from bot.services.activity.lottery_service import distribute_lottery_rewards
 
         # 获取所有中奖用户信息
         winner_user_ids = [w["user_id"] for w in winners.values()]
@@ -899,7 +899,7 @@ async def manual_draw_complete_callback(update: Update, context: ContextTypes.DE
         lottery.drawn_at = dt.datetime.now(dt.UTC)
 
         # 生成开奖公告（含@）
-        from bot.services.lottery_service import generate_lottery_announcement
+        from bot.services.activity.lottery_service import generate_lottery_announcement
         announcement = generate_lottery_announcement(lottery, winners_list, users)
 
         # 清除状态

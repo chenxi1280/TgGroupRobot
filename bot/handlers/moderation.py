@@ -5,9 +5,9 @@ from telegram.ext import ContextTypes
 
 from bot.db.session import Database
 from bot.i18n.strings import t
-from bot.services.chat_service import ensure_chat, get_chat_settings
-from bot.services.moderation_service import check_text_and_record
-from bot.services.user_service import ensure_user
+from bot.services.core.chat_service import ensure_chat, get_chat_settings
+from bot.services.moderation.moderation_service import check_text_and_record
+from bot.services.core.user_service import ensure_user
 
 
 async def moderation_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

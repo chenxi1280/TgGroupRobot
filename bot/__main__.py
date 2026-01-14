@@ -175,7 +175,7 @@ def main() -> None:
 
     # 启动定时任务调度器
     async def run_bot_with_scheduler():
-        from bot.services.scheduler import Scheduler
+        from bot.services.automation.scheduler import Scheduler
         from bot.tasks import (
             AdsTask,
             CleanupTask,

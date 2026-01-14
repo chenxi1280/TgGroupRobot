@@ -6,15 +6,15 @@ from telegram.ext import ContextTypes, filters
 from sqlalchemy.orm import selectinload
 
 from bot.db.session import Database
-from bot.services.chat_service import ensure_chat, get_chat_settings
-from bot.services.points_service import (
+from bot.services.core.chat_service import ensure_chat, get_chat_settings
+from bot.services.activity.points_service import (
     add_message_points,
     get_balance,
     get_leaderboard,
     get_user_rank,
     sign_in,
 )
-from bot.services.user_service import ensure_user
+from bot.services.core.user_service import ensure_user
 
 
 async def sign_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

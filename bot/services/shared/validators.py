@@ -25,7 +25,7 @@ async def validate_user_permission(
     Returns:
         用户是否有权限
     """
-    from bot.services.telegram_perm import is_user_admin
+    from bot.services.core.permission_service import is_user_admin
     return await is_user_admin(app, chat_id, user_id)
 
 

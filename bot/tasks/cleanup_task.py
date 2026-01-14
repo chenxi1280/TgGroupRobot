@@ -1,7 +1,7 @@
 """清理任务"""
 
-from bot.services.scheduler.core import ScheduledTask
-from bot.services.scheduler.task_config import TASK_CONFIG
+from bot.services.automation.scheduler.core import ScheduledTask
+from bot.services.automation.scheduler.task_config import TASK_CONFIG
 
 
 class CleanupTask(ScheduledTask):
@@ -18,7 +18,7 @@ class CleanupTask(ScheduledTask):
 
     async def execute(self, app) -> None:
         """执行清理逻辑"""
-        from bot.services.anti_flood_service import anti_flood_cleanup_job
+        from bot.services.moderation.anti_flood_service import anti_flood_cleanup_job
         import structlog
 
         log = structlog.get_logger(__name__)

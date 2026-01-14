@@ -13,8 +13,8 @@ from bot.keyboards.invite_link import (
     invite_link_menu_keyboard,
 )
 from bot.models.enums import InviteLinkStatus
-from bot.services.chat_service import ensure_chat, get_chat_settings
-from bot.services.invite_link_service import (
+from bot.services.core.chat_service import ensure_chat, get_chat_settings
+from bot.services.integration.invite_service import (
     create_invite_link,
     delete_invite_link,
     get_chat_invite_links,
@@ -23,8 +23,8 @@ from bot.services.invite_link_service import (
     revoke_invite_link,
     update_invite_link_info,
 )
-from bot.services.state_service import clear_user_state, get_user_state, set_user_state
-from bot.services.telegram_perm import is_user_admin
+from bot.services.state.state_service import clear_user_state, get_user_state, set_user_state
+from bot.services.core.permission_service import is_user_admin
 
 # 创建流程状态
 WAIT_NAME = 1
@@ -46,8 +46,8 @@ async def invite_link_menu_callback(update: Update, context: ContextTypes.DEFAUL
 
     # 私聊中的邀请链接管理 - 返回到管理面板
     if chat.type == "private":
-        from bot.services.chat_group_service import get_user_current_chat
-        from bot.services.chat_group_service import get_user_managed_chats
+        from bot.services.integration.chat_group_service import get_user_current_chat
+        from bot.services.integration.chat_group_service import get_user_managed_chats
         db: Database = context.application.bot_data["db"]
         target_chat_id = await get_user_current_chat(db, user.id)
         if target_chat_id is None:
@@ -91,7 +91,7 @@ async def invite_link_list_callback(update: Update, context: ContextTypes.DEFAUL
     # 私聊中的邀请链接管理 - 从回调中获取目标群组ID
     target_chat_id = None
     if chat.type == "private":
-        from bot.services.chat_group_service import get_user_current_chat
+        from bot.services.integration.chat_group_service import get_user_current_chat
         db: Database = context.application.bot_data["db"]
         target_chat_id = await get_user_current_chat(db, user.id)
         if target_chat_id is None:
@@ -150,7 +150,7 @@ async def invite_link_stats_callback(update: Update, context: ContextTypes.DEFAU
     # 私聊中的邀请链接管理 - 从回调中获取目标群组ID
     target_chat_id = None
     if chat.type == "private":
-        from bot.services.chat_group_service import get_user_current_chat
+        from bot.services.integration.chat_group_service import get_user_current_chat
         db: Database = context.application.bot_data["db"]
         target_chat_id = await get_user_current_chat(db, user.id)
         if target_chat_id is None:
@@ -263,7 +263,7 @@ async def invite_link_create_start_callback(update: Update, context: ContextType
 
         # 如果 callback_data 中没有 chat_id，从数据库获取
         if target_chat_id is None:
-            from bot.services.chat_group_service import get_user_current_chat
+            from bot.services.integration.chat_group_service import get_user_current_chat
             db: Database = context.application.bot_data["db"]
             target_chat_id = await get_user_current_chat(db, user.id)
             if target_chat_id is None:
@@ -604,7 +604,7 @@ async def link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 async def _show_user_invite_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int) -> None:
     """显示用户邀请链接菜单"""
-    from bot.services.invite_service import get_user_invite_stats
+    from bot.services.integration.invite_service import get_user_invite_stats
     from bot.keyboards.invite_link import user_invite_menu_keyboard
 
     db: Database = context.application.bot_data["db"]
@@ -661,7 +661,7 @@ async def user_invite_create_callback(update: Update, context: ContextTypes.DEFA
         await q.answer("无效的群组ID", show_alert=True)
         return
 
-    from bot.services.invite_service import create_invite_link as user_create_link
+    from bot.services.integration.invite_service import create_invite_link as user_create_link
 
     db: Database = context.application.bot_data["db"]
 
@@ -713,7 +713,7 @@ async def user_invite_list_callback(update: Update, context: ContextTypes.DEFAUL
         await q.answer("无效的群组ID", show_alert=True)
         return
 
-    from bot.services.invite_service import get_user_links
+    from bot.services.integration.invite_service import get_user_links
 
     db: Database = context.application.bot_data["db"]
 
@@ -762,7 +762,7 @@ async def user_invite_rank_callback(update: Update, context: ContextTypes.DEFAUL
         await q.answer("无效的群组ID", show_alert=True)
         return
 
-    from bot.services.invite_service import get_invite_leaderboard, get_user_rank
+    from bot.services.integration.invite_service import get_invite_leaderboard, get_user_rank
 
     db: Database = context.application.bot_data["db"]
 

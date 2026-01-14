@@ -1,7 +1,7 @@
 """广告发送任务"""
 
-from bot.services.scheduler.core import ScheduledTask
-from bot.services.scheduler.task_config import TASK_CONFIG
+from bot.services.automation.scheduler.core import ScheduledTask
+from bot.services.automation.scheduler.task_config import TASK_CONFIG
 
 
 class AdsTask(ScheduledTask):
@@ -18,7 +18,7 @@ class AdsTask(ScheduledTask):
 
     async def execute(self, app) -> None:
         """执行广告发送逻辑"""
-        from bot.services.ad_service import (
+        from bot.services.automation.ad_service import (
             get_scheduled_ads,
             should_send_ad,
             mark_ad_sent,

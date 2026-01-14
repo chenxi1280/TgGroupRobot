@@ -6,15 +6,15 @@ from telegram.ext import ContextTypes
 from bot.db.session import Database
 from bot.i18n.strings import t
 from bot.keyboards.verification import verification_keyboard
-from bot.services.chat_service import ensure_chat, get_chat_settings
-from bot.services.user_service import ensure_user
+from bot.services.core.chat_service import ensure_chat, get_chat_settings
+from bot.services.core.user_service import ensure_user
 from bot.services.verification_service import (
     create_or_replace_challenge,
     get_challenge,
     solve_by_answer,
     solve_by_token,
 )
-from bot.services.invite_service import track_and_award_invite
+from bot.services.integration.invite_service import track_and_award_invite
 
 
 async def new_members_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

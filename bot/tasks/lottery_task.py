@@ -1,7 +1,7 @@
 """抽奖自动开奖任务"""
 
-from bot.services.scheduler.core import ScheduledTask
-from bot.services.scheduler.task_config import TASK_CONFIG
+from bot.services.automation.scheduler.core import ScheduledTask
+from bot.services.automation.scheduler.task_config import TASK_CONFIG
 
 
 class LotteryTask(ScheduledTask):
@@ -20,7 +20,7 @@ class LotteryTask(ScheduledTask):
         """执行开奖逻辑"""
         from sqlalchemy import select
         from bot.models.core import Lottery, TgUser
-        from bot.services.lottery_service import (
+        from bot.services.activity.lottery_service import (
             perform_random_draw,
             generate_lottery_announcement,
             distribute_lottery_rewards,

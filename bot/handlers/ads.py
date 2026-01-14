@@ -4,8 +4,8 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from bot.db.session import Database
-from bot.services.chat_service import ensure_chat, get_chat_settings
-from bot.services.telegram_perm import is_user_admin
+from bot.services.core.chat_service import ensure_chat, get_chat_settings
+from bot.services.core.permission_service import is_user_admin
 from bot.models.core import AdCampaign
 
 

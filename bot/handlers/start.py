@@ -9,11 +9,11 @@ from bot.db.session import Database
 from bot.i18n.strings import t
 from bot.keyboards.chat_group import chat_group_list_keyboard
 from bot.models.enums import ConversationStateType
-from bot.services.chat_group_service import get_user_current_chat, get_user_managed_chats, set_user_current_chat
-from bot.services.chat_service import ensure_chat, get_chat_settings
-from bot.services.state_service import clear_user_state, get_user_state
-from bot.services.telegram_perm import is_user_admin
-from bot.services.user_service import ensure_user
+from bot.services.integration.chat_group_service import get_user_current_chat, get_user_managed_chats, set_user_current_chat
+from bot.services.core.chat_service import ensure_chat, get_chat_settings
+from bot.services.state.state_service import clear_user_state, get_user_state
+from bot.services.core.permission_service import is_user_admin
+from bot.services.core.user_service import ensure_user
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -192,7 +192,7 @@ async def private_message_handler(update: Update, context: ContextTypes.DEFAULT_
     # 先检查用户是否有对话状态（如抽奖创建流程）
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
-        from bot.services.state_service import get_user_state
+        from bot.services.state.state_service import get_user_state
 
         state = await get_user_state(session, chat_id=chat.id, user_id=user.id)
         await session.commit()

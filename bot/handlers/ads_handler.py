@@ -13,7 +13,7 @@ from bot.keyboards.ads import (
     ads_list_keyboard,
     ads_menu_keyboard,
 )
-from bot.services.ad_service import (
+from bot.services.automation.ad_service import (
     create_ad_campaign,
     delete_ad,
     get_ad,
@@ -22,9 +22,9 @@ from bot.services.ad_service import (
     should_send_ad,
     toggle_ad,
 )
-from bot.services.chat_group_service import get_user_current_chat, get_user_managed_chats
-from bot.services.state_service import clear_user_state, set_user_state, get_user_state
-from bot.services.telegram_perm import is_user_admin
+from bot.services.integration.chat_group_service import get_user_current_chat, get_user_managed_chats
+from bot.services.state.state_service import clear_user_state, set_user_state, get_user_state
+from bot.services.core.permission_service import is_user_admin
 from bot.handlers.admin import _show_private_admin_menu, _safe_edit_message
 
 log = structlog.get_logger(__name__)

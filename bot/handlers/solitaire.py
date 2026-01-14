@@ -13,7 +13,7 @@ from bot.keyboards.solitaire import (
     solitaire_menu_keyboard,
 )
 from bot.models.enums import SolitaireStatus
-from bot.services.solitaire_service import (
+from bot.services.activity.solitaire_service import (
     close_solitaire,
     create_solitaire,
     delete_solitaire,
@@ -25,8 +25,8 @@ from bot.services.solitaire_service import (
     leave_solitaire,
     update_entry,
 )
-from bot.services.state_service import clear_user_state, set_user_state, get_user_state
-from bot.services.telegram_perm import is_user_admin
+from bot.services.state.state_service import clear_user_state, set_user_state, get_user_state
+from bot.services.core.permission_service import is_user_admin
 
 # 创建流程状态
 WAIT_CONFIG = 1
@@ -70,8 +70,8 @@ async def solitaire_menu_callback(update: Update, context: ContextTypes.DEFAULT_
     # 私聊中的接龙管理 - 从回调中获取目标群组ID
     target_chat_id = None
     if chat.type == "private":
-        from bot.services.chat_group_service import get_user_current_chat
-        from bot.services.chat_group_service import get_user_managed_chats
+        from bot.services.integration.chat_group_service import get_user_current_chat
+        from bot.services.integration.chat_group_service import get_user_managed_chats
         db: Database = context.application.bot_data["db"]
         target_chat_id = await get_user_current_chat(db, user.id)
         if target_chat_id is None:
@@ -127,7 +127,7 @@ async def solitaire_list_callback(update: Update, context: ContextTypes.DEFAULT_
 
         # 如果无法从 callback_data 获取，回退到数据库
         if target_chat_id is None:
-            from bot.services.chat_group_service import get_user_current_chat
+            from bot.services.integration.chat_group_service import get_user_current_chat
             db: Database = context.application.bot_data["db"]
             target_chat_id = await get_user_current_chat(db, user.id)
             # 尝试从 parts[3] 获取页码
@@ -199,7 +199,7 @@ async def solitaire_stats_callback(update: Update, context: ContextTypes.DEFAULT
 
         # 如果无法从 callback_data 获取，回退到数据库
         if target_chat_id is None:
-            from bot.services.chat_group_service import get_user_current_chat
+            from bot.services.integration.chat_group_service import get_user_current_chat
             db: Database = context.application.bot_data["db"]
             target_chat_id = await get_user_current_chat(db, user.id)
 
@@ -265,7 +265,7 @@ async def solitaire_detail_callback(update: Update, context: ContextTypes.DEFAUL
 
         # 如果无法从 callback_data 获取，回退到数据库
         if target_chat_id is None:
-            from bot.services.chat_group_service import get_user_current_chat
+            from bot.services.integration.chat_group_service import get_user_current_chat
             db: Database = context.application.bot_data["db"]
             target_chat_id = await get_user_current_chat(db, user.id)
             if target_chat_id is None:
@@ -327,7 +327,7 @@ async def solitaire_create_start_callback(update: Update, context: ContextTypes.
 
         # 如果 callback_data 中没有 chat_id，从数据库获取
         if target_chat_id is None:
-            from bot.services.chat_group_service import get_user_current_chat
+            from bot.services.integration.chat_group_service import get_user_current_chat
             db: Database = context.application.bot_data["db"]
             target_chat_id = await get_user_current_chat(db, user.id)
             if target_chat_id is None:
@@ -703,7 +703,7 @@ async def solitaire_cancel_callback(update: Update, context: ContextTypes.DEFAUL
     # 获取目标群组ID
     target_chat_id = None
     if chat.type == "private":
-        from bot.services.chat_group_service import get_user_current_chat
+        from bot.services.integration.chat_group_service import get_user_current_chat
         db: Database = context.application.bot_data["db"]
         target_chat_id = await get_user_current_chat(db, user.id)
     else:
@@ -776,7 +776,7 @@ async def join_solitaire_callback(update: Update, context: ContextTypes.DEFAULT_
 
         # 检查积分限制
         if solitaire.points_required and solitaire.points_required > 0:
-            from bot.services.points_service import get_balance
+            from bot.services.activity.points_service import get_balance
             points = await get_balance(session, solitaire.chat_id, user_id)
             log.info("checking_points", solitaire_id=solitaire_id, required=solitaire.points_required, user_points=points)
             if points < solitaire.points_required:
@@ -955,7 +955,7 @@ async def solitaire_refresh_callback(update: Update, context: ContextTypes.DEFAU
 
         # 如果无法从 callback_data 获取，回退到数据库
         if target_chat_id is None:
-            from bot.services.chat_group_service import get_user_current_chat
+            from bot.services.integration.chat_group_service import get_user_current_chat
             db: Database = context.application.bot_data["db"]
             target_chat_id = await get_user_current_chat(db, user.id)
             if target_chat_id is None:
@@ -1034,7 +1034,7 @@ async def solitaire_close_callback(update: Update, context: ContextTypes.DEFAULT
 
         # 如果无法从 callback_data 获取，回退到数据库
         if target_chat_id is None:
-            from bot.services.chat_group_service import get_user_current_chat
+            from bot.services.integration.chat_group_service import get_user_current_chat
             db: Database = context.application.bot_data["db"]
             target_chat_id = await get_user_current_chat(db, user.id)
             if target_chat_id is None:
@@ -1133,7 +1133,7 @@ async def solitaire_delete_callback(update: Update, context: ContextTypes.DEFAUL
 
         # 如果无法从 callback_data 获取，回退到数据库
         if target_chat_id is None:
-            from bot.services.chat_group_service import get_user_current_chat
+            from bot.services.integration.chat_group_service import get_user_current_chat
             db: Database = context.application.bot_data["db"]
             target_chat_id = await get_user_current_chat(db, user.id)
             if target_chat_id is None:

@@ -5,7 +5,7 @@ from telegram.ext import ContextTypes
 
 from bot.db.session import Database
 from bot.models.enums import AutoReplyMatchType, ConversationStateType
-from bot.services.auto_reply_service import (
+from bot.services.moderation.auto_reply_service import (
     create_auto_reply_rule,
     delete_auto_reply_rule,
     get_chat_auto_reply_rules,
@@ -13,10 +13,10 @@ from bot.services.auto_reply_service import (
     match_auto_reply,
     CreateResult,
 )
-from bot.services.chat_service import ensure_chat, get_chat_settings
-from bot.services.state_service import clear_user_state, get_user_state, set_user_state
-from bot.services.telegram_perm import is_user_admin
-from bot.services.user_service import ensure_user
+from bot.services.core.chat_service import ensure_chat, get_chat_settings
+from bot.services.state.state_service import clear_user_state, get_user_state, set_user_state
+from bot.services.core.permission_service import is_user_admin
+from bot.services.core.user_service import ensure_user
 
 
 # ============================================
@@ -35,8 +35,8 @@ async def auto_reply_menu_callback(update: Update, context: ContextTypes.DEFAULT
 
     # 私聊中的自动回复管理 - 返回到管理面板
     if chat.type == "private":
-        from bot.services.chat_group_service import get_user_current_chat
-        from bot.services.chat_group_service import get_user_managed_chats
+        from bot.services.integration.chat_group_service import get_user_current_chat
+        from bot.services.integration.chat_group_service import get_user_managed_chats
         db: Database = context.application.bot_data["db"]
         target_chat_id = await get_user_current_chat(db, user.id)
         if target_chat_id is None:
@@ -111,7 +111,7 @@ async def auto_reply_create_start(update: Update, context: ContextTypes.DEFAULT_
 
         # 如果 callback_data 中没有 chat_id，从数据库获取
         if target_chat_id is None:
-            from bot.services.chat_group_service import get_user_current_chat
+            from bot.services.integration.chat_group_service import get_user_current_chat
             from bot.models.core import TgChat
             from sqlalchemy import select
             db: Database = context.application.bot_data["db"]

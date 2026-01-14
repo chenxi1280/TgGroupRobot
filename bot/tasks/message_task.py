@@ -1,7 +1,7 @@
 """定时消息发送任务"""
 
-from bot.services.scheduler.core import ScheduledTask
-from bot.services.scheduler.task_config import TASK_CONFIG
+from bot.services.automation.scheduler.core import ScheduledTask
+from bot.services.automation.scheduler.task_config import TASK_CONFIG
 
 
 class MessageTask(ScheduledTask):
@@ -18,7 +18,7 @@ class MessageTask(ScheduledTask):
 
     async def execute(self, app) -> None:
         """执行定时消息发送逻辑"""
-        from bot.services.scheduled_message_service import (
+        from bot.services.automation.scheduled_service import (
             get_pending_messages,
             mark_message_sent,
         )
