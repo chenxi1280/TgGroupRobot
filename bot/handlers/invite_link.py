@@ -281,7 +281,9 @@ async def invite_link_create_start_callback(update: Update, context: ContextType
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
-        await set_user_state(session, target_chat_id, user.id, "invite_link_create", {})
+        # 修复：使用 chat.id 保存状态，而不是 target_chat_id
+        # 与后续的状态查询和更新保持一致
+        await set_user_state(session, chat.id, user.id, "invite_link_create", {"target_chat_id": target_chat_id})
         await session.commit()
 
     await q.edit_message_text(
