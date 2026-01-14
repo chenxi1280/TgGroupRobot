@@ -356,9 +356,30 @@ def build_application() -> Application:
     # ========================================
     # private chat messages (non-command)
     # 创建流程处理器使用更高优先级（group=0），按注册顺序执行
+
+    # 包装 scheduled_message_handler 用于诊断
+    async def scheduled_message_wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """包装函数用于诊断 scheduled_message_handler 是否被调用"""
+        log.warning(
+            "=== SCHEDULED_MESSAGE_WRAPPER CALLED ===",
+            user_id=update.effective_user.id if update.effective_user else None,
+            chat_id=update.effective_chat.id if update.effective_chat else None,
+            text_preview=(update.effective_message.text or "")[:50] if update.effective_message else "",
+        )
+        try:
+            await scheduled_message_handler(update, context)
+        except Exception as e:
+            log.exception("scheduled_message_handler_error", error=str(e))
+            raise
+
+    # scheduled_message_wrapper 使用更高的优先级（group=-1），确保在 ConversationHandler 之前被调用
+    # 修复：ConversationHandler 会拦截私聊消息，导致后续 Handler 无法被调用
+    app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND, scheduled_message_wrapper), group=-1)
+    log.info("Handler registered", handler="scheduled_message_handler", group=-1)
     app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND, banned_word_config_handler), group=0)
-    app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND, scheduled_message_handler), group=0)
+    log.info("Handler registered", handler="banned_word_config_handler", group=0)
     app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND, lottery_message_handler), group=0)
+    log.info("Handler registered", handler="lottery_message_handler", group=0)
 
     # 其他配置相关处理器使用相同的优先级 (group=1)
     app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND, auto_reply_config_handler), group=1)

@@ -215,15 +215,14 @@ async def scheduled_create_start(update: Update, context: ContextTypes.DEFAULT_T
             language_code=user.language_code,
         )
 
-        # 清除旧状态（避免状态冲突）
-        await clear_user_state(session, chat_id=user.id, user_id=user.id)
+        # 清除旧状态（避免状态冲突）- 统一使用目标群组ID
+        await clear_user_state(session, chat_id=target_chat_id, user_id=user.id)
 
         # 设置状态：等待输入配置
-        # 注意：使用 user.id (私聊ID) 而不是 target_chat_id 来保存状态
-        # 这样在私聊中发送消息时能正确读取状态
+        # 统一使用目标群组ID保存状态，与违禁词等功能保持一致
         await set_user_state(
             session,
-            chat_id=user.id,  # 使用私聊ID保存状态
+            chat_id=target_chat_id,  # 使用目标群组ID保存状态
             user_id=user.id,
             state_type=ConversationStateType.scheduled_create.value,
             state_data={"step": "content", "target_chat_id": target_chat_id},
@@ -366,19 +365,25 @@ async def scheduled_message_handler(update: Update, context: ContextTypes.DEFAUL
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
-        # 获取用户状态
-        # 注意：状态使用 chat_id=user.id (私聊ID) 保存，所以读取时也使用 user.id
+        # 获取用户状态 - 统一使用目标群组ID查询状态，与违禁词保持一致
         state = None
         state_data_dict = None
         if chat.type == "private":
-            # 私聊模式：直接使用 user.id 查询状态
-            state = await get_user_state(session, chat_id=user.id, user_id=user.id)
+            # 私聊模式：从目标群组查询状态
+            from bot.services.chat_group_service import get_user_current_chat
+            target_chat_id = await get_user_current_chat(db, user_id=user.id)
+
+            if target_chat_id is None:
+                await session.commit()
+                return
+
+            state = await get_user_state(session, chat_id=target_chat_id, user_id=user.id)
 
             # 添加调试日志
             log.info(
                 "scheduled_message_handler_private",
                 user_id=user.id,
-                chat_id=user.id,
+                target_chat_id=target_chat_id,
                 state_type=state.state_type if state else None,
                 text_preview=text[:50] if text else ""
             )
@@ -387,18 +392,9 @@ async def scheduled_message_handler(update: Update, context: ContextTypes.DEFAUL
                 # 用户未开始定时消息创建流程，静默返回让其他处理器处理
                 await session.commit()
                 return
-
-            # 验证状态中是否有目标群组ID
-            target_chat_id = state.state_data.get("target_chat_id")
-            if target_chat_id is None:
-                await update.effective_message.reply_text(
-                    "❌ 状态数据不完整\n\n"
-                    "请重新点击「创建定时消息」按钮开始"
-                )
-                await session.commit()
-                return
         else:
             # 群聊模式：从当前群组获取状态
+            target_chat_id = chat.id
             state = await get_user_state(session, chat_id=chat.id, user_id=user.id)
 
         # 只处理定时消息创建流程的状态
@@ -487,12 +483,8 @@ async def _parse_scheduled_config(update: Update, session, state: object, text: 
             raise ValueError(error_messages.get(result.reason, "创建失败"))
 
         # 清除状态
-        # 注意：在私聊模式下，状态使用 user.id 保存，所以清除时也使用 user.id
-        # 在群聊模式下，状态使用 target_chat_id 保存
-        if update.effective_chat.type == "private":
-            await clear_user_state(session, chat_id=update.effective_user.id, user_id=update.effective_user.id)
-        else:
-            await clear_user_state(session, chat_id=target_chat_id, user_id=update.effective_user.id)
+        # 统一使用 target_chat_id 清除状态，与违禁词保持一致
+        await clear_user_state(session, chat_id=target_chat_id, user_id=update.effective_user.id)
         await session.commit()
 
         # 返回成功消息
