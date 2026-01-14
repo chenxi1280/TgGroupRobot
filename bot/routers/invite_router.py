@@ -1,0 +1,70 @@
+from __future__ import annotations
+import structlog
+from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ConversationHandler, MessageHandler, filters
+from bot.handlers.invite_link import (
+    invite_link_cancel_callback,
+    invite_link_create_expire_message,
+    invite_link_create_limit_message,
+    invite_link_create_name_message,
+    invite_link_create_start_callback,
+    invite_link_delete_callback,
+    invite_link_detail_callback,
+    invite_link_list_callback,
+    invite_link_menu_callback,
+    invite_link_refresh_callback,
+    invite_link_revoke_callback,
+    invite_link_stats_callback,
+    link_command,
+    user_invite_create_callback,
+    user_invite_list_callback,
+    user_invite_rank_callback,
+    WAIT_NAME, WAIT_LIMIT, WAIT_EXPIRE,
+)
+from bot.routers.base import BaseRouter
+
+log = structlog.get_logger(__name__)
+
+class InviteRouter(BaseRouter):
+    """邀请链接功能路由器"""
+    
+    @property
+    def name(self) -> str:
+        return "invite"
+    
+    def register(self, app: Application) -> None:
+        log.info(f"Registering {self.name} router")
+        
+        # 命令处理器
+        app.add_handler(CommandHandler("link", link_command))
+        
+        # 回调处理器
+        app.add_handler(CallbackQueryHandler(invite_link_menu_callback, pattern=r"^inv:menu$"))
+        app.add_handler(CallbackQueryHandler(invite_link_list_callback, pattern=r"^inv:list"))
+        app.add_handler(CallbackQueryHandler(invite_link_stats_callback, pattern=r"^inv:stats$"))
+        app.add_handler(CallbackQueryHandler(invite_link_detail_callback, pattern=r"^inv:detail:\d+$"))
+        app.add_handler(CallbackQueryHandler(invite_link_refresh_callback, pattern=r"^inv:refresh:\d+$"))
+        app.add_handler(CallbackQueryHandler(invite_link_revoke_callback, pattern=r"^inv:revoke:\d+$"))
+        app.add_handler(CallbackQueryHandler(invite_link_delete_callback, pattern=r"^inv:delete:\d+$"))
+        
+        # 用户邀请链接回调
+        app.add_handler(CallbackQueryHandler(user_invite_create_callback, pattern=r"^inv:user:create:\-?\d+$"))
+        app.add_handler(CallbackQueryHandler(user_invite_list_callback, pattern=r"^inv:user:list:\-?\d+$"))
+        app.add_handler(CallbackQueryHandler(user_invite_rank_callback, pattern=r"^inv:user:rank:\-?\d+$"))
+        
+        # 邀请链接创建流程对话
+        invite_link_conv = ConversationHandler(
+            entry_points=[CallbackQueryHandler(invite_link_create_start_callback, pattern=r"^inv:create")],
+            states={
+                WAIT_NAME: [MessageHandler((filters.ChatType.GROUPS | filters.ChatType.PRIVATE) & filters.TEXT & ~filters.COMMAND, invite_link_create_name_message)],
+                WAIT_LIMIT: [MessageHandler((filters.ChatType.GROUPS | filters.ChatType.PRIVATE) & filters.TEXT & ~filters.COMMAND, invite_link_create_limit_message)],
+                WAIT_EXPIRE: [MessageHandler((filters.ChatType.GROUPS | filters.ChatType.PRIVATE) & filters.TEXT & ~filters.COMMAND, invite_link_create_expire_message)],
+            },
+            fallbacks=[
+                CommandHandler("cancel", invite_link_cancel_callback),
+                CallbackQueryHandler(invite_link_cancel_callback, pattern=r"^inv:cancel$"),
+            ],
+            per_chat=True,
+        )
+        app.add_handler(invite_link_conv)
+        
+        log.info(f"{self.name} router registered successfully")
