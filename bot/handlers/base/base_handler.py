@@ -9,11 +9,9 @@ from abc import ABC, abstractmethod
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from bot.db.session import Database
 from bot.handlers.base.chat_resolver import ChatResolver
 from bot.handlers.base.message_helper import MessageHelper
 from bot.handlers.base.permission import PermissionHelper
-from bot.handlers.base.state_helper import StateHelper
 
 log = structlog.get_logger(__name__)
 
@@ -80,56 +78,6 @@ class BaseHandler(ABC):
 
         return target_chat_id
 
-    async def handle_command(
-        self,
-        update: Update,
-        context: ContextTypes.DEFAULT_TYPE,
-        *,
-        require_admin: bool = True,
-        admin_error_message: str | None = None,
-        allow_private: bool = False,
-    ) -> int | None:
-        """统一命令处理模板方法
-
-        Args:
-            update: Telegram 更新对象
-            context: Bot 上下文
-            require_admin: 是否要求管理员权限（默认 True）
-            admin_error_message: 管理员权限错误提示（可选）
-            allow_private: 是否允许私聊触发（默认 False）
-
-        Returns:
-            int | None: 目标群组 ID，如果处理失败返回 None
-        """
-        # 1. 验证必要数据
-        if not self._validate_update(update):
-            return None
-
-        # 2. 检查是否允许私聊
-        if not allow_private and self.chat_resolver.is_private_chat(update):
-            await self.message_helper.safe_reply(update, "请在群组中使用此命令")
-            return None
-
-        # 3. 解析目标群组
-        target_chat_id = await self.chat_resolver.resolve_target_chat(update, context)
-        if target_chat_id is None:
-            return None
-
-        # 4. 检查权限（可选）
-        if require_admin:
-            if not await self.permission.require_admin(
-                update,
-                context,
-                target_chat_id,
-                error_message=admin_error_message,
-            ):
-                return None
-
-        # 5. 执行具体处理（由子类实现）
-        await self.process(update, context, target_chat_id)
-
-        return target_chat_id
-
     def _validate_update(self, update: Update) -> bool:
         """验证更新对象是否包含必要数据
 
@@ -161,76 +109,3 @@ class BaseHandler(ABC):
             target_chat_id: 目标群组 ID
         """
         raise NotImplementedError
-
-    def create_state_helper(
-        self,
-        session,
-        chat_id: int,
-        user_id: int,
-    ) -> StateHelper:
-        """创建状态助手
-
-        Args:
-            session: 数据库会话
-            chat_id: 聊天 ID
-            user_id: 用户 ID
-
-        Returns:
-            StateHelper: 状态助手实例
-        """
-        return StateHelper(session, chat_id, user_id)
-
-    async def resolve_target_chat_id(
-        self,
-        update: Update,
-        context: ContextTypes.DEFAULT_TYPE,
-        allow_none: bool = False,
-    ) -> int | None:
-        """解析目标群组 ID（统一处理私聊/群聊场景）
-
-        这是对 ChatResolver.resolve_target_chat 的便捷包装，
-        子类可以直接调用此方法而无需访问 self.chat_resolver。
-
-        Args:
-            update: Telegram 更新对象
-            context: Bot 上下文
-            allow_none: 是否允许返回 None
-
-        Returns:
-            int | None: 目标群组 ID，如果无法解析且 allow_none=True 则返回 None
-
-        Example:
-            >>> target_chat_id = await self.resolve_target_chat_id(update, context)
-            >>> if target_chat_id:
-            ...     # 处理逻辑
-        """
-        target_chat_id = await self.chat_resolver.resolve_target_chat(update, context)
-        if not allow_none and target_chat_id is None:
-            # 如果不允许 None 且解析失败，已经由 resolve_target_chat 发送错误消息
-            return None
-        return target_chat_id
-
-    async def require_target_chat_id(
-        self,
-        update: Update,
-        context: ContextTypes.DEFAULT_TYPE,
-        error_message: str = "请先选择一个群组",
-    ) -> int | None:
-        """获取目标群组 ID（必须存在，否则发送错误消息）
-
-        这是对 ChatResolver.require_target_chat 的便捷包装。
-
-        Args:
-            update: Telegram 更新对象
-            context: Bot 上下文
-            error_message: 未选择群组时的错误提示
-
-        Returns:
-            int | None: 目标群组 ID，如果解析失败返回 None
-
-        Example:
-            >>> target_chat_id = await self.require_target_chat_id(update, context)
-            >>> if target_chat_id is None:
-            ...     return  # 错误消息已发送
-        """
-        return await self.chat_resolver.require_target_chat(update, context, error_message)

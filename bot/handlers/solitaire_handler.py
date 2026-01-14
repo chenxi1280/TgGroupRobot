@@ -30,6 +30,7 @@ from bot.services.activity.solitaire_service import (
 )
 from bot.services.state.state_service import clear_user_state, set_user_state, get_user_state
 from bot.utils.callback_parser import CallbackParser
+from bot.utils.chat_context import PrivateChatContext
 
 # 创建流程状态
 WAIT_CONFIG = 1
@@ -196,40 +197,24 @@ async def solitaire_list_callback(update: Update, context: ContextTypes.DEFAULT_
     q = update.callback_query
     await q.answer()
 
-    chat = update.effective_chat
-    user = update.effective_user
-
     data = q.data or ""
     cb = CallbackParser.parse(data)
 
-    # 优先从 callback_data 获取目标群组ID
-    target_chat_id = None
-    page = 0
+    # 解析页面参数
+    chat = update.effective_chat
     if chat.type == "private":
         # sol:list:{chat_id}:{page} 格式
-        target_chat_id = cb.get_int(2)
         page = cb.get_int(3, default=0)
-
-        # 如果无法从 callback_data 获取，回退到数据库
-        if target_chat_id == 0:
-            from bot.services.integration.chat_group_service import get_user_current_chat
-            db: Database = context.application.bot_data["db"]
-            target_chat_id = await get_user_current_chat(db, user.id)
-            page = cb.get_int(3, default=0)
-
-        if target_chat_id is None:
-            await _solitaire_handler.message_helper.safe_edit(update, "请先选择一个群组")
-            return
-        if not await _solitaire_handler.permission_helper.is_user_admin(context, target_chat_id, user.id):
-            await _solitaire_handler.message_helper.safe_edit(update, "你没有该群组的管理权限")
-            return
     else:
         # 群聊场景：sol:list 或 sol:list:{page}
         page = cb.get_int(2, default=0) if cb.get(2).isdigit() else 0
-        if not await _solitaire_handler.permission_helper.is_user_admin(context, chat.id, user.id):
-            await _solitaire_handler.message_helper.safe_edit(update, "仅管理员可使用此功能")
-            return
-        target_chat_id = chat.id
+
+    # 使用 PrivateChatContext 解析目标群组并检查权限
+    target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(
+        update, context, chat_index=2
+    )
+    if target_chat_id is None:
+        return  # 错误消息已发送
 
     # 使用 Handler 处理
     await _solitaire_handler.show_list(update, context, target_chat_id, page)
@@ -242,34 +227,12 @@ async def solitaire_stats_callback(update: Update, context: ContextTypes.DEFAULT
     q = update.callback_query
     await q.answer()
 
-    chat = update.effective_chat
-    user = update.effective_user
-
-    data = q.data or ""
-    cb = CallbackParser.parse(data)
-
-    # 优先从 callback_data 获取目标群组ID
-    target_chat_id = None
-    if chat.type == "private":
-        # sol:stats:{chat_id} 格式
-        target_chat_id = cb.get_int(2)
-        if target_chat_id == 0:
-            # 如果无法从 callback_data 获取，回退到数据库
-            from bot.services.integration.chat_group_service import get_user_current_chat
-            db: Database = context.application.bot_data["db"]
-            target_chat_id = await get_user_current_chat(db, user.id)
-
-        if target_chat_id is None or target_chat_id == 0:
-            await _solitaire_handler.message_helper.safe_edit(update, "请先选择一个群组")
-            return
-        if not await _solitaire_handler.permission_helper.is_user_admin(context, target_chat_id, user.id):
-            await _solitaire_handler.message_helper.safe_edit(update, "你没有该群组的管理权限")
-            return
-    else:
-        if not await _solitaire_handler.permission_helper.is_user_admin(context, chat.id, user.id):
-            await _solitaire_handler.message_helper.safe_edit(update, "仅管理员可使用此功能")
-            return
-        target_chat_id = chat.id
+    # 使用 PrivateChatContext 解析目标群组并检查权限
+    target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(
+        update, context, chat_index=2
+    )
+    if target_chat_id is None:
+        return  # 错误消息已发送
 
     # 使用 Handler 处理
     await _solitaire_handler.show_stats(update, context, target_chat_id)
@@ -282,9 +245,6 @@ async def solitaire_detail_callback(update: Update, context: ContextTypes.DEFAUL
     q = update.callback_query
     await q.answer()
 
-    chat = update.effective_chat
-    user = update.effective_user
-
     data = q.data or ""
     cb = CallbackParser.parse(data)
     if cb.length() < 3:
@@ -294,29 +254,13 @@ async def solitaire_detail_callback(update: Update, context: ContextTypes.DEFAUL
     if solitaire_id == 0:
         return
 
-    # 解析可选的 chat_id 参数
-    target_chat_id = None
-    if chat.type == "private":
-        # chat_id 可能是负数（群组），所以不能直接用 isdigit()
-        target_chat_id = cb.get_int(3)
-
-        # 如果无法从 callback_data 获取，回退到数据库
-        if target_chat_id == 0:
-            from bot.services.integration.chat_group_service import get_user_current_chat
-            db: Database = context.application.bot_data["db"]
-            target_chat_id = await get_user_current_chat(db, user.id)
-            if target_chat_id is None:
-                await _solitaire_handler.message_helper.safe_edit(update, "请先选择一个群组")
-                return
-
-        if not await _solitaire_handler.permission_helper.is_user_admin(context, target_chat_id, user.id):
-            await _solitaire_handler.message_helper.safe_edit(update, "你没有该群组的管理权限")
-            return
-    else:
-        if not await _solitaire_handler.permission_helper.is_user_admin(context, chat.id, user.id):
-            await _solitaire_handler.message_helper.safe_edit(update, "仅管理员可使用此功能")
-            return
-        target_chat_id = chat.id
+    # 使用 PrivateChatContext 解析目标群组并检查权限
+    # callback_data 格式: sol:detail:{solitaire_id}:{chat_id}（私聊场景）
+    target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(
+        update, context, chat_index=3
+    )
+    if target_chat_id is None:
+        return  # 错误消息已发送
 
     # 使用 Handler 处理
     await _solitaire_handler.show_detail(update, context, solitaire_id, target_chat_id)
@@ -332,32 +276,12 @@ async def solitaire_create_start_callback(update: Update, context: ContextTypes.
     chat = update.effective_chat
     user = update.effective_user
 
-    # 私聊中的接龙创建 - 优先从 callback_data 获取目标群组ID
-    target_chat_id = None
-    if chat.type == "private":
-        # 优先从 callback_data 提取 chat_id
-        data = q.data or ""
-        if data.startswith("sol:create:"):
-            cb = CallbackParser.parse(data)
-            target_chat_id = cb.get_int(2)
-
-        # 如果 callback_data 中没有 chat_id，从数据库获取
-        if target_chat_id == 0:
-            from bot.services.integration.chat_group_service import get_user_current_chat
-            db: Database = context.application.bot_data["db"]
-            target_chat_id = await get_user_current_chat(db, user.id)
-            if target_chat_id is None:
-                await q.edit_message_text("请先选择一个群组")
-                return
-
-        if not await is_user_admin(context, target_chat_id, user.id):
-            await q.edit_message_text("你没有该群组的管理权限")
-            return
-    else:
-        if not await is_user_admin(context, chat.id, user.id):
-            await q.edit_message_text("仅管理员可使用此功能")
-            return
-        target_chat_id = chat.id
+    # 使用 PrivateChatContext 解析目标群组并检查权限
+    target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(
+        update, context, chat_index=2
+    )
+    if target_chat_id is None:
+        return  # 错误消息已发送
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
@@ -950,7 +874,6 @@ async def solitaire_refresh_callback(update: Update, context: ContextTypes.DEFAU
     await q.answer()
 
     chat = update.effective_chat
-    user = update.effective_user
 
     data = q.data or ""
     cb = CallbackParser.parse(data)
@@ -961,29 +884,12 @@ async def solitaire_refresh_callback(update: Update, context: ContextTypes.DEFAU
     if solitaire_id == 0:
         return
 
-    # 解析可选的 chat_id 参数
-    target_chat_id = None
-    if chat.type == "private":
-        # chat_id 可能是负数（群组），所以不能直接用 isdigit()
-        target_chat_id = cb.get_int(3)
-
-        # 如果无法从 callback_data 获取，回退到数据库
-        if target_chat_id == 0:
-            from bot.services.integration.chat_group_service import get_user_current_chat
-            db: Database = context.application.bot_data["db"]
-            target_chat_id = await get_user_current_chat(db, user.id)
-            if target_chat_id is None:
-                await q.edit_message_text("请先选择一个群组")
-                return
-
-        if not await is_user_admin(context, target_chat_id, user.id):
-            await q.edit_message_text("你没有该群组的管理权限")
-            return
-    else:
-        if not await is_user_admin(context, chat.id, user.id):
-            await q.edit_message_text("仅管理员可使用此功能")
-            return
-        target_chat_id = chat.id
+    # 使用 PrivateChatContext 解析目标群组并检查权限
+    target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(
+        update, context, chat_index=3
+    )
+    if target_chat_id is None:
+        return  # 错误消息已发送
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
@@ -1035,30 +941,12 @@ async def solitaire_close_callback(update: Update, context: ContextTypes.DEFAULT
     data = q.data or ""
     cb = CallbackParser.parse(data)
 
-    # 私聊中的接龙管理 - 优先从回调中获取目标群组ID
-    target_chat_id = None
-    if chat.type == "private":
-        # 优先从 callback_data 提取 chat_id
-        # chat_id 可能是负数（群组），所以不能直接用 isdigit()
-        target_chat_id = cb.get_int(3)
-
-        # 如果无法从 callback_data 获取，回退到数据库
-        if target_chat_id == 0:
-            from bot.services.integration.chat_group_service import get_user_current_chat
-            db: Database = context.application.bot_data["db"]
-            target_chat_id = await get_user_current_chat(db, user.id)
-            if target_chat_id is None:
-                await q.edit_message_text("请先选择一个群组")
-                return
-
-        if not await is_user_admin(context, target_chat_id, user.id):
-            await q.edit_message_text("你没有该群组的管理权限")
-            return
-    else:
-        if not await is_user_admin(context, chat.id, user.id):
-            await q.edit_message_text("仅管理员可使用此功能")
-            return
-        target_chat_id = chat.id
+    # 使用 PrivateChatContext 解析目标群组并检查权限
+    target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(
+        update, context, chat_index=3
+    )
+    if target_chat_id is None:
+        return  # 错误消息已发送
 
     if cb.length() < 3:
         return
@@ -1127,35 +1015,16 @@ async def solitaire_delete_callback(update: Update, context: ContextTypes.DEFAUL
     await q.answer()
 
     chat = update.effective_chat
-    user = update.effective_user
 
     data = q.data or ""
     cb = CallbackParser.parse(data)
 
-    # 私聊中的接龙管理 - 优先从回调中获取目标群组ID
-    target_chat_id = None
-    if chat.type == "private":
-        # 优先从 callback_data 提取 chat_id
-        # chat_id 可能是负数（群组），所以不能直接用 isdigit()
-        target_chat_id = cb.get_int(3)
-
-        # 如果无法从 callback_data 获取，回退到数据库
-        if target_chat_id == 0:
-            from bot.services.integration.chat_group_service import get_user_current_chat
-            db: Database = context.application.bot_data["db"]
-            target_chat_id = await get_user_current_chat(db, user.id)
-            if target_chat_id is None:
-                await q.edit_message_text("请先选择一个群组")
-                return
-
-        if not await is_user_admin(context, target_chat_id, user.id):
-            await q.edit_message_text("你没有该群组的管理权限")
-            return
-    else:
-        if not await is_user_admin(context, chat.id, user.id):
-            await q.edit_message_text("仅管理员可使用此功能")
-            return
-        target_chat_id = chat.id
+    # 使用 PrivateChatContext 解析目标群组并检查权限
+    target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(
+        update, context, chat_index=3
+    )
+    if target_chat_id is None:
+        return  # 错误消息已发送
 
     if cb.length() < 3:
         return
