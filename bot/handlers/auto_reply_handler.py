@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import structlog
+
 from telegram import Update
 from telegram.ext import ContextTypes
+
+
+log = structlog.get_logger(__name__)
 
 from bot.db.session import Database
 from bot.handlers.base.base_handler import BaseHandler
@@ -607,7 +612,7 @@ async def auto_reply_message_handler(update: Update, context: ContextTypes.DEFAU
         result = await match_auto_reply(session, chat.id, message_text)
         await session.commit()
 
-    if result.matched and result.reply_content:
+    if result.success and result.reply_content:
         try:
             await update.effective_message.reply_text(result.reply_content)
         except Exception as e:
