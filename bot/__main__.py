@@ -14,7 +14,12 @@ from bot.db.session import create_database, Database
 from bot.handlers.anti_flood_handler import anti_flood_cleanup_job
 from bot.handlers.auto_delete_handler import auto_delete_handler
 from bot.handlers.auto_delete_config_handler import auto_delete_config_callback
+from bot.handlers.group_message_handler import unified_group_message_handler
+from bot.handlers.lottery_handler import lottery_message_handler
 from bot.handlers.moderation_handler import moderation_message_handler
+from bot.handlers.points_handler import get_points_alias_handler, message_points_handler
+from bot.handlers.scheduled_handler import scheduled_message_handler
+from bot.handlers.solitaire_handler import solitaire_join_message_handler
 from bot.handlers.start_handler import cancel_command as cancel_callback, private_message_handler, start_command as start_callback
 from bot.handlers.verification_handler import new_members_handler, verify_callback, verify_message_handler
 from bot.logging_config import configure_logging
@@ -100,7 +105,9 @@ def _register_routers(app: Application) -> None:
 
 def _register_common_handlers(app: Application) -> None:
     """注册通用处理器（验证、审核、自动删除等）"""
-    # 验证相关
+    log.warning("=== REGISTERING COMMON HANDLERS ===")
+
+    # ==================== 验证相关 ====================
     app.add_handler(CallbackQueryHandler(verify_callback, pattern=r"^vfy:"))
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, new_members_handler))
     app.add_handler(
@@ -108,11 +115,15 @@ def _register_common_handlers(app: Application) -> None:
         group=1
     )
 
-    # 内容审核
+    # ==================== Group 0: 核心功能 ====================
+    log.warning("=== REGISTERING GROUP 0: CORE FUNCTIONALITY ===")
+
+    # 统一消息处理入口（违禁词检测 + 自动回复）
     app.add_handler(
-        MessageHandler(filters.ChatType.GROUPS & filters.TEXT & ~filters.COMMAND, moderation_message_handler),
-        group=3
+        MessageHandler(filters.ChatType.GROUPS & filters.TEXT, unified_group_message_handler),
+        group=0
     )
+    log.warning("=== UNIFIED_GROUP_MESSAGE_HANDLER REGISTERED (GROUP 0) ===")
 
     # 自动删除系统消息
     app.add_handler(MessageHandler(filters.ChatType.GROUPS & filters.ALL, auto_delete_handler), group=0)
@@ -121,11 +132,53 @@ def _register_common_handlers(app: Application) -> None:
     from bot.handlers.anti_flood_handler import anti_flood_message_handler
     app.add_handler(MessageHandler(filters.ChatType.GROUPS & filters.ALL, anti_flood_message_handler), group=0)
 
+    # ==================== Group 1: 业务功能 ====================
+    log.warning("=== REGISTERING GROUP 1: BUSINESS LOGIC ===")
+
+    # 抽奖消息处理器
+    app.add_handler(
+        MessageHandler(filters.ChatType.GROUPS & filters.TEXT & ~filters.COMMAND, lottery_message_handler),
+        group=1
+    )
+
+    # 接龙参与消息处理器
+    app.add_handler(
+        MessageHandler(filters.ChatType.GROUPS & filters.TEXT & ~filters.COMMAND, solitaire_join_message_handler),
+        group=1
+    )
+
+    # ==================== Group 2: 定时消息 ====================
+    app.add_handler(
+        MessageHandler(filters.ChatType.GROUPS & filters.TEXT & ~filters.COMMAND, scheduled_message_handler),
+        group=2
+    )
+
+    # ==================== Group 3: 内容审核 ====================
+    app.add_handler(
+        MessageHandler(filters.ChatType.GROUPS & filters.TEXT & ~filters.COMMAND, moderation_message_handler),
+        group=3
+    )
+
+    # ==================== Group 4: 积分功能 ====================
+    app.add_handler(
+        MessageHandler(filters.ChatType.GROUPS & filters.TEXT & ~filters.COMMAND, message_points_handler),
+        group=4
+    )
+
+    # ==================== Group 5: 积分别名 ====================
+    app.add_handler(
+        MessageHandler(filters.ChatType.GROUPS & filters.TEXT & ~filters.COMMAND, get_points_alias_handler().handle),
+        group=5
+    )
+
+    # ==================== 其他 ====================
     # 自动删除配置
     app.add_handler(CallbackQueryHandler(auto_delete_config_callback, pattern=r"^autodel:"))
 
     # 私聊消息处理（显示群组列表等）- 最低优先级
     app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND, private_message_handler))
+
+    log.warning("=== ALL COMMON HANDLERS REGISTERED SUCCESSFULLY ===")
 
 
 async def _on_error(update, context) -> None:

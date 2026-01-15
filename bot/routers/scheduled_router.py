@@ -29,17 +29,7 @@ class ScheduledRouter(BaseRouter):
         app.add_handler(CallbackQueryHandler(scheduled_delete_callback, pattern=r"^scheduled_delete_"))
         app.add_handler(CallbackQueryHandler(scheduled_menu_callback, pattern=r"^scheduled:menu$"))
         app.add_handler(CallbackQueryHandler(scheduled_list_callback, pattern=r"^scheduled:list"))
-        
-        # 群组消息处理器
-        app.add_handler(
-            MessageHandler(filters.ChatType.GROUPS & filters.TEXT & ~filters.COMMAND, scheduled_message_handler),
-            group=1
-        )
-        
-        # 私聊消息处理器（group=-1，优先级高于 ConversationHandler）
-        app.add_handler(
-            MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND, scheduled_message_handler),
-            group=-1
-        )
-        
+
+        # 注意：定时消息处理器已移至 __main__.py 的 _register_common_handlers 中统一管理
+
         log.info(f"{self.name} router registered successfully")

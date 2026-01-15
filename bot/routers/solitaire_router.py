@@ -73,10 +73,6 @@ class SolitaireRouter(BaseRouter):
         )
         app.add_handler(solitaire_conv)
 
-        # 接龙参与消息处理器（优先级0）
-        app.add_handler(
-            MessageHandler(filters.ChatType.GROUPS & filters.TEXT & ~filters.COMMAND, solitaire_join_message_handler),
-            group=0
-        )
+        # 注意：接龙参与消息处理器已移至 __main__.py 的 _register_common_handlers 中统一管理
 
         log.info(f"{self.name} router registered successfully")

@@ -51,9 +51,7 @@ class PointsRouter(BaseRouter):
             per_chat=True,
         )
         app.add_handler(points_config_conv)
-        
-        # 消息处理器（最低优先级）
-        app.add_handler(MessageHandler(filters.ChatType.GROUPS & filters.TEXT & ~filters.COMMAND, message_points_handler), group=4)
-        app.add_handler(MessageHandler(filters.ChatType.GROUPS & filters.TEXT & ~filters.COMMAND, get_points_alias_handler().handle), group=5)
-        
+
+        # 注意：积分消息处理器已移至 __main__.py 的 _register_common_handlers 中统一管理
+
         log.info(f"{self.name} router registered successfully")

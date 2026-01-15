@@ -6,7 +6,6 @@ from bot.handlers.auto_reply_handler import (
     auto_reply_create_start,
     auto_reply_delete_callback,
     auto_reply_menu_callback,
-    auto_reply_message_handler,
     auto_reply_toggle_callback,
 )
 from bot.routers.base import BaseRouter
@@ -28,13 +27,9 @@ class AutoReplyRouter(BaseRouter):
         app.add_handler(CallbackQueryHandler(auto_reply_toggle_callback, pattern=r"^auto_reply_toggle_"))
         app.add_handler(CallbackQueryHandler(auto_reply_delete_callback, pattern=r"^auto_reply_delete_"))
         app.add_handler(CallbackQueryHandler(auto_reply_menu_callback, pattern=r"^auto_reply:menu$"))
-        
-        # 群组消息处理器（匹配）
-        app.add_handler(
-            MessageHandler(filters.ChatType.GROUPS & filters.TEXT & ~filters.COMMAND, auto_reply_message_handler),
-            group=2
-        )
-        
+
+        # 注意：自动回复消息处理已移至 group_message_handler.py 中的统一处理入口
+
         # 配置处理器（私聊和群聊）
         app.add_handler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, auto_reply_config_handler),

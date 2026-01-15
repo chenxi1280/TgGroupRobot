@@ -40,16 +40,6 @@ class LotteryRouter(BaseRouter):
         app.add_handler(CallbackQueryHandler(manual_draw_winner_page_callback, pattern=r"^lot:winner_page:"))
         app.add_handler(CallbackQueryHandler(manual_draw_menu_callback, pattern=r"^lot:draw_menu:"))
 
-        # 群组消息处理器（优先级1，高于普通消息）
-        app.add_handler(
-            MessageHandler(filters.ChatType.GROUPS & filters.TEXT & ~filters.COMMAND, lottery_message_handler),
-            group=1
-        )
-
-        # 私聊消息处理器（优先级0，创建流程）
-        app.add_handler(
-            MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND, lottery_message_handler),
-            group=0
-        )
+        # 注意：抽奖消息处理器已移至 __main__.py 的 _register_common_handlers 中统一管理
 
         log.info(f"{self.name} router registered successfully")
