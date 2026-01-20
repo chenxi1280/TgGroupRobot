@@ -5,6 +5,7 @@ from bot.tasks.solitaire_task import SolitaireTask
 from bot.tasks.ads_task import AdsTask
 from bot.tasks.message_task import MessageTask
 from bot.tasks.cleanup_task import CleanupTask
+from bot.tasks.verification_timeout_task import VerificationTimeoutTask
 
 __all__ = [
     "LotteryTask",
@@ -12,4 +13,5 @@ __all__ = [
     "AdsTask",
     "MessageTask",
     "CleanupTask",
+    "VerificationTimeoutTask",
 ]

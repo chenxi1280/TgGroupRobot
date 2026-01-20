@@ -46,6 +46,7 @@ class ConversationStateType(str, enum.Enum):
     scheduled_create = "scheduled_create"  # 创建定时消息流程
     auto_reply_create = "auto_reply_create"  # 创建自动回复流程
     banned_word_add = "banned_word_add"  # 添加违禁词流程
+    verification_config = "verification_config"  # 验证配置流程
 
 
 class BannedWordMatchType(str, enum.Enum):
@@ -83,6 +84,7 @@ class VerificationMode(str, enum.Enum):
     button = "button"  # 按钮验证
     math = "math"  # 数学题验证
     captcha = "captcha"  # 验证码验证
+    admin = "admin"  # 管理员确认（管理员手动审核）
 
 
 class InviteLinkStatus(str, enum.Enum):

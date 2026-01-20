@@ -5,6 +5,7 @@ from bot.handlers.auto_reply_handler import (
     auto_reply_config_handler,
     auto_reply_create_start,
     auto_reply_delete_callback,
+    auto_reply_list_callback,
     auto_reply_menu_callback,
     auto_reply_toggle_callback,
 )
@@ -24,16 +25,11 @@ class AutoReplyRouter(BaseRouter):
         
         # 回调处理器
         app.add_handler(CallbackQueryHandler(auto_reply_create_start, pattern=r"^auto_reply:create"))
+        app.add_handler(CallbackQueryHandler(auto_reply_list_callback, pattern=r"^auto_reply:list"))
         app.add_handler(CallbackQueryHandler(auto_reply_toggle_callback, pattern=r"^auto_reply_toggle_"))
         app.add_handler(CallbackQueryHandler(auto_reply_delete_callback, pattern=r"^auto_reply_delete_"))
         app.add_handler(CallbackQueryHandler(auto_reply_menu_callback, pattern=r"^auto_reply:menu$"))
 
-        # 注意：自动回复消息处理已移至 group_message_handler.py 中的统一处理入口
+        # 注意：自动回复配置处理器已移至 __main__.py 的 _register_common_handlers 中统一管理
 
-        # 配置处理器（私聊和群聊）
-        app.add_handler(
-            MessageHandler(filters.TEXT & ~filters.COMMAND, auto_reply_config_handler),
-            group=1
-        )
-        
         log.info(f"{self.name} router registered successfully")

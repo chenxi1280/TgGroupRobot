@@ -8,6 +8,7 @@ from bot.routers.auto_reply_router import AutoReplyRouter
 from bot.routers.banned_word_router import BannedWordRouter
 from bot.routers.points_router import PointsRouter
 from bot.routers.group_router import GroupRouter
+from bot.routers.verification_router import VerificationRouter
 
 __all__ = [
     "AdminRouter",
@@ -20,4 +21,5 @@ __all__ = [
     "BannedWordRouter",
     "PointsRouter",
     "GroupRouter",
+    "VerificationRouter",
 ]

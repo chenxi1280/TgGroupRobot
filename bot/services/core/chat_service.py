@@ -105,7 +105,15 @@ async def get_chat_settings(session: AsyncSession, chat_id: int) -> ChatSettings
 
     Returns:
         ChatSettings: 群组设置对象
+
+    注意：
+        当 chat_id=0 时，返回一个临时的默认设置对象，不保存到数据库
     """
+    # chat_id=0 表示不需要数据库设置（如某些通用操作）
+    # 返回一个临时的默认设置对象
+    if chat_id == 0:
+        return ChatSettings(chat_id=0)
+
     settings = await ServiceBase._get_by_filters(
         session,
         ChatSettings,

@@ -15,13 +15,12 @@ from bot.keyboards.admin.admin_main import (
     create_group_selection_keyboard,
     create_guide_keyboard,
     format_admin_main_menu_text,
-    format_verification_menu_text,
     toggle_menu,
-    verification_mode_menu,
 )
 from bot.services.integration.chat_group_service import get_user_current_chat, get_user_managed_chats, set_user_current_chat
 from bot.services.core.chat_service import ensure_chat, get_chat_settings, get_settings_toggle_rows
 from bot.services.core.permission_service import is_user_admin
+from bot.services.core.user_service import ensure_user
 from bot.utils.callback_parser import CallbackParser
 
 
@@ -63,8 +62,8 @@ class AdminHandler(BaseHandler):
             await self._handle_back_to_menu(update, context, target_chat_id)
         elif action == "toggle":
             await self._handle_toggle(update, context, target_chat_id, callback_data)
-        elif action == "vfy_mode":
-            await self._handle_verification_mode(update, context, target_chat_id, callback_data)
+        elif action == "vfy_config":
+            await self._handle_verification_config_start(update, context, target_chat_id)
 
     async def _handle_menu(
         self,
@@ -159,25 +158,6 @@ class AdminHandler(BaseHandler):
                 await session.commit()
 
         await self._show_settings_menu(update, context, chat_id)
-
-    async def _handle_verification_mode(
-        self,
-        update: Update,
-        context: ContextTypes.DEFAULT_TYPE,
-        chat_id: int,
-        callback_data: CallbackParser,
-    ) -> None:
-        """处理验证模式切换操作"""
-        selected_mode = callback_data.get(3)
-
-        if selected_mode in ["button", "math", "captcha"]:
-            db: Database = context.application.bot_data["db"]
-            async with db.session_factory() as session:
-                settings = await get_chat_settings(session, chat_id)
-                settings.verification_mode = selected_mode
-                await session.commit()
-
-        await self._show_verification_menu(update, context, chat_id)
 
     async def _get_chat_title(self, db: Database, chat_id: int) -> str:
         """获取群组标题"""
@@ -360,6 +340,128 @@ class AdminHandler(BaseHandler):
 
         await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
 
+    async def _handle_verification_config_start(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        target_chat_id: int,
+    ) -> None:
+        """开始验证配置流程"""
+        from bot.models.enums import ConversationStateType
+        from bot.services.state.state_service import clear_user_state, set_user_state
+
+        if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
+            return
+        q = update.callback_query
+        await q.answer()
+
+        chat = update.effective_chat
+        user = update.effective_user
+
+        log.warning(
+            "=== VERIFICATION_CONFIG_START CALLED ===",
+            target_chat_id=target_chat_id,
+            user_id=user.id,
+            chat_type=chat.type,
+        )
+
+        try:
+            db: Database = context.application.bot_data["db"]
+
+            # 确保目标群组存在
+            from bot.models.core import TgChat
+            from sqlalchemy import select
+
+            target_chat_title = None
+            async with db.session_factory() as session:
+                await ensure_chat(session, chat_id=target_chat_id, chat_type="group", title=target_chat_title or f"群组{target_chat_id}")
+
+                # 获取群组信息
+                chat_stmt = select(TgChat).where(TgChat.id == target_chat_id)
+                chat_result = await session.execute(chat_stmt)
+                target_chat_obj = chat_result.scalar_one_or_none()
+                target_chat_title = target_chat_obj.title if target_chat_obj else f"群组{target_chat_id}"
+
+                # 私聊模式下，确保私聊 chat 记录存在
+                if chat.type == "private":
+                    await ensure_chat(session, chat_id=user.id, chat_type="private", title=chat.title)
+
+                await ensure_user(
+                    session,
+                    user_id=user.id,
+                    username=user.username,
+                    first_name=user.first_name,
+                    last_name=user.last_name,
+                    language_code=user.language_code,
+                )
+
+                # 统一使用目标群组 ID 保存状态
+                state_chat_id = target_chat_id
+
+                # 清除所有旧状态（包括私聊状态和群组状态）
+                await clear_user_state(session, chat_id=state_chat_id, user_id=user.id)  # 清除群组状态
+                await clear_user_state(session, chat_id=user.id, user_id=user.id)  # 清除私聊状态
+
+                # 【修复】清除该用户的所有旧的 verification_config 状态（避免多行问题）
+                from bot.models.core import ConversationState
+                from sqlalchemy import delete
+                await session.execute(
+                    delete(ConversationState).where(
+                        ConversationState.user_id == user.id,
+                        ConversationState.state_type == ConversationStateType.verification_config.value,
+                    )
+                )
+
+                # 设置当前管理的群组（必须在清除状态之后设置，否则会被清除）
+                # 【修复】将 _set_current_chat 移到 clear_user_state 之后，避免 managed_chat_id 被清除
+                await self._set_current_chat(db, user.id, target_chat_id)
+
+                await set_user_state(
+                    session,
+                    chat_id=state_chat_id,
+                    user_id=user.id,
+                    state_type=ConversationStateType.verification_config.value,
+                    state_data={"step": "config", "target_chat_id": target_chat_id},
+                )
+
+                await session.commit()
+
+                log.warning(
+                    "=== VERIFICATION_CONFIG_STATE_SET ===",
+                    state_chat_id=state_chat_id,
+                    user_id=user.id,
+                    state_type=ConversationStateType.verification_config.value,
+                )
+
+        except Exception as e:
+            log.exception("verification_config_start_error", error=str(e))
+            await q.edit_message_text(f"❌ 启动失败: {str(e)}")
+            return
+
+        # 显示配置说明
+        text = "🤖 验证功能配置 ( /cancel 取消)\n\n"
+        text += "请按以下格式发送配置：\n\n"
+        text += "```\n"
+        text += "状态:开启\n"
+        text += "验证方式:管理员确认\n"
+        text += "超时时间:180\n"
+        text += "超时处理:禁言\n"
+        text += "禁言时长:86400\n"
+        text += "限制发言:是\n"
+        text += "```\n\n"
+        text += "📋 配置说明：\n"
+        text += "• 状态: 开启/关闭\n"
+        text += "• 验证方式: 按钮验证/数学题/验证码/管理员确认\n"
+        text += "• 超时时间: 秒数（如 180=3分钟，管理员确认模式不生效）\n"
+        text += "• 超时处理: 禁言/踢出\n"
+        text += "• 禁言时长: 秒数（默认 86400=1天）\n"
+        text += "• 限制发言: 是/否（验证期间是否限制发送消息）"
+
+        try:
+            await q.edit_message_text(text, parse_mode="Markdown")
+        except Exception:
+            await q.edit_message_text(text.replace("```", ""))
+
     async def _show_verification_menu(
         self,
         update: Update,
@@ -367,7 +469,13 @@ class AdminHandler(BaseHandler):
         chat_id: int,
     ) -> None:
         """显示新人验证设置菜单"""
-        from bot.keyboards.admin.admin_main import verification_mode_menu
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+        log.warning(
+            "=== _SHOW_VERIFICATION_MENU CALLED ===",
+            chat_id=chat_id,
+            user_id=update.effective_user.id if update.effective_user else None,
+        )
 
         db: Database = context.application.bot_data["db"]
         await self._set_current_chat(db, update.effective_user.id, chat_id)
@@ -378,16 +486,37 @@ class AdminHandler(BaseHandler):
 
         chat_title = await self._get_chat_title(db, chat_id)
 
-        # 使用 keyboards 层格式化消息
-        text = format_verification_menu_text(
-            chat_title=chat_title,
-            verification_mode=settings.verification_mode,
-            timeout_seconds=settings.verification_timeout_seconds,
-            restrict_can_send=settings.verification_restrict_can_send,
-        )
-        keyboard = verification_mode_menu(settings.verification_mode, chat_id)
+        # 格式化当前配置
+        mode_label = {
+            "button": "按钮验证",
+            "math": "数学题",
+            "captcha": "验证码",
+            "admin": "管理员确认",
+        }.get(settings.verification_mode, settings.verification_mode)
 
+        action_label = "禁言" if settings.verification_timeout_action == "mute" else "踢出"
+        status_label = "✅ 开启" if settings.verification_enabled else "❌ 关闭"
+
+        text = f"🤖 [{chat_title}] 新人验证\n\n"
+        text += f"状态: {status_label}\n"
+        text += f"验证方式: {mode_label}\n"
+        text += f"超时时间: {settings.verification_timeout_seconds} 秒\n"
+        text += f"超时处理: {action_label}\n"
+        if settings.verification_timeout_action == "mute":
+            text += f"禁言时长: {settings.verification_mute_duration} 秒\n"
+        text += f"限制发言: {'是' if settings.verification_restrict_can_send else '否'}\n\n"
+        text += f"💡 点击下方按钮修改配置"
+
+        # 创建配置按钮
+        buttons = [
+            [InlineKeyboardButton("📝 修改配置", callback_data=f"adm:vfy_config:{chat_id}")],
+            [InlineKeyboardButton("返回", callback_data=f"adm:menu:main:{chat_id}")],
+        ]
+        keyboard = InlineKeyboardMarkup(buttons)
+
+        log.info("=== CALLING SAFE_EDIT FOR VERIFICATION MENU ===")
         await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
+        log.info("=== SAFE_EDIT COMPLETED ===")
 
     async def _show_points_menu(
         self,
@@ -571,14 +700,31 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     q = update.callback_query
     data = q.data or ""
 
-    log.info("admin_callback_called", callback_data=data, chat_type=update.effective_chat.type, user_id=update.effective_user.id)
+    log.warning(
+        "=== ADMIN_CALLBACK CALLED ===",
+        callback_data=data,
+        chat_type=update.effective_chat.type,
+        user_id=update.effective_user.id,
+    )
 
     # 私聊中的管理回调 - 使用 Handler 处理
     if update.effective_chat.type == "private":
         cb = CallbackParser.parse(data)
         if cb.length() >= 3 and cb.get(0) == "adm":
             # 提取 target_chat_id（如果有）
-            target_chat_id = cb.get_int(3)
+            # 根据不同的 action 类型确定 chat_id 的位置
+            # - menu action: adm:menu:verification:{chat_id} → chat_id 在 index 3
+            # - 其他 action: adm:vfy_config:{chat_id} → chat_id 在 index 2
+            action = cb.get(1)
+            log.info("=== ADMIN_CALLBACK_ACTION ===", action=action, cb_parts=[cb.get(i) for i in range(cb.length())])
+            if action == "menu" and cb.length() >= 4:
+                target_chat_id = cb.get_int(3)  # menu 格式：adm:menu:{submenu}:{chat_id}
+            elif cb.length() >= 3:
+                target_chat_id = cb.get_int(2)  # 其他格式：adm:{action}:{chat_id}
+            else:
+                target_chat_id = 0
+
+            log.info("=== ADMIN_CALLBACK_TARGET_CHAT_ID ===", target_chat_id=target_chat_id)
 
             # 检查管理员权限
             if target_chat_id != 0:

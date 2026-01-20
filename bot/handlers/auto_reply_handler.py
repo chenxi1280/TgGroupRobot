@@ -27,6 +27,45 @@ from bot.services.core.user_service import ensure_user
 
 
 # ============================================
+# 辅助函数
+# ============================================
+
+def _ensure_callback_update(update: Update) -> bool:
+    """
+    确保 Update 包含回调所需的所有字段
+
+    Args:
+        update: Telegram Update 对象
+
+    Returns:
+        bool: 如果包含所有必需字段则返回 True
+    """
+    return not (
+        update.callback_query is None
+        or update.effective_chat is None
+        or update.effective_user is None
+    )
+
+
+def _ensure_message_update(update: Update, require_user: bool = True) -> bool:
+    """
+    确保 Update 包含消息所需的所有字段
+
+    Args:
+        update: Telegram Update 对象
+        require_user: 是否要求用户字段
+
+    Returns:
+        bool: 如果包含所有必需字段则返回 True
+    """
+    if update.effective_chat is None or update.effective_message is None:
+        return False
+    if require_user and update.effective_user is None:
+        return False
+    return True
+
+
+# ============================================
 # 回调处理器
 # ============================================
 
@@ -202,9 +241,49 @@ async def auto_reply_menu_callback(update: Update, context: ContextTypes.DEFAULT
     await _auto_reply_menu_handler.handle_callback(update, context)
 
 
+async def auto_reply_list_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """自动回复规则列表回调"""
+    if not _ensure_callback_update(update):
+        return
+    q = update.callback_query
+    await q.answer()
+
+    # 使用 PrivateChatContext 解析目标群组
+    from bot.utils.chat_context import PrivateChatContext
+
+    target_chat_id = await PrivateChatContext.require_current_chat(update, context)
+    if target_chat_id is None:
+        return  # 错误消息已发送
+
+    # 获取自动回复规则列表
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        rules = await get_chat_auto_reply_rules(session, target_chat_id)
+        total_matches = await get_match_count(session, target_chat_id)
+        await session.commit()
+
+    # 构建列表文本
+    text = f"📋 自动回复规则列表\n\n"
+    if rules:
+        active_count = sum(1 for r in rules if r.is_active)
+        text += f"总计: {len(rules)} 条  |  激活: {active_count} 条  |  总匹配: {total_matches} 次\n\n"
+
+        for r in rules:
+            status = "🟢 激活" if r.is_active else "🔴 暂停"
+            match_type_label = _get_match_type_label(r.match_type)
+            keywords_display = ", ".join(r.keywords[:3]) + ("..." if len(r.keywords) > 3 else "")
+            text += f"{status} [{r.id}] {keywords_display}\n"
+            text += f"   匹配: {match_type_label} | 回复: {r.reply_content[:30]}{'...' if len(r.reply_content) > 30 else ''}\n\n"
+    else:
+        text += "暂无自动回复规则"
+
+    from bot.keyboards.content.auto_reply import auto_reply_list_keyboard
+    await q.edit_message_text(text, reply_markup=auto_reply_list_keyboard(rules, target_chat_id))
+
+
 async def auto_reply_create_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """开始创建自动回复规则流程"""
-    if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
+    if not _ensure_callback_update(update):
         return
     q = update.callback_query
     await q.answer()
@@ -445,13 +524,16 @@ async def auto_reply_delete_callback(update: Update, context: ContextTypes.DEFAU
 
 async def auto_reply_config_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """处理自动回复创建流程中的消息"""
-    try:
-        # 诊断日志
-        import structlog
-        log = structlog.get_logger(__name__)
-        log.warning("=== AUTO_REPLY_CONFIG_HANDLER CALLED ===")
+    # 强制日志 - 必须在最开始输出
+    log.warning(
+        "=== AUTO_REPLY_CONFIG_HANDLER ENTRY ===",
+        chat_id=update.effective_chat.id if update.effective_chat else None,
+        user_id=update.effective_user.id if update.effective_user else None,
+        chat_type=update.effective_chat.type if update.effective_chat else None,
+    )
 
-        if update.effective_chat is None or update.effective_user is None or update.effective_message is None:
+    try:
+        if not _ensure_message_update(update, require_user=True):
             return
 
         chat = update.effective_chat
@@ -464,15 +546,27 @@ async def auto_reply_config_handler(update: Update, context: ContextTypes.DEFAUL
 
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
-            # 获取用户状态 - 私聊中使用 user.id 查询状态，与其他处理器保持一致
-            state_chat_id = user.id if chat.type == "private" else chat.id
+            # 获取用户状态 - 私聊中使用 chat.id 查询状态（与设置状态时一致）
+            state_chat_id = chat.id  # 统一使用 chat.id
             state = await get_user_state(session, chat_id=state_chat_id, user_id=user.id)
+
+            log.info(
+                "auto_reply_config_state_check",
+                chat_id=chat.id,
+                user_id=user.id,
+                state_chat_id=state_chat_id,
+                state_found=state is not None,
+                state_type=state.state_type if state else None,
+                expected_state=ConversationStateType.auto_reply_create.value,
+            )
 
             # 静默忽略非自动回复创建状态，避免干扰其他功能
             if state is None or state.state_type != ConversationStateType.auto_reply_create.value:
                 log.info("auto_reply_state_not_match", state_type=state.state_type if state else None)
-                # 不要在这里 return，让代码继续执行到块结束
+                await session.commit()
+                # 不 return，让函数自然结束，允许后续 handlers 执行
             else:
+                # 状态匹配，执行处理逻辑
                 step = state.state_data.get("step")
                 log.info("auto_reply_step", step=step)
 
@@ -483,11 +577,10 @@ async def auto_reply_config_handler(update: Update, context: ContextTypes.DEFAUL
                     # 注意：_parse_auto_reply_config 内部已经 commit 了会话，不需要再次 commit
                 else:
                     await session.commit()
+
             log.info("auto_reply_handler_done")
     except Exception as e:
         # 确保异常被记录但不会阻止后续处理器
-        import structlog
-        log = structlog.get_logger(__name__)
         log.exception(
             "auto_reply_config_handler_error",
             error=str(e),
@@ -598,7 +691,7 @@ async def _parse_auto_reply_config(update: Update, session, state: object, text:
 
 async def auto_reply_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """处理群组消息，触发自动回复"""
-    if update.effective_chat is None or update.effective_message is None:
+    if not _ensure_message_update(update, require_user=False):
         return
 
     chat = update.effective_chat

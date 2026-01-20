@@ -626,14 +626,14 @@ async def banned_word_config_handler(update: Update, context: ContextTypes.DEFAU
                 state_source=state_source,
                 state_found=state is not None,
                 state_type=state.state_type if state else None,
+                expected_state=ConversationStateType.banned_word_add.value,
             )
 
-            if state is None:
-                # 用户未开始创建流程，提示用户
-                log.warning("banned_word_state_not_found", user_id=user.id)
-                await update.effective_message.reply_text(
-                    "❌ 未找到创建状态\n\n"
-                    "请先点击「添加违禁词」按钮开始创建流程"
+            # 静默忽略非违禁词添加状态，避免干扰其他功能
+            if state is None or state.state_type != ConversationStateType.banned_word_add.value:
+                log.info(
+                    "banned_word_state_not_match",
+                    state_type=state.state_type if state else None,
                 )
                 await session.commit()
                 return

@@ -111,6 +111,8 @@ class ChatSettings(Base):
     verification_mode: Mapped[str] = mapped_column(String(16), default=VerificationMode.button.value)  # 验证模式
     verification_timeout_seconds: Mapped[int] = mapped_column(Integer, default=180)
     verification_restrict_can_send: Mapped[bool] = mapped_column(Boolean, default=False)
+    verification_timeout_action: Mapped[str] = mapped_column(String(16), default="mute")  # 超时处理动作：mute（禁言）或 kick（踢出）
+    verification_mute_duration: Mapped[int] = mapped_column(Integer, default=86400)  # 禁言时长（秒），默认1天
 
     # 内容审核（基础）
     moderation_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -270,6 +272,7 @@ class VerificationChallenge(Base):
     verification_type: Mapped[str] = mapped_column(String(16), default=VerificationMode.button.value)  # 验证类型
     question: Mapped[str | None] = mapped_column(Text, nullable=True)  # 问题（数学题等）
     answer: Mapped[str | None] = mapped_column(String(64), nullable=True)  # 答案
+    timeout_handled: Mapped[bool] = mapped_column(Boolean, default=False)  # 超时是否已处理
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC))
 
 

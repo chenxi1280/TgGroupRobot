@@ -21,10 +21,16 @@ def auto_reply_menu_keyboard(chat_id: int | None = None) -> InlineKeyboardMarkup
         if chat_id
         else "auto_reply:create"
     )
+    list_callback = (
+        f"auto_reply:list:{chat_id}"
+        if chat_id
+        else "auto_reply:list"
+    )
     back_button = create_back_button(chat_id, "back_to_menu")
 
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("➕ 创建自动回复规则", callback_data=create_callback)],
+        [InlineKeyboardButton("📋 管理自动回复规则", callback_data=list_callback)],
         [back_button],
     ])
 

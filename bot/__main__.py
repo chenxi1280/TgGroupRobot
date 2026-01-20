@@ -14,6 +14,7 @@ from bot.db.session import create_database, Database
 from bot.handlers.anti_flood_handler import anti_flood_cleanup_job
 from bot.handlers.auto_delete_handler import auto_delete_handler
 from bot.handlers.auto_delete_config_handler import auto_delete_config_callback
+from bot.handlers.auto_reply_handler import auto_reply_config_handler
 from bot.handlers.group_message_handler import unified_group_message_handler
 from bot.handlers.lottery_handler import lottery_message_handler
 from bot.handlers.moderation_handler import moderation_message_handler
@@ -21,7 +22,7 @@ from bot.handlers.points_handler import get_points_alias_handler, message_points
 from bot.handlers.scheduled_handler import scheduled_message_handler
 from bot.handlers.solitaire_handler import solitaire_join_message_handler
 from bot.handlers.start_handler import cancel_command as cancel_callback, private_message_handler, start_command as start_callback
-from bot.handlers.verification_handler import new_members_handler, verify_callback, verify_message_handler
+from bot.handlers.verification_handler import admin_verify_callback, new_members_handler, verification_config_handler, verify_callback, verify_message_handler
 from bot.logging_config import configure_logging
 from bot.routers import (
     AdminRouter,
@@ -34,6 +35,7 @@ from bot.routers import (
     PointsRouter,
     ScheduledRouter,
     SolitaireRouter,
+    VerificationRouter,
 )
 
 log = structlog.get_logger(__name__)
@@ -97,6 +99,7 @@ def _register_routers(app: Application) -> None:
         BannedWordRouter(),
         PointsRouter(),
         GroupRouter(),
+        VerificationRouter(),
     ]
 
     for router in routers:
@@ -107,23 +110,47 @@ def _register_common_handlers(app: Application) -> None:
     """注册通用处理器（验证、审核、自动删除等）"""
     log.warning("=== REGISTERING COMMON HANDLERS ===")
 
+    # ==================== Group -1: 核心功能（最高优先级）====================
+    log.warning("=== REGISTERING GROUP -1: CORE FUNCTIONALITY ===")
+
+    # 【修复】统一消息处理入口（违禁词检测 + 自动回复）
+    # 移到 Group -1，确保在所有配置处理器之前执行，避免被 Router 中的 Handler 阻塞
+    # 修复问题：在群聊中发送关键字没有自动回复
+    app.add_handler(
+        MessageHandler(filters.ChatType.GROUPS & filters.TEXT, unified_group_message_handler),
+        group=-1
+    )
+    log.warning("=== UNIFIED_GROUP_MESSAGE_HANDLER REGISTERED (GROUP -1) ===")
+
+    # 验证配置处理器（需要检查用户状态）
+    # 【修复】移到 auto_reply_config_handler 之前，确保更高优先级
+    # 修复问题：verification_config_handler 未被调用
+    log.warning("=== REGISTERING VERIFICATION_CONFIG_HANDLER ===",
+                handler_name=verification_config_handler.__name__,
+                handler_id=id(verification_config_handler))
+    app.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, verification_config_handler),
+        group=-1
+    )
+    log.warning("=== VERIFICATION_CONFIG_HANDLER REGISTERED ===")
+
+    # 自动回复配置处理器（需要检查用户状态）
+    app.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, auto_reply_config_handler),
+        group=-1
+    )
+
     # ==================== 验证相关 ====================
     app.add_handler(CallbackQueryHandler(verify_callback, pattern=r"^vfy:"))
+    app.add_handler(CallbackQueryHandler(admin_verify_callback, pattern=r"^adm_vfy:"))  # 管理员确认验证
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, new_members_handler))
     app.add_handler(
         MessageHandler(filters.ChatType.GROUPS & filters.TEXT & ~filters.COMMAND, verify_message_handler),
         group=1
     )
 
-    # ==================== Group 0: 核心功能 ====================
-    log.warning("=== REGISTERING GROUP 0: CORE FUNCTIONALITY ===")
-
-    # 统一消息处理入口（违禁词检测 + 自动回复）
-    app.add_handler(
-        MessageHandler(filters.ChatType.GROUPS & filters.TEXT, unified_group_message_handler),
-        group=0
-    )
-    log.warning("=== UNIFIED_GROUP_MESSAGE_HANDLER REGISTERED (GROUP 0) ===")
+    # ==================== Group 0: 自动删除和反刷屏 ====================
+    log.warning("=== REGISTERING GROUP 0: AUTO DELETE & ANTI-FLOOD ===")
 
     # 自动删除系统消息
     app.add_handler(MessageHandler(filters.ChatType.GROUPS & filters.ALL, auto_delete_handler), group=0)
@@ -180,6 +207,29 @@ def _register_common_handlers(app: Application) -> None:
 
     log.warning("=== ALL COMMON HANDLERS REGISTERED SUCCESSFULLY ===")
 
+    # 验证关键 handlers 是否已注册
+    log.warning("=== VERIFYING KEY HANDLERS ===")
+    try:
+        handlers_dict = app.handlers
+        if -1 in handlers_dict:
+            log.warning(f"=== Group -1 has {len(handlers_dict[-1])} handlers ===")
+            for h in handlers_dict[-1]:
+                if hasattr(h, 'callback'):
+                    cb_name = h.callback.__name__ if hasattr(h.callback, '__name__') else '?'
+                    log.warning(f"  Group -1: {cb_name} ({h.__class__.__name__})")
+        # 特别检查 verification_config_handler
+        found = False
+        for group_handlers in handlers_dict.values():
+            for h in group_handlers:
+                if hasattr(h, 'callback') and hasattr(h.callback, '__name__'):
+                    if 'verification_config' in h.callback.__name__:
+                        log.warning(f"=== FOUND verification_config_handler in group ===")
+                        found = True
+        if not found:
+            log.error("=== verification_config_handler NOT FOUND in any group! ===")
+    except Exception as e:
+        log.error(f"=== Error verifying handlers: {e} ===")
+
 
 async def _on_error(update, context) -> None:
     """错误处理器"""
@@ -235,6 +285,7 @@ def main() -> None:
             LotteryTask,
             MessageTask,
             SolitaireTask,
+            VerificationTimeoutTask,
         )
 
         scheduler = Scheduler(app)
@@ -244,6 +295,7 @@ def main() -> None:
             AdsTask(),
             MessageTask(),
             CleanupTask(),
+            VerificationTimeoutTask(),  # 验证超时检查任务
         ])
 
         await scheduler.start()

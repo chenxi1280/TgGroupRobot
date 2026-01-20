@@ -9,17 +9,23 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 def format_verification_menu_text(
     chat_title: str,
+    enabled: bool,
     verification_mode: str,
     timeout_seconds: int,
     restrict_can_send: bool,
+    timeout_action: str,
+    mute_duration: int,
 ) -> str:
     """格式化验证菜单文本
 
     Args:
         chat_title: 群组标题
+        enabled: 是否启用验证
         verification_mode: 验证模式
         timeout_seconds: 超时时间（秒）
         restrict_can_send: 是否限制发言
+        timeout_action: 超时处理动作
+        mute_duration: 禁言时长（秒）
 
     Returns:
         格式化后的验证菜单文本
@@ -27,15 +33,28 @@ def format_verification_menu_text(
     mode_labels = {
         "button": "🔘 按钮验证",
         "math": "🔢 数学题验证",
-        "captcha": "🔢 验证码验证",
+        "captcha": "🔑 验证码验证",
+        "admin": "👤 管理员确认",
     }
     mode_label = mode_labels.get(verification_mode, verification_mode)
 
-    text = f"🤖 [{chat_title}] 新人验证\n\n"
-    text += f"当前验证模式: {mode_label}\n"
+    action_labels = {
+        "mute": "🔇 禁言",
+        "kick": "👢 踢出",
+    }
+    action_label = action_labels.get(timeout_action, timeout_action)
+
+    status_label = "✅ 开启" if enabled else "❌ 关闭"
+
+    text = f"🤖 [{chat_title}] 新人验证设置\n\n"
+    text += f"状态: {status_label}\n"
+    text += f"验证方式: {mode_label}\n"
     text += f"超时时间: {timeout_seconds} 秒\n"
+    text += f"超时处理: {action_label}\n"
+    if timeout_action == "mute":
+        text += f"禁言时长: {mute_duration} 秒\n"
     text += f"限制发言: {'是' if restrict_can_send else '否'}\n\n"
-    text += f"💡 点击下方按钮切换验证模式"
+    text += f"💡 点击下方按钮进行配置"
     return text
 
 
@@ -186,6 +205,7 @@ def verification_mode_menu(current_mode: str, chat_id: int | None = None) -> Inl
             f"adm:vfy_mode:{chat_id}:button",
             f"adm:vfy_mode:{chat_id}:math",
             f"adm:vfy_mode:{chat_id}:captcha",
+            f"adm:vfy_mode:{chat_id}:admin",
         ]
     else:
         # 群聊场景：原格式
@@ -194,11 +214,101 @@ def verification_mode_menu(current_mode: str, chat_id: int | None = None) -> Inl
             "adm:vfy_mode:button",
             "adm:vfy_mode:math",
             "adm:vfy_mode:captcha",
+            "adm:vfy_mode:admin",
         ]
 
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🔘 按钮验证", callback_data=button_callbacks[0])],
         [InlineKeyboardButton("🔢 数学题验证", callback_data=button_callbacks[1])],
-        [InlineKeyboardButton("🔢 验证码验证", callback_data=button_callbacks[2])],
+        [InlineKeyboardButton("🔑 验证码验证", callback_data=button_callbacks[2])],
+        [InlineKeyboardButton("👤 管理员确认", callback_data=button_callbacks[3])],
+        [InlineKeyboardButton("返回", callback_data=back_callback)],
+    ])
+
+
+def verification_config_menu(
+    enabled: bool,
+    mode: str,
+    timeout_seconds: int,
+    timeout_action: str,
+    restrict_can_send: bool,
+    chat_id: int | None = None,
+) -> InlineKeyboardMarkup:
+    """验证配置菜单
+
+    Args:
+        enabled: 是否启用验证
+        mode: 验证模式
+        timeout_seconds: 超时时间（秒）
+        timeout_action: 超时处理动作
+        restrict_can_send: 是否限制发言
+        chat_id: 群组 ID，用于私聊管理场景
+    """
+    status_prefix = "✅" if enabled else "❌"
+    mode_label = {
+        "button": "按钮验证",
+        "math": "数学题",
+        "captcha": "验证码",
+        "admin": "管理员",
+    }.get(mode, mode)
+
+    action_label = {
+        "mute": "禁言",
+        "kick": "踢出",
+    }.get(timeout_action, timeout_action)
+
+    restrict_prefix = "✅" if restrict_can_send else "❌"
+
+    if chat_id is not None:
+        # 私聊管理场景：callback_data 包含 chat_id
+        back_callback = f"adm:menu:main:{chat_id}"
+        buttons = [
+            [InlineKeyboardButton(f"{status_prefix} 验证开关", callback_data=f"adm:vfy_toggle:{chat_id}")],
+            [InlineKeyboardButton(f"🔘 验证方式: {mode_label}", callback_data=f"adm:vfy_mode_menu:{chat_id}")],
+            [InlineKeyboardButton(f"⏱️ 超时时间: {timeout_seconds}秒", callback_data=f"adm:vfy_timeout:{chat_id}")],
+            [InlineKeyboardButton(f"🔇 超时处理: {action_label}", callback_data=f"adm:vfy_action:{chat_id}")],
+            [InlineKeyboardButton(f"{restrict_prefix} 限制发言", callback_data=f"adm:vfy_restrict:{chat_id}")],
+            [InlineKeyboardButton("返回", callback_data=back_callback)],
+        ]
+    else:
+        # 群聊场景：原格式
+        back_callback = "adm:menu:verification"
+        buttons = [
+            [InlineKeyboardButton(f"{status_prefix} 验证开关", callback_data="adm:vfy_toggle")],
+            [InlineKeyboardButton(f"🔘 验证方式: {mode_label}", callback_data="adm:vfy_mode_menu")],
+            [InlineKeyboardButton(f"⏱️ 超时时间: {timeout_seconds}秒", callback_data="adm:vfy_timeout")],
+            [InlineKeyboardButton(f"🔇 超时处理: {action_label}", callback_data="adm:vfy_action")],
+            [InlineKeyboardButton(f"{restrict_prefix} 限制发言", callback_data="adm:vfy_restrict")],
+            [InlineKeyboardButton("返回", callback_data=back_callback)],
+        ]
+
+    return InlineKeyboardMarkup(buttons)
+
+
+def verification_timeout_action_menu(current_action: str, chat_id: int | None = None) -> InlineKeyboardMarkup:
+    """验证超时处理动作选择菜单
+
+    Args:
+        current_action: 当前超时处理动作
+        chat_id: 群组 ID，用于私聊管理场景
+    """
+    if chat_id is not None:
+        # 私聊管理场景：callback_data 包含 chat_id
+        back_callback = f"adm:vfy_config:{chat_id}"
+        button_callbacks = [
+            f"adm:vfy_action:{chat_id}:mute",
+            f"adm:vfy_action:{chat_id}:kick",
+        ]
+    else:
+        # 群聊场景：原格式
+        back_callback = "adm:vfy_config"
+        button_callbacks = [
+            "adm:vfy_action:mute",
+            "adm:vfy_action:kick",
+        ]
+
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔇 禁言", callback_data=button_callbacks[0])],
+        [InlineKeyboardButton("👢 踢出群聊", callback_data=button_callbacks[1])],
         [InlineKeyboardButton("返回", callback_data=back_callback)],
     ])
