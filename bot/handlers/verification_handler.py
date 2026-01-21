@@ -129,9 +129,9 @@ async def new_members_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             )
             try:
                 await context.bot.restrict_chat_member(chat_id=chat.id, user_id=u.id, permissions=perms)
-            except Exception:
-                # 权限不足就只能提示
-                pass
+            except Exception as e:
+                # 权限不足只能静默失败，记录日志
+                log.warning("restrict_chat_member_failed", chat_id=chat.id, user_id=u.id, error=str(e))
 
             # 根据验证类型发送不同的验证消息
             mention = u.mention_html()
@@ -236,15 +236,15 @@ async def verify_message_handler(update: Update, context: ContextTypes.DEFAULT_T
             # 验证成功
             try:
                 await update.effective_message.reply_text("✅ 验证成功！")
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning("verify_success_reply_failed", user_id=user.id, error=str(e))
             await _unrestrict_and_notify(context, chat.id, user.id, settings.language)
         else:
             # 验证失败
             try:
                 await update.effective_message.reply_text(f"❌ 答案错误，请重试。\n\n{ch.question}")
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning("verify_failed_reply_failed", user_id=user.id, error=str(e))
 
 
 async def _unrestrict_and_notify(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int, language: str) -> None:
@@ -270,8 +270,8 @@ async def _unrestrict_and_notify(context: ContextTypes.DEFAULT_TYPE, chat_id: in
                 can_manage_topics=False,
             ),
         )
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning("edit_admin_verify_message_failed", error=str(e))
 
 
 async def admin_verify_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -340,8 +340,8 @@ async def admin_verify_callback(update: Update, context: ContextTypes.DEFAULT_TY
                 log.warning("kick_user_failed", user_id=user_id, chat_id=chat.id, error=str(e))
                 try:
                     await q.edit_message_text(f"⚠️ 操作失败：{str(e)}")
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.warning("edit_admin_verify_message_failed", error=str(e))
 
 
 # ==================== 验证配置相关 ====================

@@ -645,8 +645,8 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             try:
                 await asyncio.sleep(10)
                 await msg.delete()
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning("delete_message_failed", error=str(e))
 
         asyncio.create_task(delete_later())
         return

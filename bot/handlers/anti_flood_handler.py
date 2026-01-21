@@ -102,8 +102,8 @@ async def anti_flood_message_handler(update: Update, context: ContextTypes.DEFAU
                     text=warning_msg,
                     parse_mode="HTML",
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning("send_flood_warning_failed", chat_id=chat.id, user_id=user.id, error=str(e))
 
             log.info(
                 "flood_punishment_executed",

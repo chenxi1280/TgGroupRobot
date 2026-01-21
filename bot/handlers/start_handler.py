@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import structlog
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
@@ -23,6 +24,9 @@ from bot.services.integration.chat_group_service import (
 from bot.services.core.chat_service import ensure_chat, get_chat_settings
 from bot.services.state.state_service import clear_user_state, get_user_state
 from bot.services.core.user_service import ensure_user
+
+
+log = structlog.get_logger(__name__)
 
 
 async def _send_guide_message(update: Update, context: ContextTypes.DEFAULT_TYPE, chat, user) -> None:
@@ -59,16 +63,16 @@ async def _send_guide_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     # 删除用户发送的消息
     try:
         await update.effective_message.delete()
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning("delete_user_message_failed", error=str(e))
 
     # 延迟后删除机器人消息（保持群组整洁）
     async def delete_later():
         try:
             await asyncio.sleep(delete_delay)
             await msg.delete()
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("delete_bot_message_failed", error=str(e))
 
     asyncio.create_task(delete_later())
 
