@@ -178,9 +178,8 @@ async def solitaire_menu_callback(update: Update, context: ContextTypes.DEFAULT_
             return
 
         # 返回到管理面板
-        chats = await get_user_managed_chats(db, user.id, context.bot)
         from bot.handlers.admin_handler import _show_private_admin_menu
-        await _show_private_admin_menu(update, context, target_chat_id, chats)
+        await _show_private_admin_menu(update, context, target_chat_id)
         return
     else:
         if not await is_user_admin(context, chat.id, user.id):
@@ -312,7 +311,13 @@ async def solitaire_create_start_callback(update: Update, context: ContextTypes.
     text += f"截止时间: {deadline_example.strftime('%Y-%m-%d %H:%M')}\n"
     text += "```"
 
-    await q.edit_message_text(text, parse_mode="Markdown")
+    # 添加取消按钮
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("❌ 取消配置", callback_data=f"solitaire:cancel:{target_chat_id}")]
+    ])
+
+    await q.edit_message_text(text, parse_mode="Markdown", reply_markup=keyboard)
     return WAIT_CONFIG
 
 
@@ -430,10 +435,11 @@ async def solitaire_create_config_message(update: Update, context: ContextTypes.
                     log.error("solitaire_send_failed", error=str(e))
 
                 # 返回成功消息给创建者
-                # 只显示一个返回按钮
+                # 显示多级返回按钮：返回接龙管理 / 返回主菜单
                 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
                 keyboard = InlineKeyboardMarkup([
-                    [InlineKeyboardButton("« 返回管理菜单", callback_data=f"adm:menu:{target_chat_id}")]
+                    [InlineKeyboardButton("🔙 返回接龙管理", callback_data=f"solitaire:menu:{target_chat_id}")],
+                    [InlineKeyboardButton("🏠 返回主菜单", callback_data=f"adm:menu:{target_chat_id}")]
                 ])
                 await update.effective_message.reply_text(
                     f"✅ 接龙创建成功！\n\n已发送到群组\n\n接龙ID: {result.entity.id}",
@@ -642,21 +648,37 @@ async def solitaire_cancel_callback(update: Update, context: ContextTypes.DEFAUL
     chat = update.effective_chat
     user = update.effective_user
 
-    # 获取目标群组ID
-    target_chat_id = None
-    if chat.type == "private":
-        db: Database = context.application.bot_data["db"]
-        target_chat_id = await ChatResolver.get_current_chat(db, user.id)
+    # 从 callback_data 解析目标群组ID：solitaire:cancel:{chat_id}
+    data = q.data or ""
+    parts = data.split(":")
+    if len(parts) >= 3:
+        try:
+            target_chat_id = int(parts[2])
+        except ValueError:
+            target_chat_id = None
     else:
-        target_chat_id = chat.id
+        target_chat_id = None
+
+    # 如果从 callback_data 解析失败，从当前状态获取
+    if target_chat_id is None:
+        if chat.type == "private":
+            db: Database = context.application.bot_data["db"]
+            target_chat_id = await ChatResolver.get_current_chat(db, user.id)
+        else:
+            target_chat_id = chat.id
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
         await clear_user_state(session, target_chat_id, user.id)
         await session.commit()
 
-    keyboard = solitaire_menu_keyboard(target_chat_id if chat.type == "private" else None)
-    await q.edit_message_text("已取消创建", reply_markup=keyboard)
+    # 返回管理面板（私聊）或接龙菜单（群聊）
+    if chat.type == "private":
+        from bot.handlers.admin_handler import _show_private_admin_menu
+        await _show_private_admin_menu(update, context, target_chat_id)
+    else:
+        keyboard = solitaire_menu_keyboard(None)
+        await q.edit_message_text("已取消创建", reply_markup=keyboard)
     return ConversationHandler.END
 
 

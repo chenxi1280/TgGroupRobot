@@ -156,7 +156,13 @@ class LotteryHandler(BaseHandler):
         text += "三等奖:10U,10\n"
         text += "```"
 
-        await self.message_helper.safe_edit(update, text=text, parse_mode="Markdown")
+        # 添加取消按钮
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("❌ 取消配置", callback_data=f"lottery:cancel:{target_chat_id}")]
+        ])
+
+        await self.message_helper.safe_edit(update, text=text, parse_mode="Markdown", reply_markup=keyboard)
 
     async def handle_join(
         self,
@@ -570,9 +576,10 @@ async def _parse_lottery_config(update: Update, context: ContextTypes.DEFAULT_TY
             reply_text += f"📅 入群天数: {config.requirement_days}\n"
         reply_text += f"\n📢 已发送公告到群组"
 
-        # 只显示一个返回按钮
+        # 显示多级返回按钮：返回抽奖管理 / 返回主菜单
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("« 返回管理菜单", callback_data=f"adm:menu:{target_chat_id}")]
+            [InlineKeyboardButton("🔙 返回抽奖管理", callback_data=f"adm:menu:lottery:{target_chat_id}")],
+            [InlineKeyboardButton("🏠 返回主菜单", callback_data=f"adm:menu:{target_chat_id}")]
         ])
 
         await update.effective_message.reply_text(reply_text, reply_markup=keyboard)
@@ -1004,3 +1011,43 @@ async def manual_draw_menu_callback(update: Update, context: ContextTypes.DEFAUL
             f"请为每个奖项选择中奖人：",
             reply_markup=manual_draw_summary_keyboard(lottery_id, prizes),
         )
+
+
+# ==================== 取消回调处理器 ====================
+
+async def lottery_cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """取消抽奖配置，返回抽奖菜单"""
+    if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
+        return
+    q = update.callback_query
+    await q.answer()
+
+    # 解析参数：lottery:cancel:{chat_id}
+    data = q.data or ""
+    parts = data.split(":")
+    if len(parts) < 3:
+        await q.edit_message_text("❌ 无法获取群组信息")
+        return
+
+    try:
+        target_chat_id = int(parts[2])
+    except ValueError:
+        await q.edit_message_text("❌ 群组ID格式错误")
+        return
+
+    chat = update.effective_chat
+    user = update.effective_user
+
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        # 清除配置状态
+        state_chat_id = user.id if chat.type == "private" else chat.id
+        await clear_user_state(session, state_chat_id, user.id)
+        await session.commit()
+
+    # 返回管理面板（私聊场景）或抽奖菜单（群聊场景）
+    if chat.type == "private":
+        from bot.handlers.admin_handler import _show_private_admin_menu
+        await _show_private_admin_menu(update, context, target_chat_id)
+    else:
+        await _lottery_handler.show_menu(update, context, target_chat_id)

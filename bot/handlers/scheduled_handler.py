@@ -63,11 +63,8 @@ class ScheduledMenuHandler(BaseHandler):
     ) -> None:
         """处理私聊场景 - 返回管理面板"""
         from bot.handlers.admin_handler import _show_private_admin_menu
-        from bot.services.integration.chat_group_service import get_user_managed_chats
 
-        db = context.application.bot_data["db"]
-        chats = await get_user_managed_chats(db, update.effective_user.id, context.bot)
-        await _show_private_admin_menu(update, context, target_chat_id, chats)
+        await _show_private_admin_menu(update, context, target_chat_id)
 
     async def _handle_group_chat(
         self,
@@ -332,7 +329,13 @@ async def scheduled_create_start(update: Update, context: ContextTypes.DEFAULT_T
     text += "是否重复: 是\n"
     text += "```"
 
-    await q.edit_message_text(text)
+    # 添加取消按钮
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("❌ 取消配置", callback_data=f"scheduled:cancel:{target_chat_id}")]
+    ])
+
+    await q.edit_message_text(text, reply_markup=keyboard)
 
 
 async def scheduled_toggle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -405,6 +408,40 @@ async def scheduled_delete_callback(update: Update, context: ContextTypes.DEFAUL
         await scheduled_menu_callback(update, context)
     else:
         await q.answer("删除失败", show_alert=True)
+
+
+async def scheduled_cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """取消定时消息配置，返回定时消息菜单"""
+    if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
+        return
+    q = update.callback_query
+    await q.answer()
+
+    # 解析参数：scheduled:cancel:{chat_id}
+    data = q.data or ""
+    cb = CallbackParser.parse(data)
+    target_chat_id = cb.get_int(2)
+
+    if target_chat_id == 0:
+        await q.edit_message_text("❌ 无法获取群组信息")
+        return
+
+    chat = update.effective_chat
+    user = update.effective_user
+
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        # 清除配置状态
+        state_chat_id = user.id if chat.type == "private" else chat.id
+        await clear_user_state(session, state_chat_id, user.id)
+        await session.commit()
+
+    # 返回管理面板
+    # 不调用菜单回调（因为它会从状态中获取 target_chat_id，但状态已被清除）
+    # 直接调用管理面板，传递 target_chat_id
+    from bot.handlers.admin_handler import _show_private_admin_menu
+
+    await _show_private_admin_menu(update, context, target_chat_id)
 
 
 # ============================================
@@ -571,9 +608,10 @@ async def _parse_scheduled_config(update: Update, session, state: object, text: 
         reply_text += f"🕐 首次发送: {beijing_time.strftime('%Y-%m-%d %H:%M:%S')}(北京时间)\n"
         reply_text += f"\n消息ID: {result.entity.id}"
 
-        # 只显示一个返回按钮
+        # 显示多级返回按钮：返回定时消息管理 / 返回主菜单
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("« 返回管理菜单", callback_data=f"adm:menu:{target_chat_id}")]
+            [InlineKeyboardButton("🔙 返回定时消息管理", callback_data=f"scheduled:menu:{target_chat_id}")],
+            [InlineKeyboardButton("🏠 返回主菜单", callback_data=f"adm:menu:{target_chat_id}")]
         ])
 
         await update.effective_message.reply_text(reply_text, reply_markup=keyboard)

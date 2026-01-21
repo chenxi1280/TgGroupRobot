@@ -545,9 +545,10 @@ async def _parse_verification_config(update: Update, session, state: object, tex
             result_text += f"• 禁言时长: {mute_duration} 秒\n"
         result_text += f"• 限制发言: {'是' if restrict_can_send else '否'}\n"
 
-        # 创建返回按钮
+        # 显示多级返回按钮：返回验证菜单 / 返回主菜单
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:verification:{target_chat_id}")]
+            [InlineKeyboardButton("🔙 返回验证菜单", callback_data=f"adm:menu:verification:{target_chat_id}")],
+            [InlineKeyboardButton("🏠 返回主菜单", callback_data=f"adm:menu:{target_chat_id}")]
         ])
 
         await update.effective_message.reply_text(result_text, reply_markup=keyboard)
@@ -557,3 +558,47 @@ async def _parse_verification_config(update: Update, session, state: object, tex
     except Exception as e:
         log.exception("parse_verification_config_error", error=str(e))
         await update.effective_message.reply_text(f"❌ 配置失败: {str(e)}")
+
+
+# ==================== 取消回调处理器 ====================
+
+async def verification_cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """取消验证配置，返回验证菜单"""
+    if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
+        return
+    q = update.callback_query
+    await q.answer()
+
+    # 解析参数：verification:cancel:{chat_id}
+    data = q.data or ""
+    parts = data.split(":")
+    if len(parts) < 3:
+        await q.edit_message_text("❌ 无法获取群组信息")
+        return
+
+    try:
+        target_chat_id = int(parts[2])
+    except ValueError:
+        await q.edit_message_text("❌ 群组ID格式错误")
+        return
+
+    chat = update.effective_chat
+    user = update.effective_user
+
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        # 清除配置状态
+        state_chat_id = user.id if chat.type == "private" else chat.id
+        from bot.services.state.state_service import clear_user_state
+        await clear_user_state(session, state_chat_id, user.id)
+        await session.commit()
+
+    # 返回验证菜单
+    await admin_verification_menu_callback(update, context, target_chat_id)
+
+
+async def admin_verification_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, target_chat_id: int) -> None:
+    """显示验证管理菜单（供取消后返回使用）"""
+    from bot.handlers.admin_handler import AdminHandler
+    handler = AdminHandler()
+    await handler._show_verification_menu(update, context, target_chat_id)

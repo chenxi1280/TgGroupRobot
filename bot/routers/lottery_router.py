@@ -6,6 +6,7 @@ from telegram.ext import Application, CallbackQueryHandler, MessageHandler, filt
 from bot.handlers.lottery_handler import (
     draw_lottery_callback,
     join_lottery_callback,
+    lottery_cancel_callback,
     lottery_create_start,
     lottery_message_handler,
     manual_draw_complete_callback,
@@ -32,6 +33,7 @@ class LotteryRouter(BaseRouter):
 
         # 回调处理器
         app.add_handler(CallbackQueryHandler(lottery_create_start, pattern=r"^lot:create"))
+        app.add_handler(CallbackQueryHandler(lottery_cancel_callback, pattern=r"^lottery:cancel:"))
         app.add_handler(CallbackQueryHandler(join_lottery_callback, pattern=r"^join_lottery_"))
         app.add_handler(CallbackQueryHandler(draw_lottery_callback, pattern=r"^draw_lottery_"))
         app.add_handler(CallbackQueryHandler(manual_draw_select_prize_callback, pattern=r"^lot:select_prize:"))

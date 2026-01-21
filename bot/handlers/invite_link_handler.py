@@ -146,9 +146,8 @@ async def invite_link_menu_callback(update: Update, context: ContextTypes.DEFAUL
             return
 
         # 返回到管理面板
-        chats = await get_user_managed_chats(db, user.id, context.bot)
         from bot.handlers.admin_handler import _show_private_admin_menu
-        await _show_private_admin_menu(update, context, target_chat_id, chats)
+        await _show_private_admin_menu(update, context, target_chat_id)
         return
 
     if not await is_user_admin(context, chat.id, user.id):

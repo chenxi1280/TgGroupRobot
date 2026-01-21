@@ -161,15 +161,28 @@ class AdminHandler(BaseHandler):
         await self._show_settings_menu(update, context, chat_id)
 
     async def _get_chat_title(self, db: Database, chat_id: int) -> str:
-        """获取群组标题"""
+        """获取群组标题（优先从 Telegram API 实时获取）"""
         from bot.models.core import TgChat
         from sqlalchemy import select
 
+        # 先从数据库查询
         async with db.session_factory() as session:
             chat_stmt = select(TgChat).where(TgChat.id == chat_id)
             chat_result = await session.execute(chat_stmt)
             chat = chat_result.scalar_one_or_none()
-            return chat.title if chat else f"群组{chat_id}"
+            db_title = chat.title if chat else None
+
+        # 如果数据库中有标题，先尝试使用
+        if db_title:
+            return db_title
+
+        # 数据库中没有标题，尝试从 Telegram API 实时获取
+        try:
+            tg_chat = await self.message_helper._bot.get_chat(chat_id)
+            return tg_chat.title or f"群组{chat_id}"
+        except (TelegramError, AttributeError, Exception):
+            # 获取失败，使用数据库中的标题或回退值
+            return db_title or f"群组{chat_id}"
 
     async def _set_current_chat(
         self,
@@ -458,10 +471,16 @@ class AdminHandler(BaseHandler):
         text += "• 禁言时长: 秒数（默认 86400=1天）\n"
         text += "• 限制发言: 是/否（验证期间是否限制发送消息）"
 
+        # 添加取消按钮
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("❌ 取消配置", callback_data=f"verification:cancel:{target_chat_id}")]
+        ])
+
         try:
-            await q.edit_message_text(text, parse_mode="Markdown")
+            await q.edit_message_text(text, parse_mode="Markdown", reply_markup=keyboard)
         except Exception:
-            await q.edit_message_text(text.replace("```", ""))
+            await q.edit_message_text(text.replace("```", ""), reply_markup=keyboard)
 
     async def _show_verification_menu(
         self,

@@ -338,7 +338,7 @@ async def ads_create_start_callback(update: Update, context: ContextTypes.DEFAUL
         await set_user_state(session, chat.id, user.id, "ads_create_config", {"target_chat_id": target_chat_id})
         await session.commit()
 
-    config_help = """➕ 创建广告
+    config_help = """➕ 创建广告 ( /cancel 取消 )
 
 请按以下格式输入配置：
 
@@ -365,7 +365,13 @@ async def ads_create_start_callback(update: Update, context: ContextTypes.DEFAUL
 内容:
 欢迎大家参加今晚的聚餐活动！"""
 
-    await q.edit_message_text(config_help, parse_mode="HTML")
+    # 添加取消按钮
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("❌ 取消配置", callback_data=f"ads:cancel:{target_chat_id}")]
+    ])
+
+    await q.edit_message_text(config_help, parse_mode="HTML", reply_markup=keyboard)
 
 
 async def ads_create_config_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -458,10 +464,11 @@ async def ads_create_config_message(update: Update, context: ContextTypes.DEFAUL
                         await clear_user_state(session, chat.id, user.id)
                         await session.commit()
 
-                        # 只显示一个返回按钮
+                        # 显示多级返回按钮：返回广告管理 / 返回主菜单
                         from telegram import InlineKeyboardButton, InlineKeyboardMarkup
                         keyboard = InlineKeyboardMarkup([
-                            [InlineKeyboardButton("« 返回管理菜单", callback_data=f"adm:menu:{target_chat_id}")]
+                            [InlineKeyboardButton("🔙 返回广告管理", callback_data=f"ads:menu:{target_chat_id}")],
+                            [InlineKeyboardButton("🏠 返回主菜单", callback_data=f"adm:menu:{target_chat_id}")]
                         ])
 
                         await update.effective_message.reply_text(success_msg, reply_markup=keyboard)
@@ -492,6 +499,42 @@ async def ads_create_config_message(update: Update, context: ContextTypes.DEFAUL
         )
         # 明确返回，不重新抛出异常，让后续处理器继续执行
         return
+
+
+async def ads_cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """取消广告配置，返回广告菜单"""
+    if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
+        return
+    q = update.callback_query
+    await q.answer()
+
+    # 解析参数：ads:cancel:{chat_id}
+    data = q.data or ""
+    cb = CallbackParser.parse(data)
+    target_chat_id = cb.get_int(2)
+
+    if target_chat_id == 0:
+        await q.edit_message_text("❌ 无法获取群组信息")
+        return
+
+    chat = update.effective_chat
+    user = update.effective_user
+
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        # 清除配置状态
+        state_chat_id = user.id if chat.type == "private" else chat.id
+        await clear_user_state(session, state_chat_id, user.id)
+        await session.commit()
+
+    # 返回广告菜单
+    if chat.type == "private":
+        # 私聊中返回广告管理菜单
+        await _ads_handler.show_menu(update, context, target_chat_id)
+    else:
+        # 群聊中直接返回广告菜单
+        keyboard = ads_menu_keyboard(target_chat_id)
+        await q.edit_message_text("📢 广告管理\n\n管理群内广告推送", reply_markup=keyboard)
 
 
 def _parse_ads_config(text: str) -> dict:

@@ -102,11 +102,8 @@ class AutoReplyMenuHandler(BaseHandler):
     ) -> None:
         """处理私聊场景 - 返回管理面板"""
         from bot.handlers.admin_handler import _show_private_admin_menu
-        from bot.services.integration.chat_group_service import get_user_managed_chats
 
-        db = context.application.bot_data["db"]
-        chats = await get_user_managed_chats(db, update.effective_user.id, context.bot)
-        await _show_private_admin_menu(update, context, target_chat_id, chats)
+        await _show_private_admin_menu(update, context, target_chat_id)
 
     async def _handle_group_chat(
         self,
@@ -385,7 +382,13 @@ async def auto_reply_create_start(update: Update, context: ContextTypes.DEFAULT_
     text += "你好呀！欢迎来到我们的群组！\n"
     text += "```"
 
-    await q.edit_message_text(text, parse_mode="Markdown")
+    # 添加取消按钮
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("❌ 取消配置", callback_data=f"autoreply:cancel:{target_chat_id}")]
+    ])
+
+    await q.edit_message_text(text, parse_mode="Markdown", reply_markup=keyboard)
 
 
 # Handler 类定义（使用 BaseHandler）
@@ -674,9 +677,10 @@ async def _parse_auto_reply_config(update: Update, session, state: object, text:
         reply_text += f"💬 回复: {reply_content[:50]}{'...' if len(reply_content) > 50 else ''}\n"
         reply_text += f"\n规则ID: {result.entity.id}"
 
-        # 只显示一个返回按钮
+        # 显示多级返回按钮：返回自动回复管理 / 返回主菜单
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("« 返回管理菜单", callback_data=f"adm:menu:{target_chat_id}")]
+            [InlineKeyboardButton("🔙 返回自动回复管理", callback_data=f"autoreply:menu:{target_chat_id}")],
+            [InlineKeyboardButton("🏠 返回主菜单", callback_data=f"adm:menu:{target_chat_id}")]
         ])
 
         await update.effective_message.reply_text(reply_text, reply_markup=keyboard)
@@ -722,3 +726,43 @@ def _get_match_type_label(match_type: str) -> str:
         "regex": "正则表达式",
     }
     return labels.get(match_type, match_type)
+
+
+# ==================== 取消回调处理器 ====================
+
+async def auto_reply_cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """取消自动回复配置，返回自动回复菜单"""
+    if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
+        return
+    q = update.callback_query
+    await q.answer()
+
+    # 解析参数：autoreply:cancel:{chat_id}
+    data = q.data or ""
+    parts = data.split(":")
+    if len(parts) < 3:
+        await q.edit_message_text("❌ 无法获取群组信息")
+        return
+
+    try:
+        target_chat_id = int(parts[2])
+    except ValueError:
+        await q.edit_message_text("❌ 群组ID格式错误")
+        return
+
+    chat = update.effective_chat
+    user = update.effective_user
+
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        # 清除配置状态
+        state_chat_id = user.id if chat.type == "private" else chat.id
+        await clear_user_state(session, state_chat_id, user.id)
+        await session.commit()
+
+    # 返回管理面板
+    # 不调用菜单回调（因为它会从状态中获取 target_chat_id，但状态已被清除）
+    # 直接调用管理面板，传递 target_chat_id
+    from bot.handlers.admin_handler import _show_private_admin_menu
+
+    await _show_private_admin_menu(update, context, target_chat_id)

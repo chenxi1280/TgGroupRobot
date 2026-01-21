@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 import structlog
-from telegram.ext import Application
+from telegram.ext import Application, CallbackQueryHandler
 
 from bot.handlers.verification_handler import (
     admin_verify_callback,
     new_members_handler,
+    verification_cancel_callback,
     verification_config_handler,
     verify_callback,
     verify_message_handler,
@@ -25,6 +26,9 @@ class VerificationRouter(BaseRouter):
 
     def register(self, app: Application) -> None:
         log.info(f"Registering {self.name} router")
+
+        # 注册验证配置取消回调
+        app.add_handler(CallbackQueryHandler(verification_cancel_callback, pattern=r"^verification:cancel:"))
 
         # 验证配置回调已移至 admin_handler 处理（使用 adm:vfy_config 格式）
         # 验证相关回调（已在 __main__.py 中注册，这里保留引用）

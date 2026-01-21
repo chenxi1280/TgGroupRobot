@@ -23,6 +23,7 @@ class MessageHelper:
         update: Update,
         text: str,
         reply_markup=None,
+        parse_mode: str | None = None,
         show_alert: bool = False,
     ) -> bool:
         """安全编辑消息（用于 callback）
@@ -31,6 +32,7 @@ class MessageHelper:
             update: Telegram 更新对象
             text: 要发送的文本
             reply_markup: 键盘布局（可选）
+            parse_mode: 解析模式（可选）
             show_alert: 是否以 alert 形式显示
 
         Returns:
@@ -43,7 +45,9 @@ class MessageHelper:
             if show_alert:
                 await update.callback_query.answer(text, show_alert=True)
             else:
-                await update.callback_query.edit_message_text(text, reply_markup=reply_markup)
+                await update.callback_query.edit_message_text(
+                    text, reply_markup=reply_markup, parse_mode=parse_mode
+                )
             return True
         except TelegramError as e:
             log.warning("edit_message_failed", error=str(e))

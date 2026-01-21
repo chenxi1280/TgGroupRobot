@@ -2,6 +2,7 @@ from __future__ import annotations
 import structlog
 from telegram.ext import Application, CallbackQueryHandler, MessageHandler, filters
 from bot.handlers.scheduled_handler import (
+    scheduled_cancel_callback,
     scheduled_create_start,
     scheduled_delete_callback,
     scheduled_list_callback,
@@ -25,9 +26,10 @@ class ScheduledRouter(BaseRouter):
         
         # 回调处理器
         app.add_handler(CallbackQueryHandler(scheduled_create_start, pattern=r"^scheduled:create"))
+        app.add_handler(CallbackQueryHandler(scheduled_cancel_callback, pattern=r"^scheduled:cancel:"))
         app.add_handler(CallbackQueryHandler(scheduled_toggle_callback, pattern=r"^scheduled_toggle_"))
         app.add_handler(CallbackQueryHandler(scheduled_delete_callback, pattern=r"^scheduled_delete_"))
-        app.add_handler(CallbackQueryHandler(scheduled_menu_callback, pattern=r"^scheduled:menu$"))
+        app.add_handler(CallbackQueryHandler(scheduled_menu_callback, pattern=r"^scheduled:menu"))
         app.add_handler(CallbackQueryHandler(scheduled_list_callback, pattern=r"^scheduled:list"))
 
         # 注意：定时消息处理器已移至 __main__.py 的 _register_common_handlers 中统一管理

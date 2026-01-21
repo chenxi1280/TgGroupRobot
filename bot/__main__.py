@@ -14,15 +14,9 @@ from bot.db.session import create_database, Database
 from bot.handlers.anti_flood_handler import anti_flood_cleanup_job
 from bot.handlers.auto_delete_handler import auto_delete_handler
 from bot.handlers.auto_delete_config_handler import auto_delete_config_callback
-from bot.handlers.auto_reply_handler import auto_reply_config_handler
-from bot.handlers.group_message_handler import unified_group_message_handler
-from bot.handlers.lottery_handler import lottery_message_handler
-from bot.handlers.moderation_handler import moderation_message_handler
-from bot.handlers.points_handler import get_points_alias_handler, message_points_handler
-from bot.handlers.scheduled_handler import scheduled_message_handler
-from bot.handlers.solitaire_handler import solitaire_join_message_handler
-from bot.handlers.start_handler import cancel_command as cancel_callback, private_message_handler, start_command as start_callback
-from bot.handlers.verification_handler import admin_verify_callback, new_members_handler, verification_config_handler, verify_callback, verify_message_handler
+from bot.handlers.dispatcher import MessageDispatcher
+from bot.handlers.start_handler import cancel_command as cancel_callback, start_command as start_callback
+from bot.handlers.verification_handler import admin_verify_callback, new_members_handler, verify_callback
 from bot.logging_config import configure_logging
 from bot.routers import (
     AdminRouter,
@@ -110,100 +104,110 @@ def _register_common_handlers(app: Application) -> None:
     """注册通用处理器（验证、审核、自动删除等）"""
     log.warning("=== REGISTERING COMMON HANDLERS ===")
 
-    # ==================== Group -1: 核心功能（最高优先级）====================
+    # ==================== Group -2: 统一消息分发入口（最高优先级）====================
+    log.warning("=== REGISTERING GROUP -2: MESSAGE DISPATCHER ===")
+    # 统一消息分发器：根据消息来源（私聊/群聊）和用户状态，分发到对应的处理器
+    # 这是所有文本消息的统一入口
+    app.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, MessageDispatcher().dispatch),
+        group=-2
+    )
+    log.warning("=== MESSAGE DISPATCHER REGISTERED (GROUP -2) ===")
+
+    # ==================== Group -1: 核心功能（已被分发器接管，保留兼容）====================
     log.warning("=== REGISTERING GROUP -1: CORE FUNCTIONALITY ===")
+    # 注意：以下处理器已被 MessageDispatcher 接管，保留作为兼容性备份
+    # 统一消息处理入口（违禁词检测 + 自动回复）
+    # app.add_handler(
+    #     MessageHandler(filters.ChatType.GROUPS & filters.TEXT, unified_group_message_handler),
+    #     group=-1
+    # )
+    # log.warning("=== UNIFIED_GROUP_MESSAGE_HANDLER REGISTERED (GROUP -1) ===")
 
-    # 【修复】统一消息处理入口（违禁词检测 + 自动回复）
-    # 移到 Group -1，确保在所有配置处理器之前执行，避免被 Router 中的 Handler 阻塞
-    # 修复问题：在群聊中发送关键字没有自动回复
-    app.add_handler(
-        MessageHandler(filters.ChatType.GROUPS & filters.TEXT, unified_group_message_handler),
-        group=-1
-    )
-    log.warning("=== UNIFIED_GROUP_MESSAGE_HANDLER REGISTERED (GROUP -1) ===")
+    # 验证配置处理器（已被 MessageDispatcher 的 PrivateConfigHandler 接管）
+    # app.add_handler(
+    #     MessageHandler(filters.TEXT & ~filters.COMMAND, verification_config_handler),
+    #     group=-1
+    # )
 
-    # 验证配置处理器（需要检查用户状态）
-    # 【修复】移到 auto_reply_config_handler 之前，确保更高优先级
-    # 修复问题：verification_config_handler 未被调用
-    log.warning("=== REGISTERING VERIFICATION_CONFIG_HANDLER ===",
-                handler_name=verification_config_handler.__name__,
-                handler_id=id(verification_config_handler))
-    app.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, verification_config_handler),
-        group=-1
-    )
-    log.warning("=== VERIFICATION_CONFIG_HANDLER REGISTERED ===")
+    # 自动回复配置处理器（已被 MessageDispatcher 的 PrivateConfigHandler 接管）
+    # app.add_handler(
+    #     MessageHandler(filters.TEXT & ~filters.COMMAND, auto_reply_config_handler),
+    #     group=-1
+    # )
 
-    # 自动回复配置处理器（需要检查用户状态）
-    app.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, auto_reply_config_handler),
-        group=-1
-    )
+    # ==================== 以下处理器已被 MessageDispatcher 接管 ====================
+    # 注意：以下 MessageHandler 现在由 GroupMessageHandler 统一调用，不需要单独注册
 
-    # ==================== 验证相关 ====================
+    # 群聊核心功能（违禁词检测 + 自动回复）- 已由 GroupMessageHandler 调用
+    # app.add_handler(
+    #     MessageHandler(filters.ChatType.GROUPS & filters.TEXT, unified_group_message_handler),
+    #     group=-1
+    # )
+
+    # 配置处理器 - 已由 PrivateConfigHandler 调用
+    # app.add_handler(
+    #     MessageHandler(filters.TEXT & ~filters.COMMAND, verification_config_handler),
+    #     group=-1
+    # )
+    # app.add_handler(
+    #     MessageHandler(filters.TEXT & ~filters.COMMAND, auto_reply_config_handler),
+    #     group=-1
+    # )
+
+    # 业务功能处理器 - 已由 GroupMessageHandler 按顺序调用
+    # app.add_handler(
+    #     MessageHandler(filters.ChatType.GROUPS & filters.TEXT & ~filters.COMMAND, verify_message_handler),
+    #     group=1
+    # )
+    # app.add_handler(
+    #     MessageHandler(filters.ChatType.GROUPS & filters.TEXT & ~filters.COMMAND, lottery_message_handler),
+    #     group=1
+    # )
+    # app.add_handler(
+    #     MessageHandler(filters.ChatType.GROUPS & filters.TEXT & ~filters.COMMAND, solitaire_join_message_handler),
+    #     group=1
+    # )
+    # app.add_handler(
+    #     MessageHandler(filters.ChatType.GROUPS & filters.TEXT & ~filters.COMMAND, scheduled_message_handler),
+    #     group=2
+    # )
+    # app.add_handler(
+    #     MessageHandler(filters.ChatType.GROUPS & filters.TEXT & ~filters.COMMAND, moderation_message_handler),
+    #     group=3
+    # )
+    # app.add_handler(
+    #     MessageHandler(filters.ChatType.GROUPS & filters.TEXT & ~filters.COMMAND, message_points_handler),
+    #     group=4
+    # )
+    # app.add_handler(
+    #     MessageHandler(filters.ChatType.GROUPS & filters.TEXT & ~filters.COMMAND, get_points_alias_handler().handle),
+    #     group=5
+    # )
+
+    # 私聊消息处理（显示群组列表等）- 已由 MessageDispatcher 调用
+    # app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND, private_message_handler))
+
+    # ==================== 保留必要的处理器（非文本消息）====================
+    log.warning("=== REGISTERING NON-MESSAGE HANDLERS ===")
+
+    # 按钮回调处理器
     app.add_handler(CallbackQueryHandler(verify_callback, pattern=r"^vfy:"))
     app.add_handler(CallbackQueryHandler(admin_verify_callback, pattern=r"^adm_vfy:"))  # 管理员确认验证
-    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, new_members_handler))
-    app.add_handler(
-        MessageHandler(filters.ChatType.GROUPS & filters.TEXT & ~filters.COMMAND, verify_message_handler),
-        group=1
-    )
-
-    # ==================== Group 0: 自动删除和反刷屏 ====================
-    log.warning("=== REGISTERING GROUP 0: AUTO DELETE & ANTI-FLOOD ===")
-
-    # 自动删除系统消息
-    app.add_handler(MessageHandler(filters.ChatType.GROUPS & filters.ALL, auto_delete_handler), group=0)
-
-    # 反刷屏检测
-    from bot.handlers.anti_flood_handler import anti_flood_message_handler
-    app.add_handler(MessageHandler(filters.ChatType.GROUPS & filters.ALL, anti_flood_message_handler), group=0)
-
-    # ==================== Group 1: 业务功能 ====================
-    log.warning("=== REGISTERING GROUP 1: BUSINESS LOGIC ===")
-
-    # 抽奖消息处理器
-    app.add_handler(
-        MessageHandler(filters.ChatType.GROUPS & filters.TEXT & ~filters.COMMAND, lottery_message_handler),
-        group=1
-    )
-
-    # 接龙参与消息处理器
-    app.add_handler(
-        MessageHandler(filters.ChatType.GROUPS & filters.TEXT & ~filters.COMMAND, solitaire_join_message_handler),
-        group=1
-    )
-
-    # ==================== Group 2: 定时消息 ====================
-    app.add_handler(
-        MessageHandler(filters.ChatType.GROUPS & filters.TEXT & ~filters.COMMAND, scheduled_message_handler),
-        group=2
-    )
-
-    # ==================== Group 3: 内容审核 ====================
-    app.add_handler(
-        MessageHandler(filters.ChatType.GROUPS & filters.TEXT & ~filters.COMMAND, moderation_message_handler),
-        group=3
-    )
-
-    # ==================== Group 4: 积分功能 ====================
-    app.add_handler(
-        MessageHandler(filters.ChatType.GROUPS & filters.TEXT & ~filters.COMMAND, message_points_handler),
-        group=4
-    )
-
-    # ==================== Group 5: 积分别名 ====================
-    app.add_handler(
-        MessageHandler(filters.ChatType.GROUPS & filters.TEXT & ~filters.COMMAND, get_points_alias_handler().handle),
-        group=5
-    )
-
-    # ==================== 其他 ====================
-    # 自动删除配置
     app.add_handler(CallbackQueryHandler(auto_delete_config_callback, pattern=r"^autodel:"))
 
-    # 私聊消息处理（显示群组列表等）- 最低优先级
-    app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND, private_message_handler))
+    # 新成员加入事件
+    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, new_members_handler))
+
+    # ==================== Group 0: 自动删除和反刷屏（保留，处理所有消息类型）====================
+    log.warning("=== REGISTERING GROUP 0: AUTO DELETE & ANTI-FLOOD ===")
+
+    # 自动删除系统消息（处理非文本消息，如图片、贴纸等）
+    app.add_handler(MessageHandler(filters.ChatType.GROUPS & ~filters.TEXT, auto_delete_handler), group=0)
+
+    # 反刷屏检测（处理所有消息类型）
+    from bot.handlers.anti_flood_handler import anti_flood_message_handler
+    app.add_handler(MessageHandler(filters.ChatType.GROUPS & filters.ALL, anti_flood_message_handler), group=0)
 
     log.warning("=== ALL COMMON HANDLERS REGISTERED SUCCESSFULLY ===")
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 import structlog
 from telegram.ext import Application, CallbackQueryHandler, MessageHandler, filters
 from bot.handlers.ads_handler import (
+    ads_cancel_callback,
     ads_create_config_message,
     ads_create_start_callback,
     ads_delete_callback,
@@ -28,10 +29,11 @@ class AdsRouter(BaseRouter):
         
         # 回调处理器
         app.add_handler(CallbackQueryHandler(ads_create_start_callback, pattern=r"^ads:create"))
+        app.add_handler(CallbackQueryHandler(ads_cancel_callback, pattern=r"^ads:cancel:"))
         app.add_handler(CallbackQueryHandler(ads_toggle_callback, pattern=r"^ads:toggle_"))
         app.add_handler(CallbackQueryHandler(ads_delete_callback, pattern=r"^ads:delete_"))
         app.add_handler(CallbackQueryHandler(ads_send_callback, pattern=r"^ads:send_"))
-        app.add_handler(CallbackQueryHandler(ads_menu_callback, pattern=r"^ads:menu$"))
+        app.add_handler(CallbackQueryHandler(ads_menu_callback, pattern=r"^ads:menu"))
         app.add_handler(CallbackQueryHandler(ads_list_callback, pattern=r"^ads:list"))
         app.add_handler(CallbackQueryHandler(ads_stats_callback, pattern=r"^ads:stats"))
         app.add_handler(CallbackQueryHandler(ads_detail_callback, pattern=r"^ads:detail:\d+$"))

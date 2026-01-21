@@ -142,28 +142,49 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """取消当前流程，返回首页"""
+    """取消当前流程，返回相应界面
+
+    支持私聊和群聊两种场景：
+    - 私聊：清除目标群组的配置状态，返回管理菜单
+    - 群聊：清除当前群组的状态，发送引导消息
+    """
     if update.effective_chat is None or update.effective_user is None or update.effective_message is None:
         return
 
     chat = update.effective_chat
     user = update.effective_user
-
-    if chat.type == "private":
-        await update.effective_message.reply_text("请在群里使用该指令。")
-        return
-
     db: Database = context.application.bot_data["db"]
-    async with db.session_factory() as session:
-        await ensure_chat(session, chat_id=chat.id, chat_type=chat.type, title=chat.title)
-        settings = await get_chat_settings(session, chat.id)
 
-        # 清除状态
-        await clear_user_state(session, chat_id=chat.id, user_id=user.id)
+    # 获取当前选中的群组
+    target_chat_id = await get_user_current_chat(db, user.id)
+
+    async with db.session_factory() as session:
+        if chat.type == "private":
+            # 私聊：清除目标群组的状态
+            if target_chat_id:
+                await clear_user_state(session, chat_id=target_chat_id, user_id=user.id)
+        else:
+            # 群聊：清除当前群组的状态
+            await ensure_chat(session, chat_id=chat.id, chat_type=chat.type, title=chat.title)
+            await clear_user_state(session, chat_id=chat.id, user_id=user.id)
         await session.commit()
 
-    # 发送引导消息
-    await _send_guide_message(update, context, chat, user)
+    # 返回相应界面
+    if chat.type == "private":
+        if target_chat_id:
+            # 返回该群组的管理菜单
+            from bot.handlers.admin_handler import _show_private_admin_menu
+            await _show_private_admin_menu(update, context, target_chat_id)
+        else:
+            # 没有选中群组，返回群组列表
+            chats = await get_user_managed_chats(db, user.id, context.bot)
+            await update.effective_message.reply_text(
+                "已取消当前配置",
+                reply_markup=chat_group_list_keyboard(chats, target_chat_id),
+            )
+    else:
+        # 群聊发送引导消息
+        await _send_guide_message(update, context, chat, user)
 
 
 async def private_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
