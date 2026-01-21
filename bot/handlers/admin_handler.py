@@ -580,7 +580,8 @@ class AdminHandler(BaseHandler):
 
         chat_title = await self._get_chat_title(db, chat_id)
         text = f"🧹 [{chat_title}] 自动删除配置\n\n"
-        text += f"自动清理群组中的系统消息"
+        text += f"帮助您自动清理群组中的系统消息\n\n"
+        text += f"💡 点击下方按钮进行配置"
 
         keyboard = auto_delete_config_keyboard(settings, chat_id)
 

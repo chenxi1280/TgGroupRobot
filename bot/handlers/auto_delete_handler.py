@@ -55,8 +55,6 @@ async def auto_delete_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         elif message.users_shared or message.chat_shared:
             # 共享用户/聊天
             pass
-        elif message.delete_this_message:
-            pass
         elif message.is_automatic_forward:
             # 自动转发
             pass
@@ -69,8 +67,8 @@ async def auto_delete_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         elif message.proximity_alert_triggered:
             # 附近提醒
             pass
-        elif message.voice_chat_scheduled or message.voice_chat_ended or message.voice_chat_participants_invited:
-            # 语音聊天
+        elif message.video_chat_scheduled or message.video_chat_ended or message.video_chat_participants_invited:
+            # 视频聊天
             pass
 
         # 检查匿名管理员消息（没有 author 签名）
