@@ -8,6 +8,7 @@ import structlog
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from bot.db.session import Database
 from bot.handlers.base.message_helper import MessageHelper
 from bot.services.integration.chat_group_service import get_user_current_chat
 
@@ -101,3 +102,19 @@ class ChatResolver:
         """
         chat = update.effective_chat
         return chat is not None and chat.type in ("group", "supergroup")
+
+    @staticmethod
+    async def get_current_chat(db: Database, user_id: int) -> int | None:
+        """获取用户当前选中的群组 ID
+
+        这是 get_user_current_chat 的统一入口封装。
+
+        Args:
+            db: 数据库实例
+            user_id: 用户 ID
+
+        Returns:
+            int | None: 当前选中的群组 ID，未选中时返回 None
+        """
+        from bot.services.integration.chat_group_service import get_user_current_chat
+        return await get_user_current_chat(db, user_id)

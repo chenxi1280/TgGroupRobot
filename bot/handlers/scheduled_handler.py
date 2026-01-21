@@ -7,6 +7,7 @@ from telegram.ext import ContextTypes
 
 from bot.db.session import Database
 from bot.handlers.base.base_handler import BaseHandler
+from bot.handlers.base.chat_resolver import ChatResolver
 from bot.models.enums import ConversationStateType, ScheduleType
 from bot.models.core import ScheduledMessage
 from bot.services.core.chat_service import ensure_chat, get_chat_settings
@@ -245,11 +246,10 @@ async def scheduled_create_start(update: Update, context: ContextTypes.DEFAULT_T
 
         # 如果 callback_data 中没有 chat_id，从数据库获取
         if target_chat_id == 0:
-            from bot.services.integration.chat_group_service import get_user_current_chat
             from bot.models.core import TgChat
             from sqlalchemy import select
             db: Database = context.application.bot_data["db"]
-            target_chat_id = await get_user_current_chat(db, user.id)
+            target_chat_id = await ChatResolver.get_current_chat(db, user.id)
             if target_chat_id is None:
                 await q.edit_message_text("请先选择一个群组")
                 return
@@ -442,8 +442,7 @@ async def scheduled_message_handler(update: Update, context: ContextTypes.DEFAUL
         state_data_dict = None
         if chat.type == "private":
             # 私聊模式：从目标群组查询状态
-            from bot.services.integration.chat_group_service import get_user_current_chat
-            target_chat_id = await get_user_current_chat(db, user_id=user.id)
+            target_chat_id = await ChatResolver.get_current_chat(db, user_id=user.id)
 
             if target_chat_id is None:
                 await session.commit()

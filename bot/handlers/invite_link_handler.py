@@ -7,6 +7,7 @@ from telegram.ext import ContextTypes, ConversationHandler
 
 from bot.db.session import Database
 from bot.handlers.base.base_handler import BaseHandler
+from bot.handlers.base.chat_resolver import ChatResolver
 from bot.keyboards.integration.invite_link import (
     invite_link_create_keyboard,
     invite_link_detail_keyboard,
@@ -134,9 +135,9 @@ async def invite_link_menu_callback(update: Update, context: ContextTypes.DEFAUL
 
     # 私聊中的邀请链接管理 - 返回到管理面板
     if chat.type == "private":
-        from bot.services.integration.chat_group_service import get_user_current_chat, get_user_managed_chats
+        from bot.services.integration.chat_group_service import get_user_managed_chats
         db: Database = context.application.bot_data["db"]
-        target_chat_id = await get_user_current_chat(db, user.id)
+        target_chat_id = await ChatResolver.get_current_chat(db, user.id)
         if target_chat_id is None:
             await _invite_link_handler.message_helper.safe_edit(update, "请先选择一个群组")
             return
@@ -275,9 +276,8 @@ async def invite_link_create_start_callback(update: Update, context: ContextType
 
         # 如果 callback_data 中没有 chat_id，从数据库获取
         if target_chat_id == 0:
-            from bot.services.integration.chat_group_service import get_user_current_chat
             db: Database = context.application.bot_data["db"]
-            target_chat_id = await get_user_current_chat(db, user.id)
+            target_chat_id = await ChatResolver.get_current_chat(db, user.id)
             if target_chat_id is None:
                 await q.edit_message_text("请先选择一个群组")
                 return

@@ -5,8 +5,9 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from bot.db.session import Database
+from bot.handlers.base.chat_resolver import ChatResolver
 from bot.keyboards.common.chat_group import chat_group_list_keyboard
-from bot.services.integration.chat_group_service import get_user_current_chat, get_user_managed_chats, set_user_current_chat
+from bot.services.integration.chat_group_service import get_user_managed_chats, set_user_current_chat
 from bot.utils.callback_parser import CallbackParser
 
 log = structlog.get_logger(__name__)
@@ -32,7 +33,7 @@ async def chat_group_list_callback(update: Update, context: ContextTypes.DEFAULT
 
     db: Database = context.application.bot_data["db"]
     chats = await get_user_managed_chats(db, user.id, context.bot)
-    current_chat_id = await get_user_current_chat(db, user.id)
+    current_chat_id = await ChatResolver.get_current_chat(db, user.id)
 
     if not chats:
         await q.edit_message_text(
@@ -100,7 +101,7 @@ async def chat_group_refresh_callback(update: Update, context: ContextTypes.DEFA
 
     db: Database = context.application.bot_data["db"]
     chats = await get_user_managed_chats(db, user.id, context.bot)
-    current_chat_id = await get_user_current_chat(db, user.id)
+    current_chat_id = await ChatResolver.get_current_chat(db, user.id)
 
     if not chats:
         await q.edit_message_text(

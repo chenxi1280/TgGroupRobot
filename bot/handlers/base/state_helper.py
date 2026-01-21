@@ -130,3 +130,24 @@ class StateHelper:
 
         await self.session.flush()
         return state
+
+    @staticmethod
+    async def get_state_by_chat(
+        session: AsyncSession,
+        chat,
+        user_id: int,
+    ) -> ConversationState | None:
+        """根据聊天类型获取用户状态
+
+        私聊使用 user.id 作为 chat_id，群聊使用 chat.id。
+
+        Args:
+            session: 数据库会话
+            chat: 聊天对象（有 type 属性）
+            user_id: 用户 ID
+
+        Returns:
+            ConversationState | None: 用户状态对象
+        """
+        state_chat_id = user_id if chat.type == "private" else chat.id
+        return await service_get_state(session, state_chat_id, user_id)

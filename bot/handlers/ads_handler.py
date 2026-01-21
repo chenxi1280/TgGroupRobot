@@ -7,6 +7,8 @@ from telegram.ext import ContextTypes
 
 from bot.db.session import Database
 from bot.handlers.base.base_handler import BaseHandler
+from bot.handlers.base.chat_resolver import ChatResolver
+from bot.handlers.base.state_helper import StateHelper
 from bot.keyboards.content.ads import (
     ads_create_keyboard,
     ads_detail_keyboard,
@@ -23,7 +25,7 @@ from bot.services.automation.ad_service import (
     should_send_ad,
     toggle_ad,
 )
-from bot.services.integration.chat_group_service import get_user_current_chat, get_user_managed_chats
+from bot.services.integration.chat_group_service import get_user_managed_chats
 from bot.services.state.state_service import clear_user_state, set_user_state, get_user_state
 from bot.services.core.chat_service import ensure_chat, get_chat_settings
 from bot.services.core.permission_service import is_user_admin
@@ -180,7 +182,7 @@ async def ads_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     target_chat_id = None
     if chat.type == "private":
         db: Database = context.application.bot_data["db"]
-        target_chat_id = await get_user_current_chat(db, user.id)
+        target_chat_id = await ChatResolver.get_current_chat(db, user.id)
         if target_chat_id is None:
             await _ads_handler.message_helper.safe_edit(update, "请先选择一个群组")
             return
@@ -316,7 +318,7 @@ async def ads_create_start_callback(update: Update, context: ContextTypes.DEFAUL
         # 如果 callback_data 中没有 chat_id，从数据库获取
         if target_chat_id is None:
             db: Database = context.application.bot_data["db"]
-            target_chat_id = await get_user_current_chat(db, user.id)
+            target_chat_id = await ChatResolver.get_current_chat(db, user.id)
             if target_chat_id is None:
                 await q.edit_message_text("请先选择一个群组")
                 return
@@ -393,8 +395,8 @@ async def ads_create_config_message(update: Update, context: ContextTypes.DEFAUL
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
             # 获取用户状态 - 私聊中使用 user.id 查询状态，与其他处理器保持一致
+            state = await StateHelper.get_state_by_chat(session, chat, user.id)
             state_chat_id = user.id if chat.type == "private" else chat.id
-            state = await get_user_state(session, state_chat_id, user.id)
             log.info("ads_state_check", chat_id=state_chat_id, user_id=user.id, state_type=state.state_type if state else None)
 
             # 静默忽略非广告创建状态，避免干扰其他功能

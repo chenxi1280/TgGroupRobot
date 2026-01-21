@@ -5,6 +5,7 @@ from telegram import ChatPermissions, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
 from bot.db.session import Database
+from bot.handlers.base.chat_resolver import ChatResolver
 from bot.i18n.strings import t
 from bot.keyboards.common.verification import admin_verify_keyboard, verification_keyboard
 from bot.services.core.chat_service import ensure_chat, get_chat_settings
@@ -400,8 +401,7 @@ async def verification_config_handler(update: Update, context: ContextTypes.DEFA
                 log.info("verification_config_private_chat_mode")
 
                 # 私聊模式：尝试多种方式查找状态
-                from bot.services.integration.chat_group_service import get_user_current_chat
-                target_chat_id = await get_user_current_chat(db, user.id)
+                target_chat_id = await ChatResolver.get_current_chat(db, user.id)
 
                 log.info(
                     "verification_config_state_query",

@@ -8,6 +8,7 @@ from telegram.ext import ContextTypes, ConversationHandler
 
 from bot.db.session import Database
 from bot.handlers.base.base_handler import BaseHandler
+from bot.handlers.base.chat_resolver import ChatResolver
 from bot.keyboards.activity.solitaire import (
     solitaire_detail_keyboard,
     solitaire_list_keyboard,
@@ -166,9 +167,9 @@ async def solitaire_menu_callback(update: Update, context: ContextTypes.DEFAULT_
     # 私聊中的接龙管理 - 从回调中获取目标群组ID
     target_chat_id = None
     if chat.type == "private":
-        from bot.services.integration.chat_group_service import get_user_current_chat, get_user_managed_chats
+        from bot.services.integration.chat_group_service import get_user_managed_chats
         db: Database = context.application.bot_data["db"]
-        target_chat_id = await get_user_current_chat(db, user.id)
+        target_chat_id = await ChatResolver.get_current_chat(db, user.id)
         if target_chat_id is None:
             await _solitaire_handler.message_helper.safe_edit(update, "请先选择一个群组")
             return
@@ -644,9 +645,8 @@ async def solitaire_cancel_callback(update: Update, context: ContextTypes.DEFAUL
     # 获取目标群组ID
     target_chat_id = None
     if chat.type == "private":
-        from bot.services.integration.chat_group_service import get_user_current_chat
         db: Database = context.application.bot_data["db"]
-        target_chat_id = await get_user_current_chat(db, user.id)
+        target_chat_id = await ChatResolver.get_current_chat(db, user.id)
     else:
         target_chat_id = chat.id
 

@@ -10,6 +10,7 @@ log = structlog.get_logger(__name__)
 
 from bot.db.session import Database
 from bot.handlers.base.base_handler import BaseHandler
+from bot.handlers.base.chat_resolver import ChatResolver
 from bot.models.enums import AutoReplyMatchType, ConversationStateType
 from bot.services.moderation.auto_reply_service import (
     create_auto_reply_rule,
@@ -306,11 +307,10 @@ async def auto_reply_create_start(update: Update, context: ContextTypes.DEFAULT_
 
         # 如果 callback_data 中没有 chat_id，从数据库获取
         if target_chat_id is None:
-            from bot.services.integration.chat_group_service import get_user_current_chat
             from bot.models.core import TgChat
             from sqlalchemy import select
             db: Database = context.application.bot_data["db"]
-            target_chat_id = await get_user_current_chat(db, user.id)
+            target_chat_id = await ChatResolver.get_current_chat(db, user.id)
             if target_chat_id is None:
                 await q.edit_message_text("请先选择一个群组")
                 return

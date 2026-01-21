@@ -7,6 +7,7 @@ from telegram.ext import ContextTypes
 
 from bot.config import get_settings
 from bot.db.session import Database
+from bot.handlers.base.state_helper import StateHelper
 from bot.i18n.strings import t
 from bot.keyboards.common.chat_group import chat_group_list_keyboard
 from bot.keyboards.common.start import create_start_guide_keyboard
@@ -129,7 +130,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         settings = await get_chat_settings(session, chat.id)
 
         # 检查用户是否有对话状态
-        state = await get_user_state(session, chat_id=chat.id, user_id=user.id)
+        state = await StateHelper.get_state_by_chat(session, chat, user.id)
 
         # 如果有状态，清除状态
         if state is not None:
@@ -179,7 +180,7 @@ async def private_message_handler(update: Update, context: ContextTypes.DEFAULT_
     # 先检查用户是否有对话状态（如抽奖创建流程）
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
-        state = await get_user_state(session, chat_id=chat.id, user_id=user.id)
+        state = await StateHelper.get_state_by_chat(session, chat, user.id)
         await session.commit()
 
     # 如果有对话状态，不做处理（让其他专门的消息处理器处理）

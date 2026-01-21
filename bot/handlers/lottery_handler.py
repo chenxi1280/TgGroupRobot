@@ -10,6 +10,7 @@ from telegram.ext import ContextTypes
 
 from bot.db.session import Database
 from bot.handlers.base.base_handler import BaseHandler
+from bot.handlers.base.state_helper import StateHelper
 from bot.models.enums import ConversationStateType, LotteryDrawMode, PointsTxnType
 from bot.models.core import ChatMember, TgUser
 from bot.services.core.chat_service import ensure_chat, get_chat_settings
@@ -475,8 +476,7 @@ async def lottery_message_handler(update: Update, context: ContextTypes.DEFAULT_
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
             # 获取用户状态 - 私聊中使用 user.id 查询状态，与其他处理器保持一致
-            state_chat_id = user.id if chat.type == "private" else chat.id
-            state = await get_user_state(session, chat_id=state_chat_id, user_id=user.id)
+            state = await StateHelper.get_state_by_chat(session, chat, user.id)
 
             # 关键修复：不要 return，让代码继续执行到块结束
             if state is None or state.state_type != ConversationStateType.lottery_create.value:

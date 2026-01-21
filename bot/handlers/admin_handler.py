@@ -9,6 +9,7 @@ from telegram.error import BadRequest, TelegramError
 from bot.config import get_settings
 from bot.db.session import Database
 from bot.handlers.base.base_handler import BaseHandler
+from bot.handlers.base.chat_resolver import ChatResolver
 from bot.i18n.strings import t
 from bot.keyboards.admin.admin_main import (
     admin_main_menu,
@@ -17,7 +18,7 @@ from bot.keyboards.admin.admin_main import (
     format_admin_main_menu_text,
     toggle_menu,
 )
-from bot.services.integration.chat_group_service import get_user_current_chat, get_user_managed_chats, set_user_current_chat
+from bot.services.integration.chat_group_service import get_user_managed_chats, set_user_current_chat
 from bot.services.core.chat_service import ensure_chat, get_chat_settings, get_settings_toggle_rows
 from bot.services.core.permission_service import is_user_admin
 from bot.services.core.user_service import ensure_user
@@ -102,7 +103,7 @@ class AdminHandler(BaseHandler):
         """处理切换群组操作"""
         db: Database = context.application.bot_data["db"]
         chats = await get_user_managed_chats(db, update.effective_user.id, context.bot)
-        current_chat_id = await get_user_current_chat(db, update.effective_user.id)
+        current_chat_id = await ChatResolver.get_current_chat(db, update.effective_user.id)
 
         await self._show_group_selection(update, chats, current_chat_id)
 
@@ -124,7 +125,7 @@ class AdminHandler(BaseHandler):
     ) -> None:
         """处理返回主菜单操作"""
         db: Database = context.application.bot_data["db"]
-        current_chat_id = await get_user_current_chat(db, update.effective_user.id)
+        current_chat_id = await ChatResolver.get_current_chat(db, update.effective_user.id)
         chats = await get_user_managed_chats(db, update.effective_user.id, context.bot)
         if current_chat_id is None and chats:
             current_chat_id = chats[0][0]
@@ -662,7 +663,7 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         chats = await get_user_managed_chats(db, user.id, context.bot)
         log.info("admin_command_chats_fetched", user_id=user.id, chat_count=len(chats))
 
-        current_chat_id = await get_user_current_chat(db, user.id)
+        current_chat_id = await ChatResolver.get_current_chat(db, user.id)
         log.info("admin_command_current_chat", user_id=user.id, current_chat_id=current_chat_id)
 
         if not chats:

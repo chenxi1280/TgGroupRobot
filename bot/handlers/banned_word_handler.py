@@ -6,6 +6,7 @@ from telegram.ext import ContextTypes
 
 from bot.db.session import Database
 from bot.handlers.base.base_handler import BaseHandler
+from bot.handlers.base.chat_resolver import ChatResolver
 from bot.models.enums import BannedWordMatchType, ConversationStateType
 from bot.services.moderation.banned_word_service import (
     create_banned_word,
@@ -237,11 +238,10 @@ async def banned_word_add_start(update: Update, context: ContextTypes.DEFAULT_TY
 
             # 如果 callback_data 中没有 chat_id，从数据库获取
             if target_chat_id == 0:
-                from bot.services.integration.chat_group_service import get_user_current_chat
                 from bot.models.core import TgChat
                 from sqlalchemy import select
                 db: Database = context.application.bot_data["db"]
-                target_chat_id = await get_user_current_chat(db, user.id)
+                target_chat_id = await ChatResolver.get_current_chat(db, user.id)
                 if target_chat_id is None:
                     await q.edit_message_text("请先选择一个群组")
                     return
@@ -521,9 +521,8 @@ async def banned_word_delete_callback(update: Update, context: ContextTypes.DEFA
         target_chat_id = cb.get_int(1)
         # 如果 callback_data 中没有 chat_id，从数据库获取
         if target_chat_id == 0:
-            from bot.services.integration.chat_group_service import get_user_current_chat
             db: Database = context.application.bot_data["db"]
-            target_chat_id = await get_user_current_chat(db, user.id)
+            target_chat_id = await ChatResolver.get_current_chat(db, user.id)
             if target_chat_id is None:
                 await q.answer("请先选择一个群组", show_alert=True)
                 return
@@ -600,8 +599,7 @@ async def banned_word_config_handler(update: Update, context: ContextTypes.DEFAU
         # 获取用户状态
         if chat.type == "private":
             # 私聊模式：优先从目标群组查询（新版本逻辑）
-            from bot.services.integration.chat_group_service import get_user_current_chat
-            target_chat_id = await get_user_current_chat(db, user_id=user.id)
+            target_chat_id = await ChatResolver.get_current_chat(db, user_id=user.id)
 
             state = None
             state_source = None
