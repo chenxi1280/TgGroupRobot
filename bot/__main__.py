@@ -6,6 +6,7 @@ import httpx
 import os
 import structlog
 import sys
+import tempfile
 
 from telegram.ext import Application, CallbackQueryHandler, MessageHandler, filters
 
@@ -240,8 +241,8 @@ async def _on_error(update, context) -> None:
     log.exception("bot_error", err=context.error)
 
 
-# PID 文件路径
-_PID_FILE = "/tmp/tggrouprobot.pid"
+# PID 文件路径（跨平台兼容：使用系统临时目录）
+_PID_FILE = os.path.join(tempfile.gettempdir(), "tggrouprobot.pid")
 
 
 def _check_single_instance() -> None:
@@ -275,6 +276,11 @@ def _check_single_instance() -> None:
 
 def main() -> None:
     """主函数：启动 bot"""
+    # Windows 系统需要使用 WindowsSelectorEventLoopPolicy 以支持 psycopg 异步操作
+    # psycopg 的异步模式不支持 Windows 的默认 ProactorEventLoop
+    if sys.platform == 'win32':
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
     _check_single_instance()
 
     app = build_application()
