@@ -29,6 +29,7 @@ from bot.routers import (
     LotteryRouter,
     PointsRouter,
     ScheduledRouter,
+    ScheduledMessageRouter,
     SolitaireRouter,
     VerificationRouter,
 )
@@ -90,6 +91,7 @@ def _register_routers(app: Application) -> None:
         InviteRouter(),
         AdsRouter(),
         ScheduledRouter(),
+        ScheduledMessageRouter(),
         AutoReplyRouter(),
         BannedWordRouter(),
         PointsRouter(),
@@ -294,6 +296,7 @@ def main() -> None:
             CleanupTask,
             LotteryTask,
             MessageTask,
+            ScheduledMessageTaskRunner,
             SolitaireTask,
             VerificationTimeoutTask,
         )
@@ -306,6 +309,7 @@ def main() -> None:
             MessageTask(),
             CleanupTask(),
             VerificationTimeoutTask(),  # 验证超时检查任务
+            ScheduledMessageTaskRunner(),  # 定时消息任务执行器
         ])
 
         await scheduler.start()
@@ -319,7 +323,13 @@ def main() -> None:
             await scheduler.stop()
 
     try:
-        asyncio.run(run_bot_with_scheduler())
+        # 创建新的事件循环并运行（兼容 Python 3.13）
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(run_bot_with_scheduler())
+        finally:
+            loop.close()
     except KeyboardInterrupt:
         log.info("bot_shutting_down")
 

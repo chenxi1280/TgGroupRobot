@@ -39,6 +39,11 @@ class PrivateConfigHandler:
             "ads_create_config": self._handle_ads_config,
             "solitaire_create": self._handle_solitaire_config,
             "invite_link_create": self._handle_invite_link_config,
+            # 定时消息编辑状态类型
+            "sm_edit_text": self._handle_scheduled_message_text,
+            "sm_edit_buttons": self._handle_scheduled_message_buttons,
+            "sm_edit_start_at": self._handle_scheduled_message_start_at,
+            "sm_edit_end_at": self._handle_scheduled_message_end_at,
         }
 
     async def handle(
@@ -197,3 +202,117 @@ class PrivateConfigHandler:
         from bot.handlers.invite_link_handler import invite_link_create_name_message
 
         await invite_link_create_name_message(update, context)
+
+    # ==================== 定时消息编辑处理器 ====================
+
+    async def _handle_scheduled_message_text(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        session: AsyncSession,
+        state,
+        message_text: str,
+    ) -> None:
+        """处理定时消息文本编辑"""
+        from bot.handlers.scheduled_message_handler import _scheduled_message_handler
+
+        # 添加日志：方法被调用
+        log.info(
+            "=== _handle_scheduled_message_text CALLED ===",
+            user_id=update.effective_user.id,
+            message_text=message_text[:50],
+        )
+
+        target_chat_id = state.state_data.get("target_chat_id", state.chat_id)
+
+        # 添加日志：即将调用 handle_fsm_input
+        log.info(
+            "calling_handle_fsm_input",
+            target_chat_id=target_chat_id,
+            user_id=update.effective_user.id,
+        )
+
+        await _scheduled_message_handler.handle_fsm_input(
+            update, context, target_chat_id, update.effective_user.id, message_text
+        )
+
+        # 添加日志：handle_fsm_input 返回
+        log.info("handle_fsm_input_returned")
+
+    async def _handle_scheduled_message_buttons(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        session: AsyncSession,
+        state,
+        message_text: str,
+    ) -> None:
+        """处理定时消息按钮编辑"""
+        from bot.handlers.scheduled_message_handler import _scheduled_message_handler
+
+        # 添加日志：方法被调用
+        log.info(
+            "=== _handle_scheduled_message_buttons CALLED ===",
+            user_id=update.effective_user.id,
+            message_text=message_text[:50],
+        )
+
+        target_chat_id = state.state_data.get("target_chat_id", state.chat_id)
+        await _scheduled_message_handler.handle_fsm_input(
+            update, context, target_chat_id, update.effective_user.id, message_text
+        )
+
+        # 添加日志：handle_fsm_input 返回
+        log.info("handle_fsm_input_returned")
+
+    async def _handle_scheduled_message_start_at(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        session: AsyncSession,
+        state,
+        message_text: str,
+    ) -> None:
+        """处理定时消息开始时间编辑"""
+        from bot.handlers.scheduled_message_handler import _scheduled_message_handler
+
+        # 添加日志：方法被调用
+        log.info(
+            "=== _handle_scheduled_message_start_at CALLED ===",
+            user_id=update.effective_user.id,
+            message_text=message_text[:50],
+        )
+
+        target_chat_id = state.state_data.get("target_chat_id", state.chat_id)
+        await _scheduled_message_handler.handle_fsm_input(
+            update, context, target_chat_id, update.effective_user.id, message_text
+        )
+
+        # 添加日志：handle_fsm_input 返回
+        log.info("handle_fsm_input_returned")
+
+    async def _handle_scheduled_message_end_at(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        session: AsyncSession,
+        state,
+        message_text: str,
+    ) -> None:
+        """处理定时消息终止时间编辑"""
+        from bot.handlers.scheduled_message_handler import _scheduled_message_handler
+
+        # 添加日志：方法被调用
+        log.info(
+            "=== _handle_scheduled_message_end_at CALLED ===",
+            user_id=update.effective_user.id,
+            message_text=message_text[:50],
+        )
+
+        target_chat_id = state.state_data.get("target_chat_id", state.chat_id)
+        await _scheduled_message_handler.handle_fsm_input(
+            update, context, target_chat_id, update.effective_user.id, message_text
+        )
+
+        # 添加日志：handle_fsm_input 返回
+        log.info("handle_fsm_input_returned")

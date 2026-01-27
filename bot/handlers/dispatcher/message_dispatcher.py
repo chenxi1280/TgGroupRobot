@@ -103,6 +103,10 @@ class MessageDispatcher:
                 # 用目标群组ID查询配置状态
                 state = await get_user_state(session, chat_id=target_chat_id, user_id=user.id)
 
+            # 如果没找到，再尝试用私聊ID查询（支持定时消息等使用私聊ID保存状态的功能）
+            if state is None:
+                state = await get_user_state(session, chat_id=chat.id, user_id=user.id)
+
             if state is not None:
                 # 有配置状态，走配置流程
                 log.info(

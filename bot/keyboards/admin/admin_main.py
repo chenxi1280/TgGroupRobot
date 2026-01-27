@@ -135,6 +135,9 @@ def admin_main_menu(chat_id: int | None = None) -> InlineKeyboardMarkup:
                 InlineKeyboardButton("⏰定时消息", callback_data=f"adm:menu:scheduled:{chat_id}"),
             ],
             [
+                InlineKeyboardButton("📅新定时消息", callback_data=f"sm:list:{chat_id}:0"),
+            ],
+            [
                 InlineKeyboardButton("🔇违禁词", callback_data=f"adm:menu:keywords:{chat_id}"),
                 InlineKeyboardButton("💰积分", callback_data=f"adm:menu:points:{chat_id}"),
             ],
