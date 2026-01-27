@@ -42,13 +42,17 @@ class MessageHelper:
             return False
 
         try:
+            # 先 answer callback query，避免"一直加载"
             if show_alert:
                 await update.callback_query.answer(text, show_alert=True)
+                return True
             else:
+                await update.callback_query.answer()
+                # 然后编辑消息
                 await update.callback_query.edit_message_text(
                     text, reply_markup=reply_markup, parse_mode=parse_mode
                 )
-            return True
+                return True
         except TelegramError as e:
             log.warning("edit_message_failed", error=str(e))
             return False

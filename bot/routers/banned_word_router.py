@@ -32,11 +32,12 @@ class BannedWordRouter(BaseRouter):
         app.add_handler(CallbackQueryHandler(banned_word_menu_callback, pattern=r"^banned_word:menu"))
         app.add_handler(CallbackQueryHandler(banned_word_list_callback, pattern=r"^banned_word:list"))
         
-        # 消息处理器（配置）
-        app.add_handler(
-            MessageHandler(filters.TEXT & ~filters.COMMAND, banned_word_config_handler),
-            group=0
-        )
+        # 注意：配置消息已被 MessageDispatcher 的 PrivateConfigHandler 统一处理
+        # 此 MessageHandler 已移除，避免重复处理
+        # app.add_handler(
+        #     MessageHandler(filters.TEXT & ~filters.COMMAND, banned_word_config_handler),
+        #     group=0
+        # )
 
         # 注意：违禁词检测已移至 group_message_handler.py 中的统一处理入口
         

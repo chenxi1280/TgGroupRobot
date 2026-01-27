@@ -38,10 +38,11 @@ class AdsRouter(BaseRouter):
         app.add_handler(CallbackQueryHandler(ads_stats_callback, pattern=r"^ads:stats"))
         app.add_handler(CallbackQueryHandler(ads_detail_callback, pattern=r"^ads:detail:\d+$"))
         
-        # 消息处理器
-        app.add_handler(
-            MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND, ads_create_config_message),
-            group=1
-        )
+        # 注意：配置消息已被 MessageDispatcher 的 PrivateConfigHandler 统一处理
+        # 此 MessageHandler 已移除，避免重复处理
+        # app.add_handler(
+        #     MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND, ads_create_config_message),
+        #     group=1
+        # )
         
         log.info(f"{self.name} router registered successfully")

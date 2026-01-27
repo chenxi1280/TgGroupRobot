@@ -6,6 +6,7 @@ import httpx
 import os
 import structlog
 import sys
+import tempfile
 
 from telegram.ext import Application, CallbackQueryHandler, MessageHandler, filters
 
@@ -28,6 +29,7 @@ from bot.routers import (
     LotteryRouter,
     PointsRouter,
     ScheduledRouter,
+    ScheduledMessageRouter,
     SolitaireRouter,
     VerificationRouter,
 )
@@ -89,6 +91,7 @@ def _register_routers(app: Application) -> None:
         InviteRouter(),
         AdsRouter(),
         ScheduledRouter(),
+        ScheduledMessageRouter(),
         AutoReplyRouter(),
         BannedWordRouter(),
         PointsRouter(),
@@ -240,8 +243,8 @@ async def _on_error(update, context) -> None:
     log.exception("bot_error", err=context.error)
 
 
-# PID 文件路径
-_PID_FILE = "/tmp/tggrouprobot.pid"
+# PID 文件路径（跨平台兼容：使用系统临时目录）
+_PID_FILE = os.path.join(tempfile.gettempdir(), "tggrouprobot.pid")
 
 
 def _check_single_instance() -> None:
@@ -275,6 +278,11 @@ def _check_single_instance() -> None:
 
 def main() -> None:
     """主函数：启动 bot"""
+    # Windows 系统需要使用 WindowsSelectorEventLoopPolicy 以支持 psycopg 异步操作
+    # psycopg 的异步模式不支持 Windows 的默认 ProactorEventLoop
+    if sys.platform == 'win32':
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
     _check_single_instance()
 
     app = build_application()
@@ -288,6 +296,7 @@ def main() -> None:
             CleanupTask,
             LotteryTask,
             MessageTask,
+            ScheduledMessageTaskRunner,
             SolitaireTask,
             VerificationTimeoutTask,
         )
@@ -300,6 +309,7 @@ def main() -> None:
             MessageTask(),
             CleanupTask(),
             VerificationTimeoutTask(),  # 验证超时检查任务
+            ScheduledMessageTaskRunner(),  # 定时消息任务执行器
         ])
 
         await scheduler.start()
@@ -313,7 +323,13 @@ def main() -> None:
             await scheduler.stop()
 
     try:
-        asyncio.run(run_bot_with_scheduler())
+        # 创建新的事件循环并运行（兼容 Python 3.13）
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(run_bot_with_scheduler())
+        finally:
+            loop.close()
     except KeyboardInterrupt:
         log.info("bot_shutting_down")
 

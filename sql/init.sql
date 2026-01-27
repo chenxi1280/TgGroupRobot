@@ -941,6 +941,108 @@ CREATE INDEX IF NOT EXISTS ix_solitaire_entries_solitaire_id ON bot.solitaire_en
 CREATE INDEX IF NOT EXISTS ix_solitaire_entries_user_id ON bot.solitaire_entries(user_id);
 
 -- ============================================
+-- 23. 定时消息任务表 (scheduled_message_tasks)
+-- 存储定时消息任务的完整配置
+-- ============================================
+CREATE TABLE IF NOT EXISTS bot.scheduled_message_tasks (
+    task_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),              -- UUID 主键
+    chat_id BIGINT NOT NULL,                                         -- 群组 ID（外键关联 tg_chats.id）
+    created_by_user_id BIGINT,                                       -- 创建者用户 ID（外键关联 tg_users.id）
+    title VARCHAR(128) NOT NULL,                                     -- 任务标题
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,                           -- 是否启用
+
+    -- 重复配置
+    repeat_interval_min INTEGER NOT NULL DEFAULT 60,                 -- 重复间隔（分钟）：10/15/20/30/60/120/180/240/360/480/720/1440
+    day_start_hour INTEGER NOT NULL DEFAULT 0,                       -- 每日开始小时（0-23）
+    day_end_hour INTEGER NOT NULL DEFAULT 23,                        -- 每日结束小时（0-23）
+
+    -- 时间范围（Unix 时间戳）
+    start_at BIGINT,                                                 -- 开始时间（Unix 时间戳）
+    end_at BIGINT,                                                   -- 终止时间（Unix 时间戳）
+
+    -- 内容配置
+    text TEXT,                                                       -- 消息文本
+    parse_mode VARCHAR(16) NOT NULL DEFAULT 'HTML',                  -- 解析模式：HTML/Markdown/None
+    media_type VARCHAR(16) NOT NULL DEFAULT 'none',                  -- 媒体类型：photo/video/sticker/animation/document/none
+    media_file_id VARCHAR(256),                                      -- 媒体文件 ID（Telegram）
+    buttons JSONB NOT NULL DEFAULT '[]',                             -- 按钮配置（JSONB）：[[{text,url},...],...]
+
+    -- 发送选项
+    delete_previous BOOLEAN NOT NULL DEFAULT TRUE,                   -- 发送前删除上一条
+    pin_message BOOLEAN NOT NULL DEFAULT FALSE,                      -- 置顶消息
+
+    -- 执行状态
+    last_sent_message_id INTEGER,                                    -- 上次发送的消息 ID
+    next_run_at BIGINT,                                              -- 下次执行时间（Unix 时间戳）
+
+    -- 时间戳
+    created_at TIMESTAMPTZ NOT NULL,                                 -- 创建时间（带时区）
+    updated_at TIMESTAMPTZ NOT NULL,                                 -- 更新时间（带时区）
+
+    CONSTRAINT fk_smt_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE,                   -- 外键约束：删除群组时级联删除任务
+    CONSTRAINT fk_smt_created_by FOREIGN KEY (created_by_user_id)
+        REFERENCES bot.tg_users(id) ON DELETE SET NULL                  -- 外键约束：删除用户时将创建者设为 NULL
+);
+
+COMMENT ON TABLE bot.scheduled_message_tasks IS '定时消息任务表，支持灵活的定时消息发送配置';
+COMMENT ON COLUMN bot.scheduled_message_tasks.task_id IS 'UUID 主键，唯一标识任务';
+COMMENT ON COLUMN bot.scheduled_message_tasks.chat_id IS '群组 ID，外键关联 tg_chats.id';
+COMMENT ON COLUMN bot.scheduled_message_tasks.created_by_user_id IS '创建者用户 ID，外键关联 tg_users.id，删除用户时设为 NULL';
+COMMENT ON COLUMN bot.scheduled_message_tasks.title IS '任务标题，用于识别和管理';
+COMMENT ON COLUMN bot.scheduled_message_tasks.enabled IS '是否启用任务（true=启用，false=禁用）';
+COMMENT ON COLUMN bot.scheduled_message_tasks.repeat_interval_min IS '重复间隔（分钟），支持：10/15/20/30/60/120/180/240/360/480/720/1440';
+COMMENT ON COLUMN bot.scheduled_message_tasks.day_start_hour IS '每日开始小时（0-23），用于时段限制';
+COMMENT ON COLUMN bot.scheduled_message_tasks.day_end_hour IS '每日结束小时（0-23），用于时段限制';
+COMMENT ON COLUMN bot.scheduled_message_tasks.start_at IS '任务开始时间（Unix 时间戳），NULL 表示立即开始';
+COMMENT ON COLUMN bot.scheduled_message_tasks.end_at IS '任务终止时间（Unix 时间戳），NULL 表示无限制';
+COMMENT ON COLUMN bot.scheduled_message_tasks.text IS '消息文本内容';
+COMMENT ON COLUMN bot.scheduled_message_tasks.parse_mode IS '解析模式：HTML/Markdown/None';
+COMMENT ON COLUMN bot.scheduled_message_tasks.media_type IS '媒体类型：photo/video/sticker/animation/document/none';
+COMMENT ON COLUMN bot.scheduled_message_tasks.media_file_id IS 'Telegram 媒体文件 ID，用于发送媒体消息';
+COMMENT ON COLUMN bot.scheduled_message_tasks.buttons IS '按钮配置，JSONB 数组格式，如：[[{"text":"按钮1","url":"https://..."}],...]';
+COMMENT ON COLUMN bot.scheduled_message_tasks.delete_previous IS '发送前是否删除上一条消息（true=删除，false=保留）';
+COMMENT ON COLUMN bot.scheduled_message_tasks.pin_message IS '是否置顶消息（true=置顶，false=不置顶）';
+COMMENT ON COLUMN bot.scheduled_message_tasks.last_sent_message_id IS '上次发送的消息的 Telegram message_id';
+COMMENT ON COLUMN bot.scheduled_message_tasks.next_run_at IS '下次执行时间（Unix 时间戳）';
+COMMENT ON COLUMN bot.scheduled_message_tasks.created_at IS '任务创建时间';
+COMMENT ON COLUMN bot.scheduled_message_tasks.updated_at IS '任务最后更新时间';
+
+-- 创建索引以优化查询性能
+CREATE INDEX IF NOT EXISTS ix_smt_chat_id ON bot.scheduled_message_tasks(chat_id);
+CREATE INDEX IF NOT EXISTS ix_smt_enabled ON bot.scheduled_message_tasks(enabled);
+CREATE INDEX IF NOT EXISTS ix_smt_next_run_at ON bot.scheduled_message_tasks(next_run_at) WHERE enabled = TRUE;
+
+-- ============================================
+-- 24. 定时消息日志表 (scheduled_message_logs)
+-- 记录定时消息的发送历史（可选）
+-- ============================================
+CREATE TABLE IF NOT EXISTS bot.scheduled_message_logs (
+    id BIGSERIAL PRIMARY KEY,                                       -- 自增主键
+    task_id UUID NOT NULL,                                          -- 任务 ID（外键关联 scheduled_message_tasks.task_id）
+    chat_id BIGINT NOT NULL,                                        -- 群组 ID
+    message_id INTEGER,                                             -- 消息 ID（Telegram message_id）
+    sent_at TIMESTAMPTZ NOT NULL,                                   -- 发送时间（带时区）
+    success BOOLEAN NOT NULL,                                       -- 是否成功
+    error_message TEXT,                                             -- 错误消息
+    CONSTRAINT fk_sml_task_id FOREIGN KEY (task_id)
+        REFERENCES bot.scheduled_message_tasks(task_id) ON DELETE CASCADE  -- 外键约束：删除任务时级联删除日志
+);
+
+COMMENT ON TABLE bot.scheduled_message_logs IS '定时消息日志表，记录定时消息的发送历史';
+COMMENT ON COLUMN bot.scheduled_message_logs.id IS '自增主键';
+COMMENT ON COLUMN bot.scheduled_message_logs.task_id IS '任务 ID，外键关联 scheduled_message_tasks.task_id';
+COMMENT ON COLUMN bot.scheduled_message_logs.chat_id IS '群组 ID';
+COMMENT ON COLUMN bot.scheduled_message_logs.message_id IS '发送的消息的 Telegram message_id';
+COMMENT ON COLUMN bot.scheduled_message_logs.sent_at IS '消息发送时间';
+COMMENT ON COLUMN bot.scheduled_message_logs.success IS '是否发送成功（true=成功，false=失败）';
+COMMENT ON COLUMN bot.scheduled_message_logs.error_message IS '失败时的错误消息';
+
+-- 创建索引以优化查询性能
+CREATE INDEX IF NOT EXISTS ix_sml_task_id ON bot.scheduled_message_logs(task_id);
+CREATE INDEX IF NOT EXISTS ix_sml_sent_at ON bot.scheduled_message_logs(sent_at);
+
+-- ============================================
 -- 数据库初始化完成
 -- ============================================
 

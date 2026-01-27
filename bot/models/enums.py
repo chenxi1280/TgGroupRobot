@@ -47,6 +47,13 @@ class ConversationStateType(str, enum.Enum):
     auto_reply_create = "auto_reply_create"  # 创建自动回复流程
     banned_word_add = "banned_word_add"  # 添加违禁词流程
     verification_config = "verification_config"  # 验证配置流程
+    sm_edit_text = "sm_edit_text"  # 编辑定时消息文本
+    sm_edit_media = "sm_edit_media"  # 编辑定时消息媒体
+    sm_edit_buttons = "sm_edit_buttons"  # 编辑定时消息按钮
+    sm_edit_start_at = "sm_edit_start_at"  # 编辑开始时间
+    sm_edit_end_at = "sm_edit_end_at"  # 编辑终止时间
+    sm_edit_day_start = "sm_edit_day_start"  # 编辑时段开始
+    sm_edit_day_end = "sm_edit_day_end"  # 编辑时段结束
 
 
 class BannedWordMatchType(str, enum.Enum):

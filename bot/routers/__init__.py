@@ -4,6 +4,7 @@ from bot.routers.solitaire_router import SolitaireRouter
 from bot.routers.invite_router import InviteRouter
 from bot.routers.ads_router import AdsRouter
 from bot.routers.scheduled_router import ScheduledRouter
+from bot.routers.scheduled_message_router import ScheduledMessageRouter
 from bot.routers.auto_reply_router import AutoReplyRouter
 from bot.routers.banned_word_router import BannedWordRouter
 from bot.routers.points_router import PointsRouter
@@ -17,6 +18,7 @@ __all__ = [
     "InviteRouter",
     "AdsRouter",
     "ScheduledRouter",
+    "ScheduledMessageRouter",
     "AutoReplyRouter",
     "BannedWordRouter",
     "PointsRouter",

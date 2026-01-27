@@ -6,6 +6,7 @@ from bot.tasks.ads_task import AdsTask
 from bot.tasks.message_task import MessageTask
 from bot.tasks.cleanup_task import CleanupTask
 from bot.tasks.verification_timeout_task import VerificationTimeoutTask
+from bot.tasks.scheduled_message_task import ScheduledMessageTaskRunner
 
 __all__ = [
     "LotteryTask",
@@ -14,4 +15,5 @@ __all__ = [
     "MessageTask",
     "CleanupTask",
     "VerificationTimeoutTask",
+    "ScheduledMessageTaskRunner",
 ]

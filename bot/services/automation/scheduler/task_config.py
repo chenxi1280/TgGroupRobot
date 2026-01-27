@@ -27,4 +27,9 @@ TASK_CONFIG = {
         "enabled": True,
         "max_consecutive_failures": 10,
     },
+    "scheduled_message": {
+        "interval": 60,  # 1分钟
+        "enabled": True,
+        "max_consecutive_failures": 10,
+    },
 }
