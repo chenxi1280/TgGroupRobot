@@ -19,7 +19,9 @@ class CleanupTask(ScheduledTask):
     async def execute(self, app) -> None:
         """执行清理逻辑"""
         from bot.services.moderation.anti_flood_service import anti_flood_cleanup_job
+        from bot.services.moderation.anti_spam_service import anti_spam_cleanup_job
         import structlog
 
         log = structlog.get_logger(__name__)
         await anti_flood_cleanup_job(app)
+        await anti_spam_cleanup_job()

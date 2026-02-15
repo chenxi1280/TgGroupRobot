@@ -135,11 +135,63 @@ async def solve_by_token(session: AsyncSession, token: str) -> VerificationChall
         return None
     if ch.solved:
         return ch
-    if dt.datetime.now(dt.UTC) > ch.expires_at:
+
+    # 管理员审核模式允许超时后仍可人工通过，其他模式仍遵循超时限制
+    if (
+        dt.datetime.now(dt.UTC) > ch.expires_at
+        and ch.verification_type != VerificationMode.admin.value
+    ):
         return ch
 
     await ServiceBase._update_entity(session, ch, {"solved": True})
     return ch
+
+
+async def solve_by_token_scoped(
+    session: AsyncSession,
+    token: str,
+    expected_chat_id: int | None = None,
+    expected_user_id: int | None = None,
+) -> VerificationChallenge | None:
+    """
+    通过 token 验证（带 chat/user 归属校验）
+
+    仅当 token 属于指定 chat/user 时才会标记 solved，避免跨群或他人代点导致误通过。
+    """
+    ch = await ServiceBase._get_by_filters(
+        session,
+        VerificationChallenge,
+        {"token": token},
+    )
+    if ch is None:
+        return None
+    if expected_chat_id is not None and ch.chat_id != expected_chat_id:
+        return None
+    if expected_user_id is not None and ch.user_id != expected_user_id:
+        return None
+    if ch.solved:
+        return ch
+
+    if (
+        dt.datetime.now(dt.UTC) > ch.expires_at
+        and ch.verification_type != VerificationMode.admin.value
+    ):
+        return ch
+
+    await ServiceBase._update_entity(session, ch, {"solved": True})
+    return ch
+
+
+async def get_challenge_by_token(
+    session: AsyncSession,
+    token: str,
+) -> VerificationChallenge | None:
+    """按 token 获取验证挑战，不修改状态。"""
+    return await ServiceBase._get_by_filters(
+        session,
+        VerificationChallenge,
+        {"token": token},
+    )
 
 
 async def solve_by_answer(

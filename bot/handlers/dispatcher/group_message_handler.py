@@ -1,16 +1,22 @@
 """群聊消息处理器
 
 按优先级处理群聊消息：
-1. 核心功能层（违禁词检测、自动回复、验证检查）
-2. 业务功能层（抽奖参与、接龙参与、积分处理等）
+1. 核心功能层（违禁词检测、自动回复）
+2. 业务功能层（验证、抽奖、接龙、审核、积分）
 """
 from __future__ import annotations
+
+from collections.abc import Callable, Coroutine
+from typing import Any, Awaitable
 
 import structlog
 from telegram import Update
 from telegram.ext import ContextTypes
 
 log = structlog.get_logger(__name__)
+
+# Handler 函数类型
+HandlerFunc = Callable[[Update, ContextTypes.DEFAULT_TYPE], Awaitable[None]]
 
 
 class GroupMessageHandler:
@@ -21,14 +27,42 @@ class GroupMessageHandler:
 
     def __init__(self) -> None:
         """初始化群聊消息处理器"""
-        pass
+        # 延迟导入，避免循环依赖
+        self._core_handler: HandlerFunc | None = None
+        self._business_handlers: list[tuple[str, HandlerFunc]] | None = None
+
+    def _get_core_handler(self) -> HandlerFunc:
+        """获取核心功能处理器（懒加载）"""
+        if self._core_handler is None:
+            from bot.handlers.group_message_handler import unified_group_message_handler
+
+            self._core_handler = unified_group_message_handler
+        return self._core_handler
+
+    def _get_business_handlers(self) -> list[tuple[str, HandlerFunc]]:
+        """获取业务功能处理器列表（懒加载）"""
+        if self._business_handlers is None:
+            from bot.handlers.lottery_handler import lottery_message_handler
+            from bot.handlers.moderation_handler import moderation_message_handler
+            from bot.handlers.points_handler import message_points_handler
+            from bot.handlers.solitaire_handler import solitaire_join_message_handler
+            from bot.handlers.verification_handler import verify_message_handler
+
+            self._business_handlers = [
+                ("verification", verify_message_handler),
+                ("lottery", lottery_message_handler),
+                ("solitaire", solitaire_join_message_handler),
+                ("moderation", moderation_message_handler),
+                ("points", message_points_handler),
+            ]
+        return self._business_handlers
 
     async def handle(
         self,
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
-        chat,
-        user,
+        chat: Any,
+        user: Any,
         message_text: str,
     ) -> None:
         """处理群聊消息
@@ -47,95 +81,33 @@ class GroupMessageHandler:
             message_text_preview=message_text[:50],
         )
 
-        # 按优先级调用各功能处理器
-        await self._process_core_features(update, context, chat, user, message_text)
-        await self._process_business_features(update, context, chat, user, message_text)
+        # 核心功能（违禁词检测 + 自动回复）
+        await self._safe_execute(self._get_core_handler(), update, context, "core")
 
-    async def _process_core_features(
+        # 业务功能（按顺序执行）
+        for name, handler in self._get_business_handlers():
+            await self._safe_execute(handler, update, context, name)
+
+    async def _safe_execute(
         self,
+        handler: HandlerFunc,
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
-        chat,
-        user,
-        message_text: str,
+        handler_name: str,
     ) -> None:
-        """处理核心功能（最高优先级）
+        """安全执行处理器，捕获并记录异常
 
-        包括：
-        - 违禁词检测
-        - 自动回复
+        Args:
+            handler: 处理器函数
+            update: Telegram 更新对象
+            context: Bot 上下文
+            handler_name: 处理器名称（用于日志）
         """
-        from bot.handlers.group_message_handler import (
-            unified_group_message_handler,
-        )
-
-        # 统一的群组消息处理入口（违禁词检测 + 自动回复）
-        await unified_group_message_handler(update, context)
-
-    async def _process_business_features(
-        self,
-        update: Update,
-        context: ContextTypes.DEFAULT_TYPE,
-        chat,
-        user,
-        message_text: str,
-    ) -> None:
-        """处理业务功能
-
-        按顺序调用各业务功能处理器：
-        1. 验证消息处理
-        2. 抽奖参与
-        3. 接龙参与
-        4. 定时消息处理
-        5. 内容审核
-        6. 积分处理
-        """
-        # 注意：这些处理器会按顺序调用，每个处理器内部判断是否处理该消息
-
-        # 验证消息处理
-        from bot.handlers.verification_handler import verify_message_handler
-
         try:
-            await verify_message_handler(update, context)
+            await handler(update, context)
         except Exception as e:
-            log.warning("verify_message_handler_failed", error=str(e))
-
-        # 抽奖参与
-        from bot.handlers.lottery_handler import lottery_message_handler
-
-        try:
-            await lottery_message_handler(update, context)
-        except Exception as e:
-            log.warning("lottery_message_handler_failed", error=str(e))
-
-        # 接龙参与
-        from bot.handlers.solitaire_handler import solitaire_join_message_handler
-
-        try:
-            await solitaire_join_message_handler(update, context)
-        except Exception as e:
-            log.warning("solitaire_join_message_handler_failed", error=str(e))
-
-        # 定时消息处理
-        from bot.handlers.scheduled_handler import scheduled_message_handler
-
-        try:
-            await scheduled_message_handler(update, context)
-        except Exception as e:
-            log.warning("scheduled_message_handler_failed", error=str(e))
-
-        # 内容审核
-        from bot.handlers.moderation_handler import moderation_message_handler
-
-        try:
-            await moderation_message_handler(update, context)
-        except Exception as e:
-            log.warning("moderation_message_handler_failed", error=str(e))
-
-        # 积分处理
-        from bot.handlers.points_handler import message_points_handler
-
-        try:
-            await message_points_handler(update, context)
-        except Exception as e:
-            log.warning("message_points_handler_failed", error=str(e))
+            log.warning(
+                "group_handler_failed",
+                handler=handler_name,
+                error=str(e),
+            )

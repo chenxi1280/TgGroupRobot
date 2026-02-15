@@ -5,6 +5,7 @@ from telegram.error import TelegramError
 
 from bot.db.session import Database
 from bot.models.core import TgChat
+from bot.services.core.user_service import ensure_user
 
 
 # ==================== 格式化函数 ====================
@@ -165,6 +166,16 @@ async def set_user_current_chat(
     async with db.session_factory() as session:
         from bot.models.core import ConversationState, TgChat
         from sqlalchemy import select
+
+        # 确保用户存在（conversation_states.user_id 外键依赖 tg_users）
+        await ensure_user(
+            session,
+            user_id=user_id,
+            username=None,
+            first_name=None,
+            last_name=None,
+            language_code=None,
+        )
 
         # 先确保私聊记录存在于 tg_chats 中
         private_chat_stmt = select(TgChat).where(TgChat.id == user_id)

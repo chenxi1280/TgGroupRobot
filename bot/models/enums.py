@@ -47,6 +47,8 @@ class ConversationStateType(str, enum.Enum):
     auto_reply_create = "auto_reply_create"  # 创建自动回复流程
     banned_word_add = "banned_word_add"  # 添加违禁词流程
     verification_config = "verification_config"  # 验证配置流程
+    anti_flood_config = "anti_flood_config"  # 防刷屏配置流程
+    anti_spam_config = "anti_spam_config"  # 反垃圾配置流程
     sm_edit_text = "sm_edit_text"  # 编辑定时消息文本
     sm_edit_media = "sm_edit_media"  # 编辑定时消息媒体
     sm_edit_buttons = "sm_edit_buttons"  # 编辑定时消息按钮
@@ -111,7 +113,6 @@ class LotteryDrawMode(str, enum.Enum):
     """抽奖开奖模式"""
     random = "random"  # 随机开奖
     manual = "manual"  # 手动指定中奖人
-
 
 
 

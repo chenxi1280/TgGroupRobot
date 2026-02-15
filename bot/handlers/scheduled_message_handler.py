@@ -15,6 +15,7 @@ from bot.db.session import Database
 from bot.handlers.base.base_handler import BaseHandler
 from bot.handlers.base.chat_resolver import ChatResolver
 from bot.services.scheduled_message_service import ScheduledMessageService
+from bot.services.base import ValidationError
 from bot.services.state.state_service import (
     clear_user_state,
     set_user_state,
@@ -38,6 +39,12 @@ from bot.keyboards.integration.scheduled_message import (
 from bot.utils.time_helper import format_timestamp
 
 log = structlog.get_logger(__name__)
+
+
+def _is_clear_command(text: str) -> bool:
+    """判断是否为 /clear 命令（兼容 /clear@BotName）。"""
+    cmd = (text or "").strip().split(maxsplit=1)[0].lower()
+    return cmd == "/clear" or cmd.startswith("/clear@")
 
 
 class ScheduledMessageHandler(BaseHandler):
@@ -102,16 +109,24 @@ class ScheduledMessageHandler(BaseHandler):
 
         if not tasks:
             keyboard = sm_list_keyboard([], target_chat_id, page)
-            await self.message_helper.safe_edit(
+            edited = await self.message_helper.safe_edit(
                 update,
                 text="📋 定时消息列表\n\n暂无任务，点击「添加任务」开始",
                 reply_markup=keyboard,
             )
+            if not edited:
+                await self.message_helper.safe_reply(
+                    update,
+                    text="📋 定时消息列表\n\n暂无任务，点击「添加任务」开始",
+                    reply_markup=keyboard,
+                )
             return
 
         text = f"📋 定时消息列表\n\n共 {len(tasks)} 个任务"
         keyboard = sm_list_keyboard(tasks, target_chat_id, page)
-        await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
+        edited = await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
+        if not edited:
+            await self.message_helper.safe_reply(update, text=text, reply_markup=keyboard)
 
     async def show_detail(
         self,
@@ -154,7 +169,9 @@ class ScheduledMessageHandler(BaseHandler):
         # 显示任务详情
         text = self._format_task_detail(task, toast=toast)
         keyboard = sm_detail_keyboard(task, target_chat_id)
-        await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
+        edited = await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
+        if not edited:
+            await self.message_helper.safe_reply(update, text=text, reply_markup=keyboard)
 
     def _format_task_detail(self, task: ScheduledMessageTask, toast: str | None = None) -> str:
         """格式化任务详情
@@ -258,8 +275,8 @@ class ScheduledMessageHandler(BaseHandler):
                     session,
                     chat_id=target_chat_id,
                     created_by_user_id=update.effective_user.id if update.effective_user else 0,
-                    title="新定时消息",
-                    enabled=False,  # 默认禁用，等待用户配置
+                    title="定时消息",
+                    enabled=True,
                 )
             except Exception as e:
                 await session.rollback()
@@ -456,7 +473,7 @@ class ScheduledMessageHandler(BaseHandler):
                 keyboard = sm_edit_media_keyboard(target_chat_id, task_id)
             elif field == "buttons":
                 state_type = ConversationStateType.sm_edit_buttons
-                text = "🔗 编辑按钮\n\n请输入按钮配置（JSON 格式）\n\n格式示例:\n[\n  [{\"text\":\"按钮1\",\"url\":\"https://...\"}],\n  [{\"text\":\"按钮2\",\"url\":\"https://...\"}]\n]\n\n或输入 /clear 清空按钮"
+                text = "🔗 编辑按钮\n\n请输入按钮配置（JSON 格式）\n\n格式示例（多行）:\n[\n  [{\"text\":\"按钮1\",\"url\":\"https://...\"}],\n  [{\"text\":\"按钮2\",\"url\":\"https://...\"}]\n]\n\n格式示例（单行）:\n[\n  {\"text\":\"官网\",\"url\":\"https://example.com\"}\n]\n\n或输入 /clear 清空按钮"
                 keyboard = sm_edit_buttons_keyboard(target_chat_id, task_id)
             elif field == "repeat":
                 # 重复间隔不需要 FSM，直接显示选择键盘
@@ -665,21 +682,18 @@ class ScheduledMessageHandler(BaseHandler):
                 state_type_str = str(state.state_type) if state.state_type else ""
 
                 if state_type_str == "sm_edit_text" or state_type_str == str(ConversationStateType.sm_edit_text):
-                    if text.strip() == "/clear":
+                    if _is_clear_command(text):
                         await ScheduledMessageService.update_task_text(session, task_id, None)
                     else:
                         await ScheduledMessageService.update_task_text(session, task_id, text)
 
                 elif state_type_str == "sm_edit_buttons" or state_type_str == str(ConversationStateType.sm_edit_buttons):
-                    if text.strip() == "/clear":
+                    if _is_clear_command(text):
                         await ScheduledMessageService.update_task_buttons(session, task_id, [])
                     else:
                         # 解析 JSON
                         try:
                             buttons = json.loads(text)
-                            if not isinstance(buttons, list):
-                                raise ValueError("按钮必须是数组")
-                            await ScheduledMessageService.update_task_buttons(session, task_id, buttons)
                         except Exception as e:
                             await session.rollback()
                             await update.effective_message.reply_text(
@@ -687,8 +701,17 @@ class ScheduledMessageHandler(BaseHandler):
                             )
                             return
 
+                        try:
+                            await ScheduledMessageService.update_task_buttons(session, task_id, buttons)
+                        except ValidationError as e:
+                            await session.rollback()
+                            await update.effective_message.reply_text(
+                                f"❌ 按钮配置错误: {str(e)}\n\n请重新输入"
+                            )
+                            return
+
                 elif state_type_str == "sm_edit_start_at" or state_type_str == str(ConversationStateType.sm_edit_start_at):
-                    if text.strip() == "/clear":
+                    if _is_clear_command(text):
                         await ScheduledMessageService.update_task_start_at(session, task_id, None)
                     else:
                         result = await ScheduledMessageService.update_task_start_at(session, task_id, text.strip())
@@ -700,7 +723,7 @@ class ScheduledMessageHandler(BaseHandler):
                             return
 
                 elif state_type_str == "sm_edit_end_at" or state_type_str == str(ConversationStateType.sm_edit_end_at):
-                    if text.strip() == "/clear":
+                    if _is_clear_command(text):
                         await ScheduledMessageService.update_task_end_at(session, task_id, None)
                     else:
                         result = await ScheduledMessageService.update_task_end_at(session, task_id, text.strip())

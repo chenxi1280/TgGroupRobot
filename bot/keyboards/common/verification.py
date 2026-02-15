@@ -6,9 +6,6 @@ from __future__ import annotations
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-from bot.keyboards.base.builders import KeyboardBuilder
-
-
 def verification_keyboard(token: str) -> InlineKeyboardMarkup:
     """创建验证键盘
 
@@ -18,9 +15,9 @@ def verification_keyboard(token: str) -> InlineKeyboardMarkup:
     Returns:
         验证键盘，包含"我不是机器人"按钮
     """
-    builder = KeyboardBuilder("vfy")
-    builder.add_button("我不是机器人", "verify", token)
-    return builder.build()
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("我不是机器人", callback_data=f"vfy:{token}")]
+    ])
 
 
 def admin_verify_keyboard(user_id: int, token: str) -> InlineKeyboardMarkup:
@@ -38,4 +35,16 @@ def admin_verify_keyboard(user_id: int, token: str) -> InlineKeyboardMarkup:
             InlineKeyboardButton("✅ 通过", callback_data=f"adm_vfy:{user_id}:{token}:approve"),
             InlineKeyboardButton("❌ 拒绝", callback_data=f"adm_vfy:{user_id}:{token}:reject"),
         ]
+    ])
+
+
+def verification_timeout_help_keyboard(user_id: int) -> InlineKeyboardMarkup:
+    """验证超时后的协助键盘
+
+    Args:
+        user_id: 被禁言用户 ID
+    """
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🙋 我是本人，申请解封", callback_data=f"vfy_help:appeal:{user_id}")],
+        [InlineKeyboardButton("🛡️ 管理员一键解封", callback_data=f"vfy_help:unmute:{user_id}")],
     ])

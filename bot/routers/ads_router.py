@@ -30,9 +30,12 @@ class AdsRouter(BaseRouter):
         # 回调处理器
         app.add_handler(CallbackQueryHandler(ads_create_start_callback, pattern=r"^ads:create"))
         app.add_handler(CallbackQueryHandler(ads_cancel_callback, pattern=r"^ads:cancel:"))
-        app.add_handler(CallbackQueryHandler(ads_toggle_callback, pattern=r"^ads:toggle_"))
-        app.add_handler(CallbackQueryHandler(ads_delete_callback, pattern=r"^ads:delete_"))
-        app.add_handler(CallbackQueryHandler(ads_send_callback, pattern=r"^ads:send_"))
+        # 兼容新旧回调格式：
+        # 新版: ads:toggle:{id} / ads:delete:{id} / ads:send:{id}
+        # 旧版: ads:toggle_{id} / ads:delete_{id} / ads:send_{id}
+        app.add_handler(CallbackQueryHandler(ads_toggle_callback, pattern=r"^ads:toggle(?::|_)\d+$"))
+        app.add_handler(CallbackQueryHandler(ads_delete_callback, pattern=r"^ads:delete(?::|_)\d+$"))
+        app.add_handler(CallbackQueryHandler(ads_send_callback, pattern=r"^ads:send(?::|_)\d+$"))
         app.add_handler(CallbackQueryHandler(ads_menu_callback, pattern=r"^ads:menu"))
         app.add_handler(CallbackQueryHandler(ads_list_callback, pattern=r"^ads:list"))
         app.add_handler(CallbackQueryHandler(ads_stats_callback, pattern=r"^ads:stats"))

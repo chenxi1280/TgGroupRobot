@@ -13,6 +13,7 @@ from bot.keyboards.admin.admin_main import (
     verification_mode_menu,
 )
 from bot.keyboards.admin.auto_delete import auto_delete_config_keyboard
+from bot.keyboards.admin.antispam import anti_flood_config_keyboard, anti_spam_config_keyboard
 from bot.keyboards.admin.points import back_button as points_back_button
 from bot.keyboards.admin.points import points_config_keyboard
 
@@ -31,4 +32,7 @@ __all__ = [
     "points_back_button",
     # Auto delete
     "auto_delete_config_keyboard",
+    # Anti flood / anti spam
+    "anti_flood_config_keyboard",
+    "anti_spam_config_keyboard",
 ]

@@ -78,7 +78,20 @@ CREATE TABLE IF NOT EXISTS bot.chat_settings (
     anti_flood_messages INTEGER NOT NULL DEFAULT 5,                -- 触发消息数量
     anti_flood_seconds INTEGER NOT NULL DEFAULT 5,                 -- 时间窗口（秒）
     anti_flood_action VARCHAR(32) NOT NULL DEFAULT 'mute',         -- 惩罚动作（mute/delete/ban）
-    anti_flood_mute_duration INTEGER NOT NULL DEFAULT 60,          -- 禁言时长（秒）
+    anti_flood_mute_duration INTEGER NOT NULL DEFAULT 3600,        -- 禁言时长（秒）
+    anti_flood_exempt_admin BOOLEAN NOT NULL DEFAULT TRUE,         -- 是否豁免管理员
+    anti_flood_cleanup_messages BOOLEAN NOT NULL DEFAULT FALSE,    -- 触发后是否清理消息
+    anti_flood_delete_notify BOOLEAN NOT NULL DEFAULT FALSE,       -- 是否发送并自动删除提醒
+    anti_flood_delete_notify_seconds INTEGER NOT NULL DEFAULT 600, -- 提醒消息保留时长（秒）
+    anti_spam_enabled BOOLEAN NOT NULL DEFAULT FALSE,              -- 是否启用反垃圾
+    anti_spam_action VARCHAR(32) NOT NULL DEFAULT 'mute',          -- 反垃圾惩罚动作（delete/mute/ban）
+    anti_spam_mute_duration INTEGER NOT NULL DEFAULT 3600,         -- 反垃圾禁言时长（秒）
+    anti_spam_exempt_admin BOOLEAN NOT NULL DEFAULT TRUE,          -- 是否豁免管理员
+    anti_spam_delete_notify BOOLEAN NOT NULL DEFAULT FALSE,        -- 是否发送并自动删除提醒
+    anti_spam_delete_notify_seconds INTEGER NOT NULL DEFAULT 600,  -- 提醒消息保留时长（秒）
+    anti_spam_repeat_messages INTEGER NOT NULL DEFAULT 3,          -- 重复消息触发条数
+    anti_spam_repeat_seconds INTEGER NOT NULL DEFAULT 15,          -- 重复消息检测窗口（秒）
+    anti_spam_rules JSONB NOT NULL DEFAULT '{}'::jsonb,            -- 反垃圾规则开关与名单配置
     message_points_enabled BOOLEAN NOT NULL DEFAULT FALSE,         -- 是否启用发言积分
     message_points INTEGER NOT NULL DEFAULT 1,                     -- 每次发言获得积分
     message_points_daily_limit INTEGER,                            -- 每日发言积分上限（null=无限制）
@@ -133,6 +146,19 @@ COMMENT ON COLUMN bot.chat_settings.anti_flood_messages IS '反刷屏触发消�
 COMMENT ON COLUMN bot.chat_settings.anti_flood_seconds IS '反刷屏检测时间窗口（秒）';
 COMMENT ON COLUMN bot.chat_settings.anti_flood_action IS '反刷屏惩罚动作：mute（禁言）、delete（删除）、ban（封禁）';
 COMMENT ON COLUMN bot.chat_settings.anti_flood_mute_duration IS '反刷屏禁言时长（秒）';
+COMMENT ON COLUMN bot.chat_settings.anti_flood_exempt_admin IS '反刷屏是否豁免管理员';
+COMMENT ON COLUMN bot.chat_settings.anti_flood_cleanup_messages IS '触发反刷屏后是否自动删除触发消息';
+COMMENT ON COLUMN bot.chat_settings.anti_flood_delete_notify IS '是否发送并自动删除防刷屏提醒消息';
+COMMENT ON COLUMN bot.chat_settings.anti_flood_delete_notify_seconds IS '防刷屏提醒消息保留时长（秒）';
+COMMENT ON COLUMN bot.chat_settings.anti_spam_enabled IS '是否启用反垃圾模块';
+COMMENT ON COLUMN bot.chat_settings.anti_spam_action IS '反垃圾惩罚动作：delete（删除）、mute（禁言）、ban（封禁）';
+COMMENT ON COLUMN bot.chat_settings.anti_spam_mute_duration IS '反垃圾禁言时长（秒）';
+COMMENT ON COLUMN bot.chat_settings.anti_spam_exempt_admin IS '反垃圾是否豁免管理员';
+COMMENT ON COLUMN bot.chat_settings.anti_spam_delete_notify IS '是否发送并自动删除反垃圾提醒消息';
+COMMENT ON COLUMN bot.chat_settings.anti_spam_delete_notify_seconds IS '反垃圾提醒消息保留时长（秒）';
+COMMENT ON COLUMN bot.chat_settings.anti_spam_repeat_messages IS '反垃圾重复消息触发条数';
+COMMENT ON COLUMN bot.chat_settings.anti_spam_repeat_seconds IS '反垃圾重复消息检测窗口（秒）';
+COMMENT ON COLUMN bot.chat_settings.anti_spam_rules IS '反垃圾规则配置（开关、名单、阈值）';
 COMMENT ON COLUMN bot.chat_settings.message_points_enabled IS '是否启用发言积分功能';
 COMMENT ON COLUMN bot.chat_settings.message_points IS '每次发言获得积分数';
 COMMENT ON COLUMN bot.chat_settings.message_points_daily_limit IS '每日发言积分上限（NULL=无限制）';
@@ -156,6 +182,23 @@ COMMENT ON COLUMN bot.chat_settings.points_alias IS '积分查询命令别名（
 COMMENT ON COLUMN bot.chat_settings.points_rank_alias IS '积分排行命令别名（如：积分排行）';
 COMMENT ON COLUMN bot.chat_settings.created_at IS '配置创建时间';
 COMMENT ON COLUMN bot.chat_settings.updated_at IS '配置最后更新时间';
+
+-- 兼容历史库：为已存在的 chat_settings 表补齐新增列
+-- 说明：仅靠 CREATE TABLE IF NOT EXISTS 不会为旧表自动增加新列
+ALTER TABLE bot.chat_settings ALTER COLUMN anti_flood_mute_duration SET DEFAULT 3600;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS anti_flood_exempt_admin BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS anti_flood_cleanup_messages BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS anti_flood_delete_notify BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS anti_flood_delete_notify_seconds INTEGER NOT NULL DEFAULT 600;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS anti_spam_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS anti_spam_action VARCHAR(32) NOT NULL DEFAULT 'mute';
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS anti_spam_mute_duration INTEGER NOT NULL DEFAULT 3600;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS anti_spam_exempt_admin BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS anti_spam_delete_notify BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS anti_spam_delete_notify_seconds INTEGER NOT NULL DEFAULT 600;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS anti_spam_repeat_messages INTEGER NOT NULL DEFAULT 3;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS anti_spam_repeat_seconds INTEGER NOT NULL DEFAULT 15;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS anti_spam_rules JSONB NOT NULL DEFAULT '{}'::jsonb;
 
 -- ============================================
 -- 4. 群组成员表 (chat_members)
@@ -1045,4 +1088,3 @@ CREATE INDEX IF NOT EXISTS ix_sml_sent_at ON bot.scheduled_message_logs(sent_at)
 -- ============================================
 -- 数据库初始化完成
 -- ============================================
-

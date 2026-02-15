@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     # 群聊中 /start 和 /cancel 指令回复消息的自动删除时间（秒）
     group_guide_message_delete_seconds: int = Field(default=30, alias="GROUP_GUIDE_MESSAGE_DELETE_SECONDS")
 
+    # Bot 全局管理员（用于风控豁免等逻辑），逗号分隔 user_id，如：123,456
+    bot_admin_ids: str = Field(default="", alias="BOT_ADMIN_IDS")
+
 
 def get_settings() -> Settings:
     # 查找 env 文件
@@ -103,6 +106,5 @@ def get_settings() -> Settings:
         
         # 其他错误直接抛出
         raise
-
 
 

@@ -7,7 +7,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Literal
 
-from telegram import Bot
+from telegram import Bot, ChatPermissions
 
 
 log = structlog.get_logger(__name__)
@@ -20,7 +20,7 @@ class FloodRecord:
     user_id: int
     message_ids: list[int]  # 消息ID列表，用于删除
     timestamps: deque[dt.datetime] = field(default_factory=deque)
-    is_muted: bool = False  # 是否已被禁言
+    muted_until: dt.datetime | None = None  # 禁言到期时间（用于避免重复处罚）
 
 
 @dataclass
@@ -139,18 +139,27 @@ class AntiFloodTracker:
             record.timestamps.clear()
             return message_ids
 
-    async def mark_muted(self, chat_id: int, user_id: int, muted: bool = True):
-        """标记用户已被禁言（避免重复禁言）"""
+    async def mark_muted(self, chat_id: int, user_id: int, duration_seconds: int):
+        """标记用户禁言截止时间（避免短时间内重复禁言）"""
         async with self._lock:
             key = self._get_key(chat_id, user_id)
             if key in self._records:
-                self._records[key].is_muted = muted
+                self._records[key].muted_until = dt.datetime.now(dt.UTC) + dt.timedelta(
+                    seconds=max(duration_seconds, 1)
+                )
 
     async def is_muted(self, chat_id: int, user_id: int) -> bool:
         """检查用户是否已被禁言"""
         async with self._lock:
             key = self._get_key(chat_id, user_id)
-            return self._records.get(key, FloodRecord(chat_id, user_id, [])).is_muted
+            record = self._records.get(key)
+            if record is None or record.muted_until is None:
+                return False
+
+            if dt.datetime.now(dt.UTC) >= record.muted_until:
+                record.muted_until = None
+                return False
+            return True
 
     async def cleanup_old_records(self, max_age_seconds: int = 300):
         """清理旧的记录"""
@@ -160,8 +169,17 @@ class AntiFloodTracker:
 
             keys_to_delete = []
             for key, record in self._records.items():
-                # 如果记录超过指定时间没有活动，删除
-                if record.timestamps and record.timestamps[-1] < cutoff_time:
+                # 过期禁言状态自动清空
+                if record.muted_until is not None and record.muted_until <= now:
+                    record.muted_until = None
+
+                # 如果记录超过指定时间没有活动，且无有效禁言状态，则删除
+                if record.timestamps and record.timestamps[-1] < cutoff_time and record.muted_until is None:
+                    keys_to_delete.append(key)
+                    continue
+
+                # 空记录且无有效禁言状态，直接删除
+                if not record.timestamps and record.muted_until is None:
                     keys_to_delete.append(key)
 
             for key in keys_to_delete:
@@ -182,28 +200,27 @@ async def execute_flood_punishment(
     chat_id: int,
     user_id: int,
     action: str,
-    mute_duration: int = 60,
+    mute_duration: int = 3600,
+    cleanup_messages: bool = True,
 ) -> bool:
     """执行刷屏惩罚"""
     try:
-        if action == "delete":
-            # 只删除消息，不禁言
+        message_ids: list[int] = []
+        if cleanup_messages or action == "delete":
             message_ids = await _tracker.get_and_clear_messages(chat_id, user_id)
             for msg_id in message_ids:
                 try:
                     await bot.delete_message(chat_id=chat_id, message_id=msg_id)
                 except Exception as e:
                     log.warning("delete_message_failed", chat_id=chat_id, message_id=msg_id, error=str(e))
+
+        if action == "delete":
             return True
 
         elif action == "mute":
-            # 禁言并删除消息
-            message_ids = await _tracker.get_and_clear_messages(chat_id, user_id)
-            for msg_id in message_ids:
-                try:
-                    await bot.delete_message(chat_id=chat_id, message_id=msg_id)
-                except Exception as e:
-                    log.warning("delete_message_failed", chat_id=chat_id, message_id=msg_id, error=str(e))
+            # 禁言（可选删除消息）
+            if not cleanup_messages:
+                await _tracker.get_and_clear_messages(chat_id, user_id)
 
             # 检查是否已经禁言，避免重复
             if await _tracker.is_muted(chat_id, user_id):
@@ -213,23 +230,34 @@ async def execute_flood_punishment(
                 await bot.restrict_chat_member(
                     chat_id=chat_id,
                     user_id=user_id,
-                    permissions={"can_send_messages": False, "can_send_media_messages": False},
+                    permissions=ChatPermissions(
+                        can_send_messages=False,
+                        can_send_audios=False,
+                        can_send_documents=False,
+                        can_send_photos=False,
+                        can_send_videos=False,
+                        can_send_video_notes=False,
+                        can_send_voice_notes=False,
+                        can_send_polls=False,
+                        can_send_other_messages=False,
+                        can_add_web_page_previews=False,
+                        can_change_info=False,
+                        can_invite_users=False,
+                        can_pin_messages=False,
+                        can_manage_topics=False,
+                    ),
                     until_date=dt.datetime.now(dt.UTC) + dt.timedelta(seconds=mute_duration),
                 )
-                await _tracker.mark_muted(chat_id, user_id, True)
+                await _tracker.mark_muted(chat_id, user_id, mute_duration)
                 return True
             except Exception as e:
                 log.warning("ban_chat_member_failed", chat_id=chat_id, user_id=user_id, error=str(e))
                 return False
 
         elif action == "ban":
-            # 封禁并删除消息
-            message_ids = await _tracker.get_and_clear_messages(chat_id, user_id)
-            for msg_id in message_ids:
-                try:
-                    await bot.delete_message(chat_id=chat_id, message_id=msg_id)
-                except Exception as e:
-                    log.warning("delete_message_failed", chat_id=chat_id, message_id=msg_id, error=str(e))
+            # 封禁（可选删除消息）
+            if not cleanup_messages:
+                await _tracker.get_and_clear_messages(chat_id, user_id)
 
             try:
                 await bot.ban_chat_member(chat_id=chat_id, user_id=user_id)

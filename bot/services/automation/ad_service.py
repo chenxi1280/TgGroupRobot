@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.models.core import AdCampaign
@@ -45,6 +46,12 @@ async def create_ad_campaign(
     """
     try:
         has_image = bool(image_file_id or image_url)
+        normalized_start_time = start_time
+        normalized_interval_hours = interval_hours
+
+        # 如果设置了循环间隔但未指定开始时间，则默认从当前开始
+        if normalized_interval_hours and normalized_interval_hours > 0 and normalized_start_time is None:
+            normalized_start_time = dt.datetime.now(dt.UTC)
 
         ad = AdCampaign(
             chat_id=chat_id,
@@ -56,8 +63,8 @@ async def create_ad_campaign(
             has_image=has_image,
             schedule_time=schedule_time,
             frequency=frequency,
-            start_time=start_time,
-            interval_hours=interval_hours,
+            start_time=normalized_start_time,
+            interval_hours=normalized_interval_hours,
             max_send_count=max_send_count,
             send_count=0,
             enabled=True,
@@ -206,12 +213,14 @@ async def mark_ad_sent(
     if ad.send_count is not None:
         updates["send_count"] = ad.send_count + 1
 
+    next_send_count = (ad.send_count or 0) + 1
+
     # 检查是否达到最大推送次数
-    if ad.max_send_count and ad.send_count + 1 >= ad.max_send_count:
+    if ad.max_send_count and next_send_count >= ad.max_send_count:
         updates["enabled"] = False
 
-    # 如果是一次性广告（旧逻辑），发送后禁用
-    if ad.frequency == "once" or ad.frequency is None:
+    # 新逻辑：存在 interval_hours 代表周期任务，不在这里按 once 关闭
+    if not ad.interval_hours and (ad.frequency == "once" or ad.frequency is None):
         updates["enabled"] = False
 
     await ServiceBase._update_entity(session, ad, updates)
@@ -232,10 +241,23 @@ async def lock_ad_for_sending(
     Returns:
         AdCampaign: 锁定后的广告对象，如果失败则返回 None
     """
-    ad = await get_ad(session, ad_id)
-    if not ad or ad.send_locked:
+    # 行级锁 + SKIP LOCKED，避免多实例并发重复发送
+    stmt = (
+        select(AdCampaign)
+        .where(
+            AdCampaign.id == ad_id,
+            AdCampaign.enabled == True,
+            AdCampaign.send_locked == False,
+        )
+        .with_for_update(skip_locked=True)
+    )
+    result = await session.execute(stmt)
+    ad = result.scalar_one_or_none()
+    if not ad:
         return None
-    await ServiceBase._update_entity(session, ad, {"send_locked": True})
+
+    ad.send_locked = True
+    await session.flush()
     return ad
 
 
@@ -254,10 +276,10 @@ def should_send_ad(ad: AdCampaign) -> bool:
 
     now = dt.datetime.now(dt.UTC)
 
-    # 优先使用新的推送逻辑（自定义间隔和次数）
-    if ad.start_time and ad.interval_hours:
-        # 检查开始时间
-        if now < ad.start_time:
+    # 优先使用新的推送逻辑（支持 interval_hours；start_time 可选）
+    if ad.interval_hours and ad.interval_hours > 0:
+        start_at = ad.start_time or ad.schedule_time or ad.created_at
+        if start_at and now < start_at:
             return False
 
         # 检查推送次数
@@ -270,13 +292,11 @@ def should_send_ad(ad: AdCampaign) -> bool:
             return now >= next_send_time
         return True
 
-    # 兼容旧的频次逻辑（向后兼容）
-    # 检查定时时间
+    # 兼容旧频次逻辑（向后兼容）
     if ad.schedule_time and now < ad.schedule_time:
         return False
 
-    # 检查频次
-    if ad.frequency == "once":
+    if ad.frequency in (None, "once"):
         return ad.last_sent_at is None
     elif ad.frequency == "daily":
         if ad.last_sent_at:
@@ -291,8 +311,7 @@ def should_send_ad(ad: AdCampaign) -> bool:
             return (now - ad.last_sent_at).days >= 30
         return True
 
-    # 无频次限制，立即发送
-    return True
+    return ad.last_sent_at is None
 
 
 async def get_scheduled_ads(session: AsyncSession) -> list[AdCampaign]:
@@ -317,5 +336,5 @@ async def get_scheduled_ads(session: AsyncSession) -> list[AdCampaign]:
     # 过滤出有调度时间的广告
     return [
         ad for ad in ads
-        if ad.start_time is not None or ad.schedule_time is not None
+        if ad.start_time is not None or ad.schedule_time is not None or ad.interval_hours is not None
     ]

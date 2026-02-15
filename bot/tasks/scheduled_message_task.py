@@ -149,8 +149,19 @@ class ScheduledMessageTaskRunner(ScheduledTask):
             reply_markup = None
             if task.buttons:
                 from telegram import InlineKeyboardMarkup
+                from bot.services.base import ValidationError
                 rows = []
-                for button_row in task.buttons:
+                try:
+                    normalized_buttons = ScheduledMessageService.normalize_buttons_config(task.buttons)
+                except ValidationError as e:
+                    log.warning(
+                        "scheduled_message_buttons_invalid",
+                        task_id=str(task.task_id),
+                        error=str(e),
+                    )
+                    normalized_buttons = []
+
+                for button_row in normalized_buttons:
                     row = []
                     for button in button_row:
                         if isinstance(button, dict):

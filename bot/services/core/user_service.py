@@ -47,15 +47,15 @@ async def ensure_user(
         session,
         user,
         {
-            "username": username,
-            "first_name": first_name,
-            "last_name": last_name,
-            "language_code": language_code,
+            # 仅在新值非空时覆盖，避免后台流程把用户资料抹成 NULL
+            "username": username if username is not None else user.username,
+            "first_name": first_name if first_name is not None else user.first_name,
+            "last_name": last_name if last_name is not None else user.last_name,
+            "language_code": language_code if language_code is not None else user.language_code,
             "updated_at": dt.datetime.now(dt.UTC),
         },
     )
     return user
-
 
 
 

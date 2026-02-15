@@ -65,6 +65,14 @@ class AdminHandler(BaseHandler):
             await self._handle_toggle(update, context, target_chat_id, callback_data)
         elif action == "vfy_config":
             await self._handle_verification_config_start(update, context, target_chat_id)
+        elif action == "af_config":
+            from bot.handlers.anti_flood_config_handler import start_anti_flood_config
+
+            await start_anti_flood_config(update, context, target_chat_id)
+        elif action == "as_config":
+            from bot.handlers.anti_spam_config_handler import start_anti_spam_config
+
+            await start_anti_spam_config(update, context, target_chat_id)
 
     async def _handle_menu(
         self,
@@ -90,6 +98,8 @@ class AdminHandler(BaseHandler):
             "verification": self._show_verification_menu,
             "points": self._show_points_menu,
             "autodel": self._show_auto_delete_menu,
+            "flood": self._show_anti_flood_menu,
+            "antispam": self._show_antispam_menu,
         }
 
         handler = handlers.get(menu_action, self._show_main_menu)
@@ -327,15 +337,13 @@ class AdminHandler(BaseHandler):
         chat_id: int,
     ) -> None:
         """显示定时消息管理菜单"""
-        from bot.keyboards.integration.scheduled import scheduled_menu_keyboard
+        from bot.handlers.scheduled_message_handler import _scheduled_message_handler
 
         db: Database = context.application.bot_data["db"]
         await self._set_current_chat(db, update.effective_user.id, chat_id)
 
-        text = "⏰ 定时消息管理\n\n请选择操作："
-        keyboard = scheduled_menu_keyboard(chat_id)
-
-        await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
+        # 使用新版定时消息处理器显示列表
+        await _scheduled_message_handler.show_list(update, context, chat_id)
 
     async def _show_ads_menu(
         self,
@@ -587,6 +595,50 @@ class AdminHandler(BaseHandler):
 
         await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
 
+    async def _show_anti_flood_menu(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+    ) -> None:
+        """显示防刷屏配置菜单"""
+        from bot.handlers.anti_flood_config_handler import format_anti_flood_menu_text
+        from bot.keyboards.admin.antispam import anti_flood_config_keyboard
+
+        db: Database = context.application.bot_data["db"]
+        await self._set_current_chat(db, update.effective_user.id, chat_id)
+
+        async with db.session_factory() as session:
+            settings = await get_chat_settings(session, chat_id)
+            await session.commit()
+
+        chat_title = await self._get_chat_title(db, chat_id)
+        text = format_anti_flood_menu_text(chat_title, settings)
+        keyboard = anti_flood_config_keyboard(settings, chat_id)
+        await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
+
+    async def _show_antispam_menu(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+    ) -> None:
+        """显示反垃圾配置菜单"""
+        from bot.handlers.anti_spam_config_handler import format_anti_spam_menu_text
+        from bot.keyboards.admin.antispam import anti_spam_config_keyboard
+
+        db: Database = context.application.bot_data["db"]
+        await self._set_current_chat(db, update.effective_user.id, chat_id)
+
+        async with db.session_factory() as session:
+            settings = await get_chat_settings(session, chat_id)
+            await session.commit()
+
+        chat_title = await self._get_chat_title(db, chat_id)
+        text = format_anti_spam_menu_text(chat_title, settings)
+        keyboard = anti_spam_config_keyboard(settings, chat_id)
+        await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
+
     async def _show_group_selection(
         self,
         update: Update,
@@ -731,15 +783,18 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # 私聊中的管理回调 - 使用 Handler 处理
     if update.effective_chat.type == "private":
         cb = CallbackParser.parse(data)
-        if cb.length() >= 3 and cb.get(0) == "adm":
+        if cb.get(0) == "adm":
             # 提取 target_chat_id（如果有）
             # 根据不同的 action 类型确定 chat_id 的位置
             # - menu action: adm:menu:verification:{chat_id} → chat_id 在 index 3
             # - 其他 action: adm:vfy_config:{chat_id} → chat_id 在 index 2
+            # - 全局 action: adm:switch_group / adm:back_to_main → 不需要 chat_id
             action = cb.get(1)
             log.info("=== ADMIN_CALLBACK_ACTION ===", action=action, cb_parts=[cb.get(i) for i in range(cb.length())])
             if action == "menu" and cb.length() >= 4:
                 target_chat_id = cb.get_int(3)  # menu 格式：adm:menu:{submenu}:{chat_id}
+            elif action in {"switch_group", "back_to_main"}:
+                target_chat_id = 0
             elif cb.length() >= 3:
                 target_chat_id = cb.get_int(2)  # 其他格式：adm:{action}:{chat_id}
             else:
@@ -759,11 +814,7 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     return
 
             # 使用 Handler 处理
-            if target_chat_id != 0:
-                await _admin_handler.process(update, context, target_chat_id)
-            else:
-                # 对于不需要 target_chat_id 的操作（如 switch_group, back_to_main）
-                await _admin_handler.process(update, context, 0)  # chat_id 0 表示不需要
+            await _admin_handler.process(update, context, target_chat_id)
         return
 
     # 群聊中的回调（保持向后兼容，用于其他功能模块）
@@ -802,9 +853,12 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 # 使用 keyboards 层格式化消息
                 text = format_verification_menu_text(
                     chat_title="群组",
+                    enabled=settings.verification_enabled,
                     verification_mode=settings.verification_mode,
                     timeout_seconds=settings.verification_timeout_seconds,
                     restrict_can_send=settings.verification_restrict_can_send,
+                    timeout_action=settings.verification_timeout_action,
+                    mute_duration=settings.verification_mute_duration,
                 )
                 await session.commit()
                 await _admin_handler.message_helper.safe_edit(q, text, reply_markup=verification_mode_menu(settings.verification_mode))
@@ -833,9 +887,12 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             # 使用 keyboards 层格式化消息
             text = format_verification_menu_text(
                 chat_title="群组",
+                enabled=settings.verification_enabled,
                 verification_mode=settings.verification_mode,
                 timeout_seconds=settings.verification_timeout_seconds,
                 restrict_can_send=settings.verification_restrict_can_send,
+                timeout_action=settings.verification_timeout_action,
+                mute_duration=settings.verification_mute_duration,
             )
             await _admin_handler.message_helper.safe_edit(q, text, reply_markup=verification_mode_menu(settings.verification_mode))
             return

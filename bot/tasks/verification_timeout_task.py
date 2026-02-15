@@ -10,6 +10,7 @@ import structlog
 from telegram.ext import Application
 
 from bot.db.session import Database
+from bot.keyboards.common.verification import verification_timeout_help_keyboard
 from bot.models.core import VerificationChallenge
 from bot.services.automation.scheduler.core import ScheduledTask
 from bot.services.automation.scheduler.task_config import TASK_CONFIG
@@ -43,7 +44,7 @@ async def get_expired_challenges(session) -> list:
     return list(result.scalars().all())
 
 
-async def mute_user(app: Application, chat_id: int, user_id: int, duration: int = 86400) -> None:
+async def mute_user(app: Application, chat_id: int, user_id: int, duration: int = 86400) -> bool:
     """
     禁言用户
 
@@ -76,8 +77,10 @@ async def mute_user(app: Application, chat_id: int, user_id: int, duration: int 
             until_date=until_date,
         )
         log.info("user_muted_for_verification_timeout", chat_id=chat_id, user_id=user_id, duration=duration)
+        return True
     except Exception as e:
         log.warning("mute_user_failed", chat_id=chat_id, user_id=user_id, error=str(e))
+        return False
 
 
 async def kick_user(app: Application, chat_id: int, user_id: int) -> None:
@@ -130,7 +133,28 @@ async def check_verification_timeouts(app: Application) -> None:
                 else:
                     # 默认禁言
                     duration = settings.verification_mute_duration
-                    await mute_user(app, ch.chat_id, ch.user_id, duration)
+                    muted = await mute_user(app, ch.chat_id, ch.user_id, duration)
+
+                    if muted:
+                        mention = f'<a href="tg://user?id={ch.user_id}">用户</a>'
+                        try:
+                            await app.bot.send_message(
+                                chat_id=ch.chat_id,
+                                text=(
+                                    f"⛔ {mention} 验证超时，已被禁言 {duration} 秒。\n"
+                                    f"管理员可直接点击“管理员一键解封”，"
+                                    f"或回复该用户消息发送“解封”。"
+                                ),
+                                parse_mode="HTML",
+                                reply_markup=verification_timeout_help_keyboard(ch.user_id),
+                            )
+                        except Exception as e:
+                            log.warning(
+                                "send_verification_timeout_notice_failed",
+                                chat_id=ch.chat_id,
+                                user_id=ch.user_id,
+                                error=str(e),
+                            )
 
                 # 标记为已处理
                 ch.timeout_handled = True

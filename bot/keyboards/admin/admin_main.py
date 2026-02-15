@@ -132,10 +132,8 @@ def admin_main_menu(chat_id: int | None = None) -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton("💬自动回复", callback_data=f"adm:menu:autoreply:{chat_id}"),
-                InlineKeyboardButton("⏰定时消息", callback_data=f"adm:menu:scheduled:{chat_id}"),
-            ],
-            [
-                InlineKeyboardButton("📅新定时消息", callback_data=f"sm:list:{chat_id}:0"),
+                # 仅保留新版定时消息入口（sm:list）
+                InlineKeyboardButton("⏰定时消息", callback_data=f"sm:list:{chat_id}:0"),
             ],
             [
                 InlineKeyboardButton("🔇违禁词", callback_data=f"adm:menu:keywords:{chat_id}"),
@@ -144,6 +142,10 @@ def admin_main_menu(chat_id: int | None = None) -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton("🧹自动删除", callback_data=f"adm:menu:autodel:{chat_id}"),
                 InlineKeyboardButton("🤖验证", callback_data=f"adm:menu:verification:{chat_id}"),
+            ],
+            [
+                InlineKeyboardButton("🌊防刷屏", callback_data=f"adm:menu:flood:{chat_id}"),
+                InlineKeyboardButton("🚫反垃圾", callback_data=f"adm:menu:antispam:{chat_id}"),
             ],
             # 快捷设置开关（常用功能）
             [

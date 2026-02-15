@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from bot.models.scheduled_message import ScheduledMessageTask
 
+LOCAL_TIMEZONE = dt.timezone(dt.timedelta(hours=8))
+
 
 def is_time_in_window(timestamp: int, day_start_hour: int, day_end_hour: int) -> bool:
     """
@@ -19,17 +21,21 @@ def is_time_in_window(timestamp: int, day_start_hour: int, day_end_hour: int) ->
     Returns:
         True 如果时间在窗口内，否则返回 False
     """
-    # 将时间戳转换为 UTC 时间
-    utc_time = dt.datetime.fromtimestamp(timestamp, dt.UTC)
-    current_hour = utc_time.hour
+    # 使用业务本地时区（UTC+8）计算小时，和界面配置保持一致
+    local_time = dt.datetime.fromtimestamp(timestamp, dt.UTC).astimezone(LOCAL_TIMEZONE)
+    current_hour = local_time.hour
+
+    # 0-23 在界面中表示全天
+    if day_start_hour == 0 and day_end_hour == 23:
+        return True
 
     # 处理跨天时段
     if day_start_hour <= day_end_hour:
-        # 正常时段：如 9-18
-        return day_start_hour <= current_hour < day_end_hour
+        # 正常时段：如 9-18（含边界）
+        return day_start_hour <= current_hour <= day_end_hour
     else:
         # 跨天时段：如 22-6（22:00 到次日 06:00）
-        return current_hour >= day_start_hour or current_hour < day_end_hour
+        return current_hour >= day_start_hour or current_hour <= day_end_hour
 
 
 def calculate_next_run_time(task: ScheduledMessageTask, last_sent_timestamp: int | None = None) -> int:
@@ -45,17 +51,18 @@ def calculate_next_run_time(task: ScheduledMessageTask, last_sent_timestamp: int
     """
     now = int(dt.datetime.now(dt.UTC).timestamp())
 
-    # 如果设置了 start_at 且在未来，直接返回 start_at
-    if task.start_at and task.start_at > now:
-        return task.start_at
+    interval_seconds = task.repeat_interval_min * 60
 
-    # 基于上次发送时间或开始时间计算
-    base_time = last_sent_timestamp if last_sent_timestamp else task.start_at or now
-    next_time = base_time + task.repeat_interval_min * 60
-
-    # 确保在未来
-    while next_time < now:
-        next_time += task.repeat_interval_min * 60
+    # 首次调度：start_at 为空时立即可运行；有 start_at 时按 start_at 开始
+    if last_sent_timestamp is None:
+        next_time = task.start_at if task.start_at is not None else now
+        if next_time < now and task.start_at is not None:
+            next_time = now
+    else:
+        # 已发送过：按固定间隔滚动
+        next_time = last_sent_timestamp + interval_seconds
+        while next_time < now:
+            next_time += interval_seconds
 
     # 考虑时段窗口，找到下一个有效时间点
     if not is_time_in_window(next_time, task.day_start_hour, task.day_end_hour):
@@ -76,18 +83,18 @@ def find_next_valid_time(from_timestamp: int, task: ScheduledMessageTask) -> int
         下一个在时段窗口内的 Unix 时间戳
     """
     current = from_timestamp
-    interval = task.repeat_interval_min * 60
+    interval = max(task.repeat_interval_min * 60, 60)
 
     # 最多向前查找 30 天（防止无限循环）
     max_iterations = 30 * 24 * 60 // task.repeat_interval_min
 
     for _ in range(max_iterations):
-        current += interval
         if is_time_in_window(current, task.day_start_hour, task.day_end_hour):
             return current
+        current += interval
 
     # 如果找不到，返回原时间（应该不会发生）
-    return from_timestamp
+    return current
 
 
 def datetime_to_timestamp(dt_obj: dt.datetime) -> int:
@@ -127,10 +134,8 @@ def parse_date_time_string(date_str: str) -> int | None:
         Unix 时间戳，解析失败返回 None
     """
     try:
-        dt_obj = dt.datetime.strptime(date_str, "%Y-%m-%d %H:%M")
-        # 将输入时间视为本地时间，转换为 UTC
-        dt_obj = dt_obj.replace(tzinfo=dt.timezone.utc)
-        return int(dt_obj.timestamp())
+        local_dt = dt.datetime.strptime(date_str, "%Y-%m-%d %H:%M").replace(tzinfo=LOCAL_TIMEZONE)
+        return int(local_dt.astimezone(dt.UTC).timestamp())
     except (ValueError, TypeError):
         return None
 
@@ -146,7 +151,7 @@ def format_timestamp(timestamp: int, format_str: str = "%Y-%m-%d %H:%M") -> str:
     Returns:
         格式化后的时间字符串
     """
-    dt_obj = timestamp_to_datetime(timestamp)
+    dt_obj = dt.datetime.fromtimestamp(timestamp, dt.UTC).astimezone(LOCAL_TIMEZONE)
     return dt_obj.strftime(format_str)
 
 

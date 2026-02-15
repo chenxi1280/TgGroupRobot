@@ -4,6 +4,7 @@ import datetime as dt
 import secrets
 import uuid
 from typing import Any
+from urllib.parse import urlparse
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +22,107 @@ from bot.utils.time_helper import (
 
 class ScheduledMessageService(ServiceBase):
     """定时消息任务服务"""
+
+    # 允许通过 update_task(..., field=None) 清空的字段
+    _NULLABLE_UPDATE_FIELDS = {
+        "text",
+        "start_at",
+        "end_at",
+        "media_file_id",
+        "created_by_user_id",
+        "last_sent_message_id",
+        "next_run_at",
+    }
+
+    @staticmethod
+    def _normalize_button_url(url: str) -> str:
+        """规范化按钮 URL，支持常见简写。"""
+        normalized = url.strip()
+        if not normalized:
+            raise ValidationError("按钮 URL 不能为空")
+
+        lowered = normalized.lower()
+        blocked_schemes = ("javascript:", "data:", "file:", "vbscript:")
+        if lowered.startswith(blocked_schemes):
+            raise ValidationError("按钮 URL 协议不安全")
+
+        # 常见输入兼容：@channel / t.me/xxx / www.xxx.com / example.com
+        if normalized.startswith("@"):
+            normalized = f"https://t.me/{normalized[1:]}"
+        elif normalized.startswith("t.me/"):
+            normalized = f"https://{normalized}"
+        elif normalized.startswith("www."):
+            normalized = f"https://{normalized}"
+        elif "://" not in normalized and not normalized.startswith("tg://"):
+            normalized = f"https://{normalized}"
+
+        parsed = urlparse(normalized)
+        if parsed.scheme not in {"http", "https", "tg"}:
+            raise ValidationError("按钮 URL 协议仅支持 http/https/tg")
+
+        if parsed.scheme in {"http", "https"} and not parsed.netloc:
+            raise ValidationError("按钮 URL 格式无效")
+
+        if parsed.scheme in {"http", "https"}:
+            if not parsed.hostname:
+                raise ValidationError("按钮 URL 主机名无效")
+            try:
+                _ = parsed.port
+            except ValueError:
+                raise ValidationError("按钮 URL 端口格式无效")
+
+        if parsed.scheme == "tg" and not (parsed.netloc or parsed.path):
+            raise ValidationError("按钮 tg:// 链接格式无效")
+
+        return normalized
+
+    @staticmethod
+    def normalize_buttons_config(buttons: list) -> list[list[dict[str, str]]]:
+        """规范化按钮配置，兼容单层和双层数组。"""
+        if not isinstance(buttons, list):
+            raise ValidationError("按钮配置必须是 JSON 数组")
+
+        if not buttons:
+            return []
+
+        # 兼容单层格式: [{"text":"A","url":"https://..."}]
+        if all(isinstance(item, dict) for item in buttons):
+            rows = [buttons]
+        elif all(isinstance(item, list) for item in buttons):
+            rows = buttons
+        else:
+            raise ValidationError("按钮格式必须是 [{text,url}] 或 [[{text,url}]]")
+
+        normalized_rows: list[list[dict[str, str]]] = []
+
+        for row_index, row in enumerate(rows, start=1):
+            if not isinstance(row, list):
+                raise ValidationError(f"第 {row_index} 行按钮格式错误")
+
+            normalized_row: list[dict[str, str]] = []
+            for col_index, button in enumerate(row, start=1):
+                if not isinstance(button, dict):
+                    raise ValidationError(f"第 {row_index} 行第 {col_index} 个按钮必须是对象")
+
+                text = str(button.get("text", "")).strip()
+                raw_url = button.get("url", button.get("link", ""))
+                url = str(raw_url).strip()
+
+                if not text:
+                    raise ValidationError(f"第 {row_index} 行第 {col_index} 个按钮 text 不能为空")
+
+                if not url:
+                    raise ValidationError(f"第 {row_index} 行第 {col_index} 个按钮 url 不能为空")
+
+                normalized_row.append({
+                    "text": text,
+                    "url": ScheduledMessageService._normalize_button_url(url),
+                })
+
+            if normalized_row:
+                normalized_rows.append(normalized_row)
+
+        return normalized_rows
 
     @staticmethod
     async def create_task(
@@ -72,6 +174,9 @@ class ScheduledMessageService(ServiceBase):
             if start_at >= end_at:
                 raise ValidationError("开始时间必须早于终止时间")
 
+        raw_buttons = kwargs.get("buttons", [])
+        buttons = ScheduledMessageService.normalize_buttons_config(raw_buttons) if raw_buttons else []
+
         # 生成唯一的短 ID
         while True:
             short_id = secrets.token_hex(4)  # 8 个字符
@@ -98,7 +203,7 @@ class ScheduledMessageService(ServiceBase):
             parse_mode=kwargs.get("parse_mode", "HTML"),
             media_type=kwargs.get("media_type", "none"),
             media_file_id=kwargs.get("media_file_id"),
-            buttons=kwargs.get("buttons", []),
+            buttons=buttons,
             delete_previous=kwargs.get("delete_previous", True),
             pin_message=kwargs.get("pin_message", False),
         )
@@ -126,14 +231,21 @@ class ScheduledMessageService(ServiceBase):
         Returns:
             任务对象，不存在返回 None
         """
+        task_key = str(task_id)
+
         # 尝试通过短 ID 查找
-        stmt = select(ScheduledMessageTask).where(ScheduledMessageTask.short_id == str(task_id))
+        stmt = select(ScheduledMessageTask).where(ScheduledMessageTask.short_id == task_key)
         result = await session.execute(stmt)
         task = result.scalar_one_or_none()
 
-        # 如果未找到，尝试通过 UUID 查找
+        # 如果未找到，尝试通过 UUID 查找（无效 UUID 直接返回 None，避免数据库报错）
         if not task:
-            stmt = select(ScheduledMessageTask).where(ScheduledMessageTask.task_id == task_id)
+            try:
+                task_uuid = task_id if isinstance(task_id, uuid.UUID) else uuid.UUID(task_key)
+            except (TypeError, ValueError, AttributeError):
+                return None
+
+            stmt = select(ScheduledMessageTask).where(ScheduledMessageTask.task_id == task_uuid)
             result = await session.execute(stmt)
             task = result.scalar_one_or_none()
 
@@ -216,8 +328,11 @@ class ScheduledMessageService(ServiceBase):
 
         # 更新字段
         for key, value in kwargs.items():
-            if hasattr(task, key) and value is not None:
-                setattr(task, key, value)
+            if not hasattr(task, key):
+                continue
+            if value is None and key not in ScheduledMessageService._NULLABLE_UPDATE_FIELDS:
+                continue
+            setattr(task, key, value)
 
         # 验证时段
         if "day_start_hour" in kwargs or "day_end_hour" in kwargs:
@@ -237,7 +352,8 @@ class ScheduledMessageService(ServiceBase):
             "start_at",
         ]
         if any(key in kwargs for key in recalculate_keys):
-            task.next_run_at = calculate_next_run_time(task, task.last_sent_message_id)
+            now_timestamp = int(dt.datetime.now(dt.UTC).timestamp())
+            task.next_run_at = calculate_next_run_time(task, now_timestamp)
 
         await session.flush()
         return task
@@ -263,7 +379,8 @@ class ScheduledMessageService(ServiceBase):
 
         # 如果启用任务，重新计算下次运行时间
         if enabled:
-            task.next_run_at = calculate_next_run_time(task, task.last_sent_message_id)
+            now_timestamp = int(dt.datetime.now(dt.UTC).timestamp())
+            task.next_run_at = calculate_next_run_time(task, now_timestamp)
 
         await session.flush()
         return task
@@ -316,6 +433,7 @@ class ScheduledMessageService(ServiceBase):
             )
             .order_by(ScheduledMessageTask.next_run_at.asc())
             .limit(limit)
+            .with_for_update(skip_locked=True)
         )
 
         result = await session.execute(stmt)
@@ -411,7 +529,8 @@ class ScheduledMessageService(ServiceBase):
         Returns:
             更新后的任务对象
         """
-        return await ScheduledMessageService.update_task(session, task_id, buttons=buttons)
+        normalized_buttons = ScheduledMessageService.normalize_buttons_config(buttons)
+        return await ScheduledMessageService.update_task(session, task_id, buttons=normalized_buttons)
 
     @staticmethod
     async def update_task_repeat(

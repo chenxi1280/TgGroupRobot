@@ -4,8 +4,9 @@ import structlog
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bot.models.core import ConversationState
+from bot.models.core import ConversationState, TgChat
 from bot.services.base import ServiceBase
+from bot.services.core.user_service import ensure_user
 
 log = structlog.get_logger(__name__)
 
@@ -61,6 +62,21 @@ async def set_user_state(
     Returns:
         对话状态对象
     """
+    # 外键自愈：conversation_states 依赖 tg_users/tg_chats
+    await ensure_user(
+        session,
+        user_id=user_id,
+        username=None,
+        first_name=None,
+        last_name=None,
+        language_code=None,
+    )
+    chat = await ServiceBase._get_by_id(session, TgChat, chat_id)
+    if chat is None:
+        inferred_type = "supergroup" if chat_id < 0 else "private"
+        session.add(TgChat(id=chat_id, type=inferred_type, title=None))
+        await session.flush()
+
     state = await get_user_state(session, chat_id, user_id)
     if state is None:
         state = ConversationState(
@@ -109,4 +125,3 @@ async def clear_user_state(
     state = await get_user_state(session, chat_id, user_id)
     if state is not None:
         await ServiceBase._delete_entity(session, state)
-

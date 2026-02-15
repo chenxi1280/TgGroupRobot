@@ -24,7 +24,6 @@ class AdsTask(ScheduledTask):
             mark_ad_sent,
             lock_ad_for_sending,
         )
-        import asyncio
         import structlog
 
         log = structlog.get_logger(__name__)
@@ -32,7 +31,6 @@ class AdsTask(ScheduledTask):
 
         async with db.session_factory() as session:
             ads = await get_scheduled_ads(session)
-            now = asyncio.get_event_loop().time()
 
             for ad in ads:
                 if should_send_ad(ad):

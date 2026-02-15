@@ -133,7 +133,22 @@ class ChatSettings(Base):
     anti_flood_messages: Mapped[int] = mapped_column(Integer, default=5)  # 触发消息数量
     anti_flood_seconds: Mapped[int] = mapped_column(Integer, default=5)  # 时间窗口（秒）
     anti_flood_action: Mapped[str] = mapped_column(String(32), default="mute")  # 惩罚动作: mute/delete/ban
-    anti_flood_mute_duration: Mapped[int] = mapped_column(Integer, default=60)  # 禁言时长（秒）
+    anti_flood_mute_duration: Mapped[int] = mapped_column(Integer, default=3600)  # 禁言时长（秒）
+    anti_flood_exempt_admin: Mapped[bool] = mapped_column(Boolean, default=True)  # 是否豁免管理员
+    anti_flood_cleanup_messages: Mapped[bool] = mapped_column(Boolean, default=False)  # 触发后是否自动清理消息
+    anti_flood_delete_notify: Mapped[bool] = mapped_column(Boolean, default=False)  # 是否发送并自动删除提醒
+    anti_flood_delete_notify_seconds: Mapped[int] = mapped_column(Integer, default=600)  # 提醒消息保留时长（秒）
+
+    # 反垃圾
+    anti_spam_enabled: Mapped[bool] = mapped_column(Boolean, default=False)  # 反垃圾总开关
+    anti_spam_action: Mapped[str] = mapped_column(String(32), default="mute")  # 惩罚动作: delete/mute/ban
+    anti_spam_mute_duration: Mapped[int] = mapped_column(Integer, default=3600)  # 禁言时长（秒）
+    anti_spam_exempt_admin: Mapped[bool] = mapped_column(Boolean, default=True)  # 是否豁免管理员
+    anti_spam_delete_notify: Mapped[bool] = mapped_column(Boolean, default=False)  # 是否发送并自动删除提醒
+    anti_spam_delete_notify_seconds: Mapped[int] = mapped_column(Integer, default=600)  # 提醒消息保留时长（秒）
+    anti_spam_repeat_messages: Mapped[int] = mapped_column(Integer, default=3)  # 重复消息阈值
+    anti_spam_repeat_seconds: Mapped[int] = mapped_column(Integer, default=15)  # 重复检测窗口（秒）
+    anti_spam_rules: Mapped[dict] = mapped_column(JSONB, default=dict)  # 规则开关与名单配置
 
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC))
     updated_at: Mapped[dt.datetime] = mapped_column(
@@ -590,7 +605,4 @@ class SolitaireEntry(Base):
 
     # 关系：接龙
     solitaire: Mapped["Solitaire"] = relationship("Solitaire", back_populates="entries_rel")
-
-
-
 

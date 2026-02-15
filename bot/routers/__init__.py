@@ -3,7 +3,6 @@ from bot.routers.lottery_router import LotteryRouter
 from bot.routers.solitaire_router import SolitaireRouter
 from bot.routers.invite_router import InviteRouter
 from bot.routers.ads_router import AdsRouter
-from bot.routers.scheduled_router import ScheduledRouter
 from bot.routers.scheduled_message_router import ScheduledMessageRouter
 from bot.routers.auto_reply_router import AutoReplyRouter
 from bot.routers.banned_word_router import BannedWordRouter
@@ -17,7 +16,6 @@ __all__ = [
     "SolitaireRouter",
     "InviteRouter",
     "AdsRouter",
-    "ScheduledRouter",
     "ScheduledMessageRouter",
     "AutoReplyRouter",
     "BannedWordRouter",

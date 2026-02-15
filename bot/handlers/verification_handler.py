@@ -1,25 +1,195 @@
 from __future__ import annotations
 
+import re
+
 import structlog
+from sqlalchemy import func, or_, select
 from telegram import ChatPermissions, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from bot.db.session import Database
 from bot.handlers.base.chat_resolver import ChatResolver
 from bot.i18n.strings import t
-from bot.keyboards.common.verification import admin_verify_keyboard, verification_keyboard
+from bot.keyboards.common.verification import (
+    admin_verify_keyboard,
+    verification_keyboard,
+    verification_timeout_help_keyboard,
+)
+from bot.models.core import TgUser
 from bot.services.core.chat_service import ensure_chat, get_chat_settings
+from bot.services.core.permission_service import is_user_admin
 from bot.services.core.user_service import ensure_user
 from bot.services.verification_service import (
     create_or_replace_challenge,
+    get_challenge_by_token,
     get_challenge,
     solve_by_answer,
-    solve_by_token,
+    solve_by_token_scoped,
 )
 from bot.services.integration.invite_service import track_and_award_invite
 
 
 log = structlog.get_logger(__name__)
+
+
+def _user_mention_html(user_id: int) -> str:
+    return f'<a href="tg://user?id={user_id}">{user_id}</a>'
+
+
+def _extract_unmute_target_user_id(message, message_text: str) -> int | None:
+    """从“解封”消息中提取目标用户ID。
+
+    支持：
+    1) 回复用户消息后发送“解封”
+    2) 文本提及用户（text_mention）
+    3) 文本中直接写 @123456789 或 user_id:123456789
+    """
+    if getattr(message, "reply_to_message", None) is not None:
+        reply_user = getattr(message.reply_to_message, "from_user", None)
+        if reply_user is not None:
+            return reply_user.id
+
+    for entity in [*(message.entities or [])]:
+        entity_type = getattr(entity.type, "value", entity.type)
+        if entity_type == "text_mention" and entity.user is not None:
+            return entity.user.id
+
+    for pattern in [
+        r"@(-?\d{5,})",
+        r"(?:user_id|uid|用户id)\s*[:： ]\s*(-?\d{5,})",
+    ]:
+        m = re.search(pattern, message_text, flags=re.IGNORECASE)
+        if m:
+            try:
+                return int(m.group(1))
+            except ValueError:
+                continue
+    return None
+
+
+async def _resolve_username_to_user_id(context: ContextTypes.DEFAULT_TYPE, message_text: str) -> int | None:
+    """从 @username 尝试解析 user_id（仅公开用户名可解析）。"""
+    username: str | None = None
+
+    # 1) 显式 @username
+    m = re.search(r"@([A-Za-z0-9_]{5,})", message_text)
+    if m:
+        username = m.group(1)
+
+    # 2) 兼容“解封 Username”/“/unmute Username”
+    if username is None:
+        m2 = re.search(r"(?:^|\s)(?:解封|/unmute)\s+([A-Za-z][A-Za-z0-9_]{4,})", message_text, flags=re.IGNORECASE)
+        if m2:
+            username = m2.group(1)
+
+    if not username:
+        return None
+
+    try:
+        target_chat = await context.bot.get_chat(f"@{username}")
+        target_id = getattr(target_chat, "id", None)
+        if isinstance(target_id, int) and target_id > 0:
+            return target_id
+    except Exception:
+        return None
+    return None
+
+
+def _extract_unmute_name_token(message_text: str) -> str | None:
+    m = re.search(r"(?:^|\s)(?:解封|/unmute)\s+([^\s]+)", message_text, flags=re.IGNORECASE)
+    if not m:
+        return None
+    token = m.group(1).strip()
+    token = token.lstrip("@").strip()
+    return token or None
+
+
+async def _resolve_name_from_db(session, name_token: str) -> int | None:
+    """按用户名/名字从本地库解析 user_id（仅唯一命中时返回）。"""
+    if not name_token:
+        return None
+
+    token = name_token.lower()
+    stmt = (
+        select(TgUser.id)
+        .where(
+            or_(
+                func.lower(TgUser.username) == token,
+                func.lower(TgUser.first_name) == token,
+            )
+        )
+        .limit(2)
+    )
+    result = await session.execute(stmt)
+    rows = result.scalars().all()
+    if len(rows) == 1:
+        return int(rows[0])
+    return None
+
+
+async def _mark_challenge_released(session, chat_id: int, user_id: int) -> None:
+    ch = await get_challenge(session, chat_id, user_id)
+    if ch is None:
+        return
+    ch.solved = True
+    ch.timeout_handled = True
+    await session.flush()
+
+
+async def _try_admin_manual_unmute(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """管理员文本解封：支持“解封 + 回复用户消息”或“解封 @用户ID”"""
+    if update.effective_chat is None or update.effective_user is None or update.effective_message is None:
+        return False
+
+    chat = update.effective_chat
+    actor = update.effective_user
+    message = update.effective_message
+    text = (message.text or "").strip()
+
+    if chat.type == "private" or not text:
+        return False
+
+    normalized = text.lower()
+    wants_unmute = ("解封" in text) or normalized.startswith("/unmute")
+    if not wants_unmute:
+        return False
+
+    if not await is_user_admin(context, chat.id, actor.id):
+        return False
+
+    target_user_id = _extract_unmute_target_user_id(message, text)
+    if target_user_id is None:
+        target_user_id = await _resolve_username_to_user_id(context, text)
+
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        if target_user_id is None:
+            token = _extract_unmute_name_token(text) or ""
+            target_user_id = await _resolve_name_from_db(session, token)
+
+        if target_user_id is None:
+            try:
+                await message.reply_text("请回复目标用户消息发送“解封”，或使用“解封 @用户ID / 解封 @username / 解封 用户名”。")
+            except Exception:
+                pass
+            return True
+
+        settings = await get_chat_settings(session, chat.id)
+        await _mark_challenge_released(session, chat.id, target_user_id)
+        await session.commit()
+
+    await _unrestrict_and_notify(context, chat.id, target_user_id, settings.language)
+
+    try:
+        actor_name = actor.mention_html()
+        target_name = _user_mention_html(target_user_id)
+        await message.reply_text(
+            f"✅ 管理员解封完成\n管理员: {actor_name}\n用户: {target_name}\n方式: 文本解封",
+            parse_mode="HTML",
+        )
+    except Exception:
+        pass
+    return True
 
 
 async def new_members_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -136,49 +306,77 @@ async def new_members_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 
             # 根据验证类型发送不同的验证消息
             mention = u.mention_html()
-            if settings.verification_mode == "button":
-                await context.bot.send_message(
-                    chat_id=chat.id,
-                    text=t(settings.language, "verify.prompt", user=mention, seconds=settings.verification_timeout_seconds),
-                    reply_markup=verification_keyboard(ch.token),
-                    parse_mode="HTML",
-                )
-            elif settings.verification_mode == "math":
-                await context.bot.send_message(
-                    chat_id=chat.id,
-                    text=f"🔢 {mention} 请回答以下数学题以完成验证：\n\n<b>{ch.question}</b>\n\n⏱️ {settings.verification_timeout_seconds} 秒内完成",
-                    parse_mode="HTML",
-                )
-            elif settings.verification_mode == "captcha":
-                await context.bot.send_message(
-                    chat_id=chat.id,
-                    text=f"🔢 {mention} 请输入以下验证码以完成验证：\n\n<b>{ch.question}</b>\n\n⏱️ {settings.verification_timeout_seconds} 秒内完成",
-                    parse_mode="HTML",
-                )
-            elif settings.verification_mode == "admin":
-                # 管理员确认模式：发送管理员确认请求
-                # 管理员确认模式没有超时限制（永久等待管理员审核）
-                user_name = u.username or u.first_name or "用户"
-                mention_text = f"@{user_name}" if u.username else mention
-                await context.bot.send_message(
-                    chat_id=chat.id,
-                    text=f"👋 {mention_text} 申请加入群组，请管理员确认是否通过。",
-                    reply_markup=admin_verify_keyboard(u.id, ch.token),
-                    parse_mode="HTML",
-                )
+            prompt_sent = True
+            try:
+                if settings.verification_mode == "button":
+                    await context.bot.send_message(
+                        chat_id=chat.id,
+                        text=t(settings.language, "verify.prompt", user=mention, seconds=settings.verification_timeout_seconds),
+                        reply_markup=verification_keyboard(ch.token),
+                        parse_mode="HTML",
+                    )
+                elif settings.verification_mode == "math":
+                    await context.bot.send_message(
+                        chat_id=chat.id,
+                        text=f"🔢 {mention} 请回答以下数学题以完成验证：\n\n<b>{ch.question}</b>\n\n⏱️ {settings.verification_timeout_seconds} 秒内完成",
+                        parse_mode="HTML",
+                    )
+                elif settings.verification_mode == "captcha":
+                    await context.bot.send_message(
+                        chat_id=chat.id,
+                        text=f"🔢 {mention} 请输入以下验证码以完成验证：\n\n<b>{ch.question}</b>\n\n⏱️ {settings.verification_timeout_seconds} 秒内完成",
+                        parse_mode="HTML",
+                    )
+                elif settings.verification_mode == "admin":
+                    # 管理员确认模式：发送管理员确认请求
+                    # 管理员确认模式没有超时限制（永久等待管理员审核）
+                    user_name = u.username or u.first_name or "用户"
+                    mention_text = f"@{user_name}" if u.username else mention
+                    await context.bot.send_message(
+                        chat_id=chat.id,
+                        text=f"👋 {mention_text} 申请加入群组，请管理员确认是否通过。",
+                        reply_markup=admin_verify_keyboard(u.id, ch.token),
+                        parse_mode="HTML",
+                    )
+            except Exception as e:
+                prompt_sent = False
+                log.warning("send_verification_prompt_failed", chat_id=chat.id, user_id=u.id, mode=settings.verification_mode, error=str(e))
+
+            # 兜底：验证消息发送失败时，不继续按“未验证超时”惩罚，避免误伤
+            if not prompt_sent:
+                ch.solved = True
+                ch.timeout_handled = True
+                await session.flush()
+
+                await _unrestrict_and_notify(context, chat.id, u.id, settings.language)
+                try:
+                    await context.bot.send_message(
+                        chat_id=chat.id,
+                        text=f"⚠️ {mention} 验证提示发送失败，已临时放行。请管理员检查机器人在本群发言权限。",
+                        parse_mode="HTML",
+                    )
+                except Exception:
+                    pass
 
         await session.commit()
 
 
 async def verify_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if update.callback_query is None or update.effective_chat is None:
+    if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
         return
     q = update.callback_query
     await q.answer()
 
     data = q.data or ""
-    # vfy:<token>
-    token = data.split("vfy:", 1)[-1].strip()
+    # 兼容两种格式：
+    # 1) vfy:<token>（当前标准）
+    # 2) vfy:verify:<token>（历史格式）
+    token = ""
+    if data.startswith("vfy:verify:"):
+        token = data.split("vfy:verify:", 1)[-1].strip()
+    elif data.startswith("vfy:"):
+        token = data.split("vfy:", 1)[-1].strip()
+
     if not token:
         return
 
@@ -186,7 +384,35 @@ async def verify_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
         settings = await get_chat_settings(session, chat.id)
-        ch = await solve_by_token(session, token)
+        # 先检查 token 归属，避免非本人点击把消息误改成“已过期”
+        origin = await get_challenge_by_token(session, token)
+        if origin is None:
+            await session.commit()
+            await q.edit_message_text(t("zh-CN", "verify.expired"))
+            return
+
+        if origin.chat_id != chat.id:
+            await session.commit()
+            try:
+                await q.answer("该验证按钮不属于当前群", show_alert=True)
+            except Exception:
+                pass
+            return
+
+        if origin.user_id != update.effective_user.id:
+            await session.commit()
+            try:
+                await q.answer("仅新成员本人可点击此按钮验证", show_alert=True)
+            except Exception:
+                pass
+            return
+
+        ch = await solve_by_token_scoped(
+            session,
+            token,
+            expected_chat_id=chat.id,
+            expected_user_id=update.effective_user.id,
+        )
         await session.commit()
 
     if ch is None:
@@ -212,6 +438,10 @@ async def verify_message_handler(update: Update, context: ContextTypes.DEFAULT_T
     message_text = update.effective_message.text or ""
 
     if chat.type == "private" or not message_text:
+        return
+
+    # 管理员可在群内用“解封”手动解除验证超时禁言
+    if await _try_admin_manual_unmute(update, context):
         return
 
     db: Database = context.application.bot_data["db"]
@@ -305,9 +535,23 @@ async def admin_verify_callback(update: Update, context: ContextTypes.DEFAULT_TY
     except (ValueError, IndexError) as e:
         log.warning("invalid_admin_verify_callback_format", callback_data=data, error=str(e))
         return
+    if action not in {"approve", "reject"}:
+        log.warning("invalid_admin_verify_action", callback_data=data, action=action)
+        return
 
     chat = update.effective_chat
     if chat is None:
+        return
+
+    # 仅群管理员可执行通过/拒绝
+    actor = update.effective_user
+    if actor is None:
+        return
+    if not await is_user_admin(context, chat.id, actor.id):
+        try:
+            await q.answer("仅群管理员可执行该操作", show_alert=True)
+        except Exception:
+            pass
         return
 
     db: Database = context.application.bot_data["db"]
@@ -316,7 +560,12 @@ async def admin_verify_callback(update: Update, context: ContextTypes.DEFAULT_TY
 
         if action == "approve":
             # 通过验证
-            ch = await solve_by_token(session, token)
+            ch = await solve_by_token_scoped(
+                session,
+                token,
+                expected_chat_id=chat.id,
+                expected_user_id=user_id,
+            )
             await session.commit()
 
             if ch and ch.solved:
@@ -343,6 +592,85 @@ async def admin_verify_callback(update: Update, context: ContextTypes.DEFAULT_TY
                     await q.edit_message_text(f"⚠️ 操作失败：{str(e)}")
                 except Exception as e:
                     log.warning("edit_admin_verify_message_failed", error=str(e))
+
+
+async def verification_timeout_help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """验证超时协助回调
+
+    回调格式：
+    - vfy_help:appeal:<user_id>  被禁言用户本人点击，通知管理员处理
+    - vfy_help:unmute:<user_id>  管理员点击，立即解除限制
+    """
+    if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
+        return
+
+    q = update.callback_query
+
+    data = q.data or ""
+    parts = data.split(":")
+    if len(parts) < 3 or parts[0] != "vfy_help":
+        return
+
+    action = parts[1]
+    try:
+        target_user_id = int(parts[2])
+    except ValueError:
+        return
+
+    chat = update.effective_chat
+    actor = update.effective_user
+
+    if action == "appeal":
+        if actor.id != target_user_id:
+            try:
+                await q.answer("仅被禁言用户本人可发起解封申请", show_alert=True)
+            except Exception:
+                pass
+            return
+
+        try:
+            await context.bot.send_message(
+                chat_id=chat.id,
+                text=(
+                    f"🆘 {actor.mention_html()} 请求管理员协助解封。\n"
+                    f"管理员可点击下方按钮直接解封。"
+                ),
+                parse_mode="HTML",
+                reply_markup=verification_timeout_help_keyboard(target_user_id),
+            )
+            await q.answer("已通知管理员，请等待处理", show_alert=True)
+        except Exception:
+            pass
+        return
+
+    if action != "unmute":
+        return
+
+    if not await is_user_admin(context, chat.id, actor.id):
+        try:
+            await q.answer("仅群管理员可解封", show_alert=True)
+        except Exception:
+            pass
+        return
+
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        settings = await get_chat_settings(session, chat.id)
+        await _mark_challenge_released(session, chat.id, target_user_id)
+        await session.commit()
+
+    await _unrestrict_and_notify(context, chat.id, target_user_id, settings.language)
+
+    try:
+        await q.edit_message_text(
+            (
+                f"✅ 管理员 {actor.mention_html()} 已解封用户 "
+                f"{_user_mention_html(target_user_id)}\n方式: 按钮解封"
+            ),
+            parse_mode="HTML",
+        )
+    except Exception as e:
+        log.warning("verification_timeout_unmute_edit_failed", error=str(e))
 
 
 # ==================== 验证配置相关 ====================
@@ -548,7 +876,7 @@ async def _parse_verification_config(update: Update, session, state: object, tex
         # 显示多级返回按钮：返回验证菜单 / 返回主菜单
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("🔙 返回验证菜单", callback_data=f"adm:menu:verification:{target_chat_id}")],
-            [InlineKeyboardButton("🏠 返回主菜单", callback_data=f"adm:menu:{target_chat_id}")]
+            [InlineKeyboardButton("🏠 返回主菜单", callback_data=f"adm:menu:main:{target_chat_id}")]
         ])
 
         await update.effective_message.reply_text(result_text, reply_markup=keyboard)

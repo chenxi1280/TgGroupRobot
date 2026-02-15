@@ -29,6 +29,7 @@ def get_settings_toggle_rows(settings: ChatSettings) -> list[tuple[str, str, boo
         ("内容审核", "moderation_enabled", settings.moderation_enabled),
         ("屏蔽链接", "moderation_block_links", settings.moderation_block_links),
         ("反刷屏", "anti_flood_enabled", settings.anti_flood_enabled),
+        ("反垃圾", "anti_spam_enabled", settings.anti_spam_enabled),
         ("广告", "ads_enabled", settings.ads_enabled),
         ("商业化", "monetization_enabled", settings.monetization_enabled),
     ]
@@ -120,12 +121,17 @@ async def get_chat_settings(session: AsyncSession, chat_id: int) -> ChatSettings
         {"chat_id": chat_id},
     )
     if settings is None:
+        # 自愈：先确保 tg_chats 中存在对应 chat，避免 chat_settings 外键失败
+        chat = await ServiceBase._get_by_id(session, TgChat, chat_id)
+        if chat is None:
+            inferred_type = "supergroup" if chat_id < 0 else "private"
+            session.add(TgChat(id=chat_id, type=inferred_type, title=None))
+            await session.flush()
+
         settings = ChatSettings(chat_id=chat_id)
         session.add(settings)
         await session.flush()
     return settings
-
-
 
 
 
