@@ -56,6 +56,11 @@ class PrivateConfigHandler:
             "sm_edit_buttons": self._handle_scheduled_message_input,
             "sm_edit_start_at": self._handle_scheduled_message_input,
             "sm_edit_end_at": self._handle_scheduled_message_input,
+            # 周边资料 FSM 状态
+            "nearby_edit_price": self._handle_nearby_text_input,
+            "nearby_edit_method": self._handle_nearby_text_input,
+            "nearby_edit_address": self._handle_nearby_text_input,
+            "nearby_edit_location": self._handle_nearby_location_input,
         }
 
     async def handle(
@@ -293,4 +298,41 @@ class PrivateConfigHandler:
         target_chat_id = state.state_data.get("target_chat_id", state.chat_id)
         await _scheduled_message_handler.handle_media_input(
             update, context, target_chat_id, update.effective_user.id
+        )
+
+    async def _handle_nearby_text_input(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        session: AsyncSession,
+        state: Any,
+        message_text: str,
+    ) -> None:
+        """处理周边资料文本输入（价格/方式/备注）"""
+        from bot.handlers.nearby_handler import _nearby_handler
+
+        await _nearby_handler.handle_fsm_text_input(
+            update,
+            context,
+            session,
+            state,
+            message_text,
+        )
+
+    async def _handle_nearby_location_input(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        session: AsyncSession,
+        state: Any,
+        message_text: str,
+    ) -> None:
+        """处理周边资料定位输入"""
+        from bot.handlers.nearby_handler import _nearby_handler
+
+        await _nearby_handler.handle_fsm_location_input(
+            update,
+            context,
+            session,
+            state,
         )

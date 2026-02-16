@@ -10,6 +10,8 @@ __pycache__/
 
 dist/
 build/
+.idea
+.claude
 *.egg-info/
 
 

@@ -41,6 +41,7 @@ from bot.routers import (
     InviteRouter,
     LotteryRouter,
     PointsRouter,
+    NearbyRouter,
     ScheduledMessageRouter,
     SolitaireRouter,
     VerificationRouter,
@@ -101,6 +102,7 @@ def _register_routers(app: Application) -> None:
         AutoReplyRouter(),
         BannedWordRouter(),
         PointsRouter(),
+        NearbyRouter(),
         GroupRouter(),
         VerificationRouter(),
     ]
@@ -146,6 +148,7 @@ def _register_common_handlers(app: Application) -> None:
         | filters.Document.ALL
         | filters.Sticker.ALL
         | filters.ANIMATION
+        | filters.LOCATION
     )
     app.add_handler(
         MessageHandler(media_filters, dispatcher.dispatch),

@@ -4,6 +4,7 @@ from bot.models.core import (  # noqa: F401
     ChatSettings,
     ChatSubscription,
     ModerationViolation,
+    NearbyProfile,
     PointsAccount,
     PointsTransaction,
     SignInLog,
@@ -12,7 +13,6 @@ from bot.models.core import (  # noqa: F401
     TgUser,
     VerificationChallenge,
 )
-
 
 
 

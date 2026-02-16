@@ -56,6 +56,10 @@ class ConversationStateType(str, enum.Enum):
     sm_edit_end_at = "sm_edit_end_at"  # 编辑终止时间
     sm_edit_day_start = "sm_edit_day_start"  # 编辑时段开始
     sm_edit_day_end = "sm_edit_day_end"  # 编辑时段结束
+    nearby_edit_price = "nearby_edit_price"  # 编辑周边资料价格
+    nearby_edit_method = "nearby_edit_method"  # 编辑周边资料方式
+    nearby_edit_address = "nearby_edit_address"  # 编辑周边资料备注
+    nearby_edit_location = "nearby_edit_location"  # 编辑周边资料定位
 
 
 class BannedWordMatchType(str, enum.Enum):
@@ -113,7 +117,6 @@ class LotteryDrawMode(str, enum.Enum):
     """抽奖开奖模式"""
     random = "random"  # 随机开奖
     manual = "manual"  # 手动指定中奖人
-
 
 
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -173,6 +173,36 @@ class ChatMember(Base):
     role: Mapped[str] = mapped_column(String(16), default=MemberRole.member.value)
 
     joined_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: dt.datetime.now(dt.UTC),
+        onupdate=lambda: dt.datetime.now(dt.UTC),
+    )
+
+
+class NearbyProfile(Base):
+    """群内成员业务信息卡片（按群隔离）"""
+    __tablename__ = "nearby_profiles"
+    __table_args__ = (
+        UniqueConstraint("chat_id", "user_id", name="uq_nearby_profile_chat_user"),
+        {"schema": "bot"},
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("bot.tg_chats.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("bot.tg_users.id", ondelete="CASCADE"), index=True)
+
+    latitude: Mapped[float | None] = mapped_column(Numeric(9, 6), nullable=True)
+    longitude: Mapped[float | None] = mapped_column(Numeric(9, 6), nullable=True)
+    price_text: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    method_text: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    address_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    is_visible: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    fuzzy_distance: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_location_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC))
     updated_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: dt.datetime.now(dt.UTC),
@@ -605,4 +635,3 @@ class SolitaireEntry(Base):
 
     # 关系：接龙
     solitaire: Mapped["Solitaire"] = relationship("Solitaire", back_populates="entries_rel")
-

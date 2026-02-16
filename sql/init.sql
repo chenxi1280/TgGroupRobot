@@ -1086,5 +1086,46 @@ CREATE INDEX IF NOT EXISTS ix_sml_task_id ON bot.scheduled_message_logs(task_id)
 CREATE INDEX IF NOT EXISTS ix_sml_sent_at ON bot.scheduled_message_logs(sent_at);
 
 -- ============================================
+-- 25. 群内周边资料表 (nearby_profiles)
+-- 成员在每个群内维护独立的位置与业务信息
+-- ============================================
+CREATE TABLE IF NOT EXISTS bot.nearby_profiles (
+    id SERIAL PRIMARY KEY,                                         -- 自增主键
+    chat_id BIGINT NOT NULL,                                       -- 群组 ID（外键关联 tg_chats.id）
+    user_id BIGINT NOT NULL,                                       -- 用户 ID（外键关联 tg_users.id）
+    latitude NUMERIC(9,6),                                         -- 纬度（WGS84）
+    longitude NUMERIC(9,6),                                        -- 经度（WGS84）
+    price_text VARCHAR(128),                                       -- 价格描述
+    method_text VARCHAR(128),                                      -- 交付方式描述
+    address_text TEXT,                                             -- 地址/备注
+    is_visible BOOLEAN NOT NULL DEFAULT TRUE,                      -- 是否在附近列表可见
+    fuzzy_distance BOOLEAN NOT NULL DEFAULT TRUE,                  -- 是否模糊显示距离
+    last_location_at TIMESTAMPTZ,                                  -- 最近一次更新定位时间
+    created_at TIMESTAMPTZ NOT NULL,                               -- 创建时间
+    updated_at TIMESTAMPTZ NOT NULL,                               -- 更新时间
+    CONSTRAINT fk_nearby_profiles_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE,
+    CONSTRAINT fk_nearby_profiles_user_id FOREIGN KEY (user_id)
+        REFERENCES bot.tg_users(id) ON DELETE CASCADE,
+    CONSTRAINT uq_nearby_profile_chat_user UNIQUE (chat_id, user_id)
+);
+
+COMMENT ON TABLE bot.nearby_profiles IS '群内成员周边资料表，按 chat_id + user_id 隔离存储用户业务卡片';
+COMMENT ON COLUMN bot.nearby_profiles.chat_id IS '群组 ID，确保多群数据隔离';
+COMMENT ON COLUMN bot.nearby_profiles.user_id IS '用户 ID';
+COMMENT ON COLUMN bot.nearby_profiles.latitude IS '纬度坐标（WGS84）';
+COMMENT ON COLUMN bot.nearby_profiles.longitude IS '经度坐标（WGS84）';
+COMMENT ON COLUMN bot.nearby_profiles.price_text IS '价格文本描述';
+COMMENT ON COLUMN bot.nearby_profiles.method_text IS '交付方式文本描述';
+COMMENT ON COLUMN bot.nearby_profiles.address_text IS '地址或备注';
+COMMENT ON COLUMN bot.nearby_profiles.is_visible IS '是否在附近列表中可见';
+COMMENT ON COLUMN bot.nearby_profiles.fuzzy_distance IS '详情页距离是否模糊显示';
+COMMENT ON COLUMN bot.nearby_profiles.last_location_at IS '定位更新时间';
+
+CREATE INDEX IF NOT EXISTS ix_nearby_profiles_chat_id ON bot.nearby_profiles(chat_id);
+CREATE INDEX IF NOT EXISTS ix_nearby_profiles_user_id ON bot.nearby_profiles(user_id);
+CREATE INDEX IF NOT EXISTS ix_nearby_profiles_visible ON bot.nearby_profiles(chat_id, is_visible);
+
+-- ============================================
 -- 数据库初始化完成
 -- ============================================

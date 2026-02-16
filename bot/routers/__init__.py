@@ -9,6 +9,7 @@ from bot.routers.banned_word_router import BannedWordRouter
 from bot.routers.points_router import PointsRouter
 from bot.routers.group_router import GroupRouter
 from bot.routers.verification_router import VerificationRouter
+from bot.routers.nearby_router import NearbyRouter
 
 __all__ = [
     "AdminRouter",
@@ -22,4 +23,5 @@ __all__ = [
     "PointsRouter",
     "GroupRouter",
     "VerificationRouter",
+    "NearbyRouter",
 ]
