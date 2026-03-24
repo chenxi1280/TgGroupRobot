@@ -5,7 +5,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from bot.handlers.ads_handler import _parse_ad_id_from_callback, _parse_ads_config
+from bot.handlers.ads_handler import (
+    _format_ad_detail_text,
+    _parse_ad_id_from_callback,
+    _parse_ads_config,
+)
 from bot.services.automation.ad_service import should_send_ad
 
 
@@ -85,3 +89,24 @@ def test_should_send_ad_legacy_once_logic() -> None:
     assert should_send_ad(ad) is True
     ad.last_sent_at = now
     assert should_send_ad(ad) is False
+
+
+def test_format_ad_detail_text_contains_schedule_and_image() -> None:
+    ad = SimpleNamespace(
+        title="活动通知",
+        content="正文内容",
+        enabled=True,
+        schedule_time=dt.datetime(2026, 2, 16, 12, 0, tzinfo=dt.UTC),
+        frequency="daily",
+        has_image=True,
+        last_sent_at=dt.datetime(2026, 2, 16, 13, 0, tzinfo=dt.UTC),
+    )
+
+    text = _format_ad_detail_text(ad)
+
+    assert "🟢 活动通知" in text
+    assert "状态: 启用" in text
+    assert "⏰ 定时: 2026-02-16 12:00 [每天]" in text
+    assert "🖼️ 含图片" in text
+    assert "📤 上次发送: 2026-02-16 13:00" in text
+    assert text.endswith("正文内容")

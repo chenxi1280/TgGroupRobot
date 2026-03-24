@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import copy
-from typing import Any
 
 import structlog
+from sqlalchemy.ext.asyncio import AsyncSession
 from telegram import Update
 from telegram.ext import ContextTypes
 
 from bot.db.session import Database
 from bot.keyboards.admin.antispam import anti_spam_config_keyboard
+from bot.models.core import ChatSettings, ConversationState
 from bot.models.enums import ConversationStateType
 from bot.services.core.chat_service import get_chat_settings
 from bot.services.core.permission_service import is_user_admin
@@ -41,10 +42,18 @@ SPAM_REPEAT_MESSAGES_VALUES = [2, 3, 5, 8]
 SPAM_REPEAT_SECONDS_VALUES = [5, 10, 15, 30]
 
 _BOOL_TRUE = {"开启", "开", "on", "true", "1", "yes", "是"}
+_BOOL_TRUE_NORMALIZED = {x.lower() for x in _BOOL_TRUE}
 
 
 def _parse_bool(value: str) -> bool:
-    return value.strip().lower() in {x.lower() for x in _BOOL_TRUE}
+    return value.strip().lower() in _BOOL_TRUE_NORMALIZED
+
+
+def _parse_int(value: str, min_value: int) -> int | None:
+    try:
+        return max(min_value, int(value.strip()))
+    except (TypeError, ValueError):
+        return None
 
 
 def _cycle(current: int | str, options: list[int | str]) -> int | str:
@@ -68,7 +77,7 @@ def _split_int_list(value: str) -> list[int]:
     return values
 
 
-def format_anti_spam_menu_text(chat_title: str, settings: Any) -> str:
+def format_anti_spam_menu_text(chat_title: str, settings: ChatSettings) -> str:
     rules = get_antispam_rules(settings)
     status = "开启" if settings.anti_spam_enabled else "关闭"
     notify = "开启" if settings.anti_spam_delete_notify else "关闭"
@@ -239,8 +248,8 @@ async def start_anti_spam_config(
 async def anti_spam_config_message_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
-    session,
-    state: Any,
+    session: AsyncSession,
+    state: ConversationState,
     message_text: str,
 ) -> None:
     if update.effective_user is None or update.effective_message is None:
@@ -266,6 +275,7 @@ async def anti_spam_config_message_handler(
     }
 
     lines = [line.strip() for line in message_text.split("\n") if line.strip()]
+    invalid_keys: list[str] = []
     for line in lines:
         if ":" not in line:
             continue
@@ -276,25 +286,50 @@ async def anti_spam_config_message_handler(
         elif key in {"惩罚动作", "处罚"} and value in {"delete", "mute", "ban"}:
             settings.anti_spam_action = value
         elif key in {"禁言时长", "惩罚禁言"}:
-            settings.anti_spam_mute_duration = max(1, int(value))
+            parsed = _parse_int(value, 1)
+            if parsed is None:
+                invalid_keys.append(key)
+                continue
+            settings.anti_spam_mute_duration = parsed
         elif key in {"管理员豁免"}:
             settings.anti_spam_exempt_admin = _parse_bool(value)
         elif key in {"删除提醒", "惩罚删除提醒"}:
-            if value.strip().isdigit():
+            parsed = _parse_int(value, 1)
+            if parsed is not None:
                 settings.anti_spam_delete_notify = True
-                settings.anti_spam_delete_notify_seconds = max(1, int(value.strip()))
+                settings.anti_spam_delete_notify_seconds = parsed
             else:
                 settings.anti_spam_delete_notify = _parse_bool(value)
         elif key in {"删除提醒时长", "提醒时长"}:
-            settings.anti_spam_delete_notify_seconds = max(1, int(value))
+            parsed = _parse_int(value, 1)
+            if parsed is None:
+                invalid_keys.append(key)
+                continue
+            settings.anti_spam_delete_notify_seconds = parsed
         elif key in {"反洪水条数", "重复阈值"}:
-            settings.anti_spam_repeat_messages = max(2, int(value))
+            parsed = _parse_int(value, 2)
+            if parsed is None:
+                invalid_keys.append(key)
+                continue
+            settings.anti_spam_repeat_messages = parsed
         elif key in {"反洪水间隔", "检测间隔", "检测窗口"}:
-            settings.anti_spam_repeat_seconds = max(1, int(value))
+            parsed = _parse_int(value, 1)
+            if parsed is None:
+                invalid_keys.append(key)
+                continue
+            settings.anti_spam_repeat_seconds = parsed
         elif key in {"消息最大长度"}:
-            rules["message_max_length"] = max(20, int(value))
+            parsed = _parse_int(value, 20)
+            if parsed is None:
+                invalid_keys.append(key)
+                continue
+            rules["message_max_length"] = parsed
         elif key in {"姓名最大长度"}:
-            rules["name_max_length"] = max(2, int(value))
+            parsed = _parse_int(value, 2)
+            if parsed is None:
+                invalid_keys.append(key)
+                continue
+            rules["name_max_length"] = parsed
         elif key in {"例外用户ID", "例外名单-用户"}:
             rules["exception_user_ids"] = _split_int_list(value)
         elif key in {"例外群组ID", "例外名单-群组"}:
@@ -326,5 +361,8 @@ async def anti_spam_config_message_handler(
     handler = AdminHandler()
     chat_title = await handler._get_chat_title(db, target_chat_id)
     text = "✅ 反垃圾配置已更新\n\n" + format_anti_spam_menu_text(chat_title, settings)
+    if invalid_keys:
+        keys = "、".join(sorted(set(invalid_keys)))
+        text = f"⚠️ 以下字段值无效，已忽略: {keys}\n\n{text}"
     keyboard = anti_spam_config_keyboard(settings, target_chat_id)
     await update.effective_message.reply_text(text, reply_markup=keyboard)

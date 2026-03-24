@@ -4,6 +4,7 @@ import datetime as dt
 import math
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import Protocol
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,6 +14,16 @@ from bot.services.core.chat_service import ensure_chat
 from bot.services.core.user_service import ensure_user
 
 EARTH_RADIUS_KM = 6371.0088
+
+
+class UserIdentityLike(Protocol):
+    """最小用户字段协议，兼容 telegram.User 与 ORM TgUser。"""
+
+    id: int
+    username: str | None
+    first_name: str | None
+    last_name: str | None
+    language_code: str | None
 
 
 @dataclass
@@ -115,7 +126,7 @@ async def get_profile_with_user(
 async def get_or_create_profile(
     session: AsyncSession,
     chat_id: int,
-    user: TgUser,
+    user: UserIdentityLike,
     chat_type: str | None = None,
     chat_title: str | None = None,
 ) -> NearbyProfile:
@@ -146,7 +157,7 @@ async def get_or_create_profile(
 async def update_profile(
     session: AsyncSession,
     chat_id: int,
-    user: TgUser,
+    user: UserIdentityLike,
     *,
     latitude: float | None = None,
     longitude: float | None = None,

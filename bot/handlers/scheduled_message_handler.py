@@ -930,7 +930,15 @@ async def sm_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     except Exception as e:
         log.error("处理定时消息回调失败", error=str(e), callback_data=update.callback_query.data)
-        await update.callback_query.answer(
-            text=f"❌ 操作失败: {str(e)}",
-            show_alert=True,
-        )
+        short_error = str(e).splitlines()[0][:120] if str(e) else "内部错误"
+        try:
+            await update.callback_query.answer(
+                text=f"❌ 操作失败: {short_error}",
+                show_alert=True,
+            )
+        except Exception:
+            # 避免错误消息过长导致二次异常
+            await update.callback_query.answer(
+                text="❌ 操作失败，请重试",
+                show_alert=True,
+            )

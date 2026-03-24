@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import secrets
 import uuid
 from typing import Any
 from urllib.parse import urlparse
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -22,6 +23,8 @@ from bot.utils.time_helper import (
 
 class ScheduledMessageService(ServiceBase):
     """定时消息任务服务"""
+    _schema_ready = False
+    _schema_lock: asyncio.Lock | None = None
 
     # 允许通过 update_task(..., field=None) 清空的字段
     _NULLABLE_UPDATE_FIELDS = {
@@ -33,6 +36,47 @@ class ScheduledMessageService(ServiceBase):
         "last_sent_message_id",
         "next_run_at",
     }
+
+    @staticmethod
+    async def _ensure_short_id_column(session: AsyncSession) -> None:
+        """兼容旧库：确保 scheduled_message_tasks.short_id 存在并可用。"""
+        if ScheduledMessageService._schema_ready:
+            return
+
+        if ScheduledMessageService._schema_lock is None:
+            ScheduledMessageService._schema_lock = asyncio.Lock()
+
+        async with ScheduledMessageService._schema_lock:
+            if ScheduledMessageService._schema_ready:
+                return
+
+            await session.execute(
+                text("ALTER TABLE bot.scheduled_message_tasks ADD COLUMN IF NOT EXISTS short_id VARCHAR(8)")
+            )
+            await session.execute(
+                text(
+                    """
+                    WITH numbered AS (
+                        SELECT
+                            task_id,
+                            lower(lpad(to_hex((row_number() OVER (ORDER BY created_at, task_id))::bigint), 8, '0')) AS sid
+                        FROM bot.scheduled_message_tasks
+                        WHERE short_id IS NULL OR short_id = ''
+                    )
+                    UPDATE bot.scheduled_message_tasks AS t
+                    SET short_id = numbered.sid
+                    FROM numbered
+                    WHERE t.task_id = numbered.task_id
+                    """
+                )
+            )
+            await session.execute(
+                text("CREATE UNIQUE INDEX IF NOT EXISTS uq_smt_short_id ON bot.scheduled_message_tasks(short_id)")
+            )
+            await session.execute(
+                text("ALTER TABLE bot.scheduled_message_tasks ALTER COLUMN short_id SET NOT NULL")
+            )
+            ScheduledMessageService._schema_ready = True
 
     @staticmethod
     def _normalize_button_url(url: str) -> str:
@@ -145,6 +189,8 @@ class ScheduledMessageService(ServiceBase):
         Returns:
             创建的任务对象
         """
+        await ScheduledMessageService._ensure_short_id_column(session)
+
         # 验证群组存在
         chat = await session.get(TgChat, chat_id)
         if not chat:
@@ -231,6 +277,8 @@ class ScheduledMessageService(ServiceBase):
         Returns:
             任务对象，不存在返回 None
         """
+        await ScheduledMessageService._ensure_short_id_column(session)
+
         task_key = str(task_id)
 
         # 尝试通过短 ID 查找
@@ -294,6 +342,8 @@ class ScheduledMessageService(ServiceBase):
         Returns:
             任务列表
         """
+        await ScheduledMessageService._ensure_short_id_column(session)
+
         stmt = select(ScheduledMessageTask).where(ScheduledMessageTask.chat_id == chat_id)
 
         if enabled_only:
@@ -423,6 +473,8 @@ class ScheduledMessageService(ServiceBase):
         Returns:
             任务列表
         """
+        await ScheduledMessageService._ensure_short_id_column(session)
+
         now = int(dt.datetime.now(dt.UTC).timestamp())
 
         stmt = (

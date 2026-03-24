@@ -11,6 +11,8 @@ from difflib import SequenceMatcher
 import structlog
 from telegram import Bot, ChatPermissions, Message
 
+from bot.models.core import ChatSettings
+
 
 log = structlog.get_logger(__name__)
 
@@ -143,7 +145,7 @@ def get_antispam_tracker() -> AntiSpamTracker:
     return _tracker
 
 
-def get_antispam_rules(settings) -> dict[str, object]:
+def get_antispam_rules(settings: ChatSettings) -> dict[str, object]:
     """获取完整规则配置（为缺省字段补默认值）"""
     rules = copy.deepcopy(DEFAULT_RULES)
     raw = settings.anti_spam_rules or {}
@@ -271,7 +273,7 @@ def _display_name_len(message: Message) -> int:
 
 
 async def detect_spam_violation(
-    settings,
+    settings: ChatSettings,
     message: Message,
     chat_id: int,
     user_id: int,

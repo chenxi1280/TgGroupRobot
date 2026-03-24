@@ -792,7 +792,13 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             action = cb.get(1)
             log.info("=== ADMIN_CALLBACK_ACTION ===", action=action, cb_parts=[cb.get(i) for i in range(cb.length())])
             if action == "menu" and cb.length() >= 4:
-                target_chat_id = cb.get_int(3)  # menu 格式：adm:menu:{submenu}:{chat_id}
+                # 兼容两种格式：
+                # 1) adm:menu:{submenu}:{chat_id}
+                # 2) adm:menu:{chat_id}:back_to_menu （历史按钮）
+                if cb.get(3) == "back_to_menu":
+                    target_chat_id = cb.get_int(2)
+                else:
+                    target_chat_id = cb.get_int(3)
             elif action in {"switch_group", "back_to_main"}:
                 target_chat_id = 0
             elif cb.length() >= 3:

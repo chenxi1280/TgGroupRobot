@@ -989,6 +989,7 @@ CREATE INDEX IF NOT EXISTS ix_solitaire_entries_user_id ON bot.solitaire_entries
 -- ============================================
 CREATE TABLE IF NOT EXISTS bot.scheduled_message_tasks (
     task_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),              -- UUID 主键
+    short_id VARCHAR(8) NOT NULL,                                    -- 短 ID（用于 callback_data）
     chat_id BIGINT NOT NULL,                                         -- 群组 ID（外键关联 tg_chats.id）
     created_by_user_id BIGINT,                                       -- 创建者用户 ID（外键关联 tg_users.id）
     title VARCHAR(128) NOT NULL,                                     -- 任务标题
@@ -1030,6 +1031,7 @@ CREATE TABLE IF NOT EXISTS bot.scheduled_message_tasks (
 
 COMMENT ON TABLE bot.scheduled_message_tasks IS '定时消息任务表，支持灵活的定时消息发送配置';
 COMMENT ON COLUMN bot.scheduled_message_tasks.task_id IS 'UUID 主键，唯一标识任务';
+COMMENT ON COLUMN bot.scheduled_message_tasks.short_id IS '短 ID（8 位），用于 callback_data 和人工操作';
 COMMENT ON COLUMN bot.scheduled_message_tasks.chat_id IS '群组 ID，外键关联 tg_chats.id';
 COMMENT ON COLUMN bot.scheduled_message_tasks.created_by_user_id IS '创建者用户 ID，外键关联 tg_users.id，删除用户时设为 NULL';
 COMMENT ON COLUMN bot.scheduled_message_tasks.title IS '任务标题，用于识别和管理';
@@ -1055,6 +1057,22 @@ COMMENT ON COLUMN bot.scheduled_message_tasks.updated_at IS '任务最后更新�
 CREATE INDEX IF NOT EXISTS ix_smt_chat_id ON bot.scheduled_message_tasks(chat_id);
 CREATE INDEX IF NOT EXISTS ix_smt_enabled ON bot.scheduled_message_tasks(enabled);
 CREATE INDEX IF NOT EXISTS ix_smt_next_run_at ON bot.scheduled_message_tasks(next_run_at) WHERE enabled = TRUE;
+
+-- 兼容历史库：补 short_id 列并回填，确保唯一且非空
+ALTER TABLE bot.scheduled_message_tasks ADD COLUMN IF NOT EXISTS short_id VARCHAR(8);
+WITH sm_numbered AS (
+    SELECT
+        task_id,
+        lower(lpad(to_hex((row_number() OVER (ORDER BY created_at, task_id))::bigint), 8, '0')) AS sid
+    FROM bot.scheduled_message_tasks
+    WHERE short_id IS NULL OR short_id = ''
+)
+UPDATE bot.scheduled_message_tasks AS t
+SET short_id = sm_numbered.sid
+FROM sm_numbered
+WHERE t.task_id = sm_numbered.task_id;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_smt_short_id ON bot.scheduled_message_tasks(short_id);
+ALTER TABLE bot.scheduled_message_tasks ALTER COLUMN short_id SET NOT NULL;
 
 -- ============================================
 -- 24. 定时消息日志表 (scheduled_message_logs)

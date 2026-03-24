@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import datetime as dt
+import html
 
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
-from telegram import InlineKeyboardMarkup, Update
+from telegram import Chat, InlineKeyboardMarkup, Update, User
 from telegram.ext import ContextTypes
 
 from bot.db.session import Database
@@ -49,19 +50,7 @@ class NearbyHandler:
         db: Database = context.application.bot_data["db"]
 
         if chat.type in ("group", "supergroup"):
-            async with db.session_factory() as session:
-                await ensure_chat(session, chat_id=chat.id, chat_type=chat.type, title=chat.title)
-                await ensure_user(
-                    session,
-                    user_id=user.id,
-                    username=user.username,
-                    first_name=user.first_name,
-                    last_name=user.last_name,
-                    language_code=user.language_code,
-                )
-                await session.commit()
-
-            await set_user_current_chat(db, user.id, chat.id)
+            await self._bind_group_context(db, chat, user)
             text = (
                 "✅ 已绑定当前群组。\n\n"
                 "请到私聊发送 /mydata 继续编辑资料。\n"
@@ -87,18 +76,7 @@ class NearbyHandler:
 
         if chat.type in ("group", "supergroup"):
             target_chat_id = chat.id
-            await set_user_current_chat(db, user.id, target_chat_id)
-            async with db.session_factory() as session:
-                await ensure_chat(session, chat_id=chat.id, chat_type=chat.type, title=chat.title)
-                await ensure_user(
-                    session,
-                    user_id=user.id,
-                    username=user.username,
-                    first_name=user.first_name,
-                    last_name=user.last_name,
-                    language_code=user.language_code,
-                )
-                await session.commit()
+            await self._bind_group_context(db, chat, user)
         else:
             target_chat_id = await get_user_current_chat(db, user.id)
             if target_chat_id is None:
@@ -400,21 +378,33 @@ class NearbyHandler:
             )
             display_name = build_user_display_name(user, user.id)
             distance_text = format_distance(distance, fuzzy=profile.fuzzy_distance)
+            distance_mode = "模糊处理" if profile.fuzzy_distance else "精确距离"
             await session.commit()
 
+        if user.username:
+            mention_text = f"@{user.username}"
+        else:
+            mention_label = f"@{display_name}" if not display_name.startswith("@") else display_name
+            mention_text = f'<a href="tg://user?id={target_user_id}">{html.escape(mention_label)}</a>'
+
+        escaped_display_name = html.escape(display_name)
+        escaped_price = html.escape(profile.price_text or "未设置")
+        escaped_method = html.escape(profile.method_text or "未设置")
+        escaped_address = html.escape(profile.address_text or "未设置")
         detail_text = (
             "👤 成员详细档案\n"
             "—————————————————\n"
-            f"用户： {display_name}\n"
-            f"距离： 📍 {distance_text} 处 (模糊处理)\n"
+            f"用户： {escaped_display_name}\n"
+            f"@成员： {mention_text}\n"
+            f"距离： 📍 {distance_text} 处 ({distance_mode})\n"
             "业务详情：\n"
-            f"💰 服务价格： {profile.price_text or '未设置'}\n"
-            f"📦 交付方式： {profile.method_text or '未设置'}\n"
-            f"🏠 详细描述： {profile.address_text or '未设置'}\n"
+            f"💰 服务价格： {escaped_price}\n"
+            f"📦 交付方式： {escaped_method}\n"
+            f"🏠 详细描述： {escaped_address}\n"
             "—————————————————"
         )
         keyboard = nearby_detail_keyboard(target_chat_id, target_user_id, back_page)
-        await self._reply_or_edit(update, detail_text, keyboard)
+        await self._reply_or_edit(update, detail_text, keyboard, parse_mode="HTML")
 
     async def _start_edit_state(
         self,
@@ -520,16 +510,48 @@ class NearbyHandler:
         update: Update,
         text: str,
         reply_markup: InlineKeyboardMarkup | None = None,
+        parse_mode: str | None = None,
     ) -> None:
         if update.callback_query is not None:
             try:
-                await update.callback_query.edit_message_text(text=text, reply_markup=reply_markup)
+                await update.callback_query.edit_message_text(
+                    text=text,
+                    reply_markup=reply_markup,
+                    parse_mode=parse_mode,
+                )
                 return
             except Exception:
                 pass
 
         if update.effective_message is not None:
-            await update.effective_message.reply_text(text, reply_markup=reply_markup)
+            await update.effective_message.reply_text(
+                text,
+                reply_markup=reply_markup,
+                parse_mode=parse_mode,
+            )
+
+    async def _bind_group_context(self, db: Database, chat: Chat, user: User) -> None:
+        """确保群与用户存在，并将该群设置为当前管理群。"""
+        async with db.session_factory() as session:
+            await self._ensure_group_user_context(session, chat, user)
+            await session.commit()
+        await set_user_current_chat(db, user.id, chat.id)
+
+    async def _ensure_group_user_context(
+        self,
+        session: AsyncSession,
+        chat: Chat,
+        user: User,
+    ) -> None:
+        await ensure_chat(session, chat_id=chat.id, chat_type=chat.type, title=chat.title)
+        await ensure_user(
+            session,
+            user_id=user.id,
+            username=user.username,
+            first_name=user.first_name,
+            last_name=user.last_name,
+            language_code=user.language_code,
+        )
 
 
 _nearby_handler = NearbyHandler()

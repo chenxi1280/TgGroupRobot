@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from typing import Any
-
 import structlog
+from sqlalchemy.ext.asyncio import AsyncSession
 from telegram import Update
 from telegram.ext import ContextTypes
 
 from bot.db.session import Database
 from bot.keyboards.admin.antispam import anti_flood_config_keyboard
+from bot.models.core import ChatSettings, ConversationState
 from bot.models.enums import ConversationStateType
 from bot.services.core.chat_service import get_chat_settings
 from bot.services.core.permission_service import is_user_admin
@@ -26,13 +26,21 @@ FLOOD_NOTIFY_SECONDS_VALUES = [60, 300, 600, 1800]
 
 
 _BOOL_TRUE = {"开启", "开", "on", "true", "1", "yes", "是"}
+_BOOL_TRUE_NORMALIZED = {x.lower() for x in _BOOL_TRUE}
 
 
 def _parse_bool(value: str) -> bool:
-    return value.strip().lower() in {x.lower() for x in _BOOL_TRUE}
+    return value.strip().lower() in _BOOL_TRUE_NORMALIZED
 
 
-def format_anti_flood_menu_text(chat_title: str, settings: Any) -> str:
+def _parse_int(value: str, min_value: int) -> int | None:
+    try:
+        return max(min_value, int(value.strip()))
+    except (TypeError, ValueError):
+        return None
+
+
+def format_anti_flood_menu_text(chat_title: str, settings: ChatSettings) -> str:
     status = "开启" if settings.anti_flood_enabled else "关闭"
     cleanup = "开启" if settings.anti_flood_cleanup_messages else "关闭"
     notify = "开启" if settings.anti_flood_delete_notify else "关闭"
@@ -169,8 +177,8 @@ async def start_anti_flood_config(
 async def anti_flood_config_message_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
-    session,
-    state: Any,
+    session: AsyncSession,
+    state: ConversationState,
     message_text: str,
 ) -> None:
     if update.effective_user is None or update.effective_message is None:
@@ -180,6 +188,7 @@ async def anti_flood_config_message_handler(
     settings = await get_chat_settings(session, target_chat_id)
 
     lines = [line.strip() for line in message_text.split("\n") if line.strip()]
+    invalid_keys: list[str] = []
     for line in lines:
         if ":" not in line:
             continue
@@ -188,13 +197,25 @@ async def anti_flood_config_message_handler(
         if key in {"状态", "总开关", "功能总开关"}:
             settings.anti_flood_enabled = _parse_bool(value)
         elif key in {"触发条数", "触发消息数", "触发条件-消息数"}:
-            settings.anti_flood_messages = max(2, int(value))
+            parsed = _parse_int(value, 2)
+            if parsed is None:
+                invalid_keys.append(key)
+                continue
+            settings.anti_flood_messages = parsed
         elif key in {"检测间隔", "时间窗口", "触发条件-秒数"}:
-            settings.anti_flood_seconds = max(1, int(value))
+            parsed = _parse_int(value, 1)
+            if parsed is None:
+                invalid_keys.append(key)
+                continue
+            settings.anti_flood_seconds = parsed
         elif key in {"惩罚动作", "处罚"} and value in {"delete", "mute", "ban"}:
             settings.anti_flood_action = value
         elif key in {"禁言时长", "惩罚禁言"}:
-            settings.anti_flood_mute_duration = max(1, int(value))
+            parsed = _parse_int(value, 1)
+            if parsed is None:
+                invalid_keys.append(key)
+                continue
+            settings.anti_flood_mute_duration = parsed
         elif key in {"管理员豁免"}:
             settings.anti_flood_exempt_admin = _parse_bool(value)
         elif key in {"触发后清理消息"}:
@@ -206,7 +227,11 @@ async def anti_flood_config_message_handler(
             else:
                 settings.anti_flood_delete_notify = _parse_bool(value)
         elif key in {"删除提醒时长", "提醒时长"}:
-            settings.anti_flood_delete_notify_seconds = max(1, int(value))
+            parsed = _parse_int(value, 1)
+            if parsed is None:
+                invalid_keys.append(key)
+                continue
+            settings.anti_flood_delete_notify_seconds = parsed
 
     await clear_user_state(session, target_chat_id, update.effective_user.id)
     await session.commit()
@@ -218,5 +243,8 @@ async def anti_flood_config_message_handler(
     chat_title = await handler._get_chat_title(db, target_chat_id)
 
     text = "✅ 防刷屏配置已更新\n\n" + format_anti_flood_menu_text(chat_title, settings)
+    if invalid_keys:
+        keys = "、".join(sorted(set(invalid_keys)))
+        text = f"⚠️ 以下字段值无效，已忽略: {keys}\n\n{text}"
     keyboard = anti_flood_config_keyboard(settings, target_chat_id)
     await update.effective_message.reply_text(text, reply_markup=keyboard)

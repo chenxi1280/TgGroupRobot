@@ -120,6 +120,30 @@ class AdsHandler(BaseHandler):
 
 # 创建单例实例
 _ads_handler = AdsHandler()
+_FREQ_LABELS = {"once": "单次", "daily": "每天", "weekly": "每周", "monthly": "每月"}
+
+
+def _format_ad_push_text(ad: AdCampaign) -> str:
+    return f"【{ad.title}】\n\n{ad.content}"
+
+
+def _format_ad_detail_text(ad: AdCampaign) -> str:
+    status_emoji = "🟢" if ad.enabled else "🔴"
+    status_text = "启用" if ad.enabled else "暂停"
+
+    schedule_info = ""
+    if ad.schedule_time:
+        schedule_info = f"\n⏰ 定时: {ad.schedule_time.strftime('%Y-%m-%d %H:%M')}"
+        if ad.frequency:
+            schedule_info += f" [{_FREQ_LABELS.get(ad.frequency, ad.frequency)}]"
+
+    image_info = "\n🖼️ 含图片" if ad.has_image else ""
+    last_sent_info = f"\n📤 上次发送: {ad.last_sent_at.strftime('%Y-%m-%d %H:%M')}" if ad.last_sent_at else ""
+    return (
+        f"{status_emoji} {ad.title}\n\n"
+        f"状态: {status_text}{schedule_info}{image_info}{last_sent_info}\n\n"
+        f"{ad.content}"
+    )
 
 
 def _parse_ad_id_from_callback(data: str) -> int:
@@ -291,23 +315,7 @@ async def ads_detail_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
             await q.edit_message_text("❌ 该广告不属于当前管理群组")
             return
 
-        status_emoji = "🟢" if ad.enabled else "🔴"
-        status_text = "启用" if ad.enabled else "暂停"
-
-        schedule_info = ""
-        if ad.schedule_time:
-            schedule_info = f"\n⏰ 定时: {ad.schedule_time.strftime('%Y-%m-%d %H:%M')}"
-            if ad.frequency:
-                freq_map = {"once": "单次", "daily": "每天", "weekly": "每周", "monthly": "每月"}
-                schedule_info += f" [{freq_map.get(ad.frequency, ad.frequency)}]"
-
-        image_info = "\n🖼️ 含图片" if ad.has_image else ""
-        last_sent_info = f"\n📤 上次发送: {ad.last_sent_at.strftime('%Y-%m-%d %H:%M')}" if ad.last_sent_at else ""
-
-        text = f"{status_emoji} {ad.title}\n\n"
-        text += f"状态: {status_text}{schedule_info}{image_info}{last_sent_info}\n\n"
-        text += f"{ad.content}"
-
+        text = _format_ad_detail_text(ad)
         await session.commit()
 
     await q.edit_message_text(text, reply_markup=ads_detail_keyboard(ad_id, ad.enabled))
@@ -763,9 +771,9 @@ async def ads_send_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         # 发送广告
         try:
             if ad.image_file_id:
-                await context.bot.send_photo(ad.chat_id, ad.image_file_id, caption=f"【{ad.title}】\n\n{ad.content}")
+                await context.bot.send_photo(ad.chat_id, ad.image_file_id, caption=_format_ad_push_text(ad))
             else:
-                await context.bot.send_message(ad.chat_id, f"【{ad.title}】\n\n{ad.content}")
+                await context.bot.send_message(ad.chat_id, _format_ad_push_text(ad))
 
             # 标记已发送
             await mark_ad_sent(session, ad_id)
@@ -773,23 +781,7 @@ async def ads_send_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
             # 刷新详情
             ad_updated = await get_ad(session, ad_id)
-            status_emoji = "🟢" if ad_updated.enabled else "🔴"
-            status_text = "启用" if ad_updated.enabled else "暂停"
-
-            schedule_info = ""
-            if ad_updated.schedule_time:
-                schedule_info = f"\n⏰ 定时: {ad_updated.schedule_time.strftime('%Y-%m-%d %H:%M')}"
-                if ad_updated.frequency:
-                    freq_map = {"once": "单次", "daily": "每天", "weekly": "每周", "monthly": "每月"}
-                    schedule_info += f" [{freq_map.get(ad_updated.frequency, ad_updated.frequency)}]"
-
-            image_info = "\n🖼️ 含图片" if ad_updated.has_image else ""
-            last_sent_info = f"\n📤 上次发送: {ad_updated.last_sent_at.strftime('%Y-%m-%d %H:%M')}" if ad_updated.last_sent_at else ""
-
-            text = f"{status_emoji} {ad_updated.title}\n\n"
-            text += f"状态: {status_text}{schedule_info}{image_info}{last_sent_info}\n\n"
-            text += f"{ad_updated.content}"
-
+            text = _format_ad_detail_text(ad_updated)
             await q.edit_message_text(text, reply_markup=ads_detail_keyboard(ad_id, ad_updated.enabled))
         except Exception as e:
             await q.edit_message_text(f"❌ 发送失败: {str(e)}")
@@ -826,23 +818,7 @@ async def ads_toggle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         ad = await toggle_ad(session, ad_id)
         await session.commit()
 
-        status_emoji = "🟢" if ad.enabled else "🔴"
-        status_text = "启用" if ad.enabled else "暂停"
-
-        schedule_info = ""
-        if ad.schedule_time:
-            schedule_info = f"\n⏰ 定时: {ad.schedule_time.strftime('%Y-%m-%d %H:%M')}"
-            if ad.frequency:
-                freq_map = {"once": "单次", "daily": "每天", "weekly": "每周", "monthly": "每月"}
-                schedule_info += f" [{freq_map.get(ad.frequency, ad.frequency)}]"
-
-        image_info = "\n🖼️ 含图片" if ad.has_image else ""
-        last_sent_info = f"\n📤 上次发送: {ad.last_sent_at.strftime('%Y-%m-%d %H:%M')}" if ad.last_sent_at else ""
-
-        text = f"{status_emoji} {ad.title}\n\n"
-        text += f"状态: {status_text}{schedule_info}{image_info}{last_sent_info}\n\n"
-        text += f"{ad.content}"
-
+        text = _format_ad_detail_text(ad)
         await q.edit_message_text(text, reply_markup=ads_detail_keyboard(ad_id, ad.enabled))
 
 
