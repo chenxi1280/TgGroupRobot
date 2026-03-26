@@ -7,8 +7,9 @@ from telegram.error import TelegramError
 
 from bot.db.session import Database
 from bot.keyboards.admin.auto_delete import auto_delete_config_keyboard
-from bot.services.core.chat_service import get_chat_settings
-from bot.services.core.permission_service import is_user_admin
+from bot.services.core.module_settings_service import ModuleSettingsService
+from bot.services.core.permission_service import PermissionPolicyService
+from bot.utils.telegram_errors import build_public_error_text
 from bot.utils.callback_parser import CallbackParser
 
 log = structlog.get_logger(__name__)
@@ -34,6 +35,33 @@ async def _safe_edit_message(q, text: str, **kwargs) -> None:
         log.warning("edit_message_failed", error=str(e), callback_data=q.data)
 
 
+def _resolve_chat_id(cb: CallbackParser, action: str) -> int | None:
+    """严格解析配置回调中的群组 ID，兼容旧/新两种协议。"""
+    indices = (4,) if action == "set" else (3,)
+    for index in indices:
+        try:
+            return cb.require_int(index, label="chat_id")
+        except ValueError:
+            continue
+    return None
+
+
+def _sync_master_toggle(settings) -> None:
+    """根据分项开关回填总开关，兼容旧运行时逻辑。"""
+    per_item_enabled = any(
+        bool(getattr(settings, field_name, False))
+        for field_name in (
+            "auto_delete_join",
+            "auto_delete_left",
+            "auto_delete_pinned",
+            "auto_delete_avatar",
+            "auto_delete_title",
+            "auto_delete_anonymous",
+        )
+    )
+    settings.auto_delete_enabled = per_item_enabled
+
+
 async def auto_delete_config_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """自动删除配置回调处理器"""
     if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
@@ -54,22 +82,32 @@ async def auto_delete_config_callback(update: Update, context: ContextTypes.DEFA
     cb = CallbackParser.parse(data)
 
     if cb.length() < 4:
+        await _safe_edit_message(q, "参数错误")
         return
 
     action = cb.get(1)
     field = cb.get(2)
-    chat_id = cb.get_int(3)
-    if chat_id == 0:
+    chat_id = _resolve_chat_id(cb, action)
+    if chat_id is None:
         log.warning("invalid_chat_id", data=q.data)
         await _safe_edit_message(q, "无效的群组ID")
         return
 
-    # 检查管理员权限
-    if not await is_user_admin(context, chat_id, update.effective_user.id):
-        await _safe_edit_message(q, "你没有该群组的管理权限")
+    allowed, reason = await PermissionPolicyService.require_manage(
+        context,
+        chat_id,
+        update.effective_user.id,
+        capability="settings",
+    )
+    if not allowed:
+        await _safe_edit_message(q, build_public_error_text(RuntimeError(reason or "没有权限")))
         return
 
-    if action != "toggle":
+    if action == "noop":
+        return
+
+    if action not in {"toggle", "set"}:
+        await _safe_edit_message(q, "无效操作")
         return
 
     db: Database = context.application.bot_data["db"]
@@ -78,27 +116,50 @@ async def auto_delete_config_callback(update: Update, context: ContextTypes.DEFA
     actual_field = FIELD_MAPPING.get(field, field)
 
     async with db.session_factory() as session:
-        settings = await get_chat_settings(session, chat_id)
+        settings = await ModuleSettingsService.ensure(
+            session,
+            chat_id=chat_id,
+            chat_type="supergroup" if chat_id < 0 else "private",
+            user_id=update.effective_user.id,
+            username=update.effective_user.username,
+            first_name=update.effective_user.first_name,
+            last_name=update.effective_user.last_name,
+            language_code=update.effective_user.language_code,
+        )
 
         if hasattr(settings, actual_field):
             current = bool(getattr(settings, actual_field))
-            # 添加调试日志
+            if action == "set":
+                desired = cb.get_int_optional(3)
+                if desired not in {0, 1}:
+                    await _safe_edit_message(q, "无效配置值")
+                    return
+                next_value = bool(desired)
+            else:
+                next_value = not current
+
             log.info(
                 "auto_delete_toggle",
                 field=actual_field,
                 before=current,
-                after=not current,
-                chat_id=chat_id
+                after=next_value,
+                chat_id=chat_id,
+                action=action,
             )
-            setattr(settings, actual_field, not current)
+            setattr(settings, actual_field, next_value)
+            _sync_master_toggle(settings)
             await session.commit()
 
         # 在同一个会话中重新查询获取最新数据
-        settings = await get_chat_settings(session, chat_id)
+        settings = await ModuleSettingsService.ensure(
+            session,
+            chat_id=chat_id,
+            chat_type="supergroup" if chat_id < 0 else "private",
+        )
 
     keyboard = auto_delete_config_keyboard(settings, chat_id)
 
-    text = "🧹 自动删除配置\n\n"
-    text += "帮助您自动清理群组中的系统消息\n\n"
+    text = "🧹 删除系统提示\n\n"
+    text += "本功能会自动清除系统提示消息\n\n"
     text += "配置已更新"
     await _safe_edit_message(q, text, reply_markup=keyboard)

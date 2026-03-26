@@ -74,6 +74,8 @@ class PrivateChatContext:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_index: int = 2,
+        *,
+        allow_fallback_to_current_chat: bool = True,
     ) -> int | None:
         """从 callback_data 解析目标群组 ID
 
@@ -96,10 +98,20 @@ class PrivateChatContext:
 
         data = update.callback_query.data or ""
         cb = CallbackParser.parse(data)
-        target_chat_id = cb.get_int(chat_index)
+        if chat_index < cb.length():
+            target_chat_id = cb.get_int_optional(chat_index)
+            if target_chat_id in {None, 0}:
+                log.warning(
+                    "invalid_target_chat_in_callback",
+                    callback_data=data,
+                    chat_index=chat_index,
+                    user_id=update.effective_user.id,
+                )
+                return None
+            return target_chat_id
 
-        # 如果 callback_data 中没有 chat_id，从数据库获取
-        if target_chat_id == 0:
+        target_chat_id = None
+        if allow_fallback_to_current_chat:
             db: Database = context.application.bot_data["db"]
             target_chat_id = await get_user_current_chat(db, update.effective_user.id)
 

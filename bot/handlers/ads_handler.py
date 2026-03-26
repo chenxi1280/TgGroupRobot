@@ -9,7 +9,6 @@ from telegram.ext import ContextTypes
 from bot.db.session import Database
 from bot.handlers.base.base_handler import BaseHandler
 from bot.handlers.base.chat_resolver import ChatResolver
-from bot.handlers.base.state_helper import StateHelper
 from bot.keyboards.content.ads import (
     ads_create_keyboard,
     ads_detail_keyboard,
@@ -26,13 +25,15 @@ from bot.services.automation.ad_service import (
     should_send_ad,
     toggle_ad,
 )
+from bot.services.core.module_settings_service import ModuleSettingsService
+from bot.services.core.permission_service import PermissionPolicyService
 from bot.services.integration.chat_group_service import get_user_managed_chats
-from bot.services.state.state_service import clear_user_state, set_user_state, get_user_state
+from bot.services.shared.publish_service import PublishService
+from bot.services.state.conversation_state_service import ConversationStateService
 from bot.services.core.chat_service import ensure_chat, get_chat_settings
-from bot.services.core.permission_service import is_user_admin
 from bot.models.core import AdCampaign
 from bot.utils.callback_parser import CallbackParser
-from bot.utils.chat_context import PrivateChatContext
+from bot.utils.telegram_errors import answer_callback_query_safely, build_public_error_text
 
 log = structlog.get_logger(__name__)
 
@@ -123,6 +124,66 @@ _ads_handler = AdsHandler()
 _FREQ_LABELS = {"once": "单次", "daily": "每天", "weekly": "每周", "monthly": "每月"}
 
 
+async def _resolve_ads_target_chat_id(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    allow_current_chat_fallback: bool = True,
+    error_message: str = "请先选择一个群组",
+) -> int | None:
+    if update.effective_chat is None or update.effective_user is None:
+        return None
+
+    chat = update.effective_chat
+    user = update.effective_user
+
+    if chat.type != "private":
+        allowed = await PermissionPolicyService.can_manage(
+            context,
+            chat.id,
+            user.id,
+            capability="automation",
+        )
+        if not allowed:
+            await answer_callback_query_safely(update, "你没有该群组的管理权限", show_alert=True)
+            return None
+        return chat.id
+
+    callback_data = update.callback_query.data if update.callback_query and update.callback_query.data else ""
+    callback_chat_id = CallbackParser.parse(callback_data).get_int_optional(2) if callback_data else None
+    candidate_chat_ids: list[int] = []
+    if callback_chat_id not in (None, 0):
+        candidate_chat_ids.append(callback_chat_id)
+
+    if allow_current_chat_fallback:
+        db: Database = context.application.bot_data["db"]
+        current_chat_id = await ChatResolver.get_current_chat(db, user.id)
+        if current_chat_id not in (None, 0) and current_chat_id not in candidate_chat_ids:
+            candidate_chat_ids.append(current_chat_id)
+
+    for target_chat_id in candidate_chat_ids:
+        allowed = await PermissionPolicyService.can_manage(
+            context,
+            target_chat_id,
+            user.id,
+            capability="automation",
+        )
+        if allowed:
+            return target_chat_id
+
+    if candidate_chat_ids:
+        await answer_callback_query_safely(update, "你没有该群组的管理权限", show_alert=True)
+    else:
+        await answer_callback_query_safely(update, error_message, show_alert=True)
+    return None
+
+
+def _resolve_ads_state_chat_id(update: Update, target_chat_id: int) -> int:
+    if update.effective_chat is None:
+        return target_chat_id
+    return update.effective_chat.id if update.effective_chat.type == "private" else target_chat_id
+
+
 def _format_ad_push_text(ad: AdCampaign) -> str:
     return f"【{ad.title}】\n\n{ad.content}"
 
@@ -149,8 +210,8 @@ def _format_ad_detail_text(ad: AdCampaign) -> str:
 def _parse_ad_id_from_callback(data: str) -> int:
     """解析广告 ID，兼容 ads:action:{id} / ads:action_{id} 两种格式。"""
     cb = CallbackParser.parse(data)
-    ad_id = cb.get_int(2, default=0)
-    if ad_id > 0:
+    ad_id = cb.get_int_optional(2)
+    if ad_id is not None and ad_id > 0:
         return ad_id
 
     match = re.search(r"^ads:(?:detail|toggle|delete|send)_(\d+)$", data)
@@ -173,7 +234,7 @@ async def ad_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     if chat.type == "private":
         await update.effective_message.reply_text("请在群里使用 /ad。")
         return
-    if not await is_user_admin(context, chat.id, update.effective_user.id):
+    if not await PermissionPolicyService.can_manage(context, chat.id, update.effective_user.id, capability="automation"):
         await update.effective_message.reply_text("需要管理员权限。")
         return
 
@@ -217,29 +278,18 @@ async def ads_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     chat = update.effective_chat
     user = update.effective_user
 
-    # 私聊中的广告管理 - 从回调中获取目标群组ID
-    target_chat_id = None
-    if chat.type == "private":
-        db: Database = context.application.bot_data["db"]
-        target_chat_id = await ChatResolver.get_current_chat(db, user.id)
+    data = q.data or ""
+    if chat.type == "private" and data == "ads:menu":
+        target_chat_id = await _resolve_ads_target_chat_id(update, context)
         if target_chat_id is None:
-            await _ads_handler.message_helper.safe_edit(update, "请先选择一个群组")
             return
-        if not await is_user_admin(context, target_chat_id, user.id):
-            await _ads_handler.message_helper.safe_edit(update, "你没有该群组的管理权限")
-            return
+        from bot.handlers.admin_handler import _show_private_admin_menu
+        await _show_private_admin_menu(update, context, target_chat_id)
+        return
 
-        # 处理返回操作
-        data = q.data or ""
-        if data == "ads:menu":
-            from bot.handlers.admin_handler import _show_private_admin_menu
-            await _show_private_admin_menu(update, context, target_chat_id)
-            return
-    else:
-        if not await is_user_admin(context, chat.id, user.id):
-            await _ads_handler.message_helper.safe_edit(update, "仅管理员可使用此功能")
-            return
-        target_chat_id = chat.id
+    target_chat_id = await _resolve_ads_target_chat_id(update, context)
+    if target_chat_id is None:
+        return
 
     # 使用 Handler 处理
     await _ads_handler.show_menu(update, context, target_chat_id)
@@ -256,10 +306,7 @@ async def ads_list_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     cb = CallbackParser.parse(data)
     page = cb.get_int(2, default=0)
 
-    # 使用 PrivateChatContext 解析目标群组并检查权限
-    target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(
-        update, context
-    )
+    target_chat_id = await _resolve_ads_target_chat_id(update, context)
     if target_chat_id is None:
         return  # 错误消息已发送
 
@@ -274,10 +321,7 @@ async def ads_stats_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     q = update.callback_query
     await q.answer()
 
-    # 使用 PrivateChatContext 解析目标群组并检查权限
-    target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(
-        update, context
-    )
+    target_chat_id = await _resolve_ads_target_chat_id(update, context)
     if target_chat_id is None:
         return  # 错误消息已发送
 
@@ -292,14 +336,13 @@ async def ads_detail_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     q = update.callback_query
     await q.answer()
 
-    # 统一解析目标群组并检查管理员权限（兼容私聊管理场景）
-    target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(update, context)
+    target_chat_id = await _resolve_ads_target_chat_id(update, context)
     if target_chat_id is None:
         return
 
     ad_id = _parse_ad_id_from_callback(q.data or "")
     if ad_id == 0:
-        await q.edit_message_text("❌ 广告 ID 无效")
+        await answer_callback_query_safely(update, "广告 ID 无效")
         return
 
     db: Database = context.application.bot_data["db"]
@@ -312,7 +355,7 @@ async def ads_detail_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         if ad.chat_id != target_chat_id:
             await session.commit()
-            await q.edit_message_text("❌ 该广告不属于当前管理群组")
+            await answer_callback_query_safely(update, "该广告不属于当前群组")
             return
 
         text = _format_ad_detail_text(ad)
@@ -331,36 +374,31 @@ async def ads_create_start_callback(update: Update, context: ContextTypes.DEFAUL
     chat = update.effective_chat
     user = update.effective_user
 
-    # 私聊中的广告创建 - 优先从 callback_data 获取目标群组ID
-    target_chat_id = None
-    if chat.type == "private":
-        # 优先从 callback_data 提取 chat_id
-        data = q.data or ""
-        if data.startswith("ads:create:"):
-            cb = CallbackParser.parse(data)
-            target_chat_id = cb.get_int(2)
-
-        # 如果 callback_data 中没有 chat_id，从数据库获取
-        if target_chat_id is None:
-            db: Database = context.application.bot_data["db"]
-            target_chat_id = await ChatResolver.get_current_chat(db, user.id)
-            if target_chat_id is None:
-                await q.edit_message_text("请先选择一个群组")
-                return
-
-        if not await is_user_admin(context, target_chat_id, user.id):
-            await q.edit_message_text("你没有该群组的管理权限")
-            return
-    else:
-        if not await is_user_admin(context, chat.id, user.id):
-            await q.edit_message_text("仅管理员可使用此功能")
-            return
-        target_chat_id = chat.id
+    target_chat_id = await _resolve_ads_target_chat_id(update, context)
+    if target_chat_id is None:
+        return
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
-        # 设置状态为一次性创建
-        await set_user_state(session, chat.id, user.id, "ads_create_config", {"target_chat_id": target_chat_id})
+        await ModuleSettingsService.ensure(
+            session,
+            chat_id=target_chat_id,
+            chat_type=chat.type if chat.type != "private" else "supergroup",
+            title=chat.title,
+            user_id=user.id,
+            username=user.username,
+            first_name=user.first_name,
+            last_name=user.last_name,
+            language_code=user.language_code,
+        )
+        # 设置状态为一次性创建；私聊输入仍按当前会话(chat.id)保存
+        await ConversationStateService.start(
+            session,
+            chat_id=chat.id,
+            user_id=user.id,
+            state_type="ads_create_config",
+            state_data={"target_chat_id": target_chat_id},
+        )
         await session.commit()
 
     config_help = """➕ 创建广告 ( /cancel 取消 )
@@ -431,8 +469,8 @@ async def ads_create_config_message(update: Update, context: ContextTypes.DEFAUL
     try:
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
-            state = await StateHelper.get_state_by_chat(session, chat, user.id)
-            state_chat_id = user.id if chat.type == "private" else chat.id
+            state_chat_id = chat.id if chat.type == "private" else chat.id
+            state = await ConversationStateService.get(session, state_chat_id, user.id)
             logger.info(
                 "ads_state_check",
                 chat_id=state_chat_id,
@@ -449,7 +487,7 @@ async def ads_create_config_message(update: Update, context: ContextTypes.DEFAUL
             target_chat_id = state_data.get("target_chat_id")
             if not target_chat_id:
                 await update.effective_message.reply_text("❌ 会话已过期，请重新开始")
-                await clear_user_state(session, state_chat_id, user.id)
+                await ConversationStateService.clear(session, state_chat_id, user.id)
                 await session.commit()
                 return
 
@@ -463,8 +501,11 @@ async def ads_create_config_message(update: Update, context: ContextTypes.DEFAUL
             if not text:
                 await session.commit()
                 if image_file_id:
-                    await update.effective_message.reply_text(
-                        "✅ 已保存图片 file_id。\n请继续发送广告配置文本（可按模板直接粘贴）。"
+                    await PublishService.reply(
+                        context,
+                        chat_id=chat.id,
+                        reply_to_message_id=message.message_id,
+                        text="✅ 已保存图片 file_id。\n请继续发送广告配置文本（可按模板直接粘贴）。",
                     )
                 return
 
@@ -472,17 +513,17 @@ async def ads_create_config_message(update: Update, context: ContextTypes.DEFAUL
                 config = _parse_ads_config(text)
             except Exception as e:
                 await session.commit()
-                await update.effective_message.reply_text(f"❌ 配置格式错误: {str(e)}\n\n请检查后重试")
+                await update.effective_message.reply_text("❌ 配置格式错误，请检查后重试")
                 return
 
             if not config.get("title"):
                 await session.commit()
-                await update.effective_message.reply_text("❌ 标题不能为空\n\n请重新输入配置")
+                await update.effective_message.reply_text("❌ 标题不能为空，请重新输入配置")
                 return
 
             if not config.get("content"):
                 await session.commit()
-                await update.effective_message.reply_text("❌ 内容不能为空\n\n请重新输入配置")
+                await update.effective_message.reply_text("❌ 内容不能为空，请重新输入配置")
                 return
 
             final_image_file_id = (
@@ -523,7 +564,7 @@ async def ads_create_config_message(update: Update, context: ContextTypes.DEFAUL
             success_msg += f"\n{ad.content[:100]}{'...' if len(ad.content) > 100 else ''}"
             success_msg += f"\n\n广告ID: {ad.id}"
 
-            await clear_user_state(session, state_chat_id, user.id)
+            await ConversationStateService.clear(session, state_chat_id, user.id)
             await session.commit()
 
             from telegram import InlineKeyboardButton, InlineKeyboardMarkup
@@ -532,7 +573,13 @@ async def ads_create_config_message(update: Update, context: ContextTypes.DEFAUL
                 [InlineKeyboardButton("🏠 返回主菜单", callback_data=f"adm:menu:{target_chat_id}")],
             ])
 
-            await update.effective_message.reply_text(success_msg, reply_markup=keyboard)
+            await PublishService.reply(
+                context,
+                chat_id=chat.id,
+                reply_to_message_id=message.message_id,
+                text=success_msg,
+                reply_markup=keyboard,
+            )
             logger.info("ads_handler_done")
     except Exception as e:
         logger.exception(
@@ -551,13 +598,8 @@ async def ads_cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     q = update.callback_query
     await q.answer()
 
-    # 解析参数：ads:cancel:{chat_id}
-    data = q.data or ""
-    cb = CallbackParser.parse(data)
-    target_chat_id = cb.get_int(2)
-
-    if target_chat_id == 0:
-        await q.edit_message_text("❌ 无法获取群组信息")
+    target_chat_id = await _resolve_ads_target_chat_id(update, context)
+    if target_chat_id is None:
         return
 
     chat = update.effective_chat
@@ -566,8 +608,8 @@ async def ads_cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
         # 清除配置状态
-        state_chat_id = user.id if chat.type == "private" else chat.id
-        await clear_user_state(session, state_chat_id, user.id)
+        state_chat_id = _resolve_ads_state_chat_id(update, target_chat_id)
+        await ConversationStateService.clear(session, state_chat_id, user.id)
         await session.commit()
 
     # 返回广告菜单
@@ -747,13 +789,13 @@ async def ads_send_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     q = update.callback_query
     await q.answer()
 
-    target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(update, context)
+    target_chat_id = await _resolve_ads_target_chat_id(update, context)
     if target_chat_id is None:
         return
 
     ad_id = _parse_ad_id_from_callback(q.data or "")
     if ad_id == 0:
-        await q.edit_message_text("❌ 广告 ID 无效")
+        await answer_callback_query_safely(update, "广告 ID 无效")
         return
 
     db: Database = context.application.bot_data["db"]
@@ -764,16 +806,25 @@ async def ads_send_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             return
 
         if ad.chat_id != target_chat_id:
-            await q.edit_message_text("❌ 该广告不属于当前管理群组")
+            await answer_callback_query_safely(update, "该广告不属于当前群组")
             await session.commit()
             return
 
         # 发送广告
         try:
             if ad.image_file_id:
-                await context.bot.send_photo(ad.chat_id, ad.image_file_id, caption=_format_ad_push_text(ad))
+                await PublishService.send_photo(
+                    context,
+                    chat_id=ad.chat_id,
+                    photo=ad.image_file_id,
+                    caption=_format_ad_push_text(ad),
+                )
             else:
-                await context.bot.send_message(ad.chat_id, _format_ad_push_text(ad))
+                await PublishService.send(
+                    context,
+                    chat_id=ad.chat_id,
+                    text=_format_ad_push_text(ad),
+                )
 
             # 标记已发送
             await mark_ad_sent(session, ad_id)
@@ -784,7 +835,7 @@ async def ads_send_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             text = _format_ad_detail_text(ad_updated)
             await q.edit_message_text(text, reply_markup=ads_detail_keyboard(ad_id, ad_updated.enabled))
         except Exception as e:
-            await q.edit_message_text(f"❌ 发送失败: {str(e)}")
+            await q.edit_message_text(f"❌ 发送失败: {build_public_error_text(e, fallback='请稍后重试')}")
 
 
 async def ads_toggle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -794,13 +845,13 @@ async def ads_toggle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     q = update.callback_query
     await q.answer()
 
-    target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(update, context)
+    target_chat_id = await _resolve_ads_target_chat_id(update, context)
     if target_chat_id is None:
         return
 
     ad_id = _parse_ad_id_from_callback(q.data or "")
     if ad_id == 0:
-        await q.edit_message_text("❌ 广告 ID 无效")
+        await answer_callback_query_safely(update, "广告 ID 无效")
         return
 
     db: Database = context.application.bot_data["db"]
@@ -811,7 +862,7 @@ async def ads_toggle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
             return
 
         if ad.chat_id != target_chat_id:
-            await q.edit_message_text("❌ 该广告不属于当前管理群组")
+            await answer_callback_query_safely(update, "该广告不属于当前群组")
             await session.commit()
             return
 
@@ -829,25 +880,25 @@ async def ads_delete_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     q = update.callback_query
     await q.answer()
 
-    target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(update, context)
+    target_chat_id = await _resolve_ads_target_chat_id(update, context)
     if target_chat_id is None:
         return
 
     ad_id = _parse_ad_id_from_callback(q.data or "")
     if ad_id == 0:
-        await q.edit_message_text("❌ 广告 ID 无效")
+        await answer_callback_query_safely(update, "广告 ID 无效")
         return
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
         ad = await get_ad(session, ad_id)
         if ad is None:
-            await q.edit_message_text("❌ 广告不存在")
+            await q.edit_message_text("广告不存在")
             await session.commit()
             return
 
         if ad.chat_id != target_chat_id:
-            await q.edit_message_text("❌ 该广告不属于当前管理群组")
+            await answer_callback_query_safely(update, "该广告不属于当前群组")
             await session.commit()
             return
 

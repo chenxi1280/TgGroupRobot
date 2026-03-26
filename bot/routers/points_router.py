@@ -3,6 +3,7 @@ import structlog
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ConversationHandler, MessageHandler, filters
 from bot.handlers.points_handler import (
     get_points_alias_handler,
+    mall_callback,
     message_points_handler,
     points_command,
     points_rank_command,
@@ -35,6 +36,7 @@ class PointsRouter(BaseRouter):
         
         # 回调处理器
         app.add_handler(CallbackQueryHandler(points_config_callback, pattern=r"^pts:"))
+        app.add_handler(CallbackQueryHandler(mall_callback, pattern=r"^mall:"))
         
         # 积分配置流程对话
         points_config_conv = ConversationHandler(

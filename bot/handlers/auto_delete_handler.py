@@ -5,7 +5,7 @@ from telegram import Update
 from telegram.ext import ContextTypes, filters
 
 from bot.db.session import Database
-from bot.services.core.chat_service import get_chat_settings
+from bot.services.core.module_settings_service import ModuleSettingsService
 
 log = structlog.get_logger(__name__)
 
@@ -25,7 +25,12 @@ async def auto_delete_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     db: Database = context.application.bot_data["db"]
 
     async with db.session_factory() as session:
-        settings = await get_chat_settings(session, chat.id)
+        settings = await ModuleSettingsService.ensure(
+            session,
+            chat_id=chat.id,
+            chat_type=chat.type,
+            title=chat.title,
+        )
 
         # 检查是否开启自动删除
         if not settings.auto_delete_enabled:

@@ -1,42 +1,50 @@
-"""自动删除配置键盘
-
-提供自动删除管理的键盘生成。
-"""
+"""删除系统提示配置键盘。"""
 from __future__ import annotations
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-from bot.keyboards.base.helpers import create_separator
+
+def _on_label(enabled: bool) -> str:
+    return "✅ 启动" if enabled else "启动"
+
+
+def _off_label(enabled: bool) -> str:
+    return "❌ 关闭" if not enabled else "关闭"
 
 
 def auto_delete_config_keyboard(settings, chat_id: int) -> InlineKeyboardMarkup:
-    """自动删除配置键盘"""
-    # 主开关状态
-    main_status = "✅ 开启" if settings.auto_delete_enabled else "❌ 关闭"
-
-    # 各项开关状态（添加文字说明）
-    join_status = "✅ 开启" if settings.auto_delete_join else "❌ 关闭"
-    left_status = "✅ 开启" if settings.auto_delete_left else "❌ 关闭"
-    pinned_status = "✅ 开启" if settings.auto_delete_pinned else "❌ 关闭"
-    avatar_status = "✅ 开启" if settings.auto_delete_avatar else "❌ 关闭"
-    title_status = "✅ 开启" if settings.auto_delete_title else "❌ 关闭"
-    anon_status = "✅ 开启" if settings.auto_delete_anonymous else "❌ 关闭"
-
-    separator = create_separator()
-
+    """删除系统提示配置键盘，按文档三列布局。"""
     buttons = [
-        # 主开关
-        [InlineKeyboardButton(f"🧹 自动删除: {main_status}", callback_data=f"autodel:toggle:enabled:{chat_id}")],
-        # 分隔线
-        [separator],
-        # 各项开关（格式：项目: 状态）
-        [InlineKeyboardButton(f"进群: {join_status}", callback_data=f"autodel:toggle:join:{chat_id}")],
-        [InlineKeyboardButton(f"退群: {left_status}", callback_data=f"autodel:toggle:left:{chat_id}")],
-        [InlineKeyboardButton(f"置顶: {pinned_status}", callback_data=f"autodel:toggle:pinned:{chat_id}")],
-        [InlineKeyboardButton(f"头像: {avatar_status}", callback_data=f"autodel:toggle:avatar:{chat_id}")],
-        [InlineKeyboardButton(f"群名: {title_status}", callback_data=f"autodel:toggle:title:{chat_id}")],
-        [InlineKeyboardButton(f"匿名: {anon_status}", callback_data=f"autodel:toggle:anonymous:{chat_id}")],
-        # 返回
+        [
+            InlineKeyboardButton("进群消息：", callback_data=f"autodel:noop:join:{chat_id}"),
+            InlineKeyboardButton(_on_label(bool(settings.auto_delete_join)), callback_data=f"autodel:set:join:1:{chat_id}"),
+            InlineKeyboardButton(_off_label(bool(settings.auto_delete_join)), callback_data=f"autodel:set:join:0:{chat_id}"),
+        ],
+        [
+            InlineKeyboardButton("退群消息：", callback_data=f"autodel:noop:left:{chat_id}"),
+            InlineKeyboardButton(_on_label(bool(settings.auto_delete_left)), callback_data=f"autodel:set:left:1:{chat_id}"),
+            InlineKeyboardButton(_off_label(bool(settings.auto_delete_left)), callback_data=f"autodel:set:left:0:{chat_id}"),
+        ],
+        [
+            InlineKeyboardButton("置顶通知：", callback_data=f"autodel:noop:pinned:{chat_id}"),
+            InlineKeyboardButton(_on_label(bool(settings.auto_delete_pinned)), callback_data=f"autodel:set:pinned:1:{chat_id}"),
+            InlineKeyboardButton(_off_label(bool(settings.auto_delete_pinned)), callback_data=f"autodel:set:pinned:0:{chat_id}"),
+        ],
+        [
+            InlineKeyboardButton("修改群头像：", callback_data=f"autodel:noop:avatar:{chat_id}"),
+            InlineKeyboardButton(_on_label(bool(settings.auto_delete_avatar)), callback_data=f"autodel:set:avatar:1:{chat_id}"),
+            InlineKeyboardButton(_off_label(bool(settings.auto_delete_avatar)), callback_data=f"autodel:set:avatar:0:{chat_id}"),
+        ],
+        [
+            InlineKeyboardButton("修改群名字：", callback_data=f"autodel:noop:title:{chat_id}"),
+            InlineKeyboardButton(_on_label(bool(settings.auto_delete_title)), callback_data=f"autodel:set:title:1:{chat_id}"),
+            InlineKeyboardButton(_off_label(bool(settings.auto_delete_title)), callback_data=f"autodel:set:title:0:{chat_id}"),
+        ],
+        [
+            InlineKeyboardButton("匿名消息：", callback_data=f"autodel:noop:anonymous:{chat_id}"),
+            InlineKeyboardButton(_on_label(bool(settings.auto_delete_anonymous)), callback_data=f"autodel:set:anonymous:1:{chat_id}"),
+            InlineKeyboardButton(_off_label(bool(settings.auto_delete_anonymous)), callback_data=f"autodel:set:anonymous:0:{chat_id}"),
+        ],
         [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
     ]
     return InlineKeyboardMarkup(buttons)

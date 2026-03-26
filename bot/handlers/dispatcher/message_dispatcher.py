@@ -63,8 +63,8 @@ class MessageDispatcher:
         # 根据聊天类型分发
         if chat.type == "private":
             await self._dispatch_private(update, context, chat, user, message_text)
-        elif message_text:
-            # 群聊只处理文本消息
+        else:
+            # 群聊消息统一进入处理链，非文本消息也要经过强制订阅/防护等规则。
             await self._group_message_handler.handle(update, context, chat, user, message_text)
 
     async def _dispatch_private(

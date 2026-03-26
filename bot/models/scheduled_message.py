@@ -55,3 +55,22 @@ class ScheduledMessageTask(Base):
         default=lambda: dt.datetime.now(dt.UTC),
         onupdate=lambda: dt.datetime.now(dt.UTC),
     )
+
+
+class ScheduledMessageLog(Base):
+    """定时消息发送日志表。"""
+
+    __tablename__ = "scheduled_message_logs"
+    __table_args__ = {"schema": "bot"}
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    task_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("bot.scheduled_message_tasks.task_id", ondelete="CASCADE"),
+        index=True,
+    )
+    chat_id: Mapped[int] = mapped_column(BigInteger)
+    message_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    sent_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), index=True)
+    success: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)

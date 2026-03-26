@@ -16,15 +16,14 @@ from bot.handlers.base.base_handler import BaseHandler
 from bot.handlers.base.chat_resolver import ChatResolver
 from bot.services.scheduled_message_service import ScheduledMessageService
 from bot.services.base import ValidationError
-from bot.services.state.state_service import (
-    clear_user_state,
-    set_user_state,
-    get_user_state,
-)
-from bot.services.core.permission_service import is_user_admin
+from bot.services.core.module_settings_service import ModuleSettingsService
+from bot.services.core.permission_service import PermissionPolicyService
+from bot.services.shared.publish_service import PublishService
+from bot.services.state.conversation_state_service import ConversationStateService
 from bot.models.enums import ConversationStateType
 from bot.models.scheduled_message import ScheduledMessageTask
 from bot.utils.callback_parser import CallbackParser
+from bot.utils.telegram_errors import answer_callback_query_safely, build_public_error_text
 from bot.keyboards.integration.scheduled_message import (
     sm_list_keyboard,
     sm_detail_keyboard,
@@ -45,6 +44,58 @@ def _is_clear_command(text: str) -> bool:
     """判断是否为 /clear 命令（兼容 /clear@BotName）。"""
     cmd = (text or "").strip().split(maxsplit=1)[0].lower()
     return cmd == "/clear" or cmd.startswith("/clear@")
+
+
+def _resolve_state_chat_id(update: Update, target_chat_id: int) -> int:
+    if update.effective_chat is None:
+        return target_chat_id
+    return update.effective_chat.id if update.effective_chat.type == "private" else target_chat_id
+
+
+async def _resolve_target_chat_id(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    parser: CallbackParser | None = None,
+) -> int | None:
+    if update.effective_chat is None or update.effective_user is None:
+        return None
+
+    chat = update.effective_chat
+    user = update.effective_user
+
+    if chat.type != "private":
+        allowed = await PermissionPolicyService.can_manage(context, chat.id, user.id, capability="automation")
+        if not allowed:
+            await answer_callback_query_safely(update, "❌ 需要管理员权限", show_alert=True)
+            return None
+        return chat.id
+
+    candidate_ids: list[int] = []
+    if parser is not None:
+        callback_chat_id = parser.get_int_optional(2)
+        if callback_chat_id not in (None, 0):
+            candidate_ids.append(callback_chat_id)
+
+    db: Database = context.application.bot_data["db"]
+    current_chat_id = await ChatResolver.get_current_chat(db, user.id)
+    if current_chat_id not in (None, 0) and current_chat_id not in candidate_ids:
+        candidate_ids.append(current_chat_id)
+
+    for candidate_chat_id in candidate_ids:
+        allowed = await PermissionPolicyService.can_manage(
+            context,
+            candidate_chat_id,
+            user.id,
+            capability="automation",
+        )
+        if allowed:
+            return candidate_chat_id
+
+    if candidate_ids:
+        await answer_callback_query_safely(update, "你没有该群组的管理权限", show_alert=True)
+    else:
+        await answer_callback_query_safely(update, "请先选择一个群组", show_alert=True)
+    return None
 
 
 class ScheduledMessageHandler(BaseHandler):
@@ -83,8 +134,7 @@ class ScheduledMessageHandler(BaseHandler):
         """
         if update.effective_user is None:
             return False
-
-        return await is_user_admin(context, chat_id, update.effective_user.id)
+        return await PermissionPolicyService.can_manage(context, chat_id, update.effective_user.id, capability="automation")
 
     async def show_list(
         self,
@@ -161,7 +211,7 @@ class ScheduledMessageHandler(BaseHandler):
                 await session.rollback()
                 await self.message_helper.safe_edit(
                     update,
-                    text=f"❌ {str(e)}",
+                    text=f"❌ {build_public_error_text(e, fallback='任务不可用')}",
                 )
                 return
             await session.commit()
@@ -271,6 +321,17 @@ class ScheduledMessageHandler(BaseHandler):
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
             try:
+                await ModuleSettingsService.ensure(
+                    session,
+                    chat_id=target_chat_id,
+                    chat_type="supergroup" if target_chat_id < 0 else "private",
+                    title=update.effective_chat.title if update.effective_chat else None,
+                    user_id=update.effective_user.id if update.effective_user else None,
+                    username=update.effective_user.username if update.effective_user else None,
+                    first_name=update.effective_user.first_name if update.effective_user else None,
+                    last_name=update.effective_user.last_name if update.effective_user else None,
+                    language_code=update.effective_user.language_code if update.effective_user else None,
+                )
                 task = await ScheduledMessageService.create_task(
                     session,
                     chat_id=target_chat_id,
@@ -282,7 +343,7 @@ class ScheduledMessageHandler(BaseHandler):
                 await session.rollback()
                 await self.message_helper.safe_edit(
                     update,
-                    text=f"❌ 创建失败: {str(e)}",
+                    text=f"❌ 创建失败: {build_public_error_text(e, fallback='请稍后重试')}",
                 )
                 return
             await session.commit()
@@ -341,12 +402,12 @@ class ScheduledMessageHandler(BaseHandler):
                     value_int = int(value)
                     # 保存开始时间到状态，然后让用户选择结束时间
                     # 在私聊场景下，状态保存到私聊ID，目标群组ID保存到 state_data 中
-                    state_chat_id = update.effective_chat.id if update.effective_chat else target_chat_id
-                    await set_user_state(
+                    state_chat_id = _resolve_state_chat_id(update, target_chat_id)
+                    await ConversationStateService.start(
                         session,
                         state_chat_id,
                         update.effective_user.id if update.effective_user else 0,
-                        ConversationStateType.sm_edit_day_start,
+                        str(ConversationStateType.sm_edit_day_start),
                         {"task_id": task_id, "start_hour": value_int, "target_chat_id": target_chat_id},
                     )
                     await session.commit()
@@ -363,8 +424,8 @@ class ScheduledMessageHandler(BaseHandler):
                     value_int = int(value)
                     # 从状态中获取开始时间
                     # 在私聊场景下，使用私聊ID查询状态
-                    state_chat_id = update.effective_chat.id if update.effective_chat else target_chat_id
-                    state = await get_user_state(
+                    state_chat_id = _resolve_state_chat_id(update, target_chat_id)
+                    state = await ConversationStateService.get(
                         session,
                         state_chat_id,
                         update.effective_user.id if update.effective_user else 0,
@@ -383,7 +444,7 @@ class ScheduledMessageHandler(BaseHandler):
                     )
 
                     # 清除状态
-                    await clear_user_state(
+                    await ConversationStateService.clear(
                         session,
                         state_chat_id,
                         update.effective_user.id if update.effective_user else 0,
@@ -407,12 +468,12 @@ class ScheduledMessageHandler(BaseHandler):
                 )
                 await self.message_helper.safe_edit(
                     update,
-                    text=f"❌ 设置失败: {str(e)}",
+                    text=f"❌ 设置失败: {build_public_error_text(e, fallback='请重新输入')}",
                 )
                 # 确保清理可能设置的 FSM 状态
-                state_chat_id = update.effective_chat.id if update.effective_chat else target_chat_id
+                state_chat_id = _resolve_state_chat_id(update, target_chat_id)
                 async with db.session_factory() as cleanup_session:
-                    await clear_user_state(
+                    await ConversationStateService.clear(
                         cleanup_session,
                         state_chat_id,
                         update.effective_user.id if update.effective_user else 0,
@@ -458,7 +519,7 @@ class ScheduledMessageHandler(BaseHandler):
                 await session.rollback()
                 await self.message_helper.safe_edit(
                     update,
-                    text=f"❌ {str(e)}",
+                    text=f"❌ {build_public_error_text(e, fallback='任务不可用')}",
                 )
                 return
 
@@ -508,12 +569,12 @@ class ScheduledMessageHandler(BaseHandler):
 
             # 设置 FSM 状态
             # 在私聊场景下，状态保存到私聊ID，目标群组ID保存到 state_data 中
-            state_chat_id = update.effective_chat.id if update.effective_chat else target_chat_id
-            await set_user_state(
+            state_chat_id = _resolve_state_chat_id(update, target_chat_id)
+            await ConversationStateService.start(
                 session,
                 state_chat_id,
                 update.effective_user.id if update.effective_user else 0,
-                state_type,
+                str(state_type),
                 {"task_id": task_id, "target_chat_id": target_chat_id},
             )
             await session.commit()
@@ -567,7 +628,7 @@ class ScheduledMessageHandler(BaseHandler):
                 await session.rollback()
                 await self.message_helper.safe_edit(
                     update,
-                    text=f"❌ 删除失败: {str(e)}",
+                    text=f"❌ 删除失败: {build_public_error_text(e, fallback='请稍后重试')}",
                 )
                 return
             await session.commit()
@@ -604,8 +665,8 @@ class ScheduledMessageHandler(BaseHandler):
             db: Database = context.application.bot_data["db"]
             async with db.session_factory() as session:
                 # 使用私聊ID清理状态
-                state_chat_id = update.effective_chat.id if update.effective_chat else target_chat_id
-                await clear_user_state(
+                state_chat_id = _resolve_state_chat_id(update, target_chat_id)
+                await ConversationStateService.clear(
                     session,
                     state_chat_id,
                     update.effective_user.id,
@@ -649,7 +710,7 @@ class ScheduledMessageHandler(BaseHandler):
         async with db.session_factory() as session:
             # 在私聊场景下，使用私聊ID查询状态
             state_chat_id = update.effective_chat.id if update.effective_chat else target_chat_id
-            state = await get_user_state(session, state_chat_id, user_id)
+            state = await ConversationStateService.get(session, state_chat_id, user_id)
 
             # 添加日志：状态查询结果
             log.info(
@@ -666,7 +727,7 @@ class ScheduledMessageHandler(BaseHandler):
             task_id = state.state_data.get("task_id")
             if not task_id:
                 log.warning("handle_fsm_input_no_task_id")
-                await clear_user_state(session, state_chat_id, user_id)
+                await ConversationStateService.clear(session, state_chat_id, user_id)
                 await session.commit()
                 return
 
@@ -694,20 +755,16 @@ class ScheduledMessageHandler(BaseHandler):
                         # 解析 JSON
                         try:
                             buttons = json.loads(text)
-                        except Exception as e:
+                        except Exception:
                             await session.rollback()
-                            await update.effective_message.reply_text(
-                                f"❌ JSON 格式错误: {str(e)}\n\n请重新输入"
-                            )
+                            await update.effective_message.reply_text("❌ JSON 格式错误，请重新输入")
                             return
 
                         try:
                             await ScheduledMessageService.update_task_buttons(session, task_id, buttons)
-                        except ValidationError as e:
+                        except ValidationError:
                             await session.rollback()
-                            await update.effective_message.reply_text(
-                                f"❌ 按钮配置错误: {str(e)}\n\n请重新输入"
-                            )
+                            await update.effective_message.reply_text("❌ 按钮配置错误，请重新输入")
                             return
 
                 elif state_type_str == "sm_edit_start_at" or state_type_str == str(ConversationStateType.sm_edit_start_at):
@@ -718,7 +775,7 @@ class ScheduledMessageHandler(BaseHandler):
                         if not result:
                             await session.rollback()
                             await update.effective_message.reply_text(
-                                "❌ 日期时间格式错误，应为: YYYY-MM-DD HH:MM\n\n请重新输入"
+                                "❌ 日期时间格式错误，请重新输入"
                             )
                             return
 
@@ -730,18 +787,18 @@ class ScheduledMessageHandler(BaseHandler):
                         if not result:
                             await session.rollback()
                             await update.effective_message.reply_text(
-                                "❌ 日期时间格式错误，应为: YYYY-MM-DD HH:MM\n\n请重新输入"
+                                "❌ 日期时间格式错误，请重新输入"
                             )
                             return
 
                 else:
                     log.warning("handle_fsm_input_unknown_state", state_type=state_type_str)
                     await session.rollback()
-                    await update.effective_message.reply_text("❌ 未知状态")
+                    await update.effective_message.reply_text("❌ 状态无效，请重新进入")
                     return
 
                 # 清除 FSM 状态（使用私聊ID）
-                await clear_user_state(session, state_chat_id, user_id)
+                await ConversationStateService.clear(session, state_chat_id, user_id)
                 await session.commit()
 
                 # 添加日志：更新成功，即将显示详情页
@@ -754,7 +811,9 @@ class ScheduledMessageHandler(BaseHandler):
                     error=str(e),
                     traceback=traceback.format_exc(),
                 )
-                await update.effective_message.reply_text(f"❌ 操作失败: {str(e)}")
+                await update.effective_message.reply_text(
+                    f"❌ 操作失败: {build_public_error_text(e, fallback='请稍后重试')}"
+                )
                 return
 
         # 根据操作类型确定 toast 提示
@@ -829,26 +888,28 @@ class ScheduledMessageHandler(BaseHandler):
         async with db.session_factory() as session:
             # 在私聊场景下，使用私聊ID查询状态
             state_chat_id = update.effective_chat.id if update.effective_chat else target_chat_id
-            state = await get_user_state(session, state_chat_id, user_id)
+            state = await ConversationStateService.get(session, state_chat_id, user_id)
             if not state or state.state_type != ConversationStateType.sm_edit_media:
                 await session.commit()
                 return
 
             task_id = state.state_data.get("task_id")
             if not task_id:
-                await clear_user_state(session, state_chat_id, user_id)
+                await ConversationStateService.clear(session, state_chat_id, user_id)
                 await session.commit()
                 return
 
-            # 更新媒体
+                # 更新媒体
             try:
                 await ScheduledMessageService.update_task_media(session, task_id, media_type, file_id)
-                await clear_user_state(session, state_chat_id, user_id)
+                await ConversationStateService.clear(session, state_chat_id, user_id)
                 await session.commit()
             except Exception as e:
                 await session.rollback()
                 log.error("更新任务媒体失败", task_id=task_id, error=str(e))
-                await update.effective_message.reply_text(f"❌ 操作失败: {str(e)}")
+                await update.effective_message.reply_text(
+                    f"❌ 操作失败: {build_public_error_text(e, fallback='请稍后重试')}"
+                )
                 return
 
         # 返回任务详情
@@ -877,7 +938,14 @@ async def sm_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         # parts[2] = chat_id
         # parts[3] = task_id 或 page（取决于 action）
         action = parser.get(1)
-        target_chat_id = parser.get_int(2)
+        target_chat_id = parser.get_int_optional(2)
+        if target_chat_id is None:
+            await answer_callback_query_safely(
+                update,
+                "❌ 群组参数无效，请返回重试",
+                show_alert=True,
+            )
+            return
 
         # 路由到不同的方法
         if action == "list":
@@ -930,15 +998,8 @@ async def sm_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     except Exception as e:
         log.error("处理定时消息回调失败", error=str(e), callback_data=update.callback_query.data)
-        short_error = str(e).splitlines()[0][:120] if str(e) else "内部错误"
-        try:
-            await update.callback_query.answer(
-                text=f"❌ 操作失败: {short_error}",
-                show_alert=True,
-            )
-        except Exception:
-            # 避免错误消息过长导致二次异常
-            await update.callback_query.answer(
-                text="❌ 操作失败，请重试",
-                show_alert=True,
-            )
+        await answer_callback_query_safely(
+            update,
+            f"❌ 操作失败: {build_public_error_text(e, fallback='内部错误')}",
+            show_alert=True,
+        )

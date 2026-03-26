@@ -11,11 +11,13 @@ from bot.db.session import Database
 from bot.keyboards.admin.antispam import anti_spam_config_keyboard
 from bot.models.core import ChatSettings, ConversationState
 from bot.models.enums import ConversationStateType
+from bot.services.core.module_settings_service import ModuleSettingsService
+from bot.services.core.permission_service import PermissionPolicyService
 from bot.services.core.chat_service import get_chat_settings
-from bot.services.core.permission_service import is_user_admin
 from bot.services.moderation.anti_spam_service import DEFAULT_RULES, get_antispam_rules
-from bot.services.state.state_service import clear_user_state, set_user_state
+from bot.services.state.conversation_state_service import ConversationStateService
 from bot.utils.callback_parser import CallbackParser
+from bot.utils.telegram_errors import answer_callback_query_safely, mark_callback_query_answered
 
 
 log = structlog.get_logger(__name__)
@@ -77,6 +79,15 @@ def _split_int_list(value: str) -> list[int]:
     return values
 
 
+def _resolve_target_chat_id(state: ConversationState) -> int | None:
+    target_chat_id = state.state_data.get("target_chat_id") if state.state_data else None
+    if isinstance(target_chat_id, int) and target_chat_id != 0:
+        return target_chat_id
+    if state.chat_id != 0:
+        return state.chat_id
+    return None
+
+
 def format_anti_spam_menu_text(chat_title: str, settings: ChatSettings) -> str:
     rules = get_antispam_rules(settings)
     status = "开启" if settings.anti_spam_enabled else "关闭"
@@ -116,10 +127,9 @@ async def anti_spam_config_callback(update: Update, context: ContextTypes.DEFAUL
         return
 
     q = update.callback_query
-    await q.answer()
 
     if update.effective_chat is None or update.effective_chat.type != "private":
-        await q.edit_message_text("请在私聊配置反垃圾")
+        await answer_callback_query_safely(update, "请在私聊配置反垃圾", show_alert=True)
         return
 
     cb = CallbackParser.parse(q.data or "")
@@ -128,17 +138,32 @@ async def anti_spam_config_callback(update: Update, context: ContextTypes.DEFAUL
 
     op = cb.get(1)
     key = cb.get(2)
-    chat_id = cb.get_int(3)
-    if chat_id == 0:
-        await q.edit_message_text("无效的群组 ID")
+    chat_id = cb.get_int_optional(3)
+    if chat_id is None or chat_id == 0:
+        await answer_callback_query_safely(update, "无效的群组 ID", show_alert=True)
         return
 
-    if not await is_user_admin(context, chat_id, update.effective_user.id):
-        await q.edit_message_text("你没有该群组的管理权限")
+    allowed, reason = await PermissionPolicyService.require_manage(
+        context,
+        chat_id=chat_id,
+        user_id=update.effective_user.id,
+        capability="settings",
+    )
+    if not allowed:
+        await answer_callback_query_safely(update, reason or "你没有该群组的管理权限", show_alert=True)
         return
+
+    await q.answer()
+    mark_callback_query_answered(update)
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
+        await ModuleSettingsService.ensure(
+            session,
+            chat_id=chat_id,
+            chat_type="supergroup" if chat_id < 0 else "private",
+            user_id=update.effective_user.id,
+        )
         settings = await get_chat_settings(session, chat_id)
         rules = get_antispam_rules(settings)
 
@@ -196,11 +221,20 @@ async def start_anti_spam_config(
         return
 
     q = update.callback_query
+    if target_chat_id == 0:
+        await answer_callback_query_safely(update, "无效的群组 ID", show_alert=True)
+        return
     db: Database = context.application.bot_data["db"]
 
     async with db.session_factory() as session:
-        await clear_user_state(session, target_chat_id, update.effective_user.id)
-        await set_user_state(
+        await ModuleSettingsService.ensure(
+            session,
+            chat_id=target_chat_id,
+            chat_type="supergroup" if target_chat_id < 0 else "private",
+            user_id=update.effective_user.id,
+        )
+        await ConversationStateService.clear(session, target_chat_id, update.effective_user.id)
+        await ConversationStateService.start(
             session,
             chat_id=target_chat_id,
             user_id=update.effective_user.id,
@@ -255,7 +289,31 @@ async def anti_spam_config_message_handler(
     if update.effective_user is None or update.effective_message is None:
         return
 
-    target_chat_id = state.state_data.get("target_chat_id", state.chat_id)
+    target_chat_id = _resolve_target_chat_id(state)
+    if target_chat_id is None:
+        await ConversationStateService.clear(session, state.chat_id, update.effective_user.id)
+        await session.commit()
+        await update.effective_message.reply_text("❌ 无效的群组 ID，请重新进入配置")
+        return
+
+    allowed, reason = await PermissionPolicyService.require_manage(
+        context,
+        chat_id=target_chat_id,
+        user_id=update.effective_user.id,
+        capability="settings",
+    )
+    if not allowed:
+        await ConversationStateService.clear(session, target_chat_id, update.effective_user.id)
+        await session.commit()
+        await update.effective_message.reply_text(f"❌ {reason or '需要管理员权限'}")
+        return
+
+    await ModuleSettingsService.ensure(
+        session,
+        chat_id=target_chat_id,
+        chat_type="supergroup" if target_chat_id < 0 else "private",
+        user_id=update.effective_user.id,
+    )
     settings = await get_chat_settings(session, target_chat_id)
     rules = get_antispam_rules(settings)
 
@@ -352,7 +410,7 @@ async def anti_spam_config_message_handler(
     cleaned_rules.update({k: v for k, v in rules.items() if k in cleaned_rules})
     settings.anti_spam_rules = cleaned_rules
 
-    await clear_user_state(session, target_chat_id, update.effective_user.id)
+    await ConversationStateService.clear(session, target_chat_id, update.effective_user.id)
     await session.commit()
 
     db: Database = context.application.bot_data["db"]

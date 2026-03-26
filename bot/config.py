@@ -51,6 +51,14 @@ class Settings(BaseSettings):
     # Bot 全局管理员（用于风控豁免等逻辑），逗号分隔 user_id，如：123,456
     bot_admin_ids: str = Field(default="", alias="BOT_ADMIN_IDS")
 
+    # 续费入口：联系购买账号（可选，不带 @）
+    renew_contact_username: str | None = Field(default=None, alias="RENEW_CONTACT_USERNAME")
+    renew_contact_label: str = Field(default="一键联系", alias="RENEW_CONTACT_LABEL")
+
+    # 续费入口：人工联系链接与展示文案
+    renewal_contact_url: str | None = Field(default=None, alias="RENEWAL_CONTACT_URL")
+    renewal_contact_label: str = Field(default="一键联系", alias="RENEWAL_CONTACT_LABEL")
+
 
 def get_settings() -> Settings:
     # 查找 env 文件
@@ -106,5 +114,3 @@ def get_settings() -> Settings:
         
         # 其他错误直接抛出
         raise
-
-

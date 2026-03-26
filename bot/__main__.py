@@ -12,9 +12,10 @@ import tempfile
 
 import httpx
 import structlog
-from telegram.ext import Application, CallbackQueryHandler, MessageHandler, filters
+from telegram.ext import Application, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 
 from bot.config import get_settings
+from bot.db.schema_gate import SchemaValidationError, validate_database_schema
 from bot.db.session import create_database, Database
 from bot.handlers.anti_flood_handler import anti_flood_message_handler
 from bot.handlers.anti_flood_config_handler import anti_flood_config_callback
@@ -41,11 +42,13 @@ from bot.routers import (
     InviteRouter,
     LotteryRouter,
     PointsRouter,
+    RenewalRouter,
     NearbyRouter,
     ScheduledMessageRouter,
     SolitaireRouter,
     VerificationRouter,
 )
+from bot.utils.telegram_errors import answer_callback_query_safely, build_public_error_text
 
 log = structlog.get_logger(__name__)
 
@@ -102,6 +105,7 @@ def _register_routers(app: Application) -> None:
         AutoReplyRouter(),
         BannedWordRouter(),
         PointsRouter(),
+        RenewalRouter(),
         NearbyRouter(),
         GroupRouter(),
         VerificationRouter(),
@@ -126,9 +130,13 @@ def _register_common_handlers(app: Application) -> None:
     )
 
     # ==================== Group -2: 统一消息分发入口 ====================
-    # 文本消息入口
+    # 群聊统一入口：非命令消息都进入分发器，确保媒体消息也能经过等级限制/商城/欢迎等规则
     app.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, dispatcher.dispatch),
+        MessageHandler(
+            (filters.ChatType.GROUPS & ~filters.COMMAND)
+            | (filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND),
+            dispatcher.dispatch,
+        ),
         group=-2,
     )
 
@@ -167,9 +175,9 @@ def _register_common_handlers(app: Application) -> None:
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, new_members_handler))
 
     # ==================== Group 0: 自动删除 ====================
-    # 自动删除系统消息（处理非文本消息）
+    # 自动删除系统消息（文本与非文本都需要覆盖，例如匿名管理员消息）
     app.add_handler(
-        MessageHandler(filters.ChatType.GROUPS & ~filters.TEXT, auto_delete_handler),
+        MessageHandler(filters.ChatType.GROUPS & filters.ALL, auto_delete_handler),
         group=0,
     )
 
@@ -177,6 +185,29 @@ def _register_common_handlers(app: Application) -> None:
 async def _on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     """错误处理器"""
     log.exception("bot_error", err=context.error)
+    if isinstance(update, object) and hasattr(update, "callback_query"):
+        public_error = build_public_error_text(context.error)
+        await answer_callback_query_safely(
+            update,
+            f"❌ {public_error}",
+            show_alert=True,
+        )
+
+
+async def _validate_schema_or_exit(app: Application) -> None:
+    """启动前执行严格 schema gate。"""
+    db: Database = app.bot_data["db"]
+    allow_compat = os.getenv("BOT_ALLOW_SCHEMA_COMPAT", "").strip() == "1"
+
+    try:
+        await validate_database_schema(db.engine)
+        log.info("schema_gate_passed")
+    except SchemaValidationError:
+        if allow_compat:
+            log.warning("schema_gate_bypassed_by_env", env_var="BOT_ALLOW_SCHEMA_COMPAT")
+            return
+        log.exception("schema_gate_failed")
+        raise
 
 
 # PID 文件路径（跨平台兼容：使用系统临时目录）
@@ -229,6 +260,7 @@ def main() -> None:
         from bot.tasks import (
             AdsTask,
             CleanupTask,
+            GroupLockTask,
             LotteryTask,
             ScheduledMessageTaskRunner,
             SolitaireTask,
@@ -243,8 +275,10 @@ def main() -> None:
             CleanupTask(),
             VerificationTimeoutTask(),
             ScheduledMessageTaskRunner(),
+            GroupLockTask(),
         ])
 
+        await _validate_schema_or_exit(app)
         await scheduler.start()
 
         try:
@@ -271,6 +305,7 @@ def main_polling() -> None:
     """简化的轮询模式入口（兼容旧版）"""
     app = build_application()
     log.info("bot_starting")
+    asyncio.run(_validate_schema_or_exit(app))
     app.run_polling(drop_pending_updates=True)
 
 

@@ -75,6 +75,28 @@ class CallbackData:
                 return default
         return default
 
+    def get_int_optional(self, index: int) -> int | None:
+        """获取指定索引的数据部分（转换为整数，失败返回 None）"""
+        if 0 <= index < len(self._parts):
+            try:
+                return int(self._parts[index])
+            except ValueError:
+                log.warning("invalid_int_in_callback", index=index, value=self._parts[index])
+                return None
+        return None
+
+    def has_int(self, index: int) -> bool:
+        """判断指定索引是否为合法整数。"""
+        return self.get_int_optional(index) is not None
+
+    def require_int(self, index: int, label: str | None = None) -> int:
+        """获取指定索引的整数，失败时抛出异常。"""
+        value = self.get_int_optional(index)
+        if value is None:
+            name = label or f"callback[{index}]"
+            raise ValueError(f"{name} 缺失或格式错误")
+        return value
+
     def length(self) -> int:
         """获取数据部分数量
 

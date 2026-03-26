@@ -32,4 +32,9 @@ TASK_CONFIG = {
         "enabled": True,
         "max_consecutive_failures": 10,
     },
+    "group_lock": {
+        "interval": 60,  # 每分钟同步一次关群权限
+        "enabled": True,
+        "max_consecutive_failures": 10,
+    },
 }

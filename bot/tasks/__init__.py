@@ -7,6 +7,7 @@ from bot.tasks.message_task import MessageTask
 from bot.tasks.cleanup_task import CleanupTask
 from bot.tasks.verification_timeout_task import VerificationTimeoutTask
 from bot.tasks.scheduled_message_task import ScheduledMessageTaskRunner
+from bot.tasks.group_lock_task import GroupLockTask
 
 __all__ = [
     "LotteryTask",
@@ -16,4 +17,5 @@ __all__ = [
     "CleanupTask",
     "VerificationTimeoutTask",
     "ScheduledMessageTaskRunner",
+    "GroupLockTask",
 ]

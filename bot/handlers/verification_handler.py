@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 
 import structlog
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, desc
 from telegram import ChatPermissions, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
@@ -15,9 +15,10 @@ from bot.keyboards.common.verification import (
     verification_keyboard,
     verification_timeout_help_keyboard,
 )
-from bot.models.core import TgUser
+from bot.models.core import ConversationState, TgUser
 from bot.services.core.chat_service import ensure_chat, get_chat_settings
-from bot.services.core.permission_service import is_user_admin
+from bot.services.core.module_settings_service import ModuleSettingsService
+from bot.services.core.permission_service import PermissionPolicyService
 from bot.services.core.user_service import ensure_user
 from bot.services.verification_service import (
     create_or_replace_challenge,
@@ -27,6 +28,10 @@ from bot.services.verification_service import (
     solve_by_token_scoped,
 )
 from bot.services.integration.invite_service import track_and_award_invite
+from bot.services.state.conversation_state_service import ConversationStateService
+from bot.services.welcome_service import WelcomeService
+from bot.utils.callback_parser import CallbackParser
+from bot.utils.telegram_errors import answer_callback_query_safely, build_public_error_text, mark_callback_query_answered
 
 
 log = structlog.get_logger(__name__)
@@ -127,6 +132,52 @@ async def _resolve_name_from_db(session, name_token: str) -> int | None:
     return None
 
 
+def _resolve_state_chat_id(state: ConversationState, fallback_chat_id: int | None = None) -> int | None:
+    target_chat_id = state.state_data.get("target_chat_id") if state.state_data else None
+    if isinstance(target_chat_id, int) and target_chat_id != 0:
+        return target_chat_id
+    if state.chat_id != 0:
+        return state.chat_id
+    if fallback_chat_id and fallback_chat_id != 0:
+        return fallback_chat_id
+    return None
+
+
+async def _resolve_verification_config_state(
+    session,
+    db: Database,
+    chat,
+    user,
+) -> ConversationState | None:
+    """尽量使用统一状态服务定位验证配置状态。"""
+    if chat.type != "private":
+        state = await ConversationStateService.get(session, chat.id, user.id)
+        if state and state.state_type == "verification_config":
+            return state
+        return None
+
+    target_chat_id = await ChatResolver.get_current_chat(db, user.id)
+    if target_chat_id:
+        state = await ConversationStateService.get(session, target_chat_id, user.id)
+        if state and state.state_type == "verification_config":
+            return state
+
+    stmt = (
+        select(ConversationState)
+        .where(
+            ConversationState.user_id == user.id,
+            ConversationState.state_type == "verification_config",
+        )
+        .order_by(desc(ConversationState.id))
+    )
+    result = await session.execute(stmt)
+    row = result.first()
+    state = row[0] if row else None
+    if state and state.state_type == "verification_config":
+        return state
+    return None
+
+
 async def _mark_challenge_released(session, chat_id: int, user_id: int) -> None:
     ch = await get_challenge(session, chat_id, user_id)
     if ch is None:
@@ -154,7 +205,7 @@ async def _try_admin_manual_unmute(update: Update, context: ContextTypes.DEFAULT
     if not wants_unmute:
         return False
 
-    if not await is_user_admin(context, chat.id, actor.id):
+    if not await PermissionPolicyService.can_manage(context, chat.id, actor.id, capability="moderation"):
         return False
 
     target_user_id = _extract_unmute_target_user_id(message, text)
@@ -169,7 +220,7 @@ async def _try_admin_manual_unmute(update: Update, context: ContextTypes.DEFAULT
 
         if target_user_id is None:
             try:
-                await message.reply_text("请回复目标用户消息发送“解封”，或使用“解封 @用户ID / 解封 @username / 解封 用户名”。")
+                await message.reply_text("请回复目标用户消息或使用“解封 @用户ID / 解封 @username / 解封 用户名”。")
             except Exception:
                 pass
             return True
@@ -205,7 +256,14 @@ async def new_members_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         settings = await get_chat_settings(session, chat.id)
 
         # 发送欢迎消息（独立于验证功能）
-        if settings.welcome_enabled:
+        sent_doc_welcome = await WelcomeService.send_for_mode(
+            context,
+            session,
+            chat_id=chat.id,
+            mode="on_join",
+            members=list(update.effective_message.new_chat_members or []),
+        )
+        if not sent_doc_welcome and settings.welcome_enabled:
             for u in update.effective_message.new_chat_members or []:
                 mention = u.mention_html()
                 if settings.welcome_message:
@@ -365,7 +423,6 @@ async def verify_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
         return
     q = update.callback_query
-    await q.answer()
 
     data = q.data or ""
     # 兼容两种格式：
@@ -378,6 +435,7 @@ async def verify_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         token = data.split("vfy:", 1)[-1].strip()
 
     if not token:
+        await answer_callback_query_safely(update, "验证参数无效", show_alert=True)
         return
 
     chat = update.effective_chat
@@ -388,23 +446,19 @@ async def verify_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         origin = await get_challenge_by_token(session, token)
         if origin is None:
             await session.commit()
+            await q.answer()
+            mark_callback_query_answered(update)
             await q.edit_message_text(t("zh-CN", "verify.expired"))
             return
 
         if origin.chat_id != chat.id:
             await session.commit()
-            try:
-                await q.answer("该验证按钮不属于当前群", show_alert=True)
-            except Exception:
-                pass
+            await answer_callback_query_safely(update, "该验证按钮不属于当前群", show_alert=True)
             return
 
         if origin.user_id != update.effective_user.id:
             await session.commit()
-            try:
-                await q.answer("仅新成员本人可点击此按钮验证", show_alert=True)
-            except Exception:
-                pass
+            await answer_callback_query_safely(update, "仅新成员本人可点击此按钮验证", show_alert=True)
             return
 
         ch = await solve_by_token_scoped(
@@ -414,6 +468,9 @@ async def verify_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             expected_user_id=update.effective_user.id,
         )
         await session.commit()
+
+    await q.answer()
+    mark_callback_query_answered(update)
 
     if ch is None:
         await q.edit_message_text(t("zh-CN", "verify.expired"))
@@ -425,6 +482,7 @@ async def verify_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
 
     await _unrestrict_and_notify(context, chat.id, ch.user_id, settings.language)
+    await _send_after_verify_welcome(context, chat.id, ch.user_id)
     await q.edit_message_text(t(settings.language, "verify.ok"))
 
 
@@ -470,6 +528,7 @@ async def verify_message_handler(update: Update, context: ContextTypes.DEFAULT_T
             except Exception as e:
                 log.warning("verify_success_reply_failed", user_id=user.id, error=str(e))
             await _unrestrict_and_notify(context, chat.id, user.id, settings.language)
+            await _send_after_verify_welcome(context, chat.id, user.id)
         else:
             # 验证失败
             try:
@@ -505,6 +564,23 @@ async def _unrestrict_and_notify(context: ContextTypes.DEFAULT_TYPE, chat_id: in
         log.warning("edit_admin_verify_message_failed", error=str(e))
 
 
+async def _send_after_verify_welcome(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+    user_id: int,
+) -> None:
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        await WelcomeService.send_for_mode(
+            context,
+            session,
+            chat_id=chat_id,
+            mode="after_verify",
+            user_ids=[user_id],
+        )
+        await session.commit()
+
+
 async def admin_verify_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """管理员确认验证回调
 
@@ -519,24 +595,26 @@ async def admin_verify_callback(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     q = update.callback_query
-    await q.answer()
 
     data = q.data or ""
     # 解析回调数据：adm_vfy:<user_id>:<token>:<action>
-    parts = data.split(":")
-    if len(parts) < 4 or parts[0] != "adm_vfy":
+    parts = CallbackParser.parse(data)
+    if parts.action != "adm_vfy" or parts.length() < 4:
         log.warning("invalid_admin_verify_callback", callback_data=data)
+        await answer_callback_query_safely(update, "验证回调无效", show_alert=True)
         return
 
     try:
-        user_id = int(parts[1])
-        token = parts[2]
-        action = parts[3]  # approve 或 reject
-    except (ValueError, IndexError) as e:
+        user_id = parts.require_int(1, label="user_id")
+        token = parts.get(2)
+        action = parts.get(3)
+    except ValueError as e:
         log.warning("invalid_admin_verify_callback_format", callback_data=data, error=str(e))
+        await answer_callback_query_safely(update, "验证参数格式错误", show_alert=True)
         return
     if action not in {"approve", "reject"}:
         log.warning("invalid_admin_verify_action", callback_data=data, action=action)
+        await answer_callback_query_safely(update, "验证操作无效", show_alert=True)
         return
 
     chat = update.effective_chat
@@ -547,12 +625,18 @@ async def admin_verify_callback(update: Update, context: ContextTypes.DEFAULT_TY
     actor = update.effective_user
     if actor is None:
         return
-    if not await is_user_admin(context, chat.id, actor.id):
-        try:
-            await q.answer("仅群管理员可执行该操作", show_alert=True)
-        except Exception:
-            pass
+    allowed, reason = await PermissionPolicyService.require_manage(
+        context,
+        chat_id=chat.id,
+        user_id=actor.id,
+        capability="moderation",
+    )
+    if not allowed:
+        await answer_callback_query_safely(update, reason or "仅群管理员可执行该操作", show_alert=True)
         return
+
+    await q.answer()
+    mark_callback_query_answered(update)
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
@@ -571,6 +655,7 @@ async def admin_verify_callback(update: Update, context: ContextTypes.DEFAULT_TY
             if ch and ch.solved:
                 # 解除限制并发送通知
                 await _unrestrict_and_notify(context, chat.id, user_id, settings.language)
+                await _send_after_verify_welcome(context, chat.id, user_id)
                 try:
                     await q.edit_message_text(f"✅ 已通过用户 {user_id} 的验证")
                 except Exception as e:
@@ -584,12 +669,14 @@ async def admin_verify_callback(update: Update, context: ContextTypes.DEFAULT_TY
         else:  # reject
             # 拒绝验证：踢出用户
             try:
+                await _mark_challenge_released(session, chat.id, user_id)
+                await session.commit()
                 await context.bot.ban_chat_member(chat_id=chat.id, user_id=user_id)
                 await q.edit_message_text(f"❌ 已拒绝并踢出用户 {user_id}")
             except Exception as e:
                 log.warning("kick_user_failed", user_id=user_id, chat_id=chat.id, error=str(e))
                 try:
-                    await q.edit_message_text(f"⚠️ 操作失败：{str(e)}")
+                    await q.edit_message_text(f"⚠️ 操作失败：{build_public_error_text(e)}")
                 except Exception as e:
                     log.warning("edit_admin_verify_message_failed", error=str(e))
 
@@ -607,14 +694,16 @@ async def verification_timeout_help_callback(update: Update, context: ContextTyp
     q = update.callback_query
 
     data = q.data or ""
-    parts = data.split(":")
-    if len(parts) < 3 or parts[0] != "vfy_help":
+    parts = CallbackParser.parse(data)
+    if parts.action != "vfy_help" or parts.length() < 3:
+        await answer_callback_query_safely(update, "操作无效", show_alert=True)
         return
 
-    action = parts[1]
+    action = parts.get(1)
     try:
-        target_user_id = int(parts[2])
+        target_user_id = parts.require_int(2, label="user_id")
     except ValueError:
+        await answer_callback_query_safely(update, "用户参数无效", show_alert=True)
         return
 
     chat = update.effective_chat
@@ -622,10 +711,7 @@ async def verification_timeout_help_callback(update: Update, context: ContextTyp
 
     if action == "appeal":
         if actor.id != target_user_id:
-            try:
-                await q.answer("仅被禁言用户本人可发起解封申请", show_alert=True)
-            except Exception:
-                pass
+            await answer_callback_query_safely(update, "仅被禁言用户本人可发起解封申请", show_alert=True)
             return
 
         try:
@@ -639,18 +725,23 @@ async def verification_timeout_help_callback(update: Update, context: ContextTyp
                 reply_markup=verification_timeout_help_keyboard(target_user_id),
             )
             await q.answer("已通知管理员，请等待处理", show_alert=True)
-        except Exception:
-            pass
+            mark_callback_query_answered(update)
+        except Exception as exc:
+            log.warning("verification_timeout_help_appeal_failed", chat_id=chat.id, user_id=target_user_id, error=str(exc))
+            await answer_callback_query_safely(update, "通知管理员失败，请稍后重试", show_alert=True)
         return
 
     if action != "unmute":
         return
 
-    if not await is_user_admin(context, chat.id, actor.id):
-        try:
-            await q.answer("仅群管理员可解封", show_alert=True)
-        except Exception:
-            pass
+    allowed, reason = await PermissionPolicyService.require_manage(
+        context,
+        chat_id=chat.id,
+        user_id=actor.id,
+        capability="moderation",
+    )
+    if not allowed:
+        await answer_callback_query_safely(update, reason or "仅群管理员可解封", show_alert=True)
         return
 
     db: Database = context.application.bot_data["db"]
@@ -662,6 +753,8 @@ async def verification_timeout_help_callback(update: Update, context: ContextTyp
     await _unrestrict_and_notify(context, chat.id, target_user_id, settings.language)
 
     try:
+        await q.answer()
+        mark_callback_query_answered(update)
         await q.edit_message_text(
             (
                 f"✅ 管理员 {actor.mention_html()} 已解封用户 "
@@ -718,55 +811,34 @@ async def verification_config_handler(update: Update, context: ContextTypes.DEFA
         log.info("verification_config_db_obtained", db_instance=str(type(db)))
 
         async with db.session_factory() as session:
-            log.info("verification_config_session_obtained")
+            state = await _resolve_verification_config_state(session, db, chat, user)
+            log.info(
+                "verification_config_state_check",
+                state_found=state is not None,
+                state_type=state.state_type if state else None,
+            )
 
-            # 获取用户状态
-            from bot.services.state.state_service import get_user_state
-            from bot.models.enums import ConversationStateType
-
-            state = None
-            if chat.type == "private":
-                log.info("verification_config_private_chat_mode")
-
-                # 私聊模式：尝试多种方式查找状态
-                target_chat_id = await ChatResolver.get_current_chat(db, user.id)
-
-                log.info(
-                    "verification_config_state_query",
-                    chat_id=chat.id,
-                    user_id=user.id,
-                    target_chat_id=target_chat_id,
-                )
-
-                # 方式1: 通过 get_user_current_chat 获取的 target_chat_id 查询
-                if target_chat_id:
-                    state = await get_user_state(session, chat_id=target_chat_id, user_id=user.id)
-                    log.info("verification_config_state_by_target", state_found=state is not None, target_chat_id=target_chat_id)
-
-                # 方式2: 直接查询用户的所有状态，找到 verification_config 状态
-                if state is None:
-                    log.info("verification_config_trying_direct_query")
-                    from bot.models.core import ConversationState
-                    from sqlalchemy import select, desc
-                    # 按 ID 倒序排列，获取最新的状态（处理多行情况）
-                    stmt = select(ConversationState).where(
-                        ConversationState.user_id == user.id,
-                        ConversationState.state_type == ConversationStateType.verification_config.value,
-                    ).order_by(desc(ConversationState.id))
-                    result = await session.execute(stmt)
-                    # 使用 first() 获取第一行（最新的状态）
-                    row = result.first()
-                    state = row[0] if row else None
-                    log.info("verification_config_state_by_type", state_found=state is not None)
-            else:
-                log.info("verification_config_group_chat_mode", chat_id=chat.id)
-                state = await get_user_state(session, chat_id=chat.id, user_id=user.id)
-
-            log.info("verification_config_state_check", state_found=state is not None, state_type=state.state_type if state else None)
-
-            if state is None or state.state_type != ConversationStateType.verification_config.value:
+            if state is None:
                 await session.commit()
                 log.info("verification_config_state_not_match_returning")
+                return
+
+            target_chat_id = _resolve_state_chat_id(state, chat.id if chat.type != "private" else None)
+            if target_chat_id is None:
+                await session.commit()
+                await update.effective_message.reply_text("❌ 无法获取群组ID，请重新进入配置。")
+                return
+
+            allowed, reason = await PermissionPolicyService.require_manage(
+                context,
+                chat_id=target_chat_id,
+                user_id=user.id,
+                capability="settings",
+            )
+            if not allowed:
+                await ConversationStateService.clear(session, target_chat_id, user.id)
+                await session.commit()
+                await update.effective_message.reply_text(f"❌ {reason or '需要管理员权限'}")
                 return
 
             log.info("verification_config_parsing_config")
@@ -781,7 +853,7 @@ async def verification_config_handler(update: Update, context: ContextTypes.DEFA
         )
 
 
-async def _parse_verification_config(update: Update, session, state: object, text: str) -> None:
+async def _parse_verification_config(update: Update, session, state: ConversationState, text: str) -> None:
     """解析验证配置"""
     try:
         lines = text.strip().split("\n")
@@ -835,9 +907,17 @@ async def _parse_verification_config(update: Update, session, state: object, tex
                 restrict_can_send = restrict_str in ["是", "yes", "true", "1", "开启"]
 
         # 获取目标群组ID
-        target_chat_id = state.state_data.get("target_chat_id") or update.effective_chat.id
+        target_chat_id = _resolve_state_chat_id(state, update.effective_chat.id if update.effective_chat else None)
+        if target_chat_id is None:
+            raise ValueError("无法获取群组ID")
 
         # 更新配置
+        await ModuleSettingsService.ensure(
+            session,
+            chat_id=target_chat_id,
+            chat_type="supergroup" if target_chat_id < 0 else "private",
+            user_id=update.effective_user.id if update.effective_user else None,
+        )
         settings = await get_chat_settings(session, target_chat_id)
         settings.verification_enabled = enabled
         settings.verification_mode = mode
@@ -847,8 +927,8 @@ async def _parse_verification_config(update: Update, session, state: object, tex
         settings.verification_restrict_can_send = restrict_can_send
 
         # 清除状态
-        from bot.services.state.state_service import clear_user_state
-        await clear_user_state(session, chat_id=target_chat_id, user_id=update.effective_user.id)
+        if update.effective_user is not None:
+            await ConversationStateService.clear(session, chat_id=target_chat_id, user_id=update.effective_user.id)
 
         await session.commit()
 
@@ -895,19 +975,18 @@ async def verification_cancel_callback(update: Update, context: ContextTypes.DEF
     if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
         return
     q = update.callback_query
-    await q.answer()
 
     # 解析参数：verification:cancel:{chat_id}
     data = q.data or ""
-    parts = data.split(":")
-    if len(parts) < 3:
-        await q.edit_message_text("❌ 无法获取群组信息")
+    parts = CallbackParser.parse(data)
+    if parts.action != "verification" or parts.length() < 3:
+        await answer_callback_query_safely(update, "无法获取群组信息", show_alert=True)
         return
 
     try:
-        target_chat_id = int(parts[2])
+        target_chat_id = parts.require_int(2, label="chat_id")
     except ValueError:
-        await q.edit_message_text("❌ 群组ID格式错误")
+        await answer_callback_query_safely(update, "群组ID格式错误", show_alert=True)
         return
 
     chat = update.effective_chat
@@ -915,14 +994,28 @@ async def verification_cancel_callback(update: Update, context: ContextTypes.DEF
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
+        state = await _resolve_verification_config_state(session, db, chat, user)
+        resolved_chat_id = _resolve_state_chat_id(state, target_chat_id) if state is not None else target_chat_id
+        allowed, reason = await PermissionPolicyService.require_manage(
+            context,
+            chat_id=resolved_chat_id,
+            user_id=user.id,
+            capability="settings",
+        )
+        if not allowed:
+            await session.commit()
+            await answer_callback_query_safely(update, reason or "需要管理员权限", show_alert=True)
+            return
+
         # 清除配置状态
-        state_chat_id = user.id if chat.type == "private" else chat.id
-        from bot.services.state.state_service import clear_user_state
-        await clear_user_state(session, state_chat_id, user.id)
+        await ConversationStateService.clear(session, resolved_chat_id, user.id)
         await session.commit()
 
+    await q.answer()
+    mark_callback_query_answered(update)
+
     # 返回验证菜单
-    await admin_verification_menu_callback(update, context, target_chat_id)
+    await admin_verification_menu_callback(update, context, resolved_chat_id)
 
 
 async def admin_verification_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, target_chat_id: int) -> None:

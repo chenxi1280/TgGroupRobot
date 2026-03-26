@@ -6,7 +6,7 @@
 """
 from __future__ import annotations
 
-from collections.abc import Callable, Coroutine
+from collections.abc import Callable
 from typing import Any, Awaitable
 
 import structlog
@@ -16,7 +16,7 @@ from telegram.ext import ContextTypes
 log = structlog.get_logger(__name__)
 
 # Handler 函数类型
-HandlerFunc = Callable[[Update, ContextTypes.DEFAULT_TYPE], Awaitable[None]]
+HandlerFunc = Callable[[Update, ContextTypes.DEFAULT_TYPE], Awaitable[bool | None]]
 
 
 class GroupMessageHandler:
@@ -64,7 +64,7 @@ class GroupMessageHandler:
         chat: Any,
         user: Any,
         message_text: str,
-    ) -> None:
+    ) -> bool:
         """处理群聊消息
 
         Args:
@@ -82,7 +82,10 @@ class GroupMessageHandler:
         )
 
         # 核心功能（违禁词检测 + 自动回复）
-        await self._safe_execute(self._get_core_handler(), update, context, "core")
+        should_stop = await self._safe_execute(self._get_core_handler(), update, context, "core")
+        if should_stop:
+            log.info("group_message_handler_short_circuited", chat_id=chat.id, user_id=user.id)
+            return
 
         # 业务功能（按顺序执行）
         for name, handler in self._get_business_handlers():
@@ -104,10 +107,12 @@ class GroupMessageHandler:
             handler_name: 处理器名称（用于日志）
         """
         try:
-            await handler(update, context)
+            result = await handler(update, context)
+            return bool(result)
         except Exception as e:
             log.warning(
                 "group_handler_failed",
                 handler=handler_name,
                 error=str(e),
             )
+        return False

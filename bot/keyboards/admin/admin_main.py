@@ -140,12 +140,43 @@ def admin_main_menu(chat_id: int | None = None) -> InlineKeyboardMarkup:
                 InlineKeyboardButton("💰积分", callback_data=f"adm:menu:points:{chat_id}"),
             ],
             [
-                InlineKeyboardButton("🧹自动删除", callback_data=f"adm:menu:autodel:{chat_id}"),
+                InlineKeyboardButton("🧩自定义积分", callback_data=f"adm:menu:custom_points:{chat_id}"),
+                InlineKeyboardButton("👑积分等级", callback_data=f"adm:menu:points_level:{chat_id}"),
+            ],
+            [
+                InlineKeyboardButton("🛍积分商城", callback_data=f"adm:menu:points_mall:{chat_id}"),
+                InlineKeyboardButton("📊统计", callback_data=f"adm:menu:stats:{chat_id}"),
+            ],
+            [
+                InlineKeyboardButton("🧹删除提示", callback_data=f"adm:menu:autodel:{chat_id}"),
                 InlineKeyboardButton("🤖验证", callback_data=f"adm:menu:verification:{chat_id}"),
             ],
             [
                 InlineKeyboardButton("🌊防刷屏", callback_data=f"adm:menu:flood:{chat_id}"),
                 InlineKeyboardButton("🚫反垃圾", callback_data=f"adm:menu:antispam:{chat_id}"),
+            ],
+            [
+                InlineKeyboardButton("🔧控制权限", callback_data=f"adm:menu:control:{chat_id}"),
+                InlineKeyboardButton("📣强制订阅", callback_data=f"adm:menu:forcesub:{chat_id}"),
+            ],
+            [
+                InlineKeyboardButton("🔒关群设置", callback_data=f"adm:menu:closegroup:{chat_id}"),
+                InlineKeyboardButton("🕵️改名监控", callback_data=f"adm:menu:renamewatch:{chat_id}"),
+            ],
+            [
+                InlineKeyboardButton("👋进群欢迎", callback_data=f"adm:menu:welcome:{chat_id}"),
+                InlineKeyboardButton("💳续费入口", callback_data=f"adm:menu:renewal:{chat_id}"),
+            ],
+            [
+                InlineKeyboardButton("🖐联盟功能", callback_data=f"adm:menu:alliance:{chat_id}"),
+                InlineKeyboardButton("🔁车库转发", callback_data=f"adm:menu:garage_forward:{chat_id}"),
+            ],
+            [
+                InlineKeyboardButton("🚗车库认证", callback_data=f"adm:menu:garage_auth:{chat_id}"),
+                InlineKeyboardButton("🔎老师搜索", callback_data=f"adm:menu:teacher_search:{chat_id}"),
+            ],
+            [
+                InlineKeyboardButton("💯车评系统", callback_data=f"adm:menu:car_review:{chat_id}"),
             ],
             # 快捷设置开关（常用功能）
             [
@@ -177,6 +208,22 @@ def admin_main_menu(chat_id: int | None = None) -> InlineKeyboardMarkup:
             InlineKeyboardButton("💰积分", callback_data="adm:menu:points"),
             InlineKeyboardButton("📊统计", callback_data="adm:menu:stats"),
         ],
+        [
+            InlineKeyboardButton("🧩自定义积分", callback_data="adm:menu:custom_points"),
+            InlineKeyboardButton("👑积分等级", callback_data="adm:menu:points_level"),
+        ],
+        [
+            InlineKeyboardButton("🛍积分商城", callback_data="adm:menu:points_mall"),
+        ],
+        [
+            InlineKeyboardButton("🖐联盟功能", callback_data="adm:menu:alliance"),
+            InlineKeyboardButton("🔁车库转发", callback_data="adm:menu:garage_forward"),
+        ],
+        [
+            InlineKeyboardButton("🚗车库认证", callback_data="adm:menu:garage_auth"),
+            InlineKeyboardButton("🔎老师搜索", callback_data="adm:menu:teacher_search"),
+        ],
+        [InlineKeyboardButton("💯车评系统", callback_data="adm:menu:car_review")],
         [InlineKeyboardButton("⚙️群设置", callback_data="adm:menu:settings")],
     ])
 

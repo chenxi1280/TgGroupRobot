@@ -166,7 +166,7 @@ async def _get_or_create_account(
                 PointsAccount.chat_id == chat_id,
                 PointsAccount.user_id == user_id
             )
-        )
+        ).with_for_update()
     )
     acc = res.scalar_one_or_none()
     if acc is None:

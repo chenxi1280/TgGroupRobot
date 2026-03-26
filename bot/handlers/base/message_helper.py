@@ -39,7 +39,18 @@ class MessageHelper:
             bool: 是否成功编辑
         """
         if update.callback_query is None:
-            return False
+            if update.effective_message is None:
+                return False
+            try:
+                await update.effective_message.reply_text(
+                    text,
+                    reply_markup=reply_markup,
+                    parse_mode=parse_mode,
+                )
+                return True
+            except TelegramError as e:
+                log.warning("reply_message_failed", error=str(e))
+                return False
 
         try:
             # 先 answer callback query，避免"一直加载"

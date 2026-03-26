@@ -40,6 +40,46 @@ class SubscriptionStatus(str, enum.Enum):
     cancelled = "cancelled"
 
 
+class ControlPermissionPolicy(str, enum.Enum):
+    """机器人管理权限门槛"""
+    all_admins = "all_admins"
+    can_restrict_members = "can_restrict_members"
+    can_change_info = "can_change_info"
+    can_promote_members = "can_promote_members"
+    owner_only = "owner_only"
+
+
+class GroupLockDeleteNoticeMode(str, enum.Enum):
+    """关群通知消息处理方式"""
+    delete = "delete"
+    keep = "keep"
+
+
+class ForceSubscribeCheckMode(str, enum.Enum):
+    """强制订阅校验策略"""
+    all = "all"
+    any = "any"
+
+
+class ForceSubscribeAction(str, enum.Enum):
+    """未订阅时处理动作"""
+    delete_and_warn = "delete_and_warn"
+    delete_only = "delete_only"
+    warn_only = "warn_only"
+    mute = "mute"
+
+
+class WelcomeMode(str, enum.Enum):
+    on_join = "on_join"
+    after_verify = "after_verify"
+
+
+class WelcomeDeleteMode(str, enum.Enum):
+    seconds = "seconds"
+    delete_prev = "delete_prev"
+    keep = "keep"
+
+
 class ConversationStateType(str, enum.Enum):
     """对话状态类型"""
     lottery_create = "lottery_create"  # 创建抽奖流程
@@ -49,6 +89,21 @@ class ConversationStateType(str, enum.Enum):
     verification_config = "verification_config"  # 验证配置流程
     anti_flood_config = "anti_flood_config"  # 防刷屏配置流程
     anti_spam_config = "anti_spam_config"  # 反垃圾配置流程
+    renewal_card_input = "renewal_card_input"  # 续费卡密输入流程
+    force_subscribe_channel_1_input = "force_subscribe_channel_1_input"  # 强制订阅频道1
+    force_subscribe_channel_2_input = "force_subscribe_channel_2_input"  # 强制订阅频道2
+    force_subscribe_text_input = "force_subscribe_text_input"  # 强制订阅文案
+    force_subscribe_cover_input = "force_subscribe_cover_input"  # 强制订阅封面
+    force_subscribe_buttons_input = "force_subscribe_buttons_input"  # 强制订阅按钮
+    group_lock_open_keyword_input = "group_lock_open_keyword_input"  # 关群开群词
+    group_lock_close_keyword_input = "group_lock_close_keyword_input"  # 关群关群词
+    group_lock_open_time_input = "group_lock_open_time_input"  # 开群时间
+    group_lock_close_time_input = "group_lock_close_time_input"  # 关群时间
+    rename_monitor_text_input = "rename_monitor_text_input"  # 改名监控文案
+    welcome_title_input = "welcome_title_input"  # 欢迎标题
+    welcome_text_input = "welcome_text_input"  # 欢迎文本
+    welcome_cover_input = "welcome_cover_input"  # 欢迎封面
+    welcome_buttons_input = "welcome_buttons_input"  # 欢迎按钮
     sm_edit_text = "sm_edit_text"  # 编辑定时消息文本
     sm_edit_media = "sm_edit_media"  # 编辑定时消息媒体
     sm_edit_buttons = "sm_edit_buttons"  # 编辑定时消息按钮
@@ -60,6 +115,26 @@ class ConversationStateType(str, enum.Enum):
     nearby_edit_method = "nearby_edit_method"  # 编辑周边资料方式
     nearby_edit_address = "nearby_edit_address"  # 编辑周边资料备注
     nearby_edit_location = "nearby_edit_location"  # 编辑周边资料定位
+    control_permission_config = "control_permission_config"  # 控制权限配置流程
+    group_lock_config = "group_lock_config"  # 关群设置配置流程
+    name_change_monitor_config = "name_change_monitor_config"  # 改名监控配置流程
+    force_subscribe_config = "force_subscribe_config"  # 强制订阅配置流程
+    alliance_create_name_input = "alliance_create_name_input"  # 联盟名称输入
+    alliance_join_code_input = "alliance_join_code_input"  # 联盟邀请码输入
+    garage_forward_source_input = "garage_forward_source_input"  # 车库转发来源频道输入
+    garage_forward_keyword_input = "garage_forward_keyword_input"  # 车库转发关键词输入
+    garage_badge_input = "garage_badge_input"  # 车库认证图标输入
+    garage_teacher_input = "garage_teacher_input"  # 手动认证老师输入
+    garage_whitelist_input = "garage_whitelist_input"  # 车库发言白名单输入
+    garage_limit_interval_input = "garage_limit_interval_input"  # 车库限制间隔输入
+    garage_limit_max_count_input = "garage_limit_max_count_input"  # 车库限制次数输入
+    teacher_search_delegate_target_input = "teacher_search_delegate_target_input"  # 老师搜索代录目标
+    teacher_search_delegate_location_input = "teacher_search_delegate_location_input"  # 老师搜索代录定位
+    car_review_submit_command_input = "car_review_submit_command_input"  # 车评提交指令
+    car_review_rank_command_input = "car_review_rank_command_input"  # 车评排行指令
+    car_review_approver_input = "car_review_approver_input"  # 车评审核人
+    car_review_template_input = "car_review_template_input"  # 车评模板
+    car_review_reward_points_input = "car_review_reward_points_input"  # 车评奖励积分
 
 
 class BannedWordMatchType(str, enum.Enum):
@@ -117,6 +192,3 @@ class LotteryDrawMode(str, enum.Enum):
     """抽奖开奖模式"""
     random = "random"  # 随机开奖
     manual = "manual"  # 手动指定中奖人
-
-
-

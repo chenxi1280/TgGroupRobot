@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import datetime as dt
 import re
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.models.core import ChatSettings, TgChat
 from bot.services.base import ServiceBase
+from bot.services.core.module_settings_service import ModuleSettingsService
 
 
 # ==================== 辅助函数 ====================
@@ -66,33 +66,17 @@ async def ensure_chat(session: AsyncSession, chat_id: int, chat_type: str, title
     Returns:
         TgChat: 群组对象
     """
+    await ModuleSettingsService.ensure(
+        session,
+        chat_id=chat_id,
+        chat_type=chat_type,
+        title=title,
+    )
     chat = await ServiceBase._get_by_id(session, TgChat, chat_id)
     if chat is None:
         chat = TgChat(id=chat_id, type=chat_type, title=title)
         session.add(chat)
         await session.flush()
-    else:
-        await ServiceBase._update_entity(
-            session,
-            chat,
-            {
-                "title": title,
-                "type": chat_type,
-                "updated_at": dt.datetime.now(dt.UTC),
-            },
-        )
-
-    # 确保设置存在
-    settings = await ServiceBase._get_by_filters(
-        session,
-        ChatSettings,
-        {"chat_id": chat_id},
-    )
-    if settings is None:
-        settings = ChatSettings(chat_id=chat_id)
-        session.add(settings)
-        await session.flush()
-
     return chat
 
 
@@ -115,23 +99,10 @@ async def get_chat_settings(session: AsyncSession, chat_id: int) -> ChatSettings
     if chat_id == 0:
         return ChatSettings(chat_id=0)
 
-    settings = await ServiceBase._get_by_filters(
+    return await ModuleSettingsService.ensure(
         session,
-        ChatSettings,
-        {"chat_id": chat_id},
+        chat_id=chat_id,
+        chat_type="supergroup" if chat_id < 0 else "private",
+        title=None,
     )
-    if settings is None:
-        # 自愈：先确保 tg_chats 中存在对应 chat，避免 chat_settings 外键失败
-        chat = await ServiceBase._get_by_id(session, TgChat, chat_id)
-        if chat is None:
-            inferred_type = "supergroup" if chat_id < 0 else "private"
-            session.add(TgChat(id=chat_id, type=inferred_type, title=None))
-            await session.flush()
-
-        settings = ChatSettings(chat_id=chat_id)
-        session.add(settings)
-        await session.flush()
-    return settings
-
-
 

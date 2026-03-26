@@ -50,6 +50,52 @@ class PrivateConfigHandler:
             "ads_create_config": self._handle_ads_config,
             "solitaire_create": self._handle_solitaire_config,
             "invite_link_create": self._handle_invite_link_config,
+            "renewal_card_input": self._handle_renewal_card_input,
+            "force_subscribe_channel_1_input": self._handle_force_subscribe_input,
+            "force_subscribe_channel_2_input": self._handle_force_subscribe_input,
+            "force_subscribe_text_input": self._handle_force_subscribe_input,
+            "force_subscribe_cover_input": self._handle_force_subscribe_input,
+            "force_subscribe_buttons_input": self._handle_force_subscribe_input,
+            "group_lock_open_keyword_input": self._handle_group_lock_input,
+            "group_lock_close_keyword_input": self._handle_group_lock_input,
+            "group_lock_open_time_input": self._handle_group_lock_input,
+            "group_lock_close_time_input": self._handle_group_lock_input,
+            "rename_monitor_text_input": self._handle_rename_monitor_input,
+            "welcome_title_input": self._handle_welcome_input,
+            "welcome_text_input": self._handle_welcome_input,
+            "welcome_cover_input": self._handle_welcome_input,
+            "welcome_buttons_input": self._handle_welcome_input,
+            "alliance_create_name_input": self._handle_alliance_input,
+            "alliance_join_code_input": self._handle_alliance_input,
+            "garage_forward_source_input": self._handle_garage_forward_input,
+            "garage_forward_keyword_input": self._handle_garage_forward_input,
+            "garage_badge_input": self._handle_garage_features_input,
+            "garage_teacher_input": self._handle_garage_features_input,
+            "garage_whitelist_input": self._handle_garage_features_input,
+            "garage_limit_interval_input": self._handle_garage_features_input,
+            "garage_limit_max_count_input": self._handle_garage_features_input,
+            "teacher_search_delegate_target_input": self._handle_garage_features_input,
+            "teacher_search_delegate_location_input": self._handle_garage_features_input,
+            "car_review_submit_command_input": self._handle_garage_features_input,
+            "car_review_rank_command_input": self._handle_garage_features_input,
+            "car_review_approver_input": self._handle_garage_features_input,
+            "car_review_template_input": self._handle_garage_features_input,
+            "car_review_reward_points_input": self._handle_garage_features_input,
+            "custom_points_name_input": self._handle_points_extended_input,
+            "custom_points_rank_input": self._handle_points_extended_input,
+            "custom_points_adjust_input": self._handle_points_extended_input,
+            "points_level_name_input": self._handle_points_extended_input,
+            "points_level_threshold_input": self._handle_points_extended_input,
+            "points_mall_command_input": self._handle_points_extended_input,
+            "points_mall_cover_input": self._handle_points_extended_input,
+            "points_mall_product_name_input": self._handle_points_extended_input,
+            "points_mall_product_price_input": self._handle_points_extended_input,
+            "points_mall_product_limit_input": self._handle_points_extended_input,
+            "points_mall_product_stock_input": self._handle_points_extended_input,
+            "points_mall_product_fulfiller_input": self._handle_points_extended_input,
+            "points_mall_product_description_input": self._handle_points_extended_input,
+            "points_mall_product_sort_input": self._handle_points_extended_input,
+            "points_mall_product_cover_input": self._handle_points_extended_input,
             # 定时消息 FSM 状态
             "sm_edit_text": self._handle_scheduled_message_input,
             "sm_edit_media": self._handle_scheduled_message_media,
@@ -61,6 +107,8 @@ class PrivateConfigHandler:
             "nearby_edit_method": self._handle_nearby_text_input,
             "nearby_edit_address": self._handle_nearby_text_input,
             "nearby_edit_location": self._handle_nearby_location_input,
+            # 兼容旧状态名，统一走续费卡密输入处理
+            "renewal_enter_code": self._handle_renewal_card_input,
         }
 
     async def handle(
@@ -259,6 +307,115 @@ class PrivateConfigHandler:
         from bot.handlers.invite_link_handler import invite_link_create_name_message
 
         await invite_link_create_name_message(update, context)
+
+    async def _handle_renewal_card_input(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        session: AsyncSession,
+        state: Any,
+        message_text: str,
+    ) -> None:
+        """处理续费卡密输入"""
+        from bot.handlers.renewal_handler import handle_renewal_card_input
+
+        await handle_renewal_card_input(update, context, session, state, message_text)
+
+    async def _handle_force_subscribe_input(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        session: AsyncSession,
+        state: Any,
+        message_text: str,
+    ) -> None:
+        from bot.handlers.admin_handler import handle_force_subscribe_channel_input
+
+        await handle_force_subscribe_channel_input(update, context, session, state, message_text)
+
+    async def _handle_group_lock_input(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        session: AsyncSession,
+        state: Any,
+        message_text: str,
+    ) -> None:
+        from bot.handlers.admin_handler import handle_group_lock_text_input
+
+        await handle_group_lock_text_input(update, context, session, state, message_text)
+
+    async def _handle_rename_monitor_input(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        session: AsyncSession,
+        state: Any,
+        message_text: str,
+    ) -> None:
+        from bot.handlers.admin_handler import handle_rename_monitor_text_input
+
+        await handle_rename_monitor_text_input(update, context, session, state, message_text)
+
+    async def _handle_welcome_input(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        session: AsyncSession,
+        state: Any,
+        message_text: str,
+    ) -> None:
+        from bot.handlers.admin_handler import handle_welcome_input
+
+        await handle_welcome_input(update, context, session, state, message_text)
+
+    async def _handle_alliance_input(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        session: AsyncSession,
+        state: Any,
+        message_text: str,
+    ) -> None:
+        from bot.handlers.admin_handler import handle_alliance_input
+
+        await handle_alliance_input(update, context, session, state, message_text)
+
+    async def _handle_points_extended_input(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        session: AsyncSession,
+        state: Any,
+        message_text: str,
+    ) -> None:
+        from bot.handlers.admin_handler import handle_points_extended_input
+
+        await handle_points_extended_input(update, context, session, state, message_text)
+
+    async def _handle_garage_forward_input(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        session: AsyncSession,
+        state: Any,
+        message_text: str,
+    ) -> None:
+        from bot.handlers.admin_handler import handle_garage_forward_input
+
+        await handle_garage_forward_input(update, context, session, state, message_text)
+
+    async def _handle_garage_features_input(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        session: AsyncSession,
+        state: Any,
+        message_text: str,
+    ) -> None:
+        from bot.handlers.admin_handler import handle_garage_features_input
+
+        await handle_garage_features_input(update, context, session, state, message_text)
 
     # ==================== 定时消息 FSM 处理器 ====================
 

@@ -113,6 +113,28 @@ CREATE TABLE IF NOT EXISTS bot.chat_settings (
     auto_delete_anonymous BOOLEAN NOT NULL DEFAULT FALSE,          -- 自动删除匿名管理员消息
     points_alias VARCHAR(32) NOT NULL DEFAULT '积分',              -- 积分查询命令别名
     points_rank_alias VARCHAR(32) NOT NULL DEFAULT '积分排行',      -- 积分排行命令别名
+    control_permission_policy VARCHAR(32) NOT NULL DEFAULT 'can_promote_members', -- 机器人管理权限门槛
+    group_lock_phrase_enabled BOOLEAN NOT NULL DEFAULT FALSE,      -- 关群话术开关
+    group_lock_open_phrase TEXT,                                   -- 开群词
+    group_lock_close_phrase TEXT,                                  -- 关群词
+    group_lock_schedule_enabled BOOLEAN NOT NULL DEFAULT FALSE,    -- 关群定时开关
+    group_lock_open_time VARCHAR(5),                               -- 开群时间（HH:MM）
+    group_lock_close_time VARCHAR(5),                              -- 关群时间（HH:MM）
+    group_lock_delete_notice_mode VARCHAR(16) NOT NULL DEFAULT 'keep', -- 删除通知消息策略（delete/keep）
+    name_change_monitor_enabled BOOLEAN NOT NULL DEFAULT FALSE,    -- 改名监控总开关
+    name_change_monitor_template_text TEXT NOT NULL DEFAULT E'检测到用户{userId}修改{changeType}\n原{changeType}: {oldContent}\n新{changeType}: {newContent}\n\n请注意规避风险', -- 改名监控提示模板
+    name_change_monitor_delete_after_seconds INTEGER NOT NULL DEFAULT 60, -- 提示消息自动删除秒数
+    force_subscribe_enabled BOOLEAN NOT NULL DEFAULT FALSE,        -- 是否启用强制订阅频道
+    force_subscribe_bound_channel_1 TEXT,                          -- 绑定频道1
+    force_subscribe_bound_channel_2 TEXT,                          -- 绑定频道2
+    force_subscribe_cover_media_type VARCHAR(16),                  -- 引导封面媒体类型
+    force_subscribe_cover_file_id VARCHAR(256),                    -- 引导封面文件ID
+    force_subscribe_guide_text TEXT NOT NULL DEFAULT '{member}，您需要关注我们的频道才能发言。', -- 引导文案
+    force_subscribe_custom_buttons_enabled BOOLEAN NOT NULL DEFAULT FALSE, -- 自定义按钮开关
+    force_subscribe_check_mode VARCHAR(8) NOT NULL DEFAULT 'all',  -- 订阅校验策略（all/any）
+    force_subscribe_not_subscribed_action VARCHAR(32) NOT NULL DEFAULT 'delete_and_warn', -- 未订阅处理动作
+    force_subscribe_delete_warn_after_seconds INTEGER NOT NULL DEFAULT 60, -- 提示消息删除秒数
+    force_subscribe_buttons JSONB NOT NULL DEFAULT '[]'::jsonb,    -- 引导按钮布局（jsonb）
     created_at TIMESTAMPTZ NOT NULL,                               -- 创建时间（带时区）
     updated_at TIMESTAMPTZ NOT NULL,                               -- 更新时间（带时区）
     CONSTRAINT fk_chat_settings_chat_id FOREIGN KEY (chat_id)
@@ -180,6 +202,28 @@ COMMENT ON COLUMN bot.chat_settings.auto_delete_title IS '是否自动删除修�
 COMMENT ON COLUMN bot.chat_settings.auto_delete_anonymous IS '是否自动删除匿名管理员消息';
 COMMENT ON COLUMN bot.chat_settings.points_alias IS '积分查询命令别名（如：积分）';
 COMMENT ON COLUMN bot.chat_settings.points_rank_alias IS '积分排行命令别名（如：积分排行）';
+COMMENT ON COLUMN bot.chat_settings.control_permission_policy IS '机器人管理权限门槛：all_admins / can_restrict_members / can_change_info / can_promote_members / owner_only';
+COMMENT ON COLUMN bot.chat_settings.group_lock_phrase_enabled IS '是否启用关群话术';
+COMMENT ON COLUMN bot.chat_settings.group_lock_open_phrase IS '开群词';
+COMMENT ON COLUMN bot.chat_settings.group_lock_close_phrase IS '关群词';
+COMMENT ON COLUMN bot.chat_settings.group_lock_schedule_enabled IS '是否启用关群定时';
+COMMENT ON COLUMN bot.chat_settings.group_lock_open_time IS '开群时间（HH:MM）';
+COMMENT ON COLUMN bot.chat_settings.group_lock_close_time IS '关群时间（HH:MM）';
+COMMENT ON COLUMN bot.chat_settings.group_lock_delete_notice_mode IS '删除通知消息策略：delete / keep';
+COMMENT ON COLUMN bot.chat_settings.name_change_monitor_enabled IS '是否启用改名监控';
+COMMENT ON COLUMN bot.chat_settings.name_change_monitor_template_text IS '改名监控提示模板';
+COMMENT ON COLUMN bot.chat_settings.name_change_monitor_delete_after_seconds IS '改名监控提示消息删除秒数';
+COMMENT ON COLUMN bot.chat_settings.force_subscribe_enabled IS '是否启用强制订阅频道';
+COMMENT ON COLUMN bot.chat_settings.force_subscribe_bound_channel_1 IS '强制订阅绑定频道1';
+COMMENT ON COLUMN bot.chat_settings.force_subscribe_bound_channel_2 IS '强制订阅绑定频道2';
+COMMENT ON COLUMN bot.chat_settings.force_subscribe_cover_media_type IS '强制订阅引导封面媒体类型';
+COMMENT ON COLUMN bot.chat_settings.force_subscribe_cover_file_id IS '强制订阅引导封面文件ID';
+COMMENT ON COLUMN bot.chat_settings.force_subscribe_guide_text IS '强制订阅引导文案';
+COMMENT ON COLUMN bot.chat_settings.force_subscribe_custom_buttons_enabled IS '强制订阅引导按钮开关';
+COMMENT ON COLUMN bot.chat_settings.force_subscribe_check_mode IS '强制订阅校验模式：all / any';
+COMMENT ON COLUMN bot.chat_settings.force_subscribe_not_subscribed_action IS '未订阅处理动作';
+COMMENT ON COLUMN bot.chat_settings.force_subscribe_delete_warn_after_seconds IS '强制订阅提示消息删除秒数';
+COMMENT ON COLUMN bot.chat_settings.force_subscribe_buttons IS '强制订阅引导按钮布局（JSONB）';
 COMMENT ON COLUMN bot.chat_settings.created_at IS '配置创建时间';
 COMMENT ON COLUMN bot.chat_settings.updated_at IS '配置最后更新时间';
 
@@ -199,6 +243,61 @@ ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS anti_spam_delete_notify_s
 ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS anti_spam_repeat_messages INTEGER NOT NULL DEFAULT 3;
 ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS anti_spam_repeat_seconds INTEGER NOT NULL DEFAULT 15;
 ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS anti_spam_rules JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS control_permission_policy VARCHAR(32) NOT NULL DEFAULT 'can_promote_members';
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS group_lock_phrase_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS group_lock_open_phrase TEXT;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS group_lock_close_phrase TEXT;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS group_lock_schedule_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS group_lock_open_time VARCHAR(5);
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS group_lock_close_time VARCHAR(5);
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS group_lock_delete_notice_mode VARCHAR(16) NOT NULL DEFAULT 'keep';
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS name_change_monitor_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS name_change_monitor_template_text TEXT NOT NULL DEFAULT E'检测到用户{userId}修改{changeType}\n原{changeType}: {oldContent}\n新{changeType}: {newContent}\n\n请注意规避风险';
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS name_change_monitor_delete_after_seconds INTEGER NOT NULL DEFAULT 60;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS force_subscribe_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS force_subscribe_bound_channel_1 TEXT;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS force_subscribe_bound_channel_2 TEXT;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS force_subscribe_cover_media_type VARCHAR(16);
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS force_subscribe_cover_file_id VARCHAR(256);
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS force_subscribe_guide_text TEXT NOT NULL DEFAULT '{member}，您需要关注我们的频道才能发言。';
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS force_subscribe_custom_buttons_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS force_subscribe_check_mode VARCHAR(8) NOT NULL DEFAULT 'all';
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS force_subscribe_not_subscribed_action VARCHAR(32) NOT NULL DEFAULT 'delete_and_warn';
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS force_subscribe_delete_warn_after_seconds INTEGER NOT NULL DEFAULT 60;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS force_subscribe_buttons JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS garage_auth_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS garage_auth_badge VARCHAR(16) NOT NULL DEFAULT '🤝';
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS garage_limit_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS garage_limit_mode VARCHAR(16) NOT NULL DEFAULT 'none';
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS garage_limit_interval_sec INTEGER NOT NULL DEFAULT 3600;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS garage_limit_max_count INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS garage_summary_partition_by VARCHAR(16) NOT NULL DEFAULT 'region';
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS garage_summary_only_open_course BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- ============================================
+-- 4.1 欢迎消息配置表 (welcome_messages)
+-- 支持多条欢迎配置与模式切换
+-- ============================================
+CREATE TABLE IF NOT EXISTS bot.welcome_messages (
+    id SERIAL PRIMARY KEY,
+    chat_id BIGINT NOT NULL,
+    title VARCHAR(128) NOT NULL DEFAULT '待配置',
+    enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    welcome_mode VARCHAR(32) NOT NULL DEFAULT 'after_verify',
+    cover_media_type VARCHAR(16),
+    cover_media_file_id VARCHAR(256),
+    text_content TEXT NOT NULL DEFAULT '{member}，欢迎加入{group}。',
+    buttons JSONB NOT NULL DEFAULT '[]'::jsonb,
+    delete_mode VARCHAR(32) NOT NULL DEFAULT 'seconds',
+    delete_delay_seconds INTEGER,
+    last_sent_message_id INTEGER,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT fk_welcome_messages_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS ix_welcome_messages_chat_id ON bot.welcome_messages(chat_id);
 
 -- ============================================
 -- 4. 群组成员表 (chat_members)
@@ -359,6 +458,328 @@ COMMENT ON COLUMN bot.user_daily_stats.updated_at IS '统计记录最后更新�
 CREATE INDEX IF NOT EXISTS ix_user_daily_stats_chat_id ON bot.user_daily_stats(chat_id);
 CREATE INDEX IF NOT EXISTS ix_user_daily_stats_user_id ON bot.user_daily_stats(user_id);
 CREATE INDEX IF NOT EXISTS ix_user_daily_stats_stat_date ON bot.user_daily_stats(stat_date);
+
+-- ============================================
+-- 7.6. 自定义积分类型表 (custom_point_types)
+-- 定义每个群内可用的自定义积分类型
+-- ============================================
+CREATE TABLE IF NOT EXISTS bot.custom_point_types (
+    id SERIAL PRIMARY KEY,                                         -- 自增主键
+    chat_id BIGINT NOT NULL,                                       -- 群组 ID（外键关联 tg_chats.id）
+    type_no INTEGER NOT NULL,                                      -- 类型编号
+    name VARCHAR(64) NOT NULL,                                     -- 类型名称
+    rank_command VARCHAR(32),                                      -- 排行指令别名
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,                         -- 是否启用
+    created_by_user_id BIGINT,                                     -- 创建者用户 ID
+    created_at TIMESTAMPTZ NOT NULL,                               -- 创建时间（带时区）
+    updated_at TIMESTAMPTZ NOT NULL,                               -- 更新时间（带时区）
+    CONSTRAINT fk_custom_point_types_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE,
+    CONSTRAINT fk_custom_point_types_created_by_user_id FOREIGN KEY (created_by_user_id)
+        REFERENCES bot.tg_users(id) ON DELETE SET NULL,
+    CONSTRAINT uq_custom_point_type_chat_no UNIQUE (chat_id, type_no),
+    CONSTRAINT uq_custom_point_type_chat_name UNIQUE (chat_id, name)
+);
+
+COMMENT ON TABLE bot.custom_point_types IS '自定义积分类型表，记录每个群内的自定义积分种类';
+COMMENT ON COLUMN bot.custom_point_types.id IS '自增主键';
+COMMENT ON COLUMN bot.custom_point_types.chat_id IS '群组 ID，外键关联 tg_chats.id';
+COMMENT ON COLUMN bot.custom_point_types.type_no IS '类型编号';
+COMMENT ON COLUMN bot.custom_point_types.name IS '类型名称';
+COMMENT ON COLUMN bot.custom_point_types.rank_command IS '排行指令别名';
+COMMENT ON COLUMN bot.custom_point_types.enabled IS '是否启用';
+COMMENT ON COLUMN bot.custom_point_types.created_by_user_id IS '创建者用户 ID';
+COMMENT ON COLUMN bot.custom_point_types.created_at IS '创建时间';
+COMMENT ON COLUMN bot.custom_point_types.updated_at IS '更新时间';
+
+CREATE INDEX IF NOT EXISTS ix_custom_point_types_chat_id ON bot.custom_point_types(chat_id);
+CREATE INDEX IF NOT EXISTS ix_custom_point_types_type_no ON bot.custom_point_types(type_no);
+CREATE INDEX IF NOT EXISTS ix_custom_point_types_name ON bot.custom_point_types(name);
+CREATE INDEX IF NOT EXISTS ix_custom_point_types_enabled ON bot.custom_point_types(enabled);
+
+-- ============================================
+-- 7.7. 自定义积分账户表 (custom_point_accounts)
+-- 记录用户在某个自定义积分类型下的余额
+-- ============================================
+CREATE TABLE IF NOT EXISTS bot.custom_point_accounts (
+    id SERIAL PRIMARY KEY,                                         -- 自增主键
+    chat_id BIGINT NOT NULL,                                       -- 群组 ID（外键关联 tg_chats.id）
+    type_id INTEGER NOT NULL,                                      -- 类型 ID（外键关联 custom_point_types.id）
+    user_id BIGINT NOT NULL,                                       -- 用户 ID（外键关联 tg_users.id）
+    balance INTEGER NOT NULL DEFAULT 0,                            -- 余额
+    updated_at TIMESTAMPTZ NOT NULL,                               -- 更新时间（带时区）
+    CONSTRAINT fk_custom_point_accounts_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE,
+    CONSTRAINT fk_custom_point_accounts_type_id FOREIGN KEY (type_id)
+        REFERENCES bot.custom_point_types(id) ON DELETE CASCADE,
+    CONSTRAINT fk_custom_point_accounts_user_id FOREIGN KEY (user_id)
+        REFERENCES bot.tg_users(id) ON DELETE CASCADE,
+    CONSTRAINT uq_custom_point_account_chat_type_user UNIQUE (chat_id, type_id, user_id)
+);
+
+COMMENT ON TABLE bot.custom_point_accounts IS '自定义积分账户表，按群组和积分类型存储用户余额';
+COMMENT ON COLUMN bot.custom_point_accounts.id IS '自增主键';
+COMMENT ON COLUMN bot.custom_point_accounts.chat_id IS '群组 ID';
+COMMENT ON COLUMN bot.custom_point_accounts.type_id IS '积分类型 ID';
+COMMENT ON COLUMN bot.custom_point_accounts.user_id IS '用户 ID';
+COMMENT ON COLUMN bot.custom_point_accounts.balance IS '余额';
+COMMENT ON COLUMN bot.custom_point_accounts.updated_at IS '更新时间';
+
+CREATE INDEX IF NOT EXISTS ix_custom_point_accounts_chat_id ON bot.custom_point_accounts(chat_id);
+CREATE INDEX IF NOT EXISTS ix_custom_point_accounts_type_id ON bot.custom_point_accounts(type_id);
+CREATE INDEX IF NOT EXISTS ix_custom_point_accounts_user_id ON bot.custom_point_accounts(user_id);
+
+-- ============================================
+-- 7.8. 自定义积分流水表 (custom_point_ledger)
+-- 记录自定义积分增减流水
+-- ============================================
+CREATE TABLE IF NOT EXISTS bot.custom_point_ledger (
+    id BIGSERIAL PRIMARY KEY,                                      -- 自增主键
+    chat_id BIGINT NOT NULL,                                       -- 群组 ID
+    type_id INTEGER NOT NULL,                                      -- 类型 ID
+    user_id BIGINT NOT NULL,                                       -- 用户 ID
+    delta INTEGER NOT NULL,                                        -- 变动值
+    reason_note TEXT,                                              -- 备注说明
+    operator_user_id BIGINT,                                       -- 操作者用户 ID
+    created_at TIMESTAMPTZ NOT NULL,                               -- 创建时间（带时区）
+    CONSTRAINT fk_custom_point_ledger_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE,
+    CONSTRAINT fk_custom_point_ledger_type_id FOREIGN KEY (type_id)
+        REFERENCES bot.custom_point_types(id) ON DELETE CASCADE,
+    CONSTRAINT fk_custom_point_ledger_user_id FOREIGN KEY (user_id)
+        REFERENCES bot.tg_users(id) ON DELETE CASCADE,
+    CONSTRAINT fk_custom_point_ledger_operator_user_id FOREIGN KEY (operator_user_id)
+        REFERENCES bot.tg_users(id) ON DELETE SET NULL
+);
+
+COMMENT ON TABLE bot.custom_point_ledger IS '自定义积分流水表，记录所有自定义积分变动';
+COMMENT ON COLUMN bot.custom_point_ledger.id IS '自增主键';
+COMMENT ON COLUMN bot.custom_point_ledger.chat_id IS '群组 ID';
+COMMENT ON COLUMN bot.custom_point_ledger.type_id IS '积分类型 ID';
+COMMENT ON COLUMN bot.custom_point_ledger.user_id IS '用户 ID';
+COMMENT ON COLUMN bot.custom_point_ledger.delta IS '变动值，正数为增加，负数为减少';
+COMMENT ON COLUMN bot.custom_point_ledger.reason_note IS '变动备注';
+COMMENT ON COLUMN bot.custom_point_ledger.operator_user_id IS '操作者用户 ID';
+COMMENT ON COLUMN bot.custom_point_ledger.created_at IS '创建时间';
+
+CREATE INDEX IF NOT EXISTS ix_custom_point_ledger_chat_id ON bot.custom_point_ledger(chat_id);
+CREATE INDEX IF NOT EXISTS ix_custom_point_ledger_type_id ON bot.custom_point_ledger(type_id);
+CREATE INDEX IF NOT EXISTS ix_custom_point_ledger_user_id ON bot.custom_point_ledger(user_id);
+CREATE INDEX IF NOT EXISTS ix_custom_point_ledger_created_at ON bot.custom_point_ledger(created_at);
+CREATE INDEX IF NOT EXISTS ix_custom_point_ledger_operator_user_id ON bot.custom_point_ledger(operator_user_id);
+
+-- ============================================
+-- 7.9. 积分等级设置表 (points_level_settings)
+-- 记录每个群的积分等级功能开关
+-- ============================================
+CREATE TABLE IF NOT EXISTS bot.points_level_settings (
+    chat_id BIGINT PRIMARY KEY,                                    -- 群组 ID（外键关联 tg_chats.id）
+    enabled BOOLEAN NOT NULL DEFAULT FALSE,                        -- 是否启用
+    exclude_teacher_enabled BOOLEAN NOT NULL DEFAULT FALSE,       -- 是否排除老师
+    updated_at TIMESTAMPTZ NOT NULL,                               -- 更新时间（带时区）
+    CONSTRAINT fk_points_level_settings_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE
+);
+
+COMMENT ON TABLE bot.points_level_settings IS '积分等级设置表，记录每个群的积分等级功能开关';
+COMMENT ON COLUMN bot.points_level_settings.chat_id IS '群组 ID';
+COMMENT ON COLUMN bot.points_level_settings.enabled IS '是否启用';
+COMMENT ON COLUMN bot.points_level_settings.exclude_teacher_enabled IS '是否排除老师';
+COMMENT ON COLUMN bot.points_level_settings.updated_at IS '更新时间';
+
+-- ============================================
+-- 7.10. 积分等级表 (points_levels)
+-- 定义各积分门槛对应的权限等级
+-- ============================================
+CREATE TABLE IF NOT EXISTS bot.points_levels (
+    id SERIAL PRIMARY KEY,                                         -- 自增主键
+    chat_id BIGINT NOT NULL,                                       -- 群组 ID
+    level_no INTEGER NOT NULL,                                     -- 等级编号
+    level_name VARCHAR(64) NOT NULL,                               -- 等级名称
+    point_threshold INTEGER NOT NULL,                              -- 积分门槛
+    allow_text BOOLEAN NOT NULL DEFAULT TRUE,                      -- 允许发文字
+    allow_audio BOOLEAN NOT NULL DEFAULT TRUE,                     -- 允许发语音
+    allow_photo BOOLEAN NOT NULL DEFAULT TRUE,                     -- 允许发图片
+    allow_video BOOLEAN NOT NULL DEFAULT TRUE,                     -- 允许发视频
+    allow_sticker BOOLEAN NOT NULL DEFAULT TRUE,                   -- 允许发贴纸
+    allow_document BOOLEAN NOT NULL DEFAULT TRUE,                  -- 允许发文件
+    allow_mention BOOLEAN NOT NULL DEFAULT TRUE,                   -- 允许发送@提到
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,                         -- 是否启用
+    created_at TIMESTAMPTZ NOT NULL,                               -- 创建时间
+    updated_at TIMESTAMPTZ NOT NULL,                               -- 更新时间
+    CONSTRAINT fk_points_levels_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE,
+    CONSTRAINT uq_points_level_chat_no UNIQUE (chat_id, level_no),
+    CONSTRAINT uq_points_level_chat_threshold UNIQUE (chat_id, point_threshold)
+);
+
+COMMENT ON TABLE bot.points_levels IS '积分等级表，定义不同积分门槛对应的发送权限等级';
+COMMENT ON COLUMN bot.points_levels.id IS '自增主键';
+COMMENT ON COLUMN bot.points_levels.chat_id IS '群组 ID';
+COMMENT ON COLUMN bot.points_levels.level_no IS '等级编号';
+COMMENT ON COLUMN bot.points_levels.level_name IS '等级名称';
+COMMENT ON COLUMN bot.points_levels.point_threshold IS '积分门槛';
+COMMENT ON COLUMN bot.points_levels.allow_text IS '是否允许发文字';
+COMMENT ON COLUMN bot.points_levels.allow_audio IS '是否允许发语音';
+COMMENT ON COLUMN bot.points_levels.allow_photo IS '是否允许发图片';
+COMMENT ON COLUMN bot.points_levels.allow_video IS '是否允许发视频';
+COMMENT ON COLUMN bot.points_levels.allow_sticker IS '是否允许发贴纸';
+COMMENT ON COLUMN bot.points_levels.allow_document IS '是否允许发文件';
+COMMENT ON COLUMN bot.points_levels.allow_mention IS '是否允许发送@提到';
+COMMENT ON COLUMN bot.points_levels.enabled IS '是否启用';
+COMMENT ON COLUMN bot.points_levels.created_at IS '创建时间';
+COMMENT ON COLUMN bot.points_levels.updated_at IS '更新时间';
+
+CREATE INDEX IF NOT EXISTS ix_points_levels_chat_id ON bot.points_levels(chat_id);
+CREATE INDEX IF NOT EXISTS ix_points_levels_level_no ON bot.points_levels(level_no);
+CREATE INDEX IF NOT EXISTS ix_points_levels_point_threshold ON bot.points_levels(point_threshold);
+CREATE INDEX IF NOT EXISTS ix_points_levels_enabled ON bot.points_levels(enabled);
+
+-- ============================================
+-- 7.11. 积分商城设置表 (points_mall_settings)
+-- 记录每个群的积分商城全局配置
+-- ============================================
+CREATE TABLE IF NOT EXISTS bot.points_mall_settings (
+    chat_id BIGINT PRIMARY KEY,                                    -- 群组 ID（外键关联 tg_chats.id）
+    enabled BOOLEAN NOT NULL DEFAULT FALSE,                        -- 是否启用
+    entry_command VARCHAR(32) NOT NULL DEFAULT '积分商城',         -- 入口指令
+    auto_unlist_when_out_of_stock BOOLEAN NOT NULL DEFAULT FALSE,   -- 无货是否自动下架
+    redeem_notice_delete_seconds INTEGER NOT NULL DEFAULT 60,      -- 兑换提示删除时间
+    cover_media_type VARCHAR(16),                                  -- 封面类型
+    cover_file_id VARCHAR(256),                                    -- 封面文件 ID
+    updated_at TIMESTAMPTZ NOT NULL,                               -- 更新时间
+    CONSTRAINT fk_points_mall_settings_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE
+);
+
+COMMENT ON TABLE bot.points_mall_settings IS '积分商城设置表，记录每个群的积分商城全局配置';
+COMMENT ON COLUMN bot.points_mall_settings.chat_id IS '群组 ID';
+COMMENT ON COLUMN bot.points_mall_settings.enabled IS '是否启用';
+COMMENT ON COLUMN bot.points_mall_settings.entry_command IS '商城入口指令';
+COMMENT ON COLUMN bot.points_mall_settings.auto_unlist_when_out_of_stock IS '无货是否自动下架';
+COMMENT ON COLUMN bot.points_mall_settings.redeem_notice_delete_seconds IS '兑换提示删除时间';
+COMMENT ON COLUMN bot.points_mall_settings.cover_media_type IS '封面类型';
+COMMENT ON COLUMN bot.points_mall_settings.cover_file_id IS '封面文件 ID';
+COMMENT ON COLUMN bot.points_mall_settings.updated_at IS '更新时间';
+
+-- ============================================
+-- 7.12. 积分商城商品表 (points_mall_products)
+-- 记录每个群的商城商品信息
+-- ============================================
+CREATE TABLE IF NOT EXISTS bot.points_mall_products (
+    product_id SERIAL PRIMARY KEY,                                 -- 商品 ID
+    chat_id BIGINT NOT NULL,                                       -- 群组 ID
+    name VARCHAR(128) NOT NULL,                                    -- 商品名称
+    price_points INTEGER NOT NULL,                                 -- 所需积分
+    stock_total INTEGER NOT NULL DEFAULT 0,                         -- 库存总量
+    stock_left INTEGER NOT NULL DEFAULT 0,                          -- 剩余库存
+    status VARCHAR(16) NOT NULL DEFAULT 'on_sale',                  -- 状态
+    cover_media_type VARCHAR(16),                                  -- 封面类型
+    cover_file_id VARCHAR(256),                                    -- 封面文件 ID
+    limit_per_user INTEGER,                                        -- 单人限购
+    fulfiller_user_id BIGINT,                                      -- 发放人
+    description TEXT,                                              -- 商品说明
+    sort_weight INTEGER NOT NULL DEFAULT 0,                         -- 排序权重
+    created_at TIMESTAMPTZ NOT NULL,                               -- 创建时间
+    updated_at TIMESTAMPTZ NOT NULL,                               -- 更新时间
+    CONSTRAINT fk_points_mall_products_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE,
+    CONSTRAINT fk_points_mall_products_fulfiller_user_id FOREIGN KEY (fulfiller_user_id)
+        REFERENCES bot.tg_users(id) ON DELETE SET NULL
+);
+
+COMMENT ON TABLE bot.points_mall_products IS '积分商城商品表，记录每个群的商城商品信息';
+COMMENT ON COLUMN bot.points_mall_products.product_id IS '商品 ID';
+COMMENT ON COLUMN bot.points_mall_products.chat_id IS '群组 ID';
+COMMENT ON COLUMN bot.points_mall_products.name IS '商品名称';
+COMMENT ON COLUMN bot.points_mall_products.price_points IS '所需积分';
+COMMENT ON COLUMN bot.points_mall_products.stock_total IS '库存总量';
+COMMENT ON COLUMN bot.points_mall_products.stock_left IS '剩余库存';
+COMMENT ON COLUMN bot.points_mall_products.status IS '状态';
+COMMENT ON COLUMN bot.points_mall_products.cover_media_type IS '封面类型';
+COMMENT ON COLUMN bot.points_mall_products.cover_file_id IS '封面文件 ID';
+COMMENT ON COLUMN bot.points_mall_products.limit_per_user IS '单人限购';
+COMMENT ON COLUMN bot.points_mall_products.fulfiller_user_id IS '发放人';
+COMMENT ON COLUMN bot.points_mall_products.description IS '商品说明';
+COMMENT ON COLUMN bot.points_mall_products.sort_weight IS '排序权重';
+COMMENT ON COLUMN bot.points_mall_products.created_at IS '创建时间';
+COMMENT ON COLUMN bot.points_mall_products.updated_at IS '更新时间';
+
+CREATE INDEX IF NOT EXISTS ix_points_mall_products_chat_id ON bot.points_mall_products(chat_id);
+CREATE INDEX IF NOT EXISTS ix_points_mall_products_name ON bot.points_mall_products(name);
+CREATE INDEX IF NOT EXISTS ix_points_mall_products_status ON bot.points_mall_products(status);
+CREATE INDEX IF NOT EXISTS ix_points_mall_products_sort_weight ON bot.points_mall_products(sort_weight);
+CREATE INDEX IF NOT EXISTS ix_points_mall_products_fulfiller_user_id ON bot.points_mall_products(fulfiller_user_id);
+CREATE INDEX IF NOT EXISTS ix_points_mall_products_created_at ON bot.points_mall_products(created_at);
+
+-- ============================================
+-- 7.13. 积分商城订单表 (points_mall_orders)
+-- 记录用户的兑换订单
+-- ============================================
+CREATE TABLE IF NOT EXISTS bot.points_mall_orders (
+    order_id SERIAL PRIMARY KEY,                                   -- 订单 ID
+    chat_id BIGINT NOT NULL,                                       -- 群组 ID
+    product_id INTEGER NOT NULL,                                   -- 商品 ID
+    buyer_user_id BIGINT NOT NULL,                                 -- 买家用户 ID
+    price_points INTEGER NOT NULL,                                 -- 价格积分
+    quantity INTEGER NOT NULL DEFAULT 1,                            -- 数量
+    order_status VARCHAR(16) NOT NULL DEFAULT 'created',           -- 订单状态
+    operator_user_id BIGINT,                                       -- 操作人
+    created_at TIMESTAMPTZ NOT NULL,                               -- 创建时间
+    updated_at TIMESTAMPTZ NOT NULL,                               -- 更新时间
+    CONSTRAINT fk_points_mall_orders_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE,
+    CONSTRAINT fk_points_mall_orders_product_id FOREIGN KEY (product_id)
+        REFERENCES bot.points_mall_products(product_id) ON DELETE CASCADE,
+    CONSTRAINT fk_points_mall_orders_buyer_user_id FOREIGN KEY (buyer_user_id)
+        REFERENCES bot.tg_users(id) ON DELETE CASCADE,
+    CONSTRAINT fk_points_mall_orders_operator_user_id FOREIGN KEY (operator_user_id)
+        REFERENCES bot.tg_users(id) ON DELETE SET NULL
+);
+
+COMMENT ON TABLE bot.points_mall_orders IS '积分商城订单表，记录用户的兑换订单';
+COMMENT ON COLUMN bot.points_mall_orders.order_id IS '订单 ID';
+COMMENT ON COLUMN bot.points_mall_orders.chat_id IS '群组 ID';
+COMMENT ON COLUMN bot.points_mall_orders.product_id IS '商品 ID';
+COMMENT ON COLUMN bot.points_mall_orders.buyer_user_id IS '买家用户 ID';
+COMMENT ON COLUMN bot.points_mall_orders.price_points IS '价格积分';
+COMMENT ON COLUMN bot.points_mall_orders.quantity IS '数量';
+COMMENT ON COLUMN bot.points_mall_orders.order_status IS '订单状态';
+COMMENT ON COLUMN bot.points_mall_orders.operator_user_id IS '操作人';
+COMMENT ON COLUMN bot.points_mall_orders.created_at IS '创建时间';
+COMMENT ON COLUMN bot.points_mall_orders.updated_at IS '更新时间';
+
+CREATE INDEX IF NOT EXISTS ix_points_mall_orders_chat_id ON bot.points_mall_orders(chat_id);
+CREATE INDEX IF NOT EXISTS ix_points_mall_orders_product_id ON bot.points_mall_orders(product_id);
+CREATE INDEX IF NOT EXISTS ix_points_mall_orders_buyer_user_id ON bot.points_mall_orders(buyer_user_id);
+CREATE INDEX IF NOT EXISTS ix_points_mall_orders_order_status ON bot.points_mall_orders(order_status);
+CREATE INDEX IF NOT EXISTS ix_points_mall_orders_operator_user_id ON bot.points_mall_orders(operator_user_id);
+CREATE INDEX IF NOT EXISTS ix_points_mall_orders_created_at ON bot.points_mall_orders(created_at);
+
+-- ============================================
+-- 7.14. 积分商城订单流水表 (points_mall_order_logs)
+-- 记录订单操作历史
+-- ============================================
+CREATE TABLE IF NOT EXISTS bot.points_mall_order_logs (
+    id BIGSERIAL PRIMARY KEY,                                      -- 自增主键
+    order_id INTEGER NOT NULL,                                     -- 订单 ID
+    action VARCHAR(32) NOT NULL,                                   -- 动作
+    payload JSONB NOT NULL DEFAULT '{}'::jsonb,                    -- 额外载荷
+    created_at TIMESTAMPTZ NOT NULL,                               -- 创建时间
+    CONSTRAINT fk_points_mall_order_logs_order_id FOREIGN KEY (order_id)
+        REFERENCES bot.points_mall_orders(order_id) ON DELETE CASCADE
+);
+
+COMMENT ON TABLE bot.points_mall_order_logs IS '积分商城订单流水表，记录订单操作历史';
+COMMENT ON COLUMN bot.points_mall_order_logs.id IS '自增主键';
+COMMENT ON COLUMN bot.points_mall_order_logs.order_id IS '订单 ID';
+COMMENT ON COLUMN bot.points_mall_order_logs.action IS '动作';
+COMMENT ON COLUMN bot.points_mall_order_logs.payload IS '额外载荷';
+COMMENT ON COLUMN bot.points_mall_order_logs.created_at IS '创建时间';
+
+CREATE INDEX IF NOT EXISTS ix_points_mall_order_logs_order_id ON bot.points_mall_order_logs(order_id);
+CREATE INDEX IF NOT EXISTS ix_points_mall_order_logs_action ON bot.points_mall_order_logs(action);
+CREATE INDEX IF NOT EXISTS ix_points_mall_order_logs_created_at ON bot.points_mall_order_logs(created_at);
 
 -- ============================================
 -- 8. 审核违规记录表 (moderation_violations)
@@ -1143,6 +1564,329 @@ COMMENT ON COLUMN bot.nearby_profiles.last_location_at IS '定位更新时间';
 CREATE INDEX IF NOT EXISTS ix_nearby_profiles_chat_id ON bot.nearby_profiles(chat_id);
 CREATE INDEX IF NOT EXISTS ix_nearby_profiles_user_id ON bot.nearby_profiles(user_id);
 CREATE INDEX IF NOT EXISTS ix_nearby_profiles_visible ON bot.nearby_profiles(chat_id, is_visible);
+
+-- ============================================
+-- 26. 联盟功能相关表
+-- ============================================
+CREATE TABLE IF NOT EXISTS bot.group_alliances (
+    alliance_id SERIAL PRIMARY KEY,
+    name VARCHAR(128) NOT NULL UNIQUE,
+    owner_chat_id BIGINT NOT NULL,
+    invite_code_hash VARCHAR(128) NOT NULL,
+    invite_code_expire_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT fk_group_alliances_owner_chat_id FOREIGN KEY (owner_chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS bot.group_alliance_members (
+    id SERIAL PRIMARY KEY,
+    alliance_id INTEGER NOT NULL,
+    chat_id BIGINT NOT NULL,
+    joined_at TIMESTAMPTZ NOT NULL,
+    status VARCHAR(16) NOT NULL DEFAULT 'active',
+    CONSTRAINT fk_group_alliance_members_alliance_id FOREIGN KEY (alliance_id)
+        REFERENCES bot.group_alliances(alliance_id) ON DELETE CASCADE,
+    CONSTRAINT fk_group_alliance_members_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE,
+    CONSTRAINT uq_group_alliance_member_chat UNIQUE (chat_id)
+);
+
+CREATE TABLE IF NOT EXISTS bot.group_alliance_settings (
+    chat_id BIGINT PRIMARY KEY,
+    alliance_id INTEGER NOT NULL,
+    joint_ban_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    updated_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT fk_group_alliance_settings_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE,
+    CONSTRAINT fk_group_alliance_settings_alliance_id FOREIGN KEY (alliance_id)
+        REFERENCES bot.group_alliances(alliance_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS bot.group_alliance_ban_pool (
+    id SERIAL PRIMARY KEY,
+    alliance_id INTEGER NOT NULL,
+    target_user_id BIGINT NOT NULL,
+    source_chat_id BIGINT NOT NULL,
+    source_operator_user_id BIGINT,
+    reason TEXT,
+    created_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT fk_group_alliance_ban_pool_alliance_id FOREIGN KEY (alliance_id)
+        REFERENCES bot.group_alliances(alliance_id) ON DELETE CASCADE,
+    CONSTRAINT fk_group_alliance_ban_pool_target_user_id FOREIGN KEY (target_user_id)
+        REFERENCES bot.tg_users(id) ON DELETE CASCADE,
+    CONSTRAINT fk_group_alliance_ban_pool_source_chat_id FOREIGN KEY (source_chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE,
+    CONSTRAINT fk_group_alliance_ban_pool_operator_user_id FOREIGN KEY (source_operator_user_id)
+        REFERENCES bot.tg_users(id) ON DELETE SET NULL,
+    CONSTRAINT uq_group_alliance_ban_pool UNIQUE (alliance_id, target_user_id)
+);
+
+CREATE TABLE IF NOT EXISTS bot.group_alliance_audit (
+    id SERIAL PRIMARY KEY,
+    chat_id BIGINT NOT NULL,
+    alliance_id INTEGER,
+    action VARCHAR(64) NOT NULL,
+    operator_user_id BIGINT,
+    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    result VARCHAR(16) NOT NULL DEFAULT 'success',
+    created_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT fk_group_alliance_audit_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE,
+    CONSTRAINT fk_group_alliance_audit_alliance_id FOREIGN KEY (alliance_id)
+        REFERENCES bot.group_alliances(alliance_id) ON DELETE SET NULL,
+    CONSTRAINT fk_group_alliance_audit_operator_user_id FOREIGN KEY (operator_user_id)
+        REFERENCES bot.tg_users(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS ix_group_alliance_members_alliance_id ON bot.group_alliance_members(alliance_id);
+CREATE INDEX IF NOT EXISTS ix_group_alliance_settings_alliance_id ON bot.group_alliance_settings(alliance_id);
+CREATE INDEX IF NOT EXISTS ix_group_alliance_ban_pool_alliance_id ON bot.group_alliance_ban_pool(alliance_id);
+CREATE INDEX IF NOT EXISTS ix_group_alliance_audit_chat_id ON bot.group_alliance_audit(chat_id);
+CREATE INDEX IF NOT EXISTS ix_group_alliance_audit_alliance_id ON bot.group_alliance_audit(alliance_id);
+
+-- ============================================
+-- 27. 车库转发表
+-- ============================================
+CREATE TABLE IF NOT EXISTS bot.garage_forward_settings (
+    chat_id BIGINT PRIMARY KEY,
+    enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    sync_mode VARCHAR(16) NOT NULL DEFAULT 'all',
+    keyword_rules JSONB NOT NULL DEFAULT '[]'::jsonb,
+    updated_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT fk_garage_forward_settings_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS bot.garage_forward_sources (
+    id SERIAL PRIMARY KEY,
+    chat_id BIGINT NOT NULL,
+    source_channel_id BIGINT NOT NULL,
+    source_name VARCHAR(255),
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT fk_garage_forward_sources_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS bot.garage_forward_message_map (
+    id SERIAL PRIMARY KEY,
+    chat_id BIGINT NOT NULL,
+    source_channel_id BIGINT NOT NULL,
+    source_message_id BIGINT NOT NULL,
+    target_message_id BIGINT NOT NULL,
+    forwarded_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT fk_garage_forward_message_map_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE,
+    CONSTRAINT uq_garage_forward_message_map UNIQUE (chat_id, source_channel_id, source_message_id)
+);
+
+CREATE TABLE IF NOT EXISTS bot.garage_forward_audit_logs (
+    id SERIAL PRIMARY KEY,
+    chat_id BIGINT NOT NULL,
+    source_channel_id BIGINT NOT NULL,
+    source_message_id BIGINT,
+    action VARCHAR(32) NOT NULL,
+    result VARCHAR(16) NOT NULL,
+    reason TEXT,
+    created_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT fk_garage_forward_audit_logs_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS ix_garage_forward_sources_chat_id ON bot.garage_forward_sources(chat_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_garage_forward_source_chat_channel
+    ON bot.garage_forward_sources(chat_id, source_channel_id);
+CREATE INDEX IF NOT EXISTS ix_garage_forward_audit_logs_chat_id ON bot.garage_forward_audit_logs(chat_id);
+
+-- ============================================
+-- 16. 车库认证 / 老师搜索 / 车评系统
+-- ============================================
+CREATE TABLE IF NOT EXISTS bot.garage_certified_teachers (
+    id SERIAL PRIMARY KEY,
+    chat_id BIGINT NOT NULL,
+    user_id BIGINT NOT NULL,
+    certified_by_user_id BIGINT,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT fk_garage_certified_teachers_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE,
+    CONSTRAINT fk_garage_certified_teachers_user_id FOREIGN KEY (user_id)
+        REFERENCES bot.tg_users(id) ON DELETE CASCADE,
+    CONSTRAINT fk_garage_certified_teachers_certified_by_user_id FOREIGN KEY (certified_by_user_id)
+        REFERENCES bot.tg_users(id) ON DELETE SET NULL,
+    CONSTRAINT uq_garage_certified_teacher_chat_user UNIQUE (chat_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS ix_garage_certified_teachers_chat_id ON bot.garage_certified_teachers(chat_id);
+
+CREATE TABLE IF NOT EXISTS bot.garage_speech_whitelist (
+    id SERIAL PRIMARY KEY,
+    chat_id BIGINT NOT NULL,
+    user_id BIGINT NOT NULL,
+    created_by_user_id BIGINT,
+    created_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT fk_garage_speech_whitelist_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE,
+    CONSTRAINT fk_garage_speech_whitelist_user_id FOREIGN KEY (user_id)
+        REFERENCES bot.tg_users(id) ON DELETE CASCADE,
+    CONSTRAINT fk_garage_speech_whitelist_created_by_user_id FOREIGN KEY (created_by_user_id)
+        REFERENCES bot.tg_users(id) ON DELETE SET NULL,
+    CONSTRAINT uq_garage_speech_whitelist_chat_user UNIQUE (chat_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS ix_garage_speech_whitelist_chat_id ON bot.garage_speech_whitelist(chat_id);
+
+CREATE TABLE IF NOT EXISTS bot.teacher_search_settings (
+    chat_id BIGINT PRIMARY KEY,
+    tag_search_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    nearby_search_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    attendance_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    force_location_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    delete_mode VARCHAR(16) NOT NULL DEFAULT 'none',
+    footer_button_label VARCHAR(64),
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT fk_teacher_search_settings_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS bot.teacher_profiles (
+    id SERIAL PRIMARY KEY,
+    chat_id BIGINT NOT NULL,
+    user_id BIGINT NOT NULL,
+    latitude NUMERIC(9, 6),
+    longitude NUMERIC(9, 6),
+    labels JSONB NOT NULL DEFAULT '[]'::jsonb,
+    region_text VARCHAR(128),
+    price_text VARCHAR(128),
+    open_course_today BOOLEAN NOT NULL DEFAULT FALSE,
+    last_location_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT fk_teacher_profiles_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE,
+    CONSTRAINT fk_teacher_profiles_user_id FOREIGN KEY (user_id)
+        REFERENCES bot.tg_users(id) ON DELETE CASCADE,
+    CONSTRAINT uq_teacher_profile_chat_user UNIQUE (chat_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS ix_teacher_profiles_chat_id ON bot.teacher_profiles(chat_id);
+CREATE INDEX IF NOT EXISTS ix_teacher_profiles_open_course_today ON bot.teacher_profiles(open_course_today);
+
+CREATE TABLE IF NOT EXISTS bot.teacher_daily_attendance (
+    id SERIAL PRIMARY KEY,
+    chat_id BIGINT NOT NULL,
+    user_id BIGINT NOT NULL,
+    biz_date DATE NOT NULL,
+    source_message_id BIGINT,
+    created_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT fk_teacher_daily_attendance_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE,
+    CONSTRAINT fk_teacher_daily_attendance_user_id FOREIGN KEY (user_id)
+        REFERENCES bot.tg_users(id) ON DELETE CASCADE,
+    CONSTRAINT uq_teacher_attendance_chat_user_date UNIQUE (chat_id, user_id, biz_date)
+);
+CREATE INDEX IF NOT EXISTS ix_teacher_daily_attendance_chat_id ON bot.teacher_daily_attendance(chat_id);
+CREATE INDEX IF NOT EXISTS ix_teacher_daily_attendance_biz_date ON bot.teacher_daily_attendance(biz_date);
+
+CREATE TABLE IF NOT EXISTS bot.member_locations (
+    id SERIAL PRIMARY KEY,
+    chat_id BIGINT NOT NULL,
+    user_id BIGINT NOT NULL,
+    latitude NUMERIC(9, 6) NOT NULL,
+    longitude NUMERIC(9, 6) NOT NULL,
+    updated_by_user_id BIGINT,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT fk_member_locations_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE,
+    CONSTRAINT fk_member_locations_user_id FOREIGN KEY (user_id)
+        REFERENCES bot.tg_users(id) ON DELETE CASCADE,
+    CONSTRAINT fk_member_locations_updated_by_user_id FOREIGN KEY (updated_by_user_id)
+        REFERENCES bot.tg_users(id) ON DELETE SET NULL,
+    CONSTRAINT uq_member_location_chat_user UNIQUE (chat_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS ix_member_locations_chat_id ON bot.member_locations(chat_id);
+
+CREATE TABLE IF NOT EXISTS bot.car_review_settings (
+    chat_id BIGINT PRIMARY KEY,
+    enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    review_mode VARCHAR(16) NOT NULL DEFAULT 'default',
+    teacher_lookup_mode VARCHAR(16) NOT NULL DEFAULT 'off',
+    submit_command VARCHAR(64) NOT NULL DEFAULT '提交报告',
+    rank_command VARCHAR(64) NOT NULL DEFAULT '出击排行',
+    publish_to_main_group BOOLEAN NOT NULL DEFAULT TRUE,
+    publish_to_comment_group BOOLEAN NOT NULL DEFAULT FALSE,
+    publish_to_bound_channel BOOLEAN NOT NULL DEFAULT FALSE,
+    approver_user_id BIGINT,
+    reward_points INTEGER NOT NULL DEFAULT 100,
+    template_text TEXT NOT NULL DEFAULT E'【时间】：{time}\n【老师】：{teacher}\n【留名】：{author}\n【评价】：{review}\n【人照】：{photo_score}\n【颜值】：{face_score}\n【身材】：{body_score}\n【服务】：{service_score}\n【态度】：{attitude_score}\n【环境】：{env_score}\n【综合】：{total_score}\n【过程】：{process}',
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT fk_car_review_settings_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE,
+    CONSTRAINT fk_car_review_settings_approver_user_id FOREIGN KEY (approver_user_id)
+        REFERENCES bot.tg_users(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS bot.car_review_custom_fields (
+    id SERIAL PRIMARY KEY,
+    chat_id BIGINT NOT NULL,
+    field_key VARCHAR(64) NOT NULL,
+    field_label VARCHAR(64) NOT NULL,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT fk_car_review_custom_fields_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE,
+    CONSTRAINT uq_car_review_field_chat_key UNIQUE (chat_id, field_key)
+);
+CREATE INDEX IF NOT EXISTS ix_car_review_custom_fields_chat_id ON bot.car_review_custom_fields(chat_id);
+
+CREATE TABLE IF NOT EXISTS bot.car_review_reports (
+    report_id SERIAL PRIMARY KEY,
+    chat_id BIGINT NOT NULL,
+    teacher_user_id BIGINT,
+    author_user_id BIGINT,
+    review_text TEXT,
+    scores JSONB NOT NULL DEFAULT '{}'::jsonb,
+    process_text TEXT,
+    media_file_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+    report_status VARCHAR(16) NOT NULL DEFAULT 'pending',
+    approved_by_user_id BIGINT,
+    approved_at TIMESTAMPTZ,
+    published_message_id BIGINT,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT fk_car_review_reports_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE,
+    CONSTRAINT fk_car_review_reports_teacher_user_id FOREIGN KEY (teacher_user_id)
+        REFERENCES bot.tg_users(id) ON DELETE SET NULL,
+    CONSTRAINT fk_car_review_reports_author_user_id FOREIGN KEY (author_user_id)
+        REFERENCES bot.tg_users(id) ON DELETE SET NULL,
+    CONSTRAINT fk_car_review_reports_approved_by_user_id FOREIGN KEY (approved_by_user_id)
+        REFERENCES bot.tg_users(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS ix_car_review_reports_chat_id ON bot.car_review_reports(chat_id);
+CREATE INDEX IF NOT EXISTS ix_car_review_reports_status ON bot.car_review_reports(report_status);
+
+CREATE TABLE IF NOT EXISTS bot.car_review_audit_logs (
+    id SERIAL PRIMARY KEY,
+    chat_id BIGINT NOT NULL,
+    report_id INTEGER,
+    operator_user_id BIGINT,
+    action VARCHAR(32) NOT NULL,
+    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT fk_car_review_audit_logs_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE,
+    CONSTRAINT fk_car_review_audit_logs_report_id FOREIGN KEY (report_id)
+        REFERENCES bot.car_review_reports(report_id) ON DELETE SET NULL,
+    CONSTRAINT fk_car_review_audit_logs_operator_user_id FOREIGN KEY (operator_user_id)
+        REFERENCES bot.tg_users(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS ix_car_review_audit_logs_chat_id ON bot.car_review_audit_logs(chat_id);
 
 -- ============================================
 -- 数据库初始化完成

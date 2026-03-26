@@ -181,9 +181,8 @@ async def get_due_ads(
         AdCampaign,
         active_only=True,
     )
-    now = dt.datetime.now(dt.UTC)
-    # 过滤出已到定时时间的广告
-    return [ad for ad in ads if ad.schedule_time and ad.schedule_time <= now]
+    # 只返回真正到期且符合发送规则的广告，避免调用方重复实现业务判断
+    return [ad for ad in ads if should_send_ad(ad)]
 
 
 async def mark_ad_sent(
@@ -283,7 +282,8 @@ def should_send_ad(ad: AdCampaign) -> bool:
             return False
 
         # 检查推送次数
-        if ad.max_send_count and ad.send_count >= ad.max_send_count:
+        send_count = ad.send_count or 0
+        if ad.max_send_count and send_count >= ad.max_send_count:
             return False
 
         # 计算下次推送时间

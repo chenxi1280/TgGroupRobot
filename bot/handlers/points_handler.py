@@ -1,19 +1,23 @@
 from __future__ import annotations
 
+import datetime as dt
 import re
 from telegram import Update
-from telegram.ext import ContextTypes, filters
+from telegram.ext import ContextTypes
 from sqlalchemy.orm import selectinload
 
 from bot.db.session import Database
 from bot.handlers.base.base_handler import BaseHandler
+from bot.keyboards.admin.points_extended import user_points_mall_keyboard
 from bot.services.core.chat_service import (
     build_points_alias_patterns,
     ensure_chat,
     get_chat_settings,
 )
+from bot.services.activity.points_extended_service import PointsExtendedService
 from bot.services.activity.points_service import (
     add_message_points,
+    change_points,
     format_balance_message,
     format_leaderboard_message,
     format_sign_in_already_message,
@@ -24,6 +28,8 @@ from bot.services.activity.points_service import (
     sign_in,
 )
 from bot.services.core.user_service import ensure_user
+from bot.services.shared.publish_service import PublishService
+from bot.utils.telegram_errors import answer_callback_query_safely, mark_callback_query_answered
 
 
 class PointsHandler(BaseHandler):
@@ -33,6 +39,17 @@ class PointsHandler(BaseHandler):
         super().__init__()
         # 积分功能不需要管理员权限
         self._require_admin_permission = False
+
+    @staticmethod
+    def _should_send_level_block_notice(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int) -> bool:
+        cache = context.application.bot_data.setdefault("points_level_block_notice", {})
+        key = (chat_id, user_id)
+        now = dt.datetime.now(dt.UTC)
+        last_sent = cache.get(key)
+        if isinstance(last_sent, dt.datetime) and (now - last_sent).total_seconds() < 60:
+            return False
+        cache[key] = now
+        return True
 
     async def process(
         self,
@@ -179,10 +196,7 @@ class PointsHandler(BaseHandler):
         user = update.effective_user
         message = update.effective_message
 
-        # 获取消息文本
-        text = message.text or ""
-        if not text:
-            return
+        text = (message.text or "").strip()
 
         async with db.session_factory() as session:
             await ensure_chat(session, chat_id=chat.id, chat_type=chat.type, title=chat.title)
@@ -195,9 +209,69 @@ class PointsHandler(BaseHandler):
                 language_code=user.language_code,
             )
             settings = await get_chat_settings(session, chat.id)
+            mall_setting = await PointsExtendedService.get_or_create_mall_setting(session, chat.id)
+            level_setting = await PointsExtendedService.get_or_create_level_setting(session, chat.id)
+
+            # 积分商城入口
+            if text and mall_setting.enabled and text == mall_setting.entry_command:
+                products = await PointsExtendedService.list_on_sale_products(session, chat.id)
+                await session.commit()
+                if not products:
+                    await update.effective_message.reply_text("积分商城暂时没有可兑换商品。")
+                    return
+                await self.show_mall_catalog(update, context, chat.id, products=products)
+                return
+
+            if text:
+                custom_types = await PointsExtendedService.list_custom_point_types(session, chat.id)
+                matched_type = next((item for item in custom_types if item.rank_command and text == item.rank_command), None)
+                if matched_type is not None and not matched_type.enabled:
+                    await session.commit()
+                    await update.effective_message.reply_text(f"{matched_type.name} 已关闭。")
+                    return
+                if matched_type is not None:
+                    rows = await PointsExtendedService.get_custom_point_leaderboard(
+                        session,
+                        chat_id=chat.id,
+                        type_id=matched_type.id,
+                        limit=10,
+                    )
+                    await session.commit()
+                    if not rows:
+                        await update.effective_message.reply_text(f"{matched_type.name} 暂无排行数据。")
+                        return
+                    lines = [f"🌐 {matched_type.name} 排行", ""]
+                    for index, (rank_user_id, balance) in enumerate(rows, start=1):
+                        lines.append(f"{index}. {rank_user_id}｜{balance}")
+                    await update.effective_message.reply_text("\n".join(lines))
+                    return
+
+            # 积分等级限制
+            if level_setting.enabled:
+                if level_setting.exclude_teacher_enabled:
+                    teacher_exempt = await PointsExtendedService.is_teacher_exempt(session, chat.id, user.id)
+                    if teacher_exempt:
+                        await session.commit()
+                        return
+                level = await PointsExtendedService.resolve_user_level(session, chat.id, user.id)
+                required_perm = _required_level_permission(message)
+                if required_perm is not None:
+                    allowed = True if level is None else bool(getattr(level, required_perm, False))
+                    if not allowed:
+                        await session.commit()
+                        try:
+                            await message.delete()
+                        except Exception:
+                            pass
+                        if self._should_send_level_block_notice(context, chat.id, user.id):
+                            try:
+                                await update.effective_chat.send_message("当前积分等级不足，无法发送此类消息。")
+                            except Exception:
+                                pass
+                        return
 
             # 检查是否开启发言积分
-            if not settings.message_points_enabled:
+            if not text or not settings.message_points_enabled:
                 await session.commit()
                 return
 
@@ -215,6 +289,122 @@ class PointsHandler(BaseHandler):
 
             # 不发送通知，避免打扰群聊
             return
+
+    async def show_mall_catalog(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+        *,
+        products=None,
+        setting=None,
+    ) -> None:
+        if products is None or setting is None:
+            db: Database = context.application.bot_data["db"]
+            async with db.session_factory() as session:
+                if products is None:
+                    products = await PointsExtendedService.list_on_sale_products(session, chat_id)
+                if setting is None:
+                    setting = await PointsExtendedService.get_or_create_mall_setting(session, chat_id)
+                await session.commit()
+        text = "🏦 积分商城\n\n"
+        if products:
+            text += "\n".join(f"{p.name}｜{p.price_points}积分｜库存 {p.stock_left}" for p in products)
+        else:
+            text += "暂无可兑换商品。"
+        if update.callback_query:
+            message = update.callback_query.message
+            if message and (message.photo or message.video):
+                try:
+                    await update.callback_query.edit_message_caption(
+                        caption=text,
+                        reply_markup=user_points_mall_keyboard(chat_id, products),
+                    )
+                    return
+                except Exception:
+                    pass
+            await update.callback_query.edit_message_text(text, reply_markup=user_points_mall_keyboard(chat_id, products))
+        elif update.effective_message:
+            if setting and setting.cover_file_id:
+                if setting.cover_media_type == "photo":
+                    await update.effective_message.reply_photo(
+                        photo=setting.cover_file_id,
+                        caption=text,
+                        reply_markup=user_points_mall_keyboard(chat_id, products),
+                    )
+                    return
+                if setting.cover_media_type == "video":
+                    await update.effective_message.reply_video(
+                        video=setting.cover_file_id,
+                        caption=text,
+                        reply_markup=user_points_mall_keyboard(chat_id, products),
+                    )
+                    return
+            await update.effective_message.reply_text(text, reply_markup=user_points_mall_keyboard(chat_id, products))
+
+    async def handle_mall_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if update.callback_query is None or update.effective_user is None:
+            return
+        data = update.callback_query.data or ""
+        parts = data.split(":")
+        if len(parts) < 3:
+            await answer_callback_query_safely(update, "无效操作", show_alert=True)
+            return
+        try:
+            chat_id = int(parts[2])
+        except ValueError:
+            await answer_callback_query_safely(update, "无效群组", show_alert=True)
+            return
+
+        action = parts[1]
+        db: Database = context.application.bot_data["db"]
+
+        if action == "list":
+            mark_callback_query_answered(update)
+            await self.show_mall_catalog(update, context, chat_id)
+            return
+
+        if action == "redeem":
+            if len(parts) < 4:
+                await answer_callback_query_safely(update, "无效商品", show_alert=True)
+                return
+            try:
+                product_id = int(parts[3])
+            except ValueError:
+                await answer_callback_query_safely(update, "无效商品", show_alert=True)
+                return
+            async with db.session_factory() as session:
+                await ensure_chat(session, chat_id=chat_id, chat_type="supergroup", title=None)
+                await ensure_user(
+                    session,
+                    user_id=update.effective_user.id,
+                    username=update.effective_user.username,
+                    first_name=update.effective_user.first_name,
+                    last_name=update.effective_user.last_name,
+                    language_code=update.effective_user.language_code,
+                )
+                success, reason, _order = await PointsExtendedService.redeem_product(
+                    session,
+                    chat_id=chat_id,
+                    product_id=product_id,
+                    buyer_user_id=update.effective_user.id,
+                )
+                setting = await PointsExtendedService.get_or_create_mall_setting(session, chat_id)
+                await session.commit()
+            if not success:
+                await answer_callback_query_safely(update, reason, show_alert=True)
+                return
+            mark_callback_query_answered(update)
+            await PublishService.send_temporary(
+                context,
+                chat_id=chat_id,
+                text=f"兑换成功，订单已创建。用户：{update.effective_user.id}",
+                delete_after_seconds=setting.redeem_notice_delete_seconds,
+            )
+            await self.show_mall_catalog(update, context, chat_id)
+            return
+
+        await answer_callback_query_safely(update, "暂不支持该操作", show_alert=True)
 
 
 # 创建单例实例
@@ -241,6 +431,10 @@ async def points_rank_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def message_points_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """发言积分处理器"""
     await _points_handler.handle_message_points(update, context)
+
+
+async def mall_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await _points_handler.handle_mall_callback(update, context)
 
 
 async def alias_points_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -325,3 +519,24 @@ _points_alias_handler = PointsAliasHandler()
 def get_points_alias_handler() -> PointsAliasHandler:
     """获取别名处理器实例"""
     return _points_alias_handler
+
+
+def _required_level_permission(message) -> str | None:
+    if message.sticker:
+        return "allow_sticker"
+    if message.audio or message.voice:
+        return "allow_audio"
+    if message.video:
+        return "allow_video"
+    if message.photo:
+        return "allow_photo"
+    if message.document:
+        return "allow_document"
+    text = message.text or message.caption or ""
+    entities = list(message.entities or []) + list(message.caption_entities or [])
+    has_mention = any(entity.type in {"mention", "text_mention"} for entity in entities)
+    if has_mention:
+        return "allow_mention"
+    if text:
+        return "allow_text"
+    return None

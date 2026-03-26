@@ -3,9 +3,18 @@ from bot.models.core import (  # noqa: F401
     ChatMember,
     ChatSettings,
     ChatSubscription,
+    CustomPointAccount,
+    CustomPointLedger,
+    CustomPointType,
     ModerationViolation,
     NearbyProfile,
+    PointsLevel,
+    PointsLevelSetting,
     PointsAccount,
+    PointsMallOrder,
+    PointsMallOrderLog,
+    PointsMallProduct,
+    PointsMallSetting,
     PointsTransaction,
     SignInLog,
     SubscriptionPlan,
@@ -13,7 +22,28 @@ from bot.models.core import (  # noqa: F401
     TgUser,
     VerificationChallenge,
 )
-
-
-
-
+from bot.models.alliance import (  # noqa: F401
+    GarageForwardAuditLog,
+    GarageForwardMessageMap,
+    GarageForwardSetting,
+    GarageForwardSource,
+    GroupAlliance,
+    GroupAllianceAudit,
+    GroupAllianceBanPool,
+    GroupAllianceMember,
+    GroupAllianceSetting,
+)
+from bot.models.garage_features import (  # noqa: F401
+    CarReviewAuditLog,
+    CarReviewCustomField,
+    CarReviewReport,
+    CarReviewSetting,
+    GarageCertifiedTeacher,
+    GarageSpeechWhitelist,
+    MemberLocation,
+    TeacherDailyAttendance,
+    TeacherProfile,
+    TeacherSearchSetting,
+)
+from bot.models.scheduled_message import ScheduledMessageLog, ScheduledMessageTask  # noqa: F401
+from bot.models.welcome import WelcomeMessage  # noqa: F401

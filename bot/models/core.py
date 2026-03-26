@@ -11,11 +11,15 @@ from bot.models.enums import (
     AutoReplyMatchType,
     BannedWordMatchType,
     ChatType,
+    ControlPermissionPolicy,
+    ForceSubscribeAction,
+    ForceSubscribeCheckMode,
     InviteLinkStatus,
     LotteryDrawMode,
     MemberRole,
     ModerationAction,
     PointsTxnType,
+    GroupLockDeleteNoticeMode,
     ScheduleType,
     SolitaireStatus,
     SubscriptionStatus,
@@ -124,9 +128,115 @@ class ChatSettings(Base):
     ads_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     monetization_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
 
+    # 机器人管理权限门槛
+    control_permission_policy: Mapped[str] = mapped_column(
+        String(32),
+        default=ControlPermissionPolicy.can_promote_members.value,
+    )
+
+    # 关群设置
+    group_lock_phrase_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+    )
+    group_lock_open_phrase: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+    group_lock_close_phrase: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+    group_lock_schedule_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+    )
+    group_lock_open_time: Mapped[str | None] = mapped_column(
+        String(5),
+        nullable=True,
+    )
+    group_lock_close_time: Mapped[str | None] = mapped_column(
+        String(5),
+        nullable=True,
+    )
+    group_lock_delete_notice_mode: Mapped[str] = mapped_column(
+        String(16),
+        default=GroupLockDeleteNoticeMode.keep.value,
+    )
+
+    # 改名监控
+    name_change_monitor_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+    )
+    name_change_monitor_template_text: Mapped[str] = mapped_column(
+        Text,
+        default="检测到用户{userId}修改{changeType}\n原{changeType}: {oldContent}\n新{changeType}: {newContent}\n\n请注意规避风险",
+    )
+    name_change_monitor_delete_after_seconds: Mapped[int] = mapped_column(
+        Integer,
+        default=60,
+    )
+
+    # 强制订阅频道
+    force_subscribe_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+    )
+    force_subscribe_bound_channel_1: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+    force_subscribe_bound_channel_2: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+    force_subscribe_cover_media_type: Mapped[str | None] = mapped_column(
+        String(16),
+        nullable=True,
+    )
+    force_subscribe_cover_file_id: Mapped[str | None] = mapped_column(
+        String(256),
+        nullable=True,
+    )
+    force_subscribe_guide_text: Mapped[str] = mapped_column(
+        Text,
+        default="{member}，您需要关注我们的频道才能发言。",
+    )
+    force_subscribe_custom_buttons_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+    )
+    force_subscribe_check_mode: Mapped[str] = mapped_column(
+        String(8),
+        default=ForceSubscribeCheckMode.all.value,
+    )
+    force_subscribe_not_subscribed_action: Mapped[str] = mapped_column(
+        String(32),
+        default=ForceSubscribeAction.delete_and_warn.value,
+    )
+    force_subscribe_delete_warn_after_seconds: Mapped[int] = mapped_column(
+        Integer,
+        default=60,
+    )
+    force_subscribe_buttons: Mapped[list[dict]] = mapped_column(
+        JSONB,
+        default=list,
+    )
+
     # 进群欢迎
     welcome_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     welcome_message: Mapped[str | None] = mapped_column(Text, nullable=True)  # 自定义欢迎消息模板
+
+    # 车库认证
+    garage_auth_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    garage_auth_badge: Mapped[str] = mapped_column(String(16), default="🤝")
+    garage_limit_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    garage_limit_mode: Mapped[str] = mapped_column(String(16), default="none")
+    garage_limit_interval_sec: Mapped[int] = mapped_column(Integer, default=3600)
+    garage_limit_max_count: Mapped[int] = mapped_column(Integer, default=1)
+    garage_summary_partition_by: Mapped[str] = mapped_column(String(16), default="region")
+    garage_summary_only_open_course: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # 反刷屏
     anti_flood_enabled: Mapped[bool] = mapped_column(Boolean, default=False)  # 是否启用反刷屏
@@ -285,6 +395,204 @@ class UserDailyStats(Base):
         default=lambda: dt.datetime.now(dt.UTC),
         onupdate=lambda: dt.datetime.now(dt.UTC),
     )
+
+
+class CustomPointType(Base):
+    """自定义积分类型"""
+    __tablename__ = "custom_point_types"
+    __table_args__ = (
+        UniqueConstraint("chat_id", "type_no", name="uq_custom_point_type_chat_no"),
+        UniqueConstraint("chat_id", "name", name="uq_custom_point_type_chat_name"),
+        {"schema": "bot"},
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("bot.tg_chats.id", ondelete="CASCADE"), index=True)
+    type_no: Mapped[int] = mapped_column(Integer, index=True)
+    name: Mapped[str] = mapped_column(String(64), index=True)
+    rank_command: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_by_user_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("bot.tg_users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC))
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: dt.datetime.now(dt.UTC),
+        onupdate=lambda: dt.datetime.now(dt.UTC),
+    )
+
+
+class CustomPointAccount(Base):
+    """自定义积分账户"""
+    __tablename__ = "custom_point_accounts"
+    __table_args__ = (
+        UniqueConstraint("chat_id", "type_id", "user_id", name="uq_custom_point_account_chat_type_user"),
+        {"schema": "bot"},
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("bot.tg_chats.id", ondelete="CASCADE"), index=True)
+    type_id: Mapped[int] = mapped_column(Integer, ForeignKey("bot.custom_point_types.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("bot.tg_users.id", ondelete="CASCADE"), index=True)
+    balance: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: dt.datetime.now(dt.UTC),
+        onupdate=lambda: dt.datetime.now(dt.UTC),
+    )
+
+
+class CustomPointLedger(Base):
+    """自定义积分流水"""
+    __tablename__ = "custom_point_ledger"
+    __table_args__ = {"schema": "bot"}
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("bot.tg_chats.id", ondelete="CASCADE"), index=True)
+    type_id: Mapped[int] = mapped_column(Integer, ForeignKey("bot.custom_point_types.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("bot.tg_users.id", ondelete="CASCADE"), index=True)
+    delta: Mapped[int] = mapped_column(Integer)
+    reason_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    operator_user_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("bot.tg_users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC), index=True)
+
+
+class PointsLevelSetting(Base):
+    """积分等级全局设置"""
+    __tablename__ = "points_level_settings"
+    __table_args__ = {"schema": "bot"}
+
+    chat_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("bot.tg_chats.id", ondelete="CASCADE"), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    exclude_teacher_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: dt.datetime.now(dt.UTC),
+        onupdate=lambda: dt.datetime.now(dt.UTC),
+    )
+
+
+class PointsLevel(Base):
+    """积分等级定义"""
+    __tablename__ = "points_levels"
+    __table_args__ = (
+        UniqueConstraint("chat_id", "level_no", name="uq_points_level_chat_no"),
+        UniqueConstraint("chat_id", "point_threshold", name="uq_points_level_chat_threshold"),
+        {"schema": "bot"},
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("bot.tg_chats.id", ondelete="CASCADE"), index=True)
+    level_no: Mapped[int] = mapped_column(Integer, index=True)
+    level_name: Mapped[str] = mapped_column(String(64))
+    point_threshold: Mapped[int] = mapped_column(Integer, index=True)
+    allow_text: Mapped[bool] = mapped_column(Boolean, default=True)
+    allow_audio: Mapped[bool] = mapped_column(Boolean, default=True)
+    allow_photo: Mapped[bool] = mapped_column(Boolean, default=True)
+    allow_video: Mapped[bool] = mapped_column(Boolean, default=True)
+    allow_sticker: Mapped[bool] = mapped_column(Boolean, default=True)
+    allow_document: Mapped[bool] = mapped_column(Boolean, default=True)
+    allow_mention: Mapped[bool] = mapped_column(Boolean, default=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC))
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: dt.datetime.now(dt.UTC),
+        onupdate=lambda: dt.datetime.now(dt.UTC),
+    )
+
+
+class PointsMallSetting(Base):
+    """积分商城全局设置"""
+    __tablename__ = "points_mall_settings"
+    __table_args__ = {"schema": "bot"}
+
+    chat_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("bot.tg_chats.id", ondelete="CASCADE"), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    entry_command: Mapped[str] = mapped_column(String(32), default="积分商城")
+    auto_unlist_when_out_of_stock: Mapped[bool] = mapped_column(Boolean, default=False)
+    redeem_notice_delete_seconds: Mapped[int] = mapped_column(Integer, default=60)
+    cover_media_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    cover_file_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: dt.datetime.now(dt.UTC),
+        onupdate=lambda: dt.datetime.now(dt.UTC),
+    )
+
+
+class PointsMallProduct(Base):
+    """积分商城商品"""
+    __tablename__ = "points_mall_products"
+    __table_args__ = {"schema": "bot"}
+
+    product_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("bot.tg_chats.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(128), index=True)
+    price_points: Mapped[int] = mapped_column(Integer)
+    stock_total: Mapped[int] = mapped_column(Integer, default=0)
+    stock_left: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(16), default="on_sale", index=True)
+    cover_media_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    cover_file_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    limit_per_user: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    fulfiller_user_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("bot.tg_users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sort_weight: Mapped[int] = mapped_column(Integer, default=0, index=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC), index=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: dt.datetime.now(dt.UTC),
+        onupdate=lambda: dt.datetime.now(dt.UTC),
+    )
+
+
+class PointsMallOrder(Base):
+    """积分商城订单"""
+    __tablename__ = "points_mall_orders"
+    __table_args__ = {"schema": "bot"}
+
+    order_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("bot.tg_chats.id", ondelete="CASCADE"), index=True)
+    product_id: Mapped[int] = mapped_column(Integer, ForeignKey("bot.points_mall_products.product_id", ondelete="CASCADE"), index=True)
+    buyer_user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("bot.tg_users.id", ondelete="CASCADE"), index=True)
+    price_points: Mapped[int] = mapped_column(Integer)
+    quantity: Mapped[int] = mapped_column(Integer, default=1)
+    order_status: Mapped[str] = mapped_column(String(16), default="created", index=True)
+    operator_user_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("bot.tg_users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC), index=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: dt.datetime.now(dt.UTC),
+        onupdate=lambda: dt.datetime.now(dt.UTC),
+    )
+
+
+class PointsMallOrderLog(Base):
+    """积分商城订单流水"""
+    __tablename__ = "points_mall_order_logs"
+    __table_args__ = {"schema": "bot"}
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    order_id: Mapped[int] = mapped_column(Integer, ForeignKey("bot.points_mall_orders.order_id", ondelete="CASCADE"), index=True)
+    action: Mapped[str] = mapped_column(String(32), index=True)
+    payload: Mapped[dict] = mapped_column(JSONB, default=dict)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC), index=True)
 
 
 class ModerationViolation(Base):
