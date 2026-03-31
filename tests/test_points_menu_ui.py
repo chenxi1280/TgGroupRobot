@@ -1,0 +1,125 @@
+from __future__ import annotations
+
+from types import SimpleNamespace
+
+import pytest
+
+from bot.handlers import points_config_handler
+from bot.keyboards.admin.points import points_config_keyboard, points_rule_keyboard
+
+
+class _SessionContext:
+    def __init__(self, settings) -> None:
+        self.settings = settings
+        self.commits = 0
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    async def commit(self):
+        self.commits += 1
+
+
+class _FakeDb:
+    def __init__(self, session: _SessionContext) -> None:
+        self._session = session
+
+    def session_factory(self):
+        return self._session
+
+
+def _build_settings():
+    return SimpleNamespace(
+        sign_enabled=True,
+        sign_points=5,
+        sign_consecutive_days=7,
+        sign_consecutive_bonus=10,
+        message_points_enabled=False,
+        message_points=2,
+        message_points_daily_limit=None,
+        message_min_length=6,
+        invite_points_enabled=False,
+        invite_points=3,
+        invite_points_daily_limit=20,
+        points_alias="积分",
+        points_rank_alias="积分排行",
+    )
+
+
+def test_points_home_keyboard_matches_doc_style_layout():
+    keyboard = points_config_keyboard(_build_settings(), -1001).inline_keyboard
+    rows = [[button.text for button in row] for row in keyboard]
+
+    assert rows == [
+        ["⚙️ 状态：", "✅ 启动", "关闭"],
+        ["📘 展示规则：", "🕒 待实现"],
+        ["🏆 发言总排行", "🕒 待实现"],
+        ["👤 个人发言量", "🕒 待实现"],
+        ["📅 签到规则", "💬 发言规则", "🔗 邀请规则"],
+        ["🔄 转让积分", "🏷️ 积分别名", "🥇 排行别名"],
+        ["➕ 增加积分", "➖ 扣除积分"],
+        ["🎁 积分抽奖", "🧩 额外规则"],
+        ["📤 导出操作日志", "🧹 清空积分"],
+        ["🔙 返回"],
+    ]
+
+
+def test_points_rule_keyboards_keep_existing_real_actions():
+    settings = _build_settings()
+
+    checkin_rows = [[button.text for button in row] for row in points_rule_keyboard("checkin", settings, -1001).inline_keyboard]
+    speech_rows = [[button.text for button in row] for row in points_rule_keyboard("speech", settings, -1001).inline_keyboard]
+    invite_rows = [[button.text for button in row] for row in points_rule_keyboard("invite", settings, -1001).inline_keyboard]
+
+    assert checkin_rows == [
+        ["⚙️ 状态：", "✅ 启动", "关闭"],
+        ["🎯 设置获得数量"],
+        ["🔥 连续奖励"],
+        ["🔙 返回"],
+    ]
+    assert speech_rows == [
+        ["⚙️ 状态：", "启动", "✅ 关闭"],
+        ["🎯 设置获得数量"],
+        ["📈 每日上限"],
+        ["🔡 最小字数长度限制"],
+        ["🔙 返回"],
+    ]
+    assert invite_rows == [
+        ["⚙️ 状态：", "启动", "✅ 关闭"],
+        ["🎯 设置获得数量"],
+        ["📈 设置每日上限"],
+        ["🔙 返回"],
+    ]
+
+
+@pytest.mark.asyncio
+async def test_toggle_all_enabled_updates_three_existing_switches(monkeypatch):
+    captured: dict[str, object] = {}
+    settings = _build_settings()
+    settings.sign_enabled = False
+    session = _SessionContext(settings)
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(session)}))
+    update = SimpleNamespace(
+        callback_query=SimpleNamespace(data="pts:toggle:all_enabled:-1001:1"),
+        effective_chat=SimpleNamespace(type="private"),
+    )
+
+    async def fake_safe_edit(update, text, reply_markup):
+        captured["text"] = text
+        captured["keyboard"] = reply_markup.inline_keyboard
+
+    async def fake_get_chat_settings(session, chat_id: int):
+        return session.settings
+
+    monkeypatch.setattr(points_config_handler._points_config_handler.message_helper, "safe_edit", fake_safe_edit)
+    monkeypatch.setattr(points_config_handler, "get_chat_settings", fake_get_chat_settings)
+
+    await points_config_handler._points_config_handler._handle_toggle(update, context, -1001, "all_enabled")
+
+    assert settings.sign_enabled is True
+    assert settings.message_points_enabled is True
+    assert settings.invite_points_enabled is True
+    assert "配置已更新" in captured["text"]

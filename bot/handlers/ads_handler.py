@@ -20,7 +20,10 @@ from bot.services.automation.ad_service import (
     create_ad_campaign,
     delete_ad,
     get_ad,
+    get_ad_next_send_time,
     get_chat_ads,
+    is_ad_exhausted,
+    is_rotation_ad,
     mark_ad_sent,
     should_send_ad,
     toggle_ad,
@@ -62,8 +65,11 @@ class AdsHandler(BaseHandler):
         context: ContextTypes.DEFAULT_TYPE,
         target_chat_id: int,
     ) -> None:
-        """显示广告管理菜单"""
-        text = "📢 广告管理\n\n管理群内广告推送"
+        """显示轮播广告菜单"""
+        text = (
+            "🎠 轮播广告（基础版）\n\n"
+            "支持单次推送与按开始时间、间隔小时循环发送。"
+        )
         keyboard = ads_menu_keyboard(target_chat_id)
         await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
 
@@ -74,7 +80,7 @@ class AdsHandler(BaseHandler):
         target_chat_id: int,
         page: int = 0,
     ) -> None:
-        """显示广告列表"""
+        """显示轮播广告列表"""
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
             ads = await get_chat_ads(session, target_chat_id)
@@ -84,12 +90,12 @@ class AdsHandler(BaseHandler):
             keyboard = ads_menu_keyboard(target_chat_id)
             await self.message_helper.safe_edit(
                 update,
-                text="📢 广告列表\n\n暂无广告，点击「创建广告」开始",
+                text="🎠 轮播广告列表\n\n暂无任务，点击「创建轮播广告」开始。",
                 reply_markup=keyboard,
             )
             return
 
-        text = f"📢 广告列表\n\n共 {len(ads)} 个广告"
+        text = f"🎠 轮播广告列表\n\n共 {len(ads)} 条任务"
         keyboard = ads_list_keyboard(ads, target_chat_id, page)
         await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
 
@@ -99,7 +105,7 @@ class AdsHandler(BaseHandler):
         context: ContextTypes.DEFAULT_TYPE,
         target_chat_id: int,
     ) -> None:
-        """显示广告统计"""
+        """显示轮播广告看板"""
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
             ads = await get_chat_ads(session, target_chat_id)
@@ -108,12 +114,19 @@ class AdsHandler(BaseHandler):
         enabled_count = sum(1 for ad in ads if ad.enabled)
         with_image_count = sum(1 for ad in ads if ad.has_image)
         scheduled_count = sum(1 for ad in ads if ad.schedule_time or ad.start_time or ad.interval_hours)
+        rotation_count = sum(1 for ad in ads if is_rotation_ad(ad))
+        due_count = sum(1 for ad in ads if should_send_ad(ad))
+        exhausted_count = sum(1 for ad in ads if is_ad_exhausted(ad))
 
-        text = f"📊 广告统计\n\n"
-        text += f"总广告数: {len(ads)}\n"
+        text = "📊 轮播广告看板\n\n"
+        text += f"总任务数: {len(ads)}\n"
         text += f"启用中: {enabled_count}\n"
-        text += f"含图片: {with_image_count}\n"
-        text += f"定时推送: {scheduled_count}"
+        text += f"轮播任务: {rotation_count}\n"
+        text += f"已配置调度: {scheduled_count}\n"
+        text += f"当前到点: {due_count}\n"
+        text += f"已达次数上限: {exhausted_count}\n"
+        text += f"含图片: {with_image_count}\n\n"
+        text += "说明: 当前为基础版，暂未支持删上轮和发送后自动置顶。"
 
         keyboard = ads_menu_keyboard(target_chat_id)
         await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
@@ -191,18 +204,42 @@ def _format_ad_push_text(ad: AdCampaign) -> str:
 def _format_ad_detail_text(ad: AdCampaign) -> str:
     status_emoji = "🟢" if ad.enabled else "🔴"
     status_text = "启用" if ad.enabled else "暂停"
+    local_tz = dt.timezone(dt.timedelta(hours=8))
+    mode_text = "轮播" if is_rotation_ad(ad) else "单次"
 
     schedule_info = ""
-    if ad.schedule_time:
-        schedule_info = f"\n⏰ 定时: {ad.schedule_time.strftime('%Y-%m-%d %H:%M')}"
-        if ad.frequency:
-            schedule_info += f" [{_FREQ_LABELS.get(ad.frequency, ad.frequency)}]"
+    if ad.start_time:
+        schedule_info = f"\n🕒 开始: {ad.start_time.astimezone(local_tz).strftime('%Y-%m-%d %H:%M')} (UTC+8)"
+    elif ad.schedule_time:
+        schedule_info = f"\n🕒 开始: {ad.schedule_time.astimezone(local_tz).strftime('%Y-%m-%d %H:%M')} (UTC+8)"
+
+    rotation_info = f"\n🔁 间隔: {ad.interval_hours}小时" if ad.interval_hours else ""
+    if not ad.interval_hours and ad.frequency:
+        rotation_info = f"\n🔁 频率: {_FREQ_LABELS.get(ad.frequency, ad.frequency)}"
+
+    quota_info = ""
+    if ad.max_send_count:
+        quota_info = f"\n📈 进度: {ad.send_count}/{ad.max_send_count}"
+        if is_ad_exhausted(ad):
+            quota_info += "（已达上限）"
+    elif ad.send_count:
+        quota_info = f"\n📈 已推送: {ad.send_count}次"
+
+    next_send_at = get_ad_next_send_time(ad)
+    next_send_info = ""
+    if next_send_at:
+        next_send_info = f"\n⏭️ 下次: {next_send_at.astimezone(local_tz).strftime('%Y-%m-%d %H:%M')} (UTC+8)"
 
     image_info = "\n🖼️ 含图片" if ad.has_image else ""
-    last_sent_info = f"\n📤 上次发送: {ad.last_sent_at.strftime('%Y-%m-%d %H:%M')}" if ad.last_sent_at else ""
+    last_sent_info = (
+        f"\n📤 上次发送: {ad.last_sent_at.astimezone(local_tz).strftime('%Y-%m-%d %H:%M')} (UTC+8)"
+        if ad.last_sent_at else ""
+    )
     return (
         f"{status_emoji} {ad.title}\n\n"
-        f"状态: {status_text}{schedule_info}{image_info}{last_sent_info}\n\n"
+        f"状态: {status_text}\n"
+        f"模式: {mode_text}"
+        f"{schedule_info}{rotation_info}{quota_info}{next_send_info}{image_info}{last_sent_info}\n\n"
         f"{ad.content}"
     )
 
@@ -269,7 +306,7 @@ async def ad_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
 
 async def ads_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """广告菜单回调"""
+    """轮播广告菜单回调"""
     if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
         return
     q = update.callback_query
@@ -296,7 +333,7 @@ async def ads_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 
 async def ads_list_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """广告列表回调"""
+    """轮播广告列表回调"""
     if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
         return
     q = update.callback_query
@@ -315,7 +352,7 @@ async def ads_list_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 
 async def ads_stats_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """广告统计回调"""
+    """轮播广告看板回调"""
     if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
         return
     q = update.callback_query
@@ -350,7 +387,7 @@ async def ads_detail_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         ad = await get_ad(session, ad_id)
         if not ad:
             await session.commit()
-            await q.edit_message_text("广告不存在", reply_markup=ads_menu_keyboard(target_chat_id))
+            await q.edit_message_text("轮播广告不存在", reply_markup=ads_menu_keyboard(target_chat_id))
             return
 
         if ad.chat_id != target_chat_id:
@@ -365,7 +402,7 @@ async def ads_detail_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 async def ads_create_start_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """开始创建广告 - 显示配置格式说明"""
+    """开始创建轮播广告 - 显示配置格式说明"""
     if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
         return
     q = update.callback_query
@@ -401,18 +438,18 @@ async def ads_create_start_callback(update: Update, context: ContextTypes.DEFAUL
         )
         await session.commit()
 
-    config_help = """➕ 创建广告 ( /cancel 取消 )
+    config_help = """➕ 创建轮播广告 ( /cancel 取消 )
 
 请按以下格式输入配置：
 
-<strong>广告标题</strong>
+<strong>轮播标题</strong>
 
 开始时间: 2026-01-09 10:00
 推送间隔: 24小时
 推送次数: 7次
 
 内容:
-这是广告的详细内容
+这是轮播消息的详细内容
 可以多行显示
 
 <strong>参数说明：</strong>
@@ -424,7 +461,7 @@ async def ads_create_start_callback(update: Update, context: ContextTypes.DEFAUL
 • <strong>内容</strong>：使用「内容:」标记开始
 
 <strong>简化示例：</strong>
-今晚聚餐广告
+今晚聚餐轮播
 
 内容:
 欢迎大家参加今晚的聚餐活动！
@@ -432,7 +469,7 @@ async def ads_create_start_callback(update: Update, context: ContextTypes.DEFAUL
 <strong>图片示例：</strong>
 图片ID: AgACAgUAAxkBAAIB...
 内容:
-图文广告内容"""
+图文轮播内容"""
 
     # 添加取消按钮
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
@@ -505,7 +542,7 @@ async def ads_create_config_message(update: Update, context: ContextTypes.DEFAUL
                         context,
                         chat_id=chat.id,
                         reply_to_message_id=message.message_id,
-                        text="✅ 已保存图片 file_id。\n请继续发送广告配置文本（可按模板直接粘贴）。",
+                        text="✅ 已保存图片 file_id。\n请继续发送轮播配置文本（可按模板直接粘贴）。",
                     )
                 return
 
@@ -550,7 +587,7 @@ async def ads_create_config_message(update: Update, context: ContextTypes.DEFAUL
                 return
 
             ad = result.entity
-            success_msg = f"✅ 广告创建成功！\n\n标题: {ad.title}\n\n"
+            success_msg = f"✅ 轮播广告创建成功！\n\n标题: {ad.title}\n\n"
             if ad.start_time:
                 local_tz = dt.timezone(dt.timedelta(hours=8))
                 local_start = ad.start_time.astimezone(local_tz)
@@ -562,14 +599,14 @@ async def ads_create_config_message(update: Update, context: ContextTypes.DEFAUL
             if ad.has_image:
                 success_msg += "图片: 已配置（file_id）\n"
             success_msg += f"\n{ad.content[:100]}{'...' if len(ad.content) > 100 else ''}"
-            success_msg += f"\n\n广告ID: {ad.id}"
+            success_msg += f"\n\n任务ID: {ad.id}"
 
             await ConversationStateService.clear(session, state_chat_id, user.id)
             await session.commit()
 
             from telegram import InlineKeyboardButton, InlineKeyboardMarkup
             keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔙 返回广告管理", callback_data=f"ads:menu:{target_chat_id}")],
+                [InlineKeyboardButton("🔙 返回轮播广告", callback_data=f"ads:menu:{target_chat_id}")],
                 [InlineKeyboardButton("🏠 返回主菜单", callback_data=f"adm:menu:{target_chat_id}")],
             ])
 
@@ -592,7 +629,7 @@ async def ads_create_config_message(update: Update, context: ContextTypes.DEFAUL
 
 
 async def ads_cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """取消广告配置，返回广告菜单"""
+    """取消轮播广告配置，返回菜单"""
     if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
         return
     q = update.callback_query
@@ -612,14 +649,17 @@ async def ads_cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         await ConversationStateService.clear(session, state_chat_id, user.id)
         await session.commit()
 
-    # 返回广告菜单
+    # 返回轮播广告菜单
     if chat.type == "private":
-        # 私聊中返回广告管理菜单
+        # 私聊中返回轮播广告菜单
         await _ads_handler.show_menu(update, context, target_chat_id)
     else:
-        # 群聊中直接返回广告菜单
+        # 群聊中直接返回轮播广告菜单
         keyboard = ads_menu_keyboard(target_chat_id)
-        await q.edit_message_text("📢 广告管理\n\n管理群内广告推送", reply_markup=keyboard)
+        await q.edit_message_text(
+            "🎠 轮播广告（基础版）\n\n支持单次推送与按开始时间、间隔小时循环发送。",
+            reply_markup=keyboard,
+        )
 
 
 def _parse_ads_config(text: str) -> dict:

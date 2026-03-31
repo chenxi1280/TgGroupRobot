@@ -42,6 +42,10 @@ class GroupMessageHandler:
     def _get_business_handlers(self) -> list[tuple[str, HandlerFunc]]:
         """获取业务功能处理器列表（懒加载）"""
         if self._business_handlers is None:
+            from bot.handlers.auction_handler import auction_group_message_handler
+            from bot.handlers.engagement_handler import engagement_message_handler
+            from bot.handlers.game_handler import game_message_handler
+            from bot.handlers.guess_handler import guess_message_handler
             from bot.handlers.lottery_handler import lottery_message_handler
             from bot.handlers.moderation_handler import moderation_message_handler
             from bot.handlers.points_handler import message_points_handler
@@ -49,6 +53,10 @@ class GroupMessageHandler:
             from bot.handlers.verification_handler import verify_message_handler
 
             self._business_handlers = [
+                ("auction", auction_group_message_handler),
+                ("engagement", engagement_message_handler),
+                ("game", game_message_handler),
+                ("guess", guess_message_handler),
                 ("verification", verify_message_handler),
                 ("lottery", lottery_message_handler),
                 ("solitaire", solitaire_join_message_handler),

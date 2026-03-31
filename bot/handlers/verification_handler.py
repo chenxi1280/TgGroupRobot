@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime as dt
 import re
 
 import structlog
@@ -15,15 +16,20 @@ from bot.keyboards.common.verification import (
     verification_keyboard,
     verification_timeout_help_keyboard,
 )
-from bot.models.core import ConversationState, TgUser
+from bot.models.core import ChatMember, ConversationState, TgUser
+from bot.models.enums import MemberRole
 from bot.services.core.chat_service import ensure_chat, get_chat_settings
 from bot.services.core.module_settings_service import ModuleSettingsService
 from bot.services.core.permission_service import PermissionPolicyService
 from bot.services.core.user_service import ensure_user
 from bot.services.verification_service import (
+    SELF_REVIEW_EXPECTED_ANSWER,
+    build_self_review_question,
     create_or_replace_challenge,
     get_challenge_by_token,
     get_challenge,
+    is_self_review_question,
+    render_self_review_question,
     solve_by_answer,
     solve_by_token_scoped,
 )
@@ -35,6 +41,11 @@ from bot.utils.telegram_errors import answer_callback_query_safely, build_public
 
 
 log = structlog.get_logger(__name__)
+
+_JOIN_SPAM_KEYWORD_RE = re.compile(
+    r"(https?://|t\.me/|广告|推广|博彩|兼职|刷单|加群|拉人|电报|飞机|代发|赚钱)",
+    flags=re.IGNORECASE,
+)
 
 
 def _user_mention_html(user_id: int) -> str:
@@ -141,6 +152,260 @@ def _resolve_state_chat_id(state: ConversationState, fallback_chat_id: int | Non
     if fallback_chat_id and fallback_chat_id != 0:
         return fallback_chat_id
     return None
+
+
+def _collect_join_spam_signals(user) -> list[str]:
+    username = (getattr(user, "username", None) or "").strip()
+    full_name = " ".join(
+        part.strip()
+        for part in [
+            getattr(user, "first_name", None) or "",
+            getattr(user, "last_name", None) or "",
+        ]
+        if part and part.strip()
+    ).strip()
+    haystack = f"{username} {full_name}".strip()
+
+    signals: list[str] = []
+    if not username:
+        signals.append("no_username")
+    if len(full_name) >= 18:
+        signals.append("long_name")
+    if sum(char.isdigit() for char in haystack) >= 5:
+        signals.append("many_digits")
+    if re.search(r"(.)\1{4,}", haystack):
+        signals.append("repeated_chars")
+    if _JOIN_SPAM_KEYWORD_RE.search(haystack):
+        signals.append("promo_keyword")
+    return signals
+
+
+async def _upsert_chat_member_join(session, chat_id: int, user) -> None:
+    result = await session.execute(
+        select(ChatMember).where(
+            ChatMember.chat_id == chat_id,
+            ChatMember.user_id == user.id,
+        )
+    )
+    member = result.scalar_one_or_none()
+    now = dt.datetime.now(dt.UTC)
+    if member is None:
+        session.add(
+            ChatMember(
+                chat_id=chat_id,
+                user_id=user.id,
+                role=MemberRole.member.value,
+                joined_at=now,
+            )
+        )
+        await session.flush()
+        return
+
+    member.role = MemberRole.member.value
+    member.joined_at = now
+    member.updated_at = now
+    await session.flush()
+
+
+async def _count_recent_joiners(session, chat_id: int, window_seconds: int) -> int:
+    since = dt.datetime.now(dt.UTC) - dt.timedelta(seconds=max(window_seconds, 1))
+    result = await session.execute(
+        select(func.count(ChatMember.id)).where(
+            ChatMember.chat_id == chat_id,
+            ChatMember.joined_at.is_not(None),
+            ChatMember.joined_at >= since,
+        )
+    )
+    return int(result.scalar() or 0)
+
+
+async def _send_temporary_notice(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+    text: str,
+    *,
+    parse_mode: str | None = "HTML",
+    delete_after_seconds: int | None = None,
+) -> None:
+    try:
+        msg = await context.bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            parse_mode=parse_mode,
+        )
+    except Exception as exc:
+        log.warning("send_join_guard_notice_failed", chat_id=chat_id, error=str(exc))
+        return
+
+    if delete_after_seconds and delete_after_seconds > 0:
+        async def _cleanup() -> None:
+            await asyncio.sleep(delete_after_seconds)
+            try:
+                await msg.delete()
+            except Exception:
+                return
+
+        asyncio.create_task(_cleanup())
+
+
+async def _apply_join_guard_action(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+    user_id: int,
+    *,
+    mute: bool,
+    kick: bool,
+    mute_seconds: int = 86400,
+) -> None:
+    if kick:
+        await context.bot.ban_chat_member(chat_id=chat_id, user_id=user_id)
+        return
+    if mute:
+        until_date = dt.datetime.now(dt.UTC) + dt.timedelta(seconds=max(mute_seconds, 60))
+        await context.bot.restrict_chat_member(
+            chat_id=chat_id,
+            user_id=user_id,
+            permissions=ChatPermissions(
+                can_send_messages=False,
+                can_send_audios=False,
+                can_send_documents=False,
+                can_send_photos=False,
+                can_send_videos=False,
+                can_send_video_notes=False,
+                can_send_voice_notes=False,
+                can_send_polls=False,
+                can_send_other_messages=False,
+                can_add_web_page_previews=False,
+            ),
+            until_date=until_date,
+        )
+
+
+async def _handle_join_spam_guard(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat,
+    user,
+    settings,
+) -> bool:
+    if not bool(getattr(settings, "join_spam_guard_enabled", False)):
+        return False
+
+    signals = _collect_join_spam_signals(user)
+    threshold = int(getattr(settings, "join_spam_detect_rules_count", 2) or 2)
+    if len(signals) < threshold:
+        return False
+
+    try:
+        await _apply_join_guard_action(
+            context,
+            chat.id,
+            user.id,
+            mute=bool(getattr(settings, "join_spam_mute_member_enabled", False)),
+            kick=bool(getattr(settings, "join_spam_kick_member_enabled", False)),
+            mute_seconds=int(getattr(settings, "verification_mute_duration", 86400) or 86400),
+        )
+    except Exception as exc:
+        log.warning("join_spam_guard_action_failed", chat_id=chat.id, user_id=user.id, error=str(exc))
+
+    if bool(getattr(settings, "join_spam_send_invalid_msg_enabled", False)):
+        mention = user.mention_html()
+        await _send_temporary_notice(
+            context,
+            chat.id,
+            (
+                f"🚯 {mention} 命中进群垃圾拦截，已终止后续验证流程。\n"
+                f"命中项：{len(signals)} 条"
+            ),
+            delete_after_seconds=int(getattr(settings, "join_spam_tip_delete_after_seconds", 60) or 60),
+        )
+    return True
+
+
+async def _handle_join_burst_guard(
+    context: ContextTypes.DEFAULT_TYPE,
+    session,
+    chat,
+    members: list,
+    settings,
+) -> bool:
+    if not members or not bool(getattr(settings, "join_burst_enabled", False)):
+        return False
+
+    recent_count = await _count_recent_joiners(
+        session,
+        chat.id,
+        int(getattr(settings, "join_burst_window_seconds", 30) or 30),
+    )
+    threshold = int(getattr(settings, "join_burst_threshold_count", 10) or 10)
+    if recent_count < threshold:
+        return False
+
+    for user in members:
+        try:
+            await _apply_join_guard_action(
+                context,
+                chat.id,
+                user.id,
+                mute=bool(getattr(settings, "join_burst_mute_enabled", False)),
+                kick=bool(getattr(settings, "join_burst_kick_enabled", False)),
+                mute_seconds=int(getattr(settings, "verification_mute_duration", 86400) or 86400),
+            )
+        except Exception as exc:
+            log.warning("join_burst_guard_action_failed", chat_id=chat.id, user_id=user.id, error=str(exc))
+
+    if getattr(settings, "join_burst_tip_mode", "tip_and_delete") != "no_tip":
+        names = "、".join((member.first_name or member.username or str(member.id)) for member in members[:5])
+        await _send_temporary_notice(
+            context,
+            chat.id,
+            (
+                f"🚪 检测到批量进群，{recent_count} 人在时间窗口内加入。\n"
+                f"本批处理：{names}"
+            ),
+            delete_after_seconds=60,
+        )
+    return True
+
+
+async def _start_self_review_if_needed(
+    context: ContextTypes.DEFAULT_TYPE,
+    session,
+    chat,
+    user,
+    settings,
+) -> bool:
+    if not bool(getattr(settings, "join_self_review_enabled", False)):
+        return False
+
+    ch = await create_or_replace_challenge(
+        session,
+        chat_id=chat.id,
+        user_id=user.id,
+        ttl_seconds=int(getattr(settings, "join_self_review_timeout_seconds", 300) or 300),
+        verification_type=VerificationMode.captcha.value,
+    )
+    ch.question = build_self_review_question()
+    ch.answer = SELF_REVIEW_EXPECTED_ANSWER
+    await session.flush()
+
+    mention = user.mention_html()
+    try:
+        await context.bot.send_message(
+            chat_id=chat.id,
+            text=(
+                f"📝 {mention} 请发送以下口令完成自助审核：\n\n"
+                f"<b>{SELF_REVIEW_EXPECTED_ANSWER}</b>\n\n"
+                f"⏱️ {settings.join_self_review_timeout_seconds} 秒内完成"
+            ),
+            parse_mode="HTML",
+        )
+    except Exception as exc:
+        log.warning("send_self_review_prompt_failed", chat_id=chat.id, user_id=user.id, error=str(exc))
+        ch.solved = True
+        ch.timeout_handled = True
+        await session.flush()
+        return False
+    return True
 
 
 async def _resolve_verification_config_state(
@@ -254,6 +519,19 @@ async def new_members_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     async with db.session_factory() as session:
         await ensure_chat(session, chat_id=chat.id, chat_type=chat.type, title=chat.title)
         settings = await get_chat_settings(session, chat.id)
+        new_members = list(update.effective_message.new_chat_members or [])
+
+        for u in new_members:
+            await ensure_user(
+                session,
+                user_id=u.id,
+                username=u.username,
+                first_name=u.first_name,
+                last_name=u.last_name,
+                language_code=u.language_code,
+            )
+            await _upsert_chat_member_join(session, chat.id, u)
+        await session.flush()
 
         # 发送欢迎消息（独立于验证功能）
         sent_doc_welcome = await WelcomeService.send_for_mode(
@@ -261,10 +539,10 @@ async def new_members_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             session,
             chat_id=chat.id,
             mode="on_join",
-            members=list(update.effective_message.new_chat_members or []),
+            members=new_members,
         )
         if not sent_doc_welcome and settings.welcome_enabled:
-            for u in update.effective_message.new_chat_members or []:
+            for u in new_members:
                 mention = u.mention_html()
                 if settings.welcome_message:
                     # 使用自定义欢迎消息
@@ -281,20 +559,44 @@ async def new_members_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
                 except Exception as e:
                     log.warning("send_welcome_message_failed", chat_id=chat.id, error=str(e))
 
-        # 如果未启用验证，直接返回
-        if not settings.verification_enabled:
+        if await _handle_join_burst_guard(context, session, chat, new_members, settings):
             await session.commit()
             return
 
-        for u in update.effective_message.new_chat_members or []:
-            await ensure_user(
-                session,
-                user_id=u.id,
-                username=u.username,
-                first_name=u.first_name,
-                last_name=u.last_name,
-                language_code=u.language_code,
-            )
+        # 如果未启用验证，则尝试进入自助审核模式；否则直接返回
+        if not settings.verification_enabled:
+            for u in new_members:
+                started = await _start_self_review_if_needed(context, session, chat, u, settings)
+                if started:
+                    try:
+                        await context.bot.restrict_chat_member(
+                            chat_id=chat.id,
+                            user_id=u.id,
+                            permissions=ChatPermissions(
+                                can_send_messages=False,
+                                can_send_audios=False,
+                                can_send_documents=False,
+                                can_send_photos=False,
+                                can_send_videos=False,
+                                can_send_video_notes=False,
+                                can_send_voice_notes=False,
+                                can_send_polls=False,
+                                can_send_other_messages=False,
+                                can_add_web_page_previews=False,
+                                can_change_info=False,
+                                can_invite_users=False,
+                                can_pin_messages=False,
+                                can_manage_topics=False,
+                            ),
+                        )
+                    except Exception as e:
+                        log.warning("restrict_chat_member_for_self_review_failed", chat_id=chat.id, user_id=u.id, error=str(e))
+            await session.commit()
+            return
+
+        for u in new_members:
+            if await _handle_join_spam_guard(context, chat, u, settings):
+                continue
 
             # 追踪邀请并发放积分
             # 注意：由于 Telegram 的 API 限制，new_chat_members 消息不包含使用的邀请链接信息
@@ -481,6 +783,14 @@ async def verify_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await q.edit_message_text(t(settings.language, "verify.expired"))
         return
 
+    if settings.join_self_review_enabled:
+        async with db.session_factory() as session:
+            started = await _start_self_review_if_needed(context, session, chat, update.effective_user, settings)
+            await session.commit()
+        if started:
+            await q.edit_message_text("✅ 初步验证已通过，请继续发送口令完成自助审核。")
+            return
+
     await _unrestrict_and_notify(context, chat.id, ch.user_id, settings.language)
     await _send_after_verify_welcome(context, chat.id, ch.user_id)
     await q.edit_message_text(t(settings.language, "verify.ok"))
@@ -506,14 +816,21 @@ async def verify_message_handler(update: Update, context: ContextTypes.DEFAULT_T
     async with db.session_factory() as session:
         settings = await get_chat_settings(session, chat.id)
 
-        # 只处理非按钮模式的验证
+        # 只处理非按钮模式的验证，或自助审核挑战
         if settings.verification_mode == "button":
-            await session.commit()
-            return
+            existing = await get_challenge(session, chat.id, user.id)
+            if existing is None or existing.solved or not is_self_review_question(existing.question):
+                await session.commit()
+                return
+            ch = existing
+        else:
+            # 检查用户是否有待验证的挑战
+            ch = await get_challenge(session, chat.id, user.id)
+            if ch is None or ch.solved:
+                await session.commit()
+                return
 
-        # 检查用户是否有待验证的挑战
-        ch = await get_challenge(session, chat.id, user.id)
-        if ch is None or ch.solved:
+        if ch is None:
             await session.commit()
             return
 
@@ -527,12 +844,35 @@ async def verify_message_handler(update: Update, context: ContextTypes.DEFAULT_T
                 await update.effective_message.reply_text("✅ 验证成功！")
             except Exception as e:
                 log.warning("verify_success_reply_failed", user_id=user.id, error=str(e))
+            if settings.join_self_review_enabled and not is_self_review_question(ch.question):
+                async with db.session_factory() as next_session:
+                    started = await _start_self_review_if_needed(context, next_session, chat, user, settings)
+                    await next_session.commit()
+                if started:
+                    try:
+                        await update.effective_message.reply_text(
+                            f"📝 请继续发送：{SELF_REVIEW_EXPECTED_ANSWER}"
+                        )
+                    except Exception:
+                        pass
+                    return
             await _unrestrict_and_notify(context, chat.id, user.id, settings.language)
             await _send_after_verify_welcome(context, chat.id, user.id)
         else:
             # 验证失败
+            if is_self_review_question(ch.question) and settings.join_self_review_wrong_action == "reject_block":
+                try:
+                    async with db.session_factory() as next_session:
+                        await _mark_challenge_released(next_session, chat.id, user.id)
+                        await next_session.commit()
+                    await context.bot.ban_chat_member(chat_id=chat.id, user_id=user.id)
+                    await update.effective_message.reply_text("❌ 自助审核失败，已拒绝入群。")
+                except Exception as e:
+                    log.warning("self_review_block_failed", user_id=user.id, chat_id=chat.id, error=str(e))
+                return
+            prompt = render_self_review_question(ch.question) if is_self_review_question(ch.question) else ch.question
             try:
-                await update.effective_message.reply_text(f"❌ 答案错误，请重试。\n\n{ch.question}")
+                await update.effective_message.reply_text(f"❌ 答案错误，请重试。\n\n{prompt}")
             except Exception as e:
                 log.warning("verify_failed_reply_failed", user_id=user.id, error=str(e))
 
@@ -653,6 +993,19 @@ async def admin_verify_callback(update: Update, context: ContextTypes.DEFAULT_TY
             await session.commit()
 
             if ch and ch.solved:
+                if settings.join_self_review_enabled:
+                    target_user = await context.bot.get_chat_member(chat.id, user_id)
+                    started = await _start_self_review_if_needed(context, session, chat, target_user.user, settings)
+                    await session.commit()
+                    try:
+                        if started:
+                            await q.edit_message_text(f"✅ 已通过用户 {user_id} 的初步验证，已进入自助审核。")
+                        else:
+                            await q.edit_message_text(f"✅ 已通过用户 {user_id} 的验证")
+                    except Exception as e:
+                        log.warning("edit_admin_verify_message_failed", error=str(e))
+                    if started:
+                        return
                 # 解除限制并发送通知
                 await _unrestrict_and_notify(context, chat.id, user_id, settings.language)
                 await _send_after_verify_welcome(context, chat.id, user_id)

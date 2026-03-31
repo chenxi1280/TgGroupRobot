@@ -62,6 +62,22 @@ def _sync_master_toggle(settings) -> None:
     settings.auto_delete_enabled = per_item_enabled
 
 
+def _format_enabled_types(settings) -> str:
+    enabled_labels = [
+        label
+        for enabled, label in [
+            (bool(getattr(settings, "auto_delete_join", False)), "进群"),
+            (bool(getattr(settings, "auto_delete_left", False)), "退群"),
+            (bool(getattr(settings, "auto_delete_pinned", False)), "置顶"),
+            (bool(getattr(settings, "auto_delete_avatar", False)), "头像"),
+            (bool(getattr(settings, "auto_delete_title", False)), "群名"),
+            (bool(getattr(settings, "auto_delete_anonymous", False)), "匿名消息"),
+        ]
+        if enabled
+    ]
+    return "、".join(enabled_labels) if enabled_labels else "暂无"
+
+
 async def auto_delete_config_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """自动删除配置回调处理器"""
     if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
@@ -161,5 +177,7 @@ async def auto_delete_config_callback(update: Update, context: ContextTypes.DEFA
 
     text = "🧹 删除系统提示\n\n"
     text += "本功能会自动清除系统提示消息\n\n"
+    text += f"总开关状态：{'✅ 已生效' if bool(getattr(settings, 'auto_delete_enabled', False)) else '❌ 未生效'}\n"
+    text += f"当前明细：{_format_enabled_types(settings)}\n\n"
     text += "配置已更新"
     await _safe_edit_message(q, text, reply_markup=keyboard)

@@ -93,17 +93,20 @@ def format_anti_spam_menu_text(chat_title: str, settings: ChatSettings) -> str:
     status = "开启" if settings.anti_spam_enabled else "关闭"
     notify = "开启" if settings.anti_spam_delete_notify else "关闭"
     admin_exempt = "开启" if settings.anti_spam_exempt_admin else "关闭"
+    enabled_rule_count = sum(1 for value in rules.values() if isinstance(value, bool) and value)
 
     def s(key: str) -> str:
         return "开启" if bool(rules.get(key)) else "关闭"
 
-    text = f"🚫 [{chat_title}] 反垃圾\n\n"
+    text = f"🚫 [{chat_title}] 反垃圾（基础版）\n\n"
+    text += "当前为集中配置页，尚未拆分为文档中的 11 个独立子入口。\n\n"
     text += f"总开关: {status}\n"
     text += f"惩罚动作: {settings.anti_spam_action}\n"
     text += f"禁言时长: {settings.anti_spam_mute_duration} 秒\n"
     text += f"管理员豁免: {admin_exempt}\n"
     text += f"删除提醒: {notify} ({settings.anti_spam_delete_notify_seconds} 秒)\n"
     text += f"反洪水阈值: {settings.anti_spam_repeat_seconds} 秒内 {settings.anti_spam_repeat_messages} 条\n\n"
+    text += f"已启用规则: {enabled_rule_count} 项\n\n"
 
     text += "AI 屏蔽垃圾消息: " + s("ai_text") + "\n"
     text += "全网拦截广告: " + s("global_ads") + "\n"

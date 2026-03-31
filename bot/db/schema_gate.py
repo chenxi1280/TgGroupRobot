@@ -137,6 +137,35 @@ REQUIRED_INDEXES: tuple[RequiredIndex, ...] = (
         columns=("chat_id", "field_key"),
         unique=True,
     ),
+    RequiredIndex(
+        table_name="renewal_card_keys",
+        index_name="uq_renewal_card_key_hash",
+        columns=("card_key_hash",),
+        unique=True,
+    ),
+    RequiredIndex(
+        table_name="renewal_audit_logs",
+        index_name="ix_renewal_audit_logs_created_at",
+        columns=("created_at",),
+    ),
+    RequiredIndex(
+        table_name="bottom_button_layouts",
+        index_name="uq_bottom_button_layout_chat_pos",
+        columns=("chat_id", "row_no", "col_no"),
+        unique=True,
+    ),
+    RequiredIndex(
+        table_name="engagement_chat_stats",
+        index_name="uq_engagement_chat_stats_daily",
+        columns=("chat_id", "user_id", "biz_date"),
+        unique=True,
+    ),
+    RequiredIndex(
+        table_name="account_inherit_tokens",
+        index_name="uq_account_inherit_token_hash",
+        columns=("token_hash",),
+        unique=True,
+    ),
 )
 
 
@@ -144,6 +173,7 @@ def _load_model_metadata() -> None:
     # 导入模型以填充 Base.metadata
     import bot.models.alliance  # noqa: F401
     import bot.models.core  # noqa: F401
+    import bot.models.expansion  # noqa: F401
     import bot.models.garage_features  # noqa: F401
     import bot.models.scheduled_message  # noqa: F401
     import bot.models.welcome  # noqa: F401

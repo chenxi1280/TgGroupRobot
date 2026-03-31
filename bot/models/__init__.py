@@ -16,6 +16,8 @@ from bot.models.core import (  # noqa: F401
     PointsMallProduct,
     PointsMallSetting,
     PointsTransaction,
+    RenewalAuditLog,
+    RenewalCardKey,
     SignInLog,
     SubscriptionPlan,
     TgChat,
@@ -47,3 +49,21 @@ from bot.models.garage_features import (  # noqa: F401
 )
 from bot.models.scheduled_message import ScheduledMessageLog, ScheduledMessageTask  # noqa: F401
 from bot.models.welcome import WelcomeMessage  # noqa: F401
+from bot.models.expansion import (  # noqa: F401
+    AccountInheritAudit,
+    AccountInheritSetting,
+    AccountInheritToken,
+    AuctionBid,
+    AuctionItem,
+    AuctionSetting,
+    BottomButtonLayout,
+    BottomButtonSetting,
+    GameSetting,
+    EngagementChatReward,
+    EngagementChatStat,
+    EngagementEgg,
+    EngagementSetting,
+    GuessBet,
+    GuessEvent,
+    GuessSetting,
+)

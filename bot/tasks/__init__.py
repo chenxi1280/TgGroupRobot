@@ -8,6 +8,11 @@ from bot.tasks.cleanup_task import CleanupTask
 from bot.tasks.verification_timeout_task import VerificationTimeoutTask
 from bot.tasks.scheduled_message_task import ScheduledMessageTaskRunner
 from bot.tasks.group_lock_task import GroupLockTask
+from bot.tasks.auction_task import AuctionTask
+from bot.tasks.bottom_button_task import BottomButtonTask
+from bot.tasks.engagement_task import EngagementTask
+from bot.tasks.game_task import GameTask
+from bot.tasks.guess_task import GuessTask
 
 __all__ = [
     "LotteryTask",
@@ -18,4 +23,9 @@ __all__ = [
     "VerificationTimeoutTask",
     "ScheduledMessageTaskRunner",
     "GroupLockTask",
+    "AuctionTask",
+    "BottomButtonTask",
+    "EngagementTask",
+    "GameTask",
+    "GuessTask",
 ]

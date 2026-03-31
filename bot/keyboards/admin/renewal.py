@@ -16,9 +16,15 @@ def renewal_entry_keyboard(
     if not url:
         url = build_contact_url(contact_username)
 
+    contact_button = (
+        InlineKeyboardButton(f"📞 {contact_label}", url=url)
+        if url
+        else InlineKeyboardButton("📞 未配置联系入口", callback_data=f"renew:contact:{chat_id}")
+    )
+
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton(f"📞 {contact_label}", url=url)],
+            [contact_button],
             [InlineKeyboardButton("🔑 输入卡密", callback_data=f"renew:input:{chat_id}")],
             [InlineKeyboardButton("🔙 返回", callback_data=f"renew:back:{chat_id}")],
         ]

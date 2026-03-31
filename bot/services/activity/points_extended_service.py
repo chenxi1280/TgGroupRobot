@@ -703,13 +703,56 @@ class PointsExtendedService:
         limit: int = 20,
         *,
         product_id: int | None = None,
+        order_status: str | None = None,
     ) -> list[PointsMallOrder]:
         stmt = select(PointsMallOrder).where(PointsMallOrder.chat_id == chat_id)
         if product_id is not None:
             stmt = stmt.where(PointsMallOrder.product_id == product_id)
+        if order_status and order_status != "all":
+            stmt = stmt.where(PointsMallOrder.order_status == order_status)
         result = await session.execute(
             stmt
             .order_by(PointsMallOrder.created_at.desc(), PointsMallOrder.order_id.desc())
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
+    @staticmethod
+    async def count_orders_by_status(
+        session: AsyncSession,
+        *,
+        chat_id: int,
+        product_id: int | None = None,
+    ) -> dict[str, int]:
+        stmt = (
+            select(PointsMallOrder.order_status, func.count(PointsMallOrder.order_id))
+            .where(PointsMallOrder.chat_id == chat_id)
+            .group_by(PointsMallOrder.order_status)
+        )
+        if product_id is not None:
+            stmt = stmt.where(PointsMallOrder.product_id == product_id)
+        result = await session.execute(stmt)
+        stats: dict[str, int] = {"all": 0, "created": 0, "fulfilled": 0, "canceled": 0, "refunded": 0}
+        for status, count in result.all():
+            normalized = str(status or "")
+            if normalized in stats:
+                stats[normalized] = int(count or 0)
+            else:
+                stats[normalized] = int(count or 0)
+        stats["all"] = sum(count for key, count in stats.items() if key != "all")
+        return stats
+
+    @staticmethod
+    async def list_order_logs(
+        session: AsyncSession,
+        *,
+        order_id: int,
+        limit: int = 10,
+    ) -> list[PointsMallOrderLog]:
+        result = await session.execute(
+            select(PointsMallOrderLog)
+            .where(PointsMallOrderLog.order_id == order_id)
+            .order_by(PointsMallOrderLog.created_at.desc(), PointsMallOrderLog.id.desc())
             .limit(limit)
         )
         return list(result.scalars().all())

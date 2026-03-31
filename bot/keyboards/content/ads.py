@@ -1,6 +1,6 @@
-"""广告管理键盘
+"""轮播广告键盘
 
-提供广告管理的键盘生成。
+提供轮播广告管理的键盘生成。
 """
 from __future__ import annotations
 
@@ -10,8 +10,26 @@ from bot.keyboards.base.helpers import create_back_button
 from bot.keyboards.formatters import StatusIcons, format_schedule_info
 
 
+def _format_ads_list_label(ad) -> str:
+    status_icon = StatusIcons.enabled(ad.enabled)
+    image_info = " 🖼️" if ad.has_image else ""
+
+    if getattr(ad, "interval_hours", None):
+        progress = ""
+        if getattr(ad, "max_send_count", None):
+            progress = f" {ad.send_count}/{ad.max_send_count}"
+        return f"{status_icon} {ad.title} ⟳{ad.interval_hours}h{progress}{image_info}"
+
+    schedule_info = format_schedule_info(
+        getattr(ad, "schedule_time", None),
+        getattr(ad, "frequency", None) or "单次",
+        timezone_offset=8,
+    )
+    return f"{status_icon} {ad.title}{schedule_info}{image_info}"
+
+
 def ads_menu_keyboard(chat_id: int | None = None) -> InlineKeyboardMarkup:
-    """广告管理主菜单
+    """轮播广告主菜单
 
     Args:
         chat_id: 群组 ID，用于在私聊中操作群组时指定目标群组
@@ -20,10 +38,10 @@ def ads_menu_keyboard(chat_id: int | None = None) -> InlineKeyboardMarkup:
     back_button = create_back_button(chat_id, "back_to_menu")
 
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("➕ 创建广告", callback_data=create_callback)],
+        [InlineKeyboardButton("➕ 创建轮播广告", callback_data=create_callback)],
         [
-            InlineKeyboardButton("📋 广告列表", callback_data="ads:list"),
-            InlineKeyboardButton("📊 统计", callback_data="ads:stats"),
+            InlineKeyboardButton("📋 轮播列表", callback_data="ads:list"),
+            InlineKeyboardButton("📊 轮播看板", callback_data="ads:stats"),
         ],
         [back_button],
     ])
@@ -35,7 +53,7 @@ def ads_list_keyboard(
     page: int = 0,
     page_size: int = 5,
 ) -> InlineKeyboardMarkup:
-    """广告列表键盘
+    """轮播广告列表键盘
 
     Args:
         ads: 广告列表
@@ -48,19 +66,7 @@ def ads_list_keyboard(
     end_idx = start_idx + page_size
 
     for ad in ads[start_idx:end_idx]:
-        status_icon = StatusIcons.enabled(ad.enabled)
-
-        # 格式化定时信息
-        schedule_info = format_schedule_info(
-            ad.schedule_time,
-            ad.frequency or "单次",
-            timezone_offset=8,
-        )
-
-        # 图片标记
-        image_info = " 🖼️" if ad.has_image else ""
-
-        label = f"{status_icon} {ad.title}{schedule_info}{image_info}"
+        label = _format_ads_list_label(ad)
         buttons.append([InlineKeyboardButton(label, callback_data=f"ads:detail:{ad.id}")])
 
     # 分页导航

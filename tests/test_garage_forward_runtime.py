@@ -9,6 +9,7 @@ from bot.handlers.admin_handler import handle_garage_forward_input
 from bot.handlers.garage_forward_handler import garage_forward_channel_post_handler
 from bot.services.integration.garage_forward_service import GarageForwardService
 from bot.services.state import state_service
+from bot.utils.callback_parser import CallbackParser
 
 
 class _Session:
@@ -304,3 +305,25 @@ async def test_handle_garage_forward_input_rejects_non_channel_source(monkeypatc
 
     assert added_sources == []
     assert replies == ["来源必须是频道，群组或私聊不能作为车库转发来源。"]
+
+
+@pytest.mark.asyncio
+async def test_handle_garage_forward_audit_routes_with_short_code(monkeypatch):
+    calls: list[tuple[int, str]] = []
+
+    async def fake_show(update, context, chat_id: int, *, result: str = "all"):
+        calls.append((chat_id, result))
+
+    monkeypatch.setattr(admin_handler._admin_handler, "_show_garage_forward_audit_menu", fake_show)
+
+    update = SimpleNamespace(effective_user=SimpleNamespace(id=1))
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": SimpleNamespace(session_factory=_SessionFactory())}))
+
+    await admin_handler._admin_handler._handle_garage_forward(
+        update,
+        context,
+        -100123,
+        CallbackParser.parse("gfw:audit:-100123:k"),
+    )
+
+    assert calls == [(-100123, "skipped")]

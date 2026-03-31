@@ -85,6 +85,10 @@ class ConversationStateType(str, enum.Enum):
     lottery_create = "lottery_create"  # 创建抽奖流程
     scheduled_create = "scheduled_create"  # 创建定时消息流程
     auto_reply_create = "auto_reply_create"  # 创建自动回复流程
+    auto_reply_edit_keywords = "auto_reply_edit_keywords"  # 编辑自动回复关键词
+    auto_reply_edit_content = "auto_reply_edit_content"  # 编辑自动回复内容
+    auto_reply_edit_cover = "auto_reply_edit_cover"  # 编辑自动回复封面
+    auto_reply_edit_buttons = "auto_reply_edit_buttons"  # 编辑自动回复按钮
     banned_word_add = "banned_word_add"  # 添加违禁词流程
     verification_config = "verification_config"  # 验证配置流程
     anti_flood_config = "anti_flood_config"  # 防刷屏配置流程
@@ -135,6 +139,35 @@ class ConversationStateType(str, enum.Enum):
     car_review_approver_input = "car_review_approver_input"  # 车评审核人
     car_review_template_input = "car_review_template_input"  # 车评模板
     car_review_reward_points_input = "car_review_reward_points_input"  # 车评奖励积分
+    auction_wait_title = "auction_wait_title"  # 拍卖标题输入
+    auction_wait_start_price = "auction_wait_start_price"  # 拍卖起拍价输入
+    auction_wait_end_at = "auction_wait_end_at"  # 拍卖截止时间输入
+    auction_wait_confirm = "auction_wait_confirm"  # 拍卖确认发布
+    bottom_button_text_input = "bottom_button_text_input"  # 底部按钮头部文案
+    bottom_button_button_text_input = "bottom_button_button_text_input"  # 底部按钮文案
+    bottom_button_payload_input = "bottom_button_payload_input"  # 底部按钮发送内容
+    game_wait_rake_ratio = "game_wait_rake_ratio"  # 游戏抽水比例
+    game_wait_rake_owner = "game_wait_rake_owner"  # 游戏抽水归属
+    game_wait_auto_start_time = "game_wait_auto_start_time"  # 游戏自动启动时间
+    game_wait_auto_stop_time = "game_wait_auto_stop_time"  # 游戏自动停止时间
+    guess_wait_title = "guess_wait_title"  # 竞猜标题
+    guess_wait_cover = "guess_wait_cover"  # 竞猜封面
+    guess_wait_description = "guess_wait_description"  # 竞猜说明
+    guess_wait_banker = "guess_wait_banker"  # 竞猜庄家
+    guess_wait_pool = "guess_wait_pool"  # 竞猜奖池
+    guess_wait_options = "guess_wait_options"  # 竞猜选项
+    guess_wait_command = "guess_wait_command"  # 竞猜指令
+    guess_wait_deadline = "guess_wait_deadline"  # 竞猜截止时间
+    guess_wait_rake_ratio = "guess_wait_rake_ratio"  # 竞猜抽水比例
+    guess_wait_rake_owner = "guess_wait_rake_owner"  # 竞猜抽水归属
+    engagement_wait_egg_template = "engagement_wait_egg_template"  # 促活彩蛋模板
+    engagement_wait_chat_target = "engagement_wait_chat_target"  # 促活发言目标
+    engagement_wait_chat_plan = "engagement_wait_chat_plan"  # 促活奖励数组
+    engagement_wait_chat_command = "engagement_wait_chat_command"  # 促活奖励口令
+    inherit_wait_token_input = "inherit_wait_token_input"  # 炸号继承 token 输入
+    invite_link_cover_input = "invite_link_cover_input"  # 邀请链接封面输入
+    invite_link_text_input = "invite_link_text_input"  # 邀请链接文本模板输入
+    invite_link_buttons_input = "invite_link_buttons_input"  # 邀请链接按钮输入
 
 
 class BannedWordMatchType(str, enum.Enum):

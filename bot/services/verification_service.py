@@ -11,6 +11,9 @@ from bot.models.core import VerificationChallenge
 from bot.models.enums import VerificationMode
 from bot.services.base import ServiceBase
 
+SELF_REVIEW_CHALLENGE_PREFIX = "[SELF_REVIEW]"
+SELF_REVIEW_EXPECTED_ANSWER = "我已阅读群规"
+
 
 def new_token() -> str:
     """生成新的验证 token"""
@@ -58,6 +61,22 @@ def generate_math_question() -> tuple[str, str]:
         answer = str(a * b)
 
     return question, answer
+
+
+def build_self_review_question() -> str:
+    return f"{SELF_REVIEW_CHALLENGE_PREFIX} 请发送：{SELF_REVIEW_EXPECTED_ANSWER}"
+
+
+def is_self_review_question(question: str | None) -> bool:
+    return bool(question and question.startswith(SELF_REVIEW_CHALLENGE_PREFIX))
+
+
+def render_self_review_question(question: str | None) -> str:
+    if not question:
+        return SELF_REVIEW_EXPECTED_ANSWER
+    if not is_self_review_question(question):
+        return question
+    return question.split("]", 1)[-1].strip()
 
 
 async def create_or_replace_challenge(

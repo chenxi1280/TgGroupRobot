@@ -5,7 +5,11 @@ from types import SimpleNamespace
 import pytest
 
 from bot.utils.callback_parser import CallbackParser
-from bot.utils.telegram_errors import answer_callback_query_safely, build_public_error_text
+from bot.utils.telegram_errors import (
+    answer_callback_query_safely,
+    build_public_error_text,
+    mark_callback_query_answered,
+)
 
 
 def test_callback_parser_optional_int_success() -> None:
@@ -41,6 +45,8 @@ async def test_answer_callback_query_safely_truncates_to_fallback() -> None:
     calls: list[tuple[str, bool]] = []
 
     class FakeCallbackQuery:
+        id = "cb-truncate"
+
         async def answer(self, text: str, show_alert: bool = True) -> None:
             calls.append((text, show_alert))
 
@@ -56,6 +62,7 @@ async def test_answer_callback_query_safely_recovers_from_raise() -> None:
 
     class FakeCallbackQuery:
         def __init__(self) -> None:
+            self.id = "cb-recover"
             self.count = 0
 
         async def answer(self, text: str, show_alert: bool = True) -> None:
@@ -68,3 +75,20 @@ async def test_answer_callback_query_safely_recovers_from_raise() -> None:
     await answer_callback_query_safely(update, "短提示", show_alert=False)
 
     assert calls == [("短提示", False), ("操作失败，请重试", False)]
+
+
+@pytest.mark.asyncio
+async def test_mark_callback_query_answered_prevents_duplicate_answer() -> None:
+    calls: list[tuple[str, bool]] = []
+
+    class FakeCallbackQuery:
+        id = "cb-marked"
+
+        async def answer(self, text: str, show_alert: bool = True) -> None:
+            calls.append((text, show_alert))
+
+    update = SimpleNamespace(callback_query=FakeCallbackQuery())
+    mark_callback_query_answered(update)
+    await answer_callback_query_safely(update, "不会再次发送", show_alert=True)
+
+    assert calls == []

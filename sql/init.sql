@@ -66,6 +66,22 @@ CREATE TABLE IF NOT EXISTS bot.chat_settings (
     verification_restrict_can_send BOOLEAN NOT NULL,               -- 验证期间是否限制发送消息
     verification_timeout_action VARCHAR(16) NOT NULL DEFAULT 'mute', -- 验证超时后的处理动作（mute/kick）
     verification_mute_duration INTEGER NOT NULL DEFAULT 86400,     -- 验证超时禁言时长（秒，默认1天）
+    join_spam_guard_enabled BOOLEAN NOT NULL DEFAULT FALSE,        -- 进群垃圾拦截总开关
+    join_spam_detect_rules_count INTEGER NOT NULL DEFAULT 2,       -- 进群垃圾拦截命中阈值
+    join_spam_send_invalid_msg_enabled BOOLEAN NOT NULL DEFAULT FALSE, -- 是否发送进群垃圾拦截提示
+    join_spam_mute_member_enabled BOOLEAN NOT NULL DEFAULT TRUE,   -- 是否禁言可疑新人
+    join_spam_kick_member_enabled BOOLEAN NOT NULL DEFAULT FALSE,  -- 是否踢出可疑新人
+    join_spam_tip_delete_after_seconds INTEGER NOT NULL DEFAULT 60, -- 进群垃圾拦截提示删除时长
+    join_self_review_enabled BOOLEAN NOT NULL DEFAULT FALSE,       -- 进群自助审核总开关
+    join_self_review_timeout_seconds INTEGER NOT NULL DEFAULT 300, -- 自助审核超时时间
+    join_self_review_timeout_action VARCHAR(32) NOT NULL DEFAULT 'reject_allow_retry', -- 自助审核超时策略
+    join_self_review_wrong_action VARCHAR(32) NOT NULL DEFAULT 'reject_block', -- 自助审核答错策略
+    join_burst_enabled BOOLEAN NOT NULL DEFAULT FALSE,             -- 禁止批量进群总开关
+    join_burst_window_seconds INTEGER NOT NULL DEFAULT 30,         -- 批量进群时间窗口
+    join_burst_threshold_count INTEGER NOT NULL DEFAULT 10,        -- 批量进群阈值人数
+    join_burst_mute_enabled BOOLEAN NOT NULL DEFAULT TRUE,         -- 批量进群是否禁言
+    join_burst_kick_enabled BOOLEAN NOT NULL DEFAULT FALSE,        -- 批量进群是否踢出
+    join_burst_tip_mode VARCHAR(16) NOT NULL DEFAULT 'tip_and_delete', -- 批量进群提示策略
     moderation_enabled BOOLEAN NOT NULL,                           -- 是否启用内容审核
     moderation_block_links BOOLEAN NOT NULL,                       -- 是否阻止链接
     moderation_action VARCHAR(32) NOT NULL,                        -- 审核违规时的处理动作（delete/warn/ban）
@@ -104,6 +120,11 @@ CREATE TABLE IF NOT EXISTS bot.chat_settings (
     invite_link_expire_days INTEGER,                               -- 链接过期的天数（null=无限制）
     invite_link_max_joins INTEGER,                                 -- 单个链接最大加入人数（null=无限制）
     invite_link_user_limit INTEGER,                                -- 每个用户可生成链接数量上限（null=无限制）
+    invite_link_mode VARCHAR(16) NOT NULL DEFAULT 'direct',        -- 邀请模式：relay/direct
+    invite_link_cover_media_type VARCHAR(16),                      -- 邀请封面类型：photo/video/none
+    invite_link_cover_file_id VARCHAR(256),                        -- 邀请封面文件ID
+    invite_link_text_template TEXT NOT NULL DEFAULT '🔗 邀请好友加入 {group}\n邀请人：{inviter}\n新成员：{invitee}', -- 邀请卡片模板
+    invite_link_buttons JSONB NOT NULL DEFAULT '[]'::jsonb,        -- 邀请卡片按钮
     auto_delete_enabled BOOLEAN NOT NULL DEFAULT FALSE,            -- 是否开启自动删除
     auto_delete_join BOOLEAN NOT NULL DEFAULT FALSE,               -- 自动删除进群消息
     auto_delete_left BOOLEAN NOT NULL DEFAULT FALSE,               -- 自动删除退群消息
@@ -155,6 +176,22 @@ COMMENT ON COLUMN bot.chat_settings.verification_timeout_seconds IS '新人验�
 COMMENT ON COLUMN bot.chat_settings.verification_restrict_can_send IS '验证期间是否限制新成员发送消息';
 COMMENT ON COLUMN bot.chat_settings.verification_timeout_action IS '验证超时后的处理动作：mute（禁言）、kick（踢出群聊）';
 COMMENT ON COLUMN bot.chat_settings.verification_mute_duration IS '验证超时禁言时长（秒），默认 86400 秒（1天）';
+COMMENT ON COLUMN bot.chat_settings.join_spam_guard_enabled IS '进群垃圾拦截总开关';
+COMMENT ON COLUMN bot.chat_settings.join_spam_detect_rules_count IS '进群垃圾拦截命中阈值';
+COMMENT ON COLUMN bot.chat_settings.join_spam_send_invalid_msg_enabled IS '进群垃圾拦截是否发送提示';
+COMMENT ON COLUMN bot.chat_settings.join_spam_mute_member_enabled IS '进群垃圾拦截是否禁言';
+COMMENT ON COLUMN bot.chat_settings.join_spam_kick_member_enabled IS '进群垃圾拦截是否踢出';
+COMMENT ON COLUMN bot.chat_settings.join_spam_tip_delete_after_seconds IS '进群垃圾拦截提示删除时长';
+COMMENT ON COLUMN bot.chat_settings.join_self_review_enabled IS '进群自助审核总开关';
+COMMENT ON COLUMN bot.chat_settings.join_self_review_timeout_seconds IS '自助审核超时时间（秒）';
+COMMENT ON COLUMN bot.chat_settings.join_self_review_timeout_action IS '自助审核超时策略';
+COMMENT ON COLUMN bot.chat_settings.join_self_review_wrong_action IS '自助审核答错策略';
+COMMENT ON COLUMN bot.chat_settings.join_burst_enabled IS '禁止批量进群总开关';
+COMMENT ON COLUMN bot.chat_settings.join_burst_window_seconds IS '禁止批量进群时间窗口（秒）';
+COMMENT ON COLUMN bot.chat_settings.join_burst_threshold_count IS '禁止批量进群阈值人数';
+COMMENT ON COLUMN bot.chat_settings.join_burst_mute_enabled IS '批量进群触发后是否禁言';
+COMMENT ON COLUMN bot.chat_settings.join_burst_kick_enabled IS '批量进群触发后是否踢出';
+COMMENT ON COLUMN bot.chat_settings.join_burst_tip_mode IS '批量进群提示策略';
 COMMENT ON COLUMN bot.chat_settings.moderation_enabled IS '是否启用内容审核功能';
 COMMENT ON COLUMN bot.chat_settings.moderation_block_links IS '是否阻止所有链接消息';
 COMMENT ON COLUMN bot.chat_settings.moderation_action IS '审核违规时的处理动作：delete（删除）、warn（警告）、ban（封禁）';
@@ -193,6 +230,11 @@ COMMENT ON COLUMN bot.chat_settings.invite_link_notify IS '是否在有人通过
 COMMENT ON COLUMN bot.chat_settings.invite_link_expire_days IS '链接有效天数（NULL=永久有效）';
 COMMENT ON COLUMN bot.chat_settings.invite_link_max_joins IS '单个链接最大加入人数（NULL=无限制）';
 COMMENT ON COLUMN bot.chat_settings.invite_link_user_limit IS '每个用户可生成的链接数量上限（NULL=无限制）';
+COMMENT ON COLUMN bot.chat_settings.invite_link_mode IS '邀请模式：relay（中转/审核）或 direct（直达）';
+COMMENT ON COLUMN bot.chat_settings.invite_link_cover_media_type IS '邀请封面类型';
+COMMENT ON COLUMN bot.chat_settings.invite_link_cover_file_id IS '邀请封面文件ID';
+COMMENT ON COLUMN bot.chat_settings.invite_link_text_template IS '邀请卡片文本模板';
+COMMENT ON COLUMN bot.chat_settings.invite_link_buttons IS '邀请卡片按钮布局';
 COMMENT ON COLUMN bot.chat_settings.auto_delete_enabled IS '是否开启自动删除系统消息功能';
 COMMENT ON COLUMN bot.chat_settings.auto_delete_join IS '是否自动删除进群消息（xxx joined the group）';
 COMMENT ON COLUMN bot.chat_settings.auto_delete_left IS '是否自动删除退群消息（xxx left the group）';
@@ -243,6 +285,22 @@ ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS anti_spam_delete_notify_s
 ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS anti_spam_repeat_messages INTEGER NOT NULL DEFAULT 3;
 ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS anti_spam_repeat_seconds INTEGER NOT NULL DEFAULT 15;
 ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS anti_spam_rules JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS join_spam_guard_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS join_spam_detect_rules_count INTEGER NOT NULL DEFAULT 2;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS join_spam_send_invalid_msg_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS join_spam_mute_member_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS join_spam_kick_member_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS join_spam_tip_delete_after_seconds INTEGER NOT NULL DEFAULT 60;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS join_self_review_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS join_self_review_timeout_seconds INTEGER NOT NULL DEFAULT 300;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS join_self_review_timeout_action VARCHAR(32) NOT NULL DEFAULT 'reject_allow_retry';
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS join_self_review_wrong_action VARCHAR(32) NOT NULL DEFAULT 'reject_block';
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS join_burst_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS join_burst_window_seconds INTEGER NOT NULL DEFAULT 30;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS join_burst_threshold_count INTEGER NOT NULL DEFAULT 10;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS join_burst_mute_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS join_burst_kick_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS join_burst_tip_mode VARCHAR(16) NOT NULL DEFAULT 'tip_and_delete';
 ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS control_permission_policy VARCHAR(32) NOT NULL DEFAULT 'can_promote_members';
 ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS group_lock_phrase_enabled BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS group_lock_open_phrase TEXT;
@@ -915,7 +973,64 @@ CREATE INDEX IF NOT EXISTS ix_chat_subscriptions_status ON bot.chat_subscription
 CREATE INDEX IF NOT EXISTS ix_chat_subscriptions_end_at ON bot.chat_subscriptions(end_at);
 
 -- ============================================
--- 12. 广告活动表 (ad_campaigns)
+-- 12. 续费卡密与审计
+-- ============================================
+CREATE TABLE IF NOT EXISTS bot.renewal_card_keys (
+    id SERIAL PRIMARY KEY,
+    card_key_hash VARCHAR(128) NOT NULL,
+    duration_seconds INTEGER NOT NULL,
+    expires_at TIMESTAMPTZ,
+    used BOOLEAN NOT NULL DEFAULT FALSE,
+    used_by_chat_id BIGINT,
+    used_by_user_id BIGINT,
+    used_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT uq_renewal_card_key_hash UNIQUE (card_key_hash),
+    CONSTRAINT fk_renewal_card_keys_used_by_chat_id FOREIGN KEY (used_by_chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE SET NULL,
+    CONSTRAINT fk_renewal_card_keys_used_by_user_id FOREIGN KEY (used_by_user_id)
+        REFERENCES bot.tg_users(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS bot.renewal_audit_logs (
+    id SERIAL PRIMARY KEY,
+    chat_id BIGINT NOT NULL,
+    operator_user_id BIGINT,
+    action VARCHAR(32) NOT NULL,
+    reason VARCHAR(128),
+    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT fk_renewal_audit_logs_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE,
+    CONSTRAINT fk_renewal_audit_logs_operator_user_id FOREIGN KEY (operator_user_id)
+        REFERENCES bot.tg_users(id) ON DELETE SET NULL
+);
+
+COMMENT ON TABLE bot.renewal_card_keys IS '续费卡密表，仅存储卡密哈希和核销状态';
+COMMENT ON COLUMN bot.renewal_card_keys.card_key_hash IS '续费卡密哈希值，不存储明文卡密';
+COMMENT ON COLUMN bot.renewal_card_keys.duration_seconds IS '核销成功后增加的时长（秒）';
+COMMENT ON COLUMN bot.renewal_card_keys.expires_at IS '卡密失效时间，NULL 表示永不过期';
+COMMENT ON COLUMN bot.renewal_card_keys.used IS '卡密是否已被使用';
+COMMENT ON COLUMN bot.renewal_card_keys.used_by_chat_id IS '核销到的群组';
+COMMENT ON COLUMN bot.renewal_card_keys.used_by_user_id IS '执行核销的操作人';
+COMMENT ON COLUMN bot.renewal_card_keys.used_at IS '核销时间';
+COMMENT ON COLUMN bot.renewal_card_keys.created_at IS '卡密创建时间';
+
+COMMENT ON TABLE bot.renewal_audit_logs IS '续费审计日志，记录核销成功和失败原因';
+COMMENT ON COLUMN bot.renewal_audit_logs.chat_id IS '目标群组 ID';
+COMMENT ON COLUMN bot.renewal_audit_logs.operator_user_id IS '执行续费操作的用户 ID';
+COMMENT ON COLUMN bot.renewal_audit_logs.action IS '审计动作，如 success / failed';
+COMMENT ON COLUMN bot.renewal_audit_logs.reason IS '动作原因，如 redeem / card_used / card_not_found';
+COMMENT ON COLUMN bot.renewal_audit_logs.payload IS '补充审计上下文';
+COMMENT ON COLUMN bot.renewal_audit_logs.created_at IS '审计记录创建时间';
+
+CREATE INDEX IF NOT EXISTS ix_renewal_card_keys_expires_at ON bot.renewal_card_keys(expires_at);
+CREATE INDEX IF NOT EXISTS ix_renewal_card_keys_used ON bot.renewal_card_keys(used);
+CREATE INDEX IF NOT EXISTS ix_renewal_audit_logs_chat_id ON bot.renewal_audit_logs(chat_id);
+CREATE INDEX IF NOT EXISTS ix_renewal_audit_logs_created_at ON bot.renewal_audit_logs(created_at);
+
+-- ============================================
+-- 13. 广告活动表 (ad_campaigns)
 -- 存储群组内的广告活动信息
 -- ============================================
 CREATE TABLE IF NOT EXISTS bot.ad_campaigns (
@@ -1013,11 +1128,13 @@ CREATE TABLE IF NOT EXISTS bot.lotteries (
     created_by_user_id BIGINT,                                    -- 创建者用户 ID（外键关联 tg_users.id，可为空）
     title VARCHAR(128) NOT NULL DEFAULT '通用抽奖',                -- 抽奖标题
     description TEXT,                                             -- 抽奖描述说明
+    lottery_type VARCHAR(16) NOT NULL DEFAULT 'common',           -- 抽奖类型（common/points/invite/activity）
     draw_time TIMESTAMPTZ NOT NULL,                               -- 开奖时间（带时区）
     prizes JSONB NOT NULL DEFAULT '[]',                           -- 奖品列表（JSONB 数组格式）
     draw_mode VARCHAR(16) NOT NULL DEFAULT 'manual',              -- 开奖模式（random=随机开奖，manual=手动指定中奖人）
     status VARCHAR(16) NOT NULL DEFAULT 'pending',                -- 抽奖状态（pending/completed/cancelled）
     message_id INTEGER,                                           -- 抽奖消息的 Telegram message_id
+    qualification_rules JSONB NOT NULL DEFAULT '{}'::jsonb,       -- 类型附加资格规则
     -- 参与限制条件
     min_points INTEGER NOT NULL DEFAULT 0,                        -- 最低积分要求（0表示无限制）
     max_participants INTEGER NOT NULL DEFAULT 0,                  -- 最大参与人数（0表示无限制）
@@ -1039,11 +1156,13 @@ COMMENT ON COLUMN bot.lotteries.chat_id IS '群组 ID，外键关联 tg_chats.id
 COMMENT ON COLUMN bot.lotteries.created_by_user_id IS '创建抽奖的用户 ID，外键关联 tg_users.id，删除用户时设为 NULL';
 COMMENT ON COLUMN bot.lotteries.title IS '抽奖标题，默认为"通用抽奖"';
 COMMENT ON COLUMN bot.lotteries.description IS '抽奖描述说明，可包含活动详情、规则等';
+COMMENT ON COLUMN bot.lotteries.lottery_type IS '抽奖类型：common（通用）、points（积分）、invite（邀请）、activity（活跃）';
 COMMENT ON COLUMN bot.lotteries.draw_time IS '计划开奖时间';
 COMMENT ON COLUMN bot.lotteries.prizes IS '奖品列表，JSONB 数组格式存储，如：[{"name": "一等奖", "quantity": 1}]';
 COMMENT ON COLUMN bot.lotteries.draw_mode IS '开奖模式：random（随机开奖）、manual（手动指定中奖人）';
 COMMENT ON COLUMN bot.lotteries.status IS '抽奖状态：pending（待开奖）、completed（已完成）、cancelled（已取消）';
 COMMENT ON COLUMN bot.lotteries.message_id IS '抽奖消息的 Telegram message_id，用于更新消息';
+COMMENT ON COLUMN bot.lotteries.qualification_rules IS '附加资格规则，邀请/活跃抽奖使用 JSONB 存储门槛';
 COMMENT ON COLUMN bot.lotteries.min_points IS '参与抽奖的最低积分要求，0表示无限制';
 COMMENT ON COLUMN bot.lotteries.max_participants IS '最大参与人数，0表示无限制';
 COMMENT ON COLUMN bot.lotteries.participation_cost IS '参与抽奖需要消耗的积分，0表示免费参与';
@@ -1057,6 +1176,8 @@ COMMENT ON COLUMN bot.lotteries.drawn_at IS '实际开奖时间';
 CREATE INDEX IF NOT EXISTS ix_lotteries_chat_id ON bot.lotteries(chat_id);
 CREATE INDEX IF NOT EXISTS ix_lotteries_draw_time ON bot.lotteries(draw_time);
 CREATE INDEX IF NOT EXISTS ix_lotteries_status ON bot.lotteries(status);
+ALTER TABLE IF EXISTS bot.lotteries ADD COLUMN IF NOT EXISTS lottery_type VARCHAR(16) NOT NULL DEFAULT 'common';
+ALTER TABLE IF EXISTS bot.lotteries ADD COLUMN IF NOT EXISTS qualification_rules JSONB NOT NULL DEFAULT '{}'::jsonb;
 
 -- ============================================
 -- 15. 抽奖参与者表 (lottery_participants)
@@ -1096,6 +1217,7 @@ CREATE TABLE IF NOT EXISTS bot.lottery_winners (
     user_id BIGINT NOT NULL,                                      -- 用户 ID（外键关联 tg_users.id）
     prize_name VARCHAR(255) NOT NULL,                             -- 中奖奖品名称
     prize_index INTEGER NOT NULL,                                 -- 奖品索引（对应 prizes 数组中的位置）
+    points_reward INTEGER NOT NULL DEFAULT 0,                     -- 积分奖励
     created_at TIMESTAMPTZ NOT NULL,                              -- 中奖时间（带时区）
     CONSTRAINT fk_lottery_winners_lottery_id FOREIGN KEY (lottery_id)
         REFERENCES bot.lotteries(id) ON DELETE CASCADE,               -- 外键约束：删除抽奖时级联删除中奖记录
@@ -1109,11 +1231,13 @@ COMMENT ON COLUMN bot.lottery_winners.lottery_id IS '抽奖 ID，外键关联 lo
 COMMENT ON COLUMN bot.lottery_winners.user_id IS '中奖用户 ID，外键关联 tg_users.id';
 COMMENT ON COLUMN bot.lottery_winners.prize_name IS '中奖奖品名称，如"1USDT"';
 COMMENT ON COLUMN bot.lottery_winners.prize_index IS '奖品索引，对应 lotteries.prizes 数组中的位置，从0开始';
+COMMENT ON COLUMN bot.lottery_winners.points_reward IS '中奖附带积分奖励';
 COMMENT ON COLUMN bot.lottery_winners.created_at IS '中奖时间';
 
 -- 创建索引以优化查询性能
 CREATE INDEX IF NOT EXISTS ix_lottery_winners_lottery_id ON bot.lottery_winners(lottery_id);
 CREATE INDEX IF NOT EXISTS ix_lottery_winners_user_id ON bot.lottery_winners(user_id);
+ALTER TABLE bot.lottery_winners ADD COLUMN IF NOT EXISTS points_reward INTEGER NOT NULL DEFAULT 0;
 
 -- ============================================
 -- 17. 定时消息表 (scheduled_messages)
@@ -1170,7 +1294,13 @@ CREATE TABLE IF NOT EXISTS bot.auto_reply_rules (
     created_by_user_id BIGINT,                                   -- 创建者用户 ID（外键关联 tg_users.id，可为空）
     keywords JSONB NOT NULL DEFAULT '[]',                        -- 触发关键词列表（JSON 数组格式）
     reply_content TEXT NOT NULL,                                 -- 回复内容
+    cover_media_type VARCHAR(16),                                -- 封面类型
+    cover_media_file_id VARCHAR(256),                            -- 封面文件 ID
+    buttons JSONB NOT NULL DEFAULT '[]',                         -- 按钮布局（JSON 数组格式）
     match_type VARCHAR(16) NOT NULL DEFAULT 'contains',          -- 匹配类型（contains/exact/regex）
+    sort_order INTEGER NOT NULL DEFAULT 0,                       -- 命中顺序（越小越优先）
+    delete_source BOOLEAN NOT NULL DEFAULT FALSE,                -- 命中后是否删除触发消息
+    delete_reply_delay_seconds INTEGER NOT NULL DEFAULT 0,       -- 回复延迟删除秒数（0=不删除）
     is_active BOOLEAN NOT NULL DEFAULT TRUE,                     -- 是否激活
     match_count INTEGER NOT NULL DEFAULT 0,                      -- 匹配次数统计
     case_sensitive BOOLEAN NOT NULL DEFAULT FALSE,               -- 是否区分大小写
@@ -1188,7 +1318,13 @@ COMMENT ON COLUMN bot.auto_reply_rules.chat_id IS '群组 ID，外键关联 tg_c
 COMMENT ON COLUMN bot.auto_reply_rules.created_by_user_id IS '创建规则的用户 ID，外键关联 tg_users.id，删除用户时设为 NULL';
 COMMENT ON COLUMN bot.auto_reply_rules.keywords IS '触发关键词列表，JSONB 数组格式存储';
 COMMENT ON COLUMN bot.auto_reply_rules.reply_content IS '自动回复的内容';
+COMMENT ON COLUMN bot.auto_reply_rules.cover_media_type IS '自动回复封面类型：photo/video';
+COMMENT ON COLUMN bot.auto_reply_rules.cover_media_file_id IS '自动回复封面文件 ID';
+COMMENT ON COLUMN bot.auto_reply_rules.buttons IS '自动回复按钮布局（JSONB）';
 COMMENT ON COLUMN bot.auto_reply_rules.match_type IS '匹配类型：contains（包含匹配）、exact（精确匹配）、regex（正则表达式）';
+COMMENT ON COLUMN bot.auto_reply_rules.sort_order IS '规则命中顺序，越小越优先';
+COMMENT ON COLUMN bot.auto_reply_rules.delete_source IS '命中后是否删除触发消息';
+COMMENT ON COLUMN bot.auto_reply_rules.delete_reply_delay_seconds IS '回复延迟删除秒数，0 表示不删除';
 COMMENT ON COLUMN bot.auto_reply_rules.is_active IS '是否激活（true=启用，false=禁用）';
 COMMENT ON COLUMN bot.auto_reply_rules.match_count IS '规则被触发的次数统计';
 COMMENT ON COLUMN bot.auto_reply_rules.case_sensitive IS '是否区分大小写';
@@ -1198,6 +1334,10 @@ COMMENT ON COLUMN bot.auto_reply_rules.updated_at IS '记录最后更新时间';
 -- 创建索引以优化查询性能
 CREATE INDEX IF NOT EXISTS ix_auto_reply_rules_chat_id ON bot.auto_reply_rules(chat_id);
 CREATE INDEX IF NOT EXISTS ix_auto_reply_rules_is_active ON bot.auto_reply_rules(is_active);
+CREATE INDEX IF NOT EXISTS ix_auto_reply_rules_chat_sort ON bot.auto_reply_rules(chat_id, sort_order);
+ALTER TABLE bot.auto_reply_rules ADD COLUMN IF NOT EXISTS cover_media_type VARCHAR(16);
+ALTER TABLE bot.auto_reply_rules ADD COLUMN IF NOT EXISTS cover_media_file_id VARCHAR(256);
+ALTER TABLE bot.auto_reply_rules ADD COLUMN IF NOT EXISTS buttons JSONB NOT NULL DEFAULT '[]'::jsonb;
 
 -- ============================================
 -- 19. 违禁词表 (banned_words)
@@ -1887,6 +2027,372 @@ CREATE TABLE IF NOT EXISTS bot.car_review_audit_logs (
         REFERENCES bot.tg_users(id) ON DELETE SET NULL
 );
 CREATE INDEX IF NOT EXISTS ix_car_review_audit_logs_chat_id ON bot.car_review_audit_logs(chat_id);
+
+CREATE TABLE IF NOT EXISTS bot.auction_settings (
+    chat_id BIGINT PRIMARY KEY,
+    enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    pin_message_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    auto_extend_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    create_permission VARCHAR(16) NOT NULL DEFAULT 'admin',
+    points_mode VARCHAR(32) NOT NULL DEFAULT 'none',
+    updated_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT fk_auction_settings_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS bot.auction_items (
+    id SERIAL PRIMARY KEY,
+    chat_id BIGINT NOT NULL,
+    creator_user_id BIGINT,
+    source_message_id BIGINT,
+    title VARCHAR(255),
+    start_price INTEGER NOT NULL DEFAULT 0,
+    current_price INTEGER NOT NULL DEFAULT 0,
+    status VARCHAR(16) NOT NULL DEFAULT 'draft',
+    start_at TIMESTAMPTZ,
+    end_at TIMESTAMPTZ,
+    winner_user_id BIGINT,
+    winner_bid_id INTEGER,
+    last_announce_message_id BIGINT,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT fk_auction_items_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE,
+    CONSTRAINT fk_auction_items_creator_user_id FOREIGN KEY (creator_user_id)
+        REFERENCES bot.tg_users(id) ON DELETE SET NULL,
+    CONSTRAINT fk_auction_items_winner_user_id FOREIGN KEY (winner_user_id)
+        REFERENCES bot.tg_users(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS ix_auction_items_chat_id ON bot.auction_items(chat_id);
+CREATE INDEX IF NOT EXISTS ix_auction_items_status ON bot.auction_items(status);
+CREATE INDEX IF NOT EXISTS ix_auction_items_end_at ON bot.auction_items(end_at);
+
+CREATE TABLE IF NOT EXISTS bot.auction_bids (
+    id SERIAL PRIMARY KEY,
+    auction_id INTEGER NOT NULL,
+    chat_id BIGINT NOT NULL,
+    bid_user_id BIGINT NOT NULL,
+    bid_amount INTEGER NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT fk_auction_bids_auction_id FOREIGN KEY (auction_id)
+        REFERENCES bot.auction_items(id) ON DELETE CASCADE,
+    CONSTRAINT fk_auction_bids_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE,
+    CONSTRAINT fk_auction_bids_bid_user_id FOREIGN KEY (bid_user_id)
+        REFERENCES bot.tg_users(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS ix_auction_bids_auction_id ON bot.auction_bids(auction_id);
+CREATE INDEX IF NOT EXISTS ix_auction_bids_created_at ON bot.auction_bids(created_at);
+
+CREATE TABLE IF NOT EXISTS bot.bottom_button_settings (
+    chat_id BIGINT PRIMARY KEY,
+    enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    header_text TEXT NOT NULL DEFAULT '⌨️ 底部按钮已生成，点击下方按钮即可使用。',
+    generated_message_id BIGINT,
+    repeat_generate_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    repeat_interval_seconds INTEGER NOT NULL DEFAULT 3600,
+    last_generated_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT fk_bottom_button_settings_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS bot.bottom_button_layouts (
+    id SERIAL PRIMARY KEY,
+    chat_id BIGINT NOT NULL,
+    row_no INTEGER NOT NULL,
+    col_no INTEGER NOT NULL,
+    button_text VARCHAR(32) NOT NULL DEFAULT '按钮',
+    payload_text TEXT,
+    action_mode VARCHAR(16) NOT NULL DEFAULT 'send',
+    sort_key INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT fk_bottom_button_layouts_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE,
+    CONSTRAINT uq_bottom_button_layout_chat_pos UNIQUE (chat_id, row_no, col_no)
+);
+CREATE INDEX IF NOT EXISTS ix_bottom_button_layouts_chat_id ON bot.bottom_button_layouts(chat_id);
+
+CREATE TABLE IF NOT EXISTS bot.game_settings (
+    chat_id BIGINT PRIMARY KEY,
+    k3_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    blackjack_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    rake_ratio VARCHAR(16),
+    rake_owner_user_id BIGINT,
+    auto_schedule_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    auto_start_time VARCHAR(5),
+    auto_stop_time VARCHAR(5),
+    delete_game_message_mode VARCHAR(16) NOT NULL DEFAULT 'keep',
+    k3_panel_message_id BIGINT,
+    blackjack_panel_message_id BIGINT,
+    updated_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT fk_game_settings_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE,
+    CONSTRAINT fk_game_settings_rake_owner_user_id FOREIGN KEY (rake_owner_user_id)
+        REFERENCES bot.tg_users(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS bot.game_rounds (
+    id SERIAL PRIMARY KEY,
+    chat_id BIGINT NOT NULL,
+    game_type VARCHAR(16) NOT NULL,
+    creator_user_id BIGINT,
+    status VARCHAR(16) NOT NULL DEFAULT 'pending',
+    settle_at TIMESTAMPTZ,
+    announcement_message_id BIGINT,
+    result_data JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT fk_game_rounds_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE,
+    CONSTRAINT fk_game_rounds_creator_user_id FOREIGN KEY (creator_user_id)
+        REFERENCES bot.tg_users(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS ix_game_rounds_chat_id ON bot.game_rounds(chat_id);
+CREATE INDEX IF NOT EXISTS ix_game_rounds_game_type ON bot.game_rounds(game_type);
+CREATE INDEX IF NOT EXISTS ix_game_rounds_status ON bot.game_rounds(status);
+CREATE INDEX IF NOT EXISTS ix_game_rounds_settle_at ON bot.game_rounds(settle_at);
+
+CREATE TABLE IF NOT EXISTS bot.game_participants (
+    id SERIAL PRIMARY KEY,
+    round_id INTEGER NOT NULL,
+    chat_id BIGINT NOT NULL,
+    user_id BIGINT NOT NULL,
+    bet_points INTEGER NOT NULL DEFAULT 0,
+    status VARCHAR(16) NOT NULL DEFAULT 'active',
+    choice_data JSONB NOT NULL DEFAULT '{}'::jsonb,
+    payout_points INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT fk_game_participants_round_id FOREIGN KEY (round_id)
+        REFERENCES bot.game_rounds(id) ON DELETE CASCADE,
+    CONSTRAINT fk_game_participants_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE,
+    CONSTRAINT fk_game_participants_user_id FOREIGN KEY (user_id)
+        REFERENCES bot.tg_users(id) ON DELETE CASCADE,
+    CONSTRAINT uq_game_participant_round_user UNIQUE (round_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS ix_game_participants_round_id ON bot.game_participants(round_id);
+CREATE INDEX IF NOT EXISTS ix_game_participants_chat_id ON bot.game_participants(chat_id);
+CREATE INDEX IF NOT EXISTS ix_game_participants_user_id ON bot.game_participants(user_id);
+
+CREATE TABLE IF NOT EXISTS bot.lottery_settings (
+    chat_id BIGINT PRIMARY KEY,
+    publish_pin_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    result_pin_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    delete_join_message_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    updated_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT fk_lottery_settings_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS bot.guess_settings (
+    chat_id BIGINT PRIMARY KEY,
+    rake_ratio VARCHAR(16),
+    rake_owner_user_id BIGINT,
+    delete_message_mode VARCHAR(16) NOT NULL DEFAULT 'keep',
+    updated_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT fk_guess_settings_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE,
+    CONSTRAINT fk_guess_settings_rake_owner_user_id FOREIGN KEY (rake_owner_user_id)
+        REFERENCES bot.tg_users(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS bot.guess_events (
+    id SERIAL PRIMARY KEY,
+    chat_id BIGINT NOT NULL,
+    creator_user_id BIGINT,
+    title VARCHAR(128) NOT NULL DEFAULT '竞猜活动',
+    cover_file_id VARCHAR(256),
+    description TEXT,
+    mode VARCHAR(16) NOT NULL DEFAULT 'no_banker',
+    banker_user_id BIGINT,
+    public_pool INTEGER NOT NULL DEFAULT 0,
+    options_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+    command_keyword VARCHAR(32) NOT NULL DEFAULT '竞猜',
+    deadline_at TIMESTAMPTZ NOT NULL,
+    allow_repeat_bet BOOLEAN NOT NULL DEFAULT FALSE,
+    status VARCHAR(16) NOT NULL DEFAULT 'running',
+    winner_option VARCHAR(64),
+    announcement_message_id BIGINT,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT fk_guess_events_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE,
+    CONSTRAINT fk_guess_events_creator_user_id FOREIGN KEY (creator_user_id)
+        REFERENCES bot.tg_users(id) ON DELETE SET NULL,
+    CONSTRAINT fk_guess_events_banker_user_id FOREIGN KEY (banker_user_id)
+        REFERENCES bot.tg_users(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS ix_guess_events_chat_id ON bot.guess_events(chat_id);
+CREATE INDEX IF NOT EXISTS ix_guess_events_status ON bot.guess_events(status);
+CREATE INDEX IF NOT EXISTS ix_guess_events_deadline_at ON bot.guess_events(deadline_at);
+
+CREATE TABLE IF NOT EXISTS bot.guess_bets (
+    id SERIAL PRIMARY KEY,
+    event_id INTEGER NOT NULL,
+    chat_id BIGINT NOT NULL,
+    user_id BIGINT NOT NULL,
+    option_key VARCHAR(64) NOT NULL,
+    bet_points INTEGER NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT fk_guess_bets_event_id FOREIGN KEY (event_id)
+        REFERENCES bot.guess_events(id) ON DELETE CASCADE,
+    CONSTRAINT fk_guess_bets_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE,
+    CONSTRAINT fk_guess_bets_user_id FOREIGN KEY (user_id)
+        REFERENCES bot.tg_users(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS ix_guess_bets_event_id ON bot.guess_bets(event_id);
+CREATE INDEX IF NOT EXISTS ix_guess_bets_option_key ON bot.guess_bets(option_key);
+
+CREATE TABLE IF NOT EXISTS bot.engagement_settings (
+    chat_id BIGINT PRIMARY KEY,
+    updated_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT fk_engagement_settings_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS bot.engagement_egg (
+    chat_id BIGINT PRIMARY KEY,
+    enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    answer VARCHAR(128),
+    clues JSONB NOT NULL DEFAULT '[]'::jsonb,
+    clue_rewards JSONB NOT NULL DEFAULT '[]'::jsonb,
+    clue_times JSONB NOT NULL DEFAULT '[]'::jsonb,
+    winner_user_id BIGINT,
+    status VARCHAR(16) NOT NULL DEFAULT 'idle',
+    published_clue_count INTEGER NOT NULL DEFAULT 0,
+    updated_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT fk_engagement_egg_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE,
+    CONSTRAINT fk_engagement_egg_winner_user_id FOREIGN KEY (winner_user_id)
+        REFERENCES bot.tg_users(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS bot.engagement_egg_events (
+    id SERIAL PRIMARY KEY,
+    chat_id BIGINT NOT NULL,
+    title VARCHAR(128) NOT NULL DEFAULT '彩蛋活动',
+    enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    answer VARCHAR(128),
+    clues JSONB NOT NULL DEFAULT '[]'::jsonb,
+    clue_rewards JSONB NOT NULL DEFAULT '[]'::jsonb,
+    clue_times JSONB NOT NULL DEFAULT '[]'::jsonb,
+    winner_user_id BIGINT,
+    status VARCHAR(16) NOT NULL DEFAULT 'idle',
+    published_clue_count INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT fk_engagement_egg_events_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE,
+    CONSTRAINT fk_engagement_egg_events_winner_user_id FOREIGN KEY (winner_user_id)
+        REFERENCES bot.tg_users(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS ix_engagement_egg_events_chat_id ON bot.engagement_egg_events(chat_id);
+CREATE INDEX IF NOT EXISTS ix_engagement_egg_events_status ON bot.engagement_egg_events(status);
+CREATE INDEX IF NOT EXISTS ix_engagement_egg_events_created_at ON bot.engagement_egg_events(created_at);
+
+CREATE TABLE IF NOT EXISTS bot.engagement_egg_history (
+    id SERIAL PRIMARY KEY,
+    chat_id BIGINT NOT NULL,
+    event_id INTEGER,
+    title VARCHAR(128),
+    answer VARCHAR(128),
+    winner_user_id BIGINT,
+    reward_points INTEGER NOT NULL DEFAULT 0,
+    status VARCHAR(16) NOT NULL DEFAULT 'finished',
+    published_clue_count INTEGER NOT NULL DEFAULT 0,
+    snapshot_data JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT fk_engagement_egg_history_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE,
+    CONSTRAINT fk_engagement_egg_history_winner_user_id FOREIGN KEY (winner_user_id)
+        REFERENCES bot.tg_users(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS ix_engagement_egg_history_chat_id ON bot.engagement_egg_history(chat_id);
+CREATE INDEX IF NOT EXISTS ix_engagement_egg_history_event_id ON bot.engagement_egg_history(event_id);
+CREATE INDEX IF NOT EXISTS ix_engagement_egg_history_created_at ON bot.engagement_egg_history(created_at);
+
+CREATE TABLE IF NOT EXISTS bot.engagement_chat_reward (
+    chat_id BIGINT PRIMARY KEY,
+    enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    reward_type VARCHAR(32) NOT NULL DEFAULT 'daily_increment',
+    daily_message_target INTEGER NOT NULL DEFAULT 200,
+    reward_points_plan JSONB NOT NULL DEFAULT '[]'::jsonb,
+    after_7d_mode VARCHAR(16) NOT NULL DEFAULT 'continue',
+    command_keyword VARCHAR(32) NOT NULL DEFAULT '我爱水群',
+    updated_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT fk_engagement_chat_reward_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS bot.engagement_chat_stats (
+    id SERIAL PRIMARY KEY,
+    chat_id BIGINT NOT NULL,
+    user_id BIGINT NOT NULL,
+    biz_date DATE NOT NULL,
+    message_count INTEGER NOT NULL DEFAULT 0,
+    streak_days INTEGER NOT NULL DEFAULT 0,
+    reward_claimed BOOLEAN NOT NULL DEFAULT FALSE,
+    rewarded_points INTEGER NOT NULL DEFAULT 0,
+    updated_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT fk_engagement_chat_stats_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE,
+    CONSTRAINT fk_engagement_chat_stats_user_id FOREIGN KEY (user_id)
+        REFERENCES bot.tg_users(id) ON DELETE CASCADE,
+    CONSTRAINT uq_engagement_chat_stats_daily UNIQUE (chat_id, user_id, biz_date)
+);
+CREATE INDEX IF NOT EXISTS ix_engagement_chat_stats_chat_id ON bot.engagement_chat_stats(chat_id);
+CREATE INDEX IF NOT EXISTS ix_engagement_chat_stats_biz_date ON bot.engagement_chat_stats(biz_date);
+
+CREATE TABLE IF NOT EXISTS bot.account_inherit_settings (
+    chat_id BIGINT PRIMARY KEY,
+    enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    token_expire_minutes INTEGER NOT NULL DEFAULT 60,
+    updated_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT fk_account_inherit_settings_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS bot.account_inherit_tokens (
+    id SERIAL PRIMARY KEY,
+    chat_id BIGINT NOT NULL,
+    old_user_id BIGINT NOT NULL,
+    token_hash VARCHAR(128) NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    used BOOLEAN NOT NULL DEFAULT FALSE,
+    used_by_user_id BIGINT,
+    used_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT fk_account_inherit_tokens_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE,
+    CONSTRAINT fk_account_inherit_tokens_old_user_id FOREIGN KEY (old_user_id)
+        REFERENCES bot.tg_users(id) ON DELETE CASCADE,
+    CONSTRAINT fk_account_inherit_tokens_used_by_user_id FOREIGN KEY (used_by_user_id)
+        REFERENCES bot.tg_users(id) ON DELETE SET NULL,
+    CONSTRAINT uq_account_inherit_token_hash UNIQUE (token_hash)
+);
+CREATE INDEX IF NOT EXISTS ix_account_inherit_tokens_chat_id ON bot.account_inherit_tokens(chat_id);
+
+CREATE TABLE IF NOT EXISTS bot.account_inherit_audit (
+    id SERIAL PRIMARY KEY,
+    chat_id BIGINT NOT NULL,
+    old_user_id BIGINT,
+    new_user_id BIGINT,
+    asset_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+    result VARCHAR(16) NOT NULL DEFAULT 'success',
+    reason VARCHAR(255),
+    created_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT fk_account_inherit_audit_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE,
+    CONSTRAINT fk_account_inherit_audit_old_user_id FOREIGN KEY (old_user_id)
+        REFERENCES bot.tg_users(id) ON DELETE SET NULL,
+    CONSTRAINT fk_account_inherit_audit_new_user_id FOREIGN KEY (new_user_id)
+        REFERENCES bot.tg_users(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS ix_account_inherit_audit_chat_id ON bot.account_inherit_audit(chat_id);
 
 -- ============================================
 -- 数据库初始化完成

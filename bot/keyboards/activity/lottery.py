@@ -16,12 +16,46 @@ def lottery_menu_keyboard(chat_id: int | None = None) -> InlineKeyboardMarkup:
     Args:
         chat_id: 群组 ID，用于在私聊中操作群组时指定目标群组
     """
-    create_callback = f"lot:create:{chat_id}" if chat_id else "lot:create"
+    create_menu_callback = f"lot:create_menu:{chat_id}" if chat_id else "lot:create_menu"
+    list_callback = f"lot:list:{chat_id}:all:all:0" if chat_id else "lot:list:all:all:0"
+    setting_callback = f"lot:settings:{chat_id}" if chat_id else "lot:settings"
     back_button = create_back_button(chat_id, "back_to_menu")
 
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🎁创建通用抽奖", callback_data=create_callback)],
+        [
+            InlineKeyboardButton("🚀 发起抽奖活动", callback_data=create_menu_callback),
+            InlineKeyboardButton("📋 活动列表", callback_data=list_callback),
+        ],
+        [InlineKeyboardButton("⚙️ 抽奖设置", callback_data=setting_callback)],
         [back_button],
+    ])
+
+
+def lottery_type_keyboard(chat_id: int | None = None) -> InlineKeyboardMarkup:
+    create_callback = f"lot:create:{chat_id}:common" if chat_id else "lot:create:common"
+    points_callback = f"lot:create:{chat_id}:points" if chat_id else "lot:create:points"
+    invite_callback = f"lot:mode_menu:{chat_id}:invite" if chat_id else "lot:mode_menu:invite"
+    activity_callback = f"lot:mode_menu:{chat_id}:activity" if chat_id else "lot:mode_menu:activity"
+    back_callback = f"adm:menu:lottery:{chat_id}" if chat_id else "adm:menu:lottery"
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("🎁 通用抽奖", callback_data=create_callback),
+            InlineKeyboardButton("💰 积分抽奖", callback_data=points_callback),
+        ],
+        [
+            InlineKeyboardButton("👥 邀请抽奖", callback_data=invite_callback),
+            InlineKeyboardButton("🔥 群活跃抽奖", callback_data=activity_callback),
+        ],
+        [InlineKeyboardButton("🔙 返回", callback_data=back_callback)],
+    ])
+
+
+def lottery_mode_keyboard(chat_id: int, lottery_type: str) -> InlineKeyboardMarkup:
+    type_label = "👥 邀请抽奖" if lottery_type == "invite" else "🔥 群活跃抽奖"
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(f"{type_label} | 达标随机", callback_data=f"lot:create:{chat_id}:{lottery_type}:threshold_random")],
+        [InlineKeyboardButton(f"{type_label} | 排名入围随机", callback_data=f"lot:create:{chat_id}:{lottery_type}:ranking_random")],
+        [InlineKeyboardButton("🔙 返回", callback_data=f"lot:create_menu:{chat_id}")],
     ])
 
 

@@ -137,6 +137,74 @@ async def test_list_nearby_teachers_orders_by_distance_and_formats_fuzzy_text(mo
 
 
 @pytest.mark.asyncio
+async def test_build_teacher_summary_groups_by_region(monkeypatch):
+    rows = [
+        (
+            SimpleNamespace(chat_id=-1001, user_id=1, enabled=True, created_at=dt.datetime.now(dt.UTC)),
+            SimpleNamespace(region_text="A区", price_text="100", labels=["新人"], open_course_today=True),
+            SimpleNamespace(id=1, username="teacher_a", first_name="A"),
+        ),
+        (
+            SimpleNamespace(chat_id=-1001, user_id=2, enabled=True, created_at=dt.datetime.now(dt.UTC)),
+            SimpleNamespace(region_text="A区", price_text="200", labels=["热门"], open_course_today=False),
+            SimpleNamespace(id=2, username="teacher_b", first_name="B"),
+        ),
+        (
+            SimpleNamespace(chat_id=-1001, user_id=3, enabled=True, created_at=dt.datetime.now(dt.UTC)),
+            SimpleNamespace(region_text="B区", price_text="300", labels=[], open_course_today=True),
+            SimpleNamespace(id=3, username=None, first_name="Teacher C"),
+        ),
+    ]
+    session = _FakeSession(execute_results=[_ExecuteResult(rows=rows)])
+
+    async def fake_get_settings(session, chat_id: int):
+        return SimpleNamespace(
+            garage_summary_partition_by="region",
+            garage_summary_only_open_course=False,
+        )
+
+    monkeypatch.setattr(GarageAuthService, "get_settings", fake_get_settings)
+
+    text = await GarageAuthService.build_teacher_summary(session, -1001)
+
+    assert "分区方式：按地区" in text
+    assert "【A区】(2人)" in text
+    assert "@teacher_a" in text
+    assert "Teacher C" in text
+
+
+@pytest.mark.asyncio
+async def test_build_teacher_summary_filters_open_course(monkeypatch):
+    rows = [
+        (
+            SimpleNamespace(chat_id=-1001, user_id=1, enabled=True, created_at=dt.datetime.now(dt.UTC)),
+            SimpleNamespace(region_text="A区", price_text="100", labels=["新人"], open_course_today=False),
+            SimpleNamespace(id=1, username="teacher_a", first_name="A"),
+        ),
+        (
+            SimpleNamespace(chat_id=-1001, user_id=2, enabled=True, created_at=dt.datetime.now(dt.UTC)),
+            SimpleNamespace(region_text="B区", price_text="200", labels=["热门"], open_course_today=True),
+            SimpleNamespace(id=2, username="teacher_b", first_name="B"),
+        ),
+    ]
+    session = _FakeSession(execute_results=[_ExecuteResult(rows=rows)])
+
+    async def fake_get_settings(session, chat_id: int):
+        return SimpleNamespace(
+            garage_summary_partition_by="price",
+            garage_summary_only_open_course=True,
+        )
+
+    monkeypatch.setattr(GarageAuthService, "get_settings", fake_get_settings)
+
+    text = await GarageAuthService.build_teacher_summary(session, -1001)
+
+    assert "分区方式：按价格" in text
+    assert "@teacher_b" in text
+    assert "@teacher_a" not in text
+
+
+@pytest.mark.asyncio
 async def test_create_report_and_append_audit_records_pending_report():
     session = _FakeSession()
 

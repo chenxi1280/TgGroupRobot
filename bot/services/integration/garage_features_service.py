@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import datetime as dt
 from decimal import Decimal
+from collections import OrderedDict
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.models.core import ChatSettings, TgUser
@@ -171,6 +172,83 @@ class GarageAuthService:
             )
         )
         return result.scalar_one_or_none() is not None
+
+    @staticmethod
+    async def build_teacher_summary(session: AsyncSession, chat_id: int) -> str:
+        settings = await GarageAuthService.get_settings(session, chat_id)
+        result = await session.execute(
+            select(GarageCertifiedTeacher, TeacherProfile, TgUser)
+            .join(
+                TeacherProfile,
+                and_(
+                    TeacherProfile.chat_id == GarageCertifiedTeacher.chat_id,
+                    TeacherProfile.user_id == GarageCertifiedTeacher.user_id,
+                ),
+                isouter=True,
+            )
+            .join(TgUser, TgUser.id == GarageCertifiedTeacher.user_id, isouter=True)
+            .where(
+                GarageCertifiedTeacher.chat_id == chat_id,
+                GarageCertifiedTeacher.enabled.is_(True),
+            )
+            .order_by(GarageCertifiedTeacher.created_at.asc(), GarageCertifiedTeacher.id.asc())
+        )
+        rows = list(result.all())
+
+        if settings.garage_summary_only_open_course:
+            rows = [row for row in rows if row[1] is not None and bool(row[1].open_course_today)]
+
+        if not rows:
+            return (
+                "🧾 老师汇总信息\n\n"
+                "当前没有符合条件的认证老师。\n"
+                "你可以先添加认证老师，或关闭“只显开课”后再试。"
+            )
+
+        partition_by = settings.garage_summary_partition_by or "region"
+        groups: OrderedDict[str, list[str]] = OrderedDict()
+        total_count = 0
+
+        for teacher, profile, user in rows:
+            if partition_by == "price":
+                key = (profile.price_text if profile else None) or "未分价位"
+            else:
+                key = (profile.region_text if profile else None) or "未分地区"
+
+            display_name = build_user_display_name(user, teacher.user_id) if user else f"用户{teacher.user_id}"
+            labels = " / ".join((profile.labels or [])[:3]) if profile and profile.labels else ""
+            extras: list[str] = []
+            if partition_by != "price" and profile and profile.price_text:
+                extras.append(profile.price_text)
+            if partition_by != "region" and profile and profile.region_text:
+                extras.append(profile.region_text)
+            if labels:
+                extras.append(labels)
+            if profile and profile.open_course_today:
+                extras.append("开课中")
+
+            line = display_name
+            if extras:
+                line += f"（{' | '.join(extras)}）"
+
+            groups.setdefault(key, []).append(line)
+            total_count += 1
+
+        partition_label = "价格" if partition_by == "price" else "地区"
+        lines = [
+            "🧾 老师汇总信息",
+            "",
+            f"分区方式：按{partition_label}",
+            f"只显开课：{'是' if settings.garage_summary_only_open_course else '否'}",
+            f"老师数量：{total_count}",
+        ]
+
+        for key, members in groups.items():
+            lines.append("")
+            lines.append(f"【{key}】({len(members)}人)")
+            lines.extend(f"{idx}. {member}" for idx, member in enumerate(members, start=1))
+
+        return "\n".join(lines)
 
 
 class TeacherSearchService:
@@ -469,10 +547,70 @@ class CarReviewService:
 
     @staticmethod
     async def list_recent_reports(session: AsyncSession, chat_id: int, limit: int = 20) -> list[CarReviewReport]:
+        return await CarReviewService.list_reports(session, chat_id, limit=limit)
+
+    @staticmethod
+    async def list_reports(
+        session: AsyncSession,
+        chat_id: int,
+        *,
+        status: str = "all",
+        limit: int = 20,
+    ) -> list[CarReviewReport]:
+        stmt = select(CarReviewReport).where(CarReviewReport.chat_id == chat_id)
+        if status and status != "all":
+            stmt = stmt.where(CarReviewReport.report_status == status)
+        result = await session.execute(stmt.order_by(CarReviewReport.report_id.desc()).limit(limit))
+        return list(result.scalars().all())
+
+    @staticmethod
+    async def count_reports_by_status(session: AsyncSession, chat_id: int) -> dict[str, int]:
         result = await session.execute(
-            select(CarReviewReport)
+            select(CarReviewReport.report_status, func.count(CarReviewReport.report_id))
             .where(CarReviewReport.chat_id == chat_id)
-            .order_by(CarReviewReport.report_id.desc())
+            .group_by(CarReviewReport.report_status)
+        )
+        stats: dict[str, int] = {
+            "all": 0,
+            "pending": 0,
+            "approved": 0,
+            "published": 0,
+            "rejected": 0,
+        }
+        for status, count in result.all():
+            key = str(status or "")
+            if key in stats:
+                stats[key] = int(count or 0)
+            else:
+                stats[key] = int(count or 0)
+        stats["all"] = sum(v for k, v in stats.items() if k != "all")
+        return stats
+
+    @staticmethod
+    async def get_report(session: AsyncSession, chat_id: int, report_id: int) -> CarReviewReport | None:
+        result = await session.execute(
+            select(CarReviewReport).where(
+                CarReviewReport.chat_id == chat_id,
+                CarReviewReport.report_id == report_id,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    @staticmethod
+    async def list_audit_logs(
+        session: AsyncSession,
+        *,
+        chat_id: int,
+        report_id: int,
+        limit: int = 20,
+    ) -> list[CarReviewAuditLog]:
+        result = await session.execute(
+            select(CarReviewAuditLog)
+            .where(
+                CarReviewAuditLog.chat_id == chat_id,
+                CarReviewAuditLog.report_id == report_id,
+            )
+            .order_by(CarReviewAuditLog.id.desc())
             .limit(limit)
         )
         return list(result.scalars().all())
@@ -554,6 +692,33 @@ class CarReviewService:
             action="approved",
             operator_user_id=approver_user_id,
             payload={},
+        )
+        return report
+
+    @staticmethod
+    async def reject_report(
+        session: AsyncSession,
+        *,
+        chat_id: int,
+        report_id: int,
+        operator_user_id: int,
+        reason: str | None = None,
+    ) -> CarReviewReport | None:
+        report = await CarReviewService.get_report(session, chat_id, report_id)
+        if report is None:
+            return None
+        report.report_status = "rejected"
+        report.approved_by_user_id = operator_user_id
+        report.approved_at = dt.datetime.now(dt.UTC)
+        report.updated_at = dt.datetime.now(dt.UTC)
+        await session.flush()
+        await CarReviewService.append_audit(
+            session,
+            chat_id=chat_id,
+            report_id=report_id,
+            action="rejected",
+            operator_user_id=operator_user_id,
+            payload={"reason": reason or ""},
         )
         return report
 

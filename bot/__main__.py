@@ -10,9 +10,9 @@ import os
 import sys
 import tempfile
 
-import httpx
 import structlog
 from telegram.ext import Application, CallbackQueryHandler, ContextTypes, MessageHandler, filters
+from telegram.request import HTTPXRequest
 
 from bot.config import get_settings
 from bot.db.schema_gate import SchemaValidationError, validate_database_schema
@@ -47,6 +47,8 @@ from bot.routers import (
     ScheduledMessageRouter,
     SolitaireRouter,
     VerificationRouter,
+    BottomButtonRouter,
+    GameRuntimeRouter,
 )
 from bot.utils.telegram_errors import answer_callback_query_safely, build_public_error_text
 
@@ -62,12 +64,20 @@ def build_application() -> Application:
 
     db = create_database(settings.database_url)
 
-    # 构建应用，如果配置了代理则使用代理
-    builder = Application.builder().token(settings.bot_token).concurrent_updates(True)
+    # 构建应用。
+    # 显式关闭 trust_env，避免 IDE/系统环境变量中的代理设置导致 Telegram 初始化失败。
+    # 如需代理，仅使用 .env 中的 PROXY_URL。
+    request_kwargs = {"httpx_kwargs": {"trust_env": False}}
+    request = HTTPXRequest(proxy=settings.proxy_url, **request_kwargs)
+    get_updates_request = HTTPXRequest(proxy=settings.proxy_url, **request_kwargs)
 
-    if settings.proxy_url:
-        proxy = httpx.Proxy(url=settings.proxy_url)
-        builder = builder.proxy(proxy)
+    builder = (
+        Application.builder()
+        .token(settings.bot_token)
+        .concurrent_updates(True)
+        .request(request)
+        .get_updates_request(get_updates_request)
+    )
 
     app = builder.build()
 
@@ -109,6 +119,8 @@ def _register_routers(app: Application) -> None:
         NearbyRouter(),
         GroupRouter(),
         VerificationRouter(),
+        BottomButtonRouter(),
+        GameRuntimeRouter(),
     ]
 
     for router in routers:
@@ -262,6 +274,11 @@ def main() -> None:
             CleanupTask,
             GroupLockTask,
             LotteryTask,
+            AuctionTask,
+            BottomButtonTask,
+            EngagementTask,
+            GameTask,
+            GuessTask,
             ScheduledMessageTaskRunner,
             SolitaireTask,
             VerificationTimeoutTask,
@@ -270,12 +287,17 @@ def main() -> None:
         scheduler = Scheduler(app)
         scheduler.register_tasks([
             LotteryTask(),
+            AuctionTask(),
             SolitaireTask(),
             AdsTask(),
             CleanupTask(),
             VerificationTimeoutTask(),
             ScheduledMessageTaskRunner(),
             GroupLockTask(),
+            BottomButtonTask(),
+            EngagementTask(),
+            GameTask(),
+            GuessTask(),
         ])
 
         await _validate_schema_or_exit(app)

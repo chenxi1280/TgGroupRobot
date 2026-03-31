@@ -35,7 +35,7 @@ from bot.keyboards.integration.scheduled_message import (
     sm_edit_media_keyboard,
     sm_edit_buttons_keyboard,
 )
-from bot.utils.time_helper import format_timestamp
+from bot.utils.time_helper import format_timestamp, get_interval_description
 
 log = structlog.get_logger(__name__)
 
@@ -157,26 +157,65 @@ class ScheduledMessageHandler(BaseHandler):
             tasks = await ScheduledMessageService.list_tasks(session, target_chat_id)
             await session.commit()
 
+        total_count = len(tasks)
+        page_size = 10
+        total_pages = max(1, (total_count + page_size - 1) // page_size)
+        current_page = min(max(page, 0), total_pages - 1)
+
         if not tasks:
-            keyboard = sm_list_keyboard([], target_chat_id, page)
+            keyboard = sm_list_keyboard([], target_chat_id, current_page, page_size=page_size)
             edited = await self.message_helper.safe_edit(
                 update,
-                text="📋 定时消息列表\n\n暂无任务，点击「添加任务」开始",
+                text="⏰ 定时消息\n\n0 条数据，第 1 页/共 1 页\n\n暂无任务，点击「添加一条」开始。",
                 reply_markup=keyboard,
             )
             if not edited:
                 await self.message_helper.safe_reply(
                     update,
-                    text="📋 定时消息列表\n\n暂无任务，点击「添加任务」开始",
+                    text="⏰ 定时消息\n\n0 条数据，第 1 页/共 1 页\n\n暂无任务，点击「添加一条」开始。",
                     reply_markup=keyboard,
                 )
             return
 
-        text = f"📋 定时消息列表\n\n共 {len(tasks)} 个任务"
-        keyboard = sm_list_keyboard(tasks, target_chat_id, page)
+        text = self._format_task_list(tasks, current_page, page_size)
+        keyboard = sm_list_keyboard(tasks, target_chat_id, current_page, page_size=page_size)
         edited = await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
         if not edited:
             await self.message_helper.safe_reply(update, text=text, reply_markup=keyboard)
+
+    def _format_task_list(
+        self,
+        tasks: list[ScheduledMessageTask],
+        page: int,
+        page_size: int,
+    ) -> str:
+        total_count = len(tasks)
+        total_pages = max(1, (total_count + page_size - 1) // page_size)
+        current_page = min(max(page, 0), total_pages - 1)
+        start_idx = current_page * page_size
+        end_idx = start_idx + page_size
+        page_tasks = tasks[start_idx:end_idx]
+
+        lines = [
+            "⏰ 定时消息",
+            "",
+            f"{total_count} 条数据，第 {current_page + 1} 页/共 {total_pages} 页",
+        ]
+
+        for task in page_tasks:
+            status = "启用" if task.enabled else "关闭"
+            interval_desc = get_interval_description(task.repeat_interval_min)
+            next_run = format_timestamp(task.next_run_at) if task.next_run_at else "(未设置)"
+            end_at = format_timestamp(task.end_at) if task.end_at else "无限制"
+            lines.extend([
+                "",
+                f"#{task.short_id} {task.title}",
+                f"状态: {status} | 重复: {interval_desc}",
+                f"终止: {end_at}",
+                f"下次: {next_run}",
+            ])
+
+        return "\n".join(lines)
 
     async def show_detail(
         self,

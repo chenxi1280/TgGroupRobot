@@ -23,6 +23,7 @@ from bot.services.integration.garage_features_service import (
     TeacherSearchService,
 )
 from bot.services.moderation.auto_reply_service import match_auto_reply
+from bot.handlers.auto_reply_handler import _send_auto_reply_payload
 from bot.services.moderation.banned_word_service import match_banned_words
 from bot.services.scheduled_message_service import ScheduledMessageService
 from bot.services.shared.action_executor import ActionExecutor
@@ -126,7 +127,7 @@ async def unified_group_message_handler(update: Update, context: ContextTypes.DE
             log.info("unified_handler_skip_banned_word_admin", chat_id=chat.id, user_id=user.id)
 
         # 自动回复（所有人触发，包括管理员）
-        await _process_auto_reply(context, db, chat, message_text)
+        await _process_auto_reply(context, db, chat, message, message_text)
 
     return False
 
@@ -326,6 +327,7 @@ async def _process_auto_reply(
     context: ContextTypes.DEFAULT_TYPE,
     db: Database,
     chat,
+    message,
     message_text: str,
 ) -> None:
     """
@@ -354,13 +356,29 @@ async def _process_auto_reply(
         has_reply_content=bool(result.reply_content),
     )
 
-    if result.success and result.reply_content:
+    if result.success and result.reply_content and result.rule is not None:
         try:
-            await context.bot.send_message(chat_id=chat.id, text=result.reply_content)
+            sent = await _send_auto_reply_payload(
+                context,
+                chat_id=chat.id,
+                text=result.reply_content,
+                rule=result.rule,
+                reply_to_message_id=message.message_id,
+            )
+            if getattr(result.rule, "delete_source", False):
+                try:
+                    await message.delete()
+                except Exception as exc:
+                    log.warning("auto_reply_delete_source_failed", chat_id=chat.id, error=str(exc))
+            delete_after = getattr(result.rule, "delete_reply_delay_seconds", 0) or 0
+            if delete_after > 0:
+                asyncio.create_task(_delete_message_later(sent, delete_after))
             log.info(
                 "unified_handler_auto_reply_sent",
                 chat_id=chat.id,
                 reply_content_preview=result.reply_content[:50],
+                delete_source=bool(getattr(result.rule, "delete_source", False)),
+                delete_reply_delay_seconds=delete_after,
             )
         except Exception as e:
             log.warning("auto_reply_send_failed", chat_id=chat.id, error=str(e))

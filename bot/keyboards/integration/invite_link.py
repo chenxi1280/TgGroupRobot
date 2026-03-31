@@ -10,21 +10,66 @@ from bot.keyboards.base.helpers import create_back_button
 from bot.keyboards.formatters import StatusIcons, format_range
 
 
-def invite_link_menu_keyboard(chat_id: int | None = None) -> InlineKeyboardMarkup:
+def _toggle_labels(enabled: bool) -> tuple[str, str]:
+    return ("✅ 启动", "关闭") if enabled else ("启动", "❌ 关闭")
+
+
+def invite_link_menu_keyboard(
+    chat_id: int | None = None,
+    *,
+    enabled: bool = True,
+    remind_enabled: bool = True,
+    mode: str = "direct",
+    has_cover: bool = False,
+    button_rows: int = 0,
+) -> InlineKeyboardMarkup:
     """邀请链接管理主菜单
 
     Args:
         chat_id: 群组 ID，用于在私聊中操作群组时指定目标群组
     """
     create_callback = f"inv:create:{chat_id}" if chat_id else "inv:create"
+    enabled_on, enabled_off = _toggle_labels(enabled)
+    remind_on, remind_off = _toggle_labels(remind_enabled)
     back_button = create_back_button(chat_id, "back_to_menu")
+    relay_label = "✅ 中转模式" if mode == "relay" else "中转模式"
+    direct_label = "✅ 直达模式" if mode == "direct" else "直达模式"
+    cover_label = "🖼️ 修改封面" if has_cover else "🖼️ 设置封面"
+    button_label = f"⌨️ 按钮设置（{button_rows}行）" if button_rows else "⌨️ 按钮设置"
 
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("➕ 创建邀请链接", callback_data=create_callback)],
         [
-            InlineKeyboardButton("📋 链接列表", callback_data="inv:list"),
-            InlineKeyboardButton("📊 统计", callback_data="inv:stats"),
+            InlineKeyboardButton("⚙️ 状态：", callback_data=f"inv:home:{chat_id}" if chat_id else "inv:menu"),
+            InlineKeyboardButton(enabled_on, callback_data=f"inv:toggle:enabled:{chat_id}:1" if chat_id else "inv:toggle:enabled"),
+            InlineKeyboardButton(enabled_off, callback_data=f"inv:toggle:enabled:{chat_id}:0" if chat_id else "inv:toggle:enabled"),
         ],
+        [
+            InlineKeyboardButton("🔔 邀请提醒：", callback_data=f"inv:home:{chat_id}" if chat_id else "inv:menu"),
+            InlineKeyboardButton(remind_on, callback_data=f"inv:toggle:remind:{chat_id}:1" if chat_id else "inv:toggle:remind"),
+            InlineKeyboardButton(remind_off, callback_data=f"inv:toggle:remind:{chat_id}:0" if chat_id else "inv:toggle:remind"),
+        ],
+        [
+            InlineKeyboardButton("➕ 创建邀请链接", callback_data=create_callback),
+            InlineKeyboardButton("📋 链接列表", callback_data=f"inv:list:{0}:{chat_id}" if chat_id else "inv:list"),
+        ],
+        [
+            InlineKeyboardButton(relay_label, callback_data=f"inv:mode:{chat_id}:relay" if chat_id else "inv:mode:relay"),
+            InlineKeyboardButton(direct_label, callback_data=f"inv:mode:{chat_id}:direct" if chat_id else "inv:mode:direct"),
+        ],
+        [
+            InlineKeyboardButton(cover_label, callback_data=f"inv:cover:{chat_id}" if chat_id else "inv:cover"),
+            InlineKeyboardButton("📝 修改文本", callback_data=f"inv:text:{chat_id}" if chat_id else "inv:text"),
+        ],
+        [
+            InlineKeyboardButton(button_label, callback_data=f"inv:buttons:{chat_id}" if chat_id else "inv:buttons"),
+            InlineKeyboardButton("👀 预览效果", callback_data=f"inv:preview:{chat_id}" if chat_id else "inv:preview"),
+        ],
+        [
+            InlineKeyboardButton("🧹 清零统计", callback_data=f"inv:reset:count:{chat_id}" if chat_id else "inv:reset:count"),
+            InlineKeyboardButton("♻️ 清空链接", callback_data=f"inv:reset:links:{chat_id}" if chat_id else "inv:reset:links"),
+        ],
+        [InlineKeyboardButton("📤 导出数据", callback_data=f"inv:export:{chat_id}" if chat_id else "inv:export")],
+        [InlineKeyboardButton("📊 统计", callback_data=f"inv:stats:{chat_id}" if chat_id else "inv:stats")],
         [back_button],
     ])
 
@@ -56,32 +101,39 @@ def invite_link_list_keyboard(
         limit = format_range(link.member_count, link.member_limit) if link.member_limit else f"({link.member_count})"
         label = f"{status_icon} {name} {limit}"
 
-        buttons.append([InlineKeyboardButton(label, callback_data=f"inv:detail:{link.id}")])
+        callback = f"inv:detail:{link.id}:{chat_id}" if chat_id else f"inv:detail:{link.id}"
+        buttons.append([InlineKeyboardButton(label, callback_data=callback)])
 
     # 分页导航
     nav_buttons = []
     if page > 0:
-        nav_buttons.append(InlineKeyboardButton("⬅️ 上一页", callback_data=f"inv:list:{page-1}"))
+        callback = f"inv:list:{page-1}:{chat_id}" if chat_id else f"inv:list:{page-1}"
+        nav_buttons.append(InlineKeyboardButton("⬅️ 上一页", callback_data=callback))
     if end_idx < len(links):
-        nav_buttons.append(InlineKeyboardButton("下一页 ➡️", callback_data=f"inv:list:{page+1}"))
+        callback = f"inv:list:{page+1}:{chat_id}" if chat_id else f"inv:list:{page+1}"
+        nav_buttons.append(InlineKeyboardButton("下一页 ➡️", callback_data=callback))
 
     if nav_buttons:
         buttons.append(nav_buttons)
 
-    back_callback = f"adm:back_to_menu:{chat_id}" if chat_id else "inv:menu"
+    back_callback = f"inv:home:{chat_id}" if chat_id else "inv:menu"
     buttons.append([InlineKeyboardButton("🔙 返回", callback_data=back_callback)])
     return InlineKeyboardMarkup(buttons)
 
 
-def invite_link_detail_keyboard(link_id: int) -> InlineKeyboardMarkup:
+def invite_link_detail_keyboard(link_id: int, chat_id: int | None = None) -> InlineKeyboardMarkup:
     """邀请链接详情键盘"""
+    refresh_callback = f"inv:refresh:{link_id}:{chat_id}" if chat_id else f"inv:refresh:{link_id}"
+    revoke_callback = f"inv:revoke:{link_id}:{chat_id}" if chat_id else f"inv:revoke:{link_id}"
+    delete_callback = f"inv:delete:{link_id}:{chat_id}" if chat_id else f"inv:delete:{link_id}"
+    back_callback = f"inv:list:0:{chat_id}" if chat_id else "inv:list"
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("🔄 刷新", callback_data=f"inv:refresh:{link_id}"),
-            InlineKeyboardButton("❌ 撤销", callback_data=f"inv:revoke:{link_id}"),
+            InlineKeyboardButton("🔄 刷新", callback_data=refresh_callback),
+            InlineKeyboardButton("❌ 撤销", callback_data=revoke_callback),
         ],
-        [InlineKeyboardButton("🗑 删除", callback_data=f"inv:delete:{link_id}")],
-        [InlineKeyboardButton("🔙 返回", callback_data="inv:list")],
+        [InlineKeyboardButton("🗑 删除", callback_data=delete_callback)],
+        [InlineKeyboardButton("🔙 返回", callback_data=back_callback)],
     ])
 
 

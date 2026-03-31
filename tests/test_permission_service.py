@@ -115,3 +115,41 @@ def test_get_bot_admin_ids_falls_back_to_global_settings(monkeypatch):
     ctx = SimpleNamespace(application=SimpleNamespace(bot_data={}))
 
     assert get_bot_admin_ids(ctx) == {7001, 7002}
+
+
+@pytest.mark.asyncio
+async def test_permission_policy_respects_owner_only(monkeypatch):
+    ctx = _ctx("")
+
+    async def fake_resolve_chat_policy(context, chat_id: int):
+        return "owner_only"
+
+    async def fake_get_chat_member(*, chat_id: int, user_id: int):
+        return SimpleNamespace(status="administrator", can_promote_members=True)
+
+    monkeypatch.setattr(PermissionPolicyService, "_resolve_chat_policy", fake_resolve_chat_policy)
+    ctx.bot = SimpleNamespace(get_chat_member=fake_get_chat_member)
+
+    decision = await PermissionPolicyService.evaluate(ctx, -1001, 2002, capability="settings")
+
+    assert decision.allowed is False
+    assert decision.reason == "group_admin_required"
+
+
+@pytest.mark.asyncio
+async def test_permission_policy_respects_can_change_info(monkeypatch):
+    ctx = _ctx("")
+
+    async def fake_resolve_chat_policy(context, chat_id: int):
+        return "can_change_info"
+
+    async def fake_get_chat_member(*, chat_id: int, user_id: int):
+        return SimpleNamespace(status="administrator", can_change_info=True, can_promote_members=False)
+
+    monkeypatch.setattr(PermissionPolicyService, "_resolve_chat_policy", fake_resolve_chat_policy)
+    ctx.bot = SimpleNamespace(get_chat_member=fake_get_chat_member)
+
+    decision = await PermissionPolicyService.evaluate(ctx, -1001, 2002, capability="settings")
+
+    assert decision.allowed is True
+    assert decision.reason == "group_admin"

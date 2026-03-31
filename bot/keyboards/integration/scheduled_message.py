@@ -30,28 +30,14 @@ def sm_list_keyboard(
     end_idx = start_idx + page_size
 
     for task in tasks[start_idx:end_idx]:
-        status_icon = StatusIcons.enabled(task.enabled)
-        interval_desc = get_interval_description(task.repeat_interval_min)
-
-        # 媒体标记
-        media_icons = {
-            "photo": " 🖼️",
-            "video": " 🎥",
-            "sticker": " 😊",
-            "animation": " 🎬",
-            "document": " 📄",
-        }
-        media_info = media_icons.get(task.media_type, "")
-
-        # 时段信息
-        if task.day_start_hour == 0 and task.day_end_hour == 23:
-            time_info = ""
-        else:
-            time_info = f" [{task.day_start_hour:02d}:00-{task.day_end_hour:02d}:00]"
-
-        label = f"{status_icon} {task.title}{media_info} - {interval_desc}{time_info}"
         buttons.append([
-            InlineKeyboardButton(label, callback_data=f"sm:open:{chat_id}:{task.short_id}")
+            InlineKeyboardButton(f"🔢 编号:{task.short_id}", callback_data=f"sm:open:{chat_id}:{task.short_id}"),
+            InlineKeyboardButton(
+                "❌ 关闭" if task.enabled else "✅ 启用",
+                callback_data=f"sm:set:{chat_id}:{task.short_id}:enabled:{0 if task.enabled else 1}",
+            ),
+            InlineKeyboardButton("✏️ 修改", callback_data=f"sm:open:{chat_id}:{task.short_id}"),
+            InlineKeyboardButton("🗑 删除", callback_data=f"sm:del_confirm:{chat_id}:{task.short_id}"),
         ])
 
     # 分页导航
@@ -70,7 +56,7 @@ def sm_list_keyboard(
 
     # 底部按钮
     buttons.extend([
-        [InlineKeyboardButton("➕ 添加任务", callback_data=f"sm:add:{chat_id}")],
+        [InlineKeyboardButton("➕ 添加一条", callback_data=f"sm:add:{chat_id}")],
         [create_back_button(chat_id, "back_to_menu")],
     ])
 

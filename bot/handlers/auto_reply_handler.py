@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
+import json
 import structlog
 
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 
@@ -15,16 +17,21 @@ from bot.models.enums import AutoReplyMatchType, ConversationStateType
 from bot.services.moderation.auto_reply_service import (
     create_auto_reply_rule,
     delete_auto_reply_rule,
+    get_auto_reply_rule,
     get_chat_auto_reply_rules,
     get_match_count,
     match_auto_reply,
+    move_auto_reply_rule,
     toggle_auto_reply_rule,
+    update_auto_reply_rule,
     CreateResult,
 )
 from bot.services.core.chat_service import ensure_chat, get_chat_settings
+from bot.services.scheduled_message_service import ScheduledMessageService
 from bot.services.state.state_service import clear_user_state, get_user_state, set_user_state
 from bot.services.core.permission_service import is_user_admin
 from bot.services.core.user_service import ensure_user
+from bot.utils.chat_context import PrivateChatContext
 
 
 # ============================================
@@ -64,6 +71,164 @@ def _ensure_message_update(update: Update, require_user: bool = True) -> bool:
     if require_user and update.effective_user is None:
         return False
     return True
+
+
+async def _resolve_auto_reply_target_chat_id(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    chat_index: int = 2,
+) -> int | None:
+    """统一解析自动回复管理目标群组。"""
+    return await PrivateChatContext.resolve_target_chat_with_permission_check(
+        update,
+        context,
+        chat_index=chat_index,
+    )
+
+
+def _format_auto_reply_rule_detail(rule) -> str:
+    status = "🟢 启用" if rule.is_active else "🔴 停用"
+    delete_source = "删除" if getattr(rule, "delete_source", False) else "保留"
+    delete_delay = getattr(rule, "delete_reply_delay_seconds", 0)
+    match_type_label = _get_match_type_label(rule.match_type)
+    keywords = ", ".join(rule.keywords)
+    cover_label = "未设置"
+    if getattr(rule, "cover_media_file_id", None):
+        cover_type = getattr(rule, "cover_media_type", None) or "media"
+        cover_label = f"已设置（{cover_type}）"
+    button_rows = getattr(rule, "buttons", None) or []
+    button_count = sum(len(row) for row in button_rows if isinstance(row, list))
+    return "\n".join([
+        f"💬 自动回复规则 #{rule.sort_order}",
+        "",
+        f"ID: {rule.id}",
+        f"状态: {status}",
+        f"匹配方式: {match_type_label}",
+        f"区分大小写: {'是' if rule.case_sensitive else '否'}",
+        f"删除触发源: {delete_source}",
+        f"回复延迟删除: {delete_delay} 秒" if delete_delay else "回复延迟删除: 不删除",
+        f"命中次数: {rule.match_count}",
+        f"封面: {cover_label}",
+        f"按钮: {button_count} 个",
+        "",
+        f"关键词: {keywords}",
+        "",
+        "回复内容:",
+        rule.reply_content,
+    ])
+
+
+def _parse_auto_reply_buttons_input(raw_text: str) -> list[list[dict[str, str]]]:
+    raw = raw_text.strip()
+    if not raw:
+        raise ValueError("按钮配置不能为空。")
+
+    if raw.startswith("["):
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"按钮 JSON 格式错误：{exc.msg}") from exc
+        return ScheduledMessageService.normalize_buttons_config(parsed)
+
+    rows: list[list[dict[str, str]]] = []
+    for line in [item.strip() for item in raw.splitlines() if item.strip()]:
+        if "|" not in line:
+            raise ValueError("文本格式错误：每行必须包含“按钮文案|URL”。")
+        button_text, button_url = [part.strip() for part in line.split("|", 1)]
+        if not button_text or not button_url:
+            raise ValueError("按钮文案和 URL 不能为空。")
+        rows.append([{"text": button_text[:32], "url": button_url}])
+    if not rows:
+        raise ValueError("未解析到有效按钮。")
+    return ScheduledMessageService.normalize_buttons_config(rows)
+
+
+def _build_auto_reply_markup(rule) -> InlineKeyboardMarkup | None:
+    raw_buttons = getattr(rule, "buttons", None) or []
+    if not raw_buttons:
+        return None
+    try:
+        normalized = ScheduledMessageService.normalize_buttons_config(raw_buttons)
+    except Exception:
+        return None
+
+    keyboard_rows: list[list[InlineKeyboardButton]] = []
+    for row in normalized:
+        button_row: list[InlineKeyboardButton] = []
+        for item in row:
+            text = str(item.get("text") or "").strip()
+            url = str(item.get("url") or "").strip()
+            callback_data = str(item.get("callback_data") or "").strip()
+            if text and url:
+                button_row.append(InlineKeyboardButton(text, url=url))
+            elif text and callback_data:
+                button_row.append(InlineKeyboardButton(text, callback_data=callback_data))
+        if button_row:
+            keyboard_rows.append(button_row)
+    return InlineKeyboardMarkup(keyboard_rows) if keyboard_rows else None
+
+
+async def _send_auto_reply_payload(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    chat_id: int,
+    text: str,
+    rule,
+    reply_to_message_id: int | None = None,
+) -> object:
+    reply_markup = _build_auto_reply_markup(rule)
+    cover_type = getattr(rule, "cover_media_type", None)
+    cover_file_id = getattr(rule, "cover_media_file_id", None)
+    if cover_type == "photo" and cover_file_id:
+        return await context.bot.send_photo(
+            chat_id=chat_id,
+            photo=cover_file_id,
+            caption=text,
+            reply_markup=reply_markup,
+            reply_to_message_id=reply_to_message_id,
+        )
+    if cover_type == "video" and cover_file_id:
+        return await context.bot.send_video(
+            chat_id=chat_id,
+            video=cover_file_id,
+            caption=text,
+            reply_markup=reply_markup,
+            reply_to_message_id=reply_to_message_id,
+        )
+    return await context.bot.send_message(
+        chat_id=chat_id,
+        text=text,
+        reply_markup=reply_markup,
+        reply_to_message_id=reply_to_message_id,
+    )
+
+
+async def _show_auto_reply_rule_detail(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    chat_id: int,
+    rule_id: int,
+) -> None:
+    from bot.keyboards.content.auto_reply import auto_reply_detail_keyboard
+
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        rule = await get_auto_reply_rule(session, rule_id)
+        await session.commit()
+
+    if rule is None or rule.chat_id != chat_id:
+        if update.callback_query is not None:
+            await update.callback_query.edit_message_text("规则不存在")
+        return
+
+    text = _format_auto_reply_rule_detail(rule)
+    if update.callback_query is not None:
+        await update.callback_query.edit_message_text(
+            text,
+            reply_markup=auto_reply_detail_keyboard(rule, chat_id),
+        )
 
 
 # ============================================
@@ -246,12 +411,9 @@ async def auto_reply_list_callback(update: Update, context: ContextTypes.DEFAULT
     q = update.callback_query
     await q.answer()
 
-    # 使用 PrivateChatContext 解析目标群组
-    from bot.utils.chat_context import PrivateChatContext
-
-    target_chat_id = await PrivateChatContext.require_current_chat(update, context)
+    target_chat_id = await _resolve_auto_reply_target_chat_id(update, context)
     if target_chat_id is None:
-        return  # 错误消息已发送
+        return
 
     # 获取自动回复规则列表
     db: Database = context.application.bot_data["db"]
@@ -270,8 +432,17 @@ async def auto_reply_list_callback(update: Update, context: ContextTypes.DEFAULT
             status = "🟢 激活" if r.is_active else "🔴 暂停"
             match_type_label = _get_match_type_label(r.match_type)
             keywords_display = ", ".join(r.keywords[:3]) + ("..." if len(r.keywords) > 3 else "")
-            text += f"{status} [{r.id}] {keywords_display}\n"
-            text += f"   匹配: {match_type_label} | 回复: {r.reply_content[:30]}{'...' if len(r.reply_content) > 30 else ''}\n\n"
+            delete_source = "删源" if getattr(r, "delete_source", False) else "留源"
+            delete_delay = getattr(r, "delete_reply_delay_seconds", 0)
+            delay_label = f"{delete_delay}s删回复" if delete_delay else "不删回复"
+            cover_label = "有封面" if getattr(r, "cover_media_file_id", None) else "无封面"
+            button_count = sum(len(row) for row in (getattr(r, "buttons", None) or []) if isinstance(row, list))
+            text += f"{status} #{r.sort_order} [{r.id}] {keywords_display}\n"
+            text += (
+                f"   匹配: {match_type_label} | {delete_source} | {delay_label}\n"
+                f"   展示: {cover_label} | 按钮 {button_count} 个\n"
+                f"   回复: {r.reply_content[:30]}{'...' if len(r.reply_content) > 30 else ''}\n\n"
+            )
     else:
         text += "暂无自动回复规则"
 
@@ -289,36 +460,15 @@ async def auto_reply_create_start(update: Update, context: ContextTypes.DEFAULT_
     chat = update.effective_chat
     user = update.effective_user
 
-    # 私聊中的自动回复创建 - 优先从 callback_data 获取目标群组ID
-    target_chat_id = None
-    target_chat_title = None
+    target_chat_id = await _resolve_auto_reply_target_chat_id(update, context)
+    if target_chat_id is None:
+        return
+
+    target_chat_title = chat.title
     if chat.type == "private":
-        # 优先从 callback_data 提取 chat_id
-        if q.data.startswith("auto_reply:create:"):
-            parts = q.data.split(":")
-            if len(parts) >= 3:
-                try:
-                    target_chat_id = int(parts[2])
-                except ValueError:
-                    pass
-
-        # 如果 callback_data 中没有 chat_id，从数据库获取
-        if target_chat_id is None:
-            from bot.models.core import TgChat
-            from sqlalchemy import select
-            db: Database = context.application.bot_data["db"]
-            target_chat_id = await ChatResolver.get_current_chat(db, user.id)
-            if target_chat_id is None:
-                await q.edit_message_text("请先选择一个群组")
-                return
-
-        if not await is_user_admin(context, target_chat_id, user.id):
-            await q.edit_message_text("你没有该群组的管理权限")
-            return
-
-        # 获取群组信息用于后续操作
         from bot.models.core import TgChat
         from sqlalchemy import select
+
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
             chat_stmt = select(TgChat).where(TgChat.id == target_chat_id)
@@ -326,12 +476,6 @@ async def auto_reply_create_start(update: Update, context: ContextTypes.DEFAULT_
             target_chat_obj = chat_result.scalar_one_or_none()
             target_chat_title = target_chat_obj.title if target_chat_obj else f"群组{target_chat_id}"
             await session.commit()
-    else:
-        if not await is_user_admin(context, chat.id, user.id):
-            await q.edit_message_text("需要管理员权限。")
-            return
-        target_chat_id = chat.id
-        target_chat_title = chat.title
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
@@ -363,6 +507,8 @@ async def auto_reply_create_start(update: Update, context: ContextTypes.DEFAULT_
     text += "关键词1,关键词2,关键词3\n"
     text += "匹配类型: contains\n"
     text += "区分大小写: false\n"
+    text += "删除来源: false\n"
+    text += "延迟删除: 0\n"
     text += "回复内容:\n"
     text += "这是自动回复的内容\n"
     text += "可以多行\n"
@@ -378,17 +524,334 @@ async def auto_reply_create_start(update: Update, context: ContextTypes.DEFAULT_
     text += "你好,hi,hello\n"
     text += "匹配类型: contains\n"
     text += "区分大小写: false\n"
+    text += "删除来源: false\n"
+    text += "延迟删除: 0\n"
     text += "回复内容:\n"
     text += "你好呀！欢迎来到我们的群组！\n"
     text += "```"
-
-    # 添加取消按钮
-    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("❌ 取消配置", callback_data=f"autoreply:cancel:{target_chat_id}")]
     ])
 
     await q.edit_message_text(text, parse_mode="Markdown", reply_markup=keyboard)
+
+
+async def auto_reply_detail_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _ensure_callback_update(update):
+        return
+    q = update.callback_query
+    await q.answer()
+
+    target_chat_id = await _resolve_auto_reply_target_chat_id(update, context)
+    if target_chat_id is None:
+        return
+
+    parts = (q.data or "").split(":")
+    if len(parts) < 4:
+        await q.edit_message_text("规则不存在")
+        return
+    try:
+        rule_id = int(parts[3])
+    except ValueError:
+        await q.edit_message_text("规则不存在")
+        return
+
+    await _show_auto_reply_rule_detail(update, context, chat_id=target_chat_id, rule_id=rule_id)
+
+
+async def auto_reply_preview_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _ensure_callback_update(update):
+        return
+    q = update.callback_query
+    await q.answer()
+
+    target_chat_id = await _resolve_auto_reply_target_chat_id(update, context)
+    if target_chat_id is None:
+        return
+
+    parts = (q.data or "").split(":")
+    if len(parts) < 4:
+        await q.edit_message_text("规则不存在")
+        return
+    try:
+        rule_id = int(parts[3])
+    except ValueError:
+        await q.edit_message_text("规则不存在")
+        return
+
+    from bot.keyboards.content.auto_reply import auto_reply_preview_keyboard
+
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        rule = await get_auto_reply_rule(session, rule_id)
+        await session.commit()
+
+    if rule is None or rule.chat_id != target_chat_id:
+        await q.edit_message_text("规则不存在")
+        return
+
+    if getattr(rule, "cover_media_file_id", None):
+        await _send_auto_reply_payload(
+            context,
+            chat_id=update.effective_chat.id,
+            text=rule.reply_content,
+            rule=rule,
+        )
+        await q.edit_message_text(
+            "👁️ 预览已发送到当前会话，请查看最新一条机器人消息。",
+            reply_markup=auto_reply_preview_keyboard(rule.id, target_chat_id),
+        )
+        return
+
+    preview_lines = [
+        "👁️ 自动回复预览",
+        "",
+        "以下为命中后机器人的回复效果预览：",
+        "",
+        rule.reply_content,
+    ]
+    await q.edit_message_text(
+        "\n".join(preview_lines),
+        reply_markup=auto_reply_preview_keyboard(rule.id, target_chat_id),
+    )
+
+
+async def auto_reply_edit_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _ensure_callback_update(update):
+        return
+    q = update.callback_query
+    await q.answer()
+
+    target_chat_id = await _resolve_auto_reply_target_chat_id(update, context)
+    if target_chat_id is None:
+        return
+
+    parts = (q.data or "").split(":")
+    if len(parts) < 5:
+        await q.edit_message_text("规则不存在")
+        return
+    try:
+        rule_id = int(parts[3])
+    except ValueError:
+        await q.edit_message_text("规则不存在")
+        return
+
+    field = parts[4]
+    state_map = {
+        "keywords": ConversationStateType.auto_reply_edit_keywords.value,
+        "content": ConversationStateType.auto_reply_edit_content.value,
+        "cover": ConversationStateType.auto_reply_edit_cover.value,
+        "buttons": ConversationStateType.auto_reply_edit_buttons.value,
+    }
+    state_type = state_map.get(field)
+    if state_type is None:
+        await q.answer("暂不支持该编辑项", show_alert=True)
+        return
+
+    prompt_map = {
+        "keywords": "💬 自动回复 | 编辑关键词\n\n请输入新的关键词列表，使用英文逗号分隔。\n例如：你好,hi,hello",
+        "content": "💬 自动回复 | 编辑回复内容\n\n请输入新的回复内容。",
+        "cover": "💬 自动回复 | 编辑封面\n\n请发送图片或视频，发送“清空”可移除封面。",
+        "buttons": "💬 自动回复 | 编辑按钮\n\n请输入 JSON 按钮数组，或按“按钮文案|URL”逐行输入。\n发送“清空”可移除按钮。",
+    }
+
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        await set_user_state(
+            session,
+            chat_id=update.effective_chat.id,
+            user_id=update.effective_user.id,
+            state_type=state_type,
+            state_data={"target_chat_id": target_chat_id, "rule_id": rule_id},
+        )
+        await session.commit()
+
+    await q.edit_message_text(
+        prompt_map[field],
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"auto_reply:detail:{target_chat_id}:{rule_id}")]]),
+    )
+
+
+async def auto_reply_rule_config_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _ensure_callback_update(update):
+        return
+    q = update.callback_query
+    await q.answer()
+
+    target_chat_id = await _resolve_auto_reply_target_chat_id(update, context)
+    if target_chat_id is None:
+        return
+
+    parts = (q.data or "").split(":")
+    if len(parts) < 5:
+        await q.answer("规则不存在", show_alert=True)
+        return
+    action = parts[1]
+    try:
+        rule_id = int(parts[3])
+    except ValueError:
+        await q.answer("规则不存在", show_alert=True)
+        return
+    field = parts[4]
+
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        rule = await get_auto_reply_rule(session, rule_id)
+        if rule is None or rule.chat_id != target_chat_id:
+            await session.commit()
+            await q.answer("规则不存在", show_alert=True)
+            return
+
+        if action == "togglecfg":
+            if field == "case":
+                await update_auto_reply_rule(session, rule_id, case_sensitive=not bool(rule.case_sensitive))
+            elif field == "source":
+                await update_auto_reply_rule(session, rule_id, delete_source=not bool(rule.delete_source))
+            else:
+                await session.commit()
+                await q.answer("无效配置项", show_alert=True)
+                return
+        elif action == "cycle":
+            if field == "match":
+                ordered = [
+                    AutoReplyMatchType.exact.value,
+                    AutoReplyMatchType.contains.value,
+                    AutoReplyMatchType.starts_with.value,
+                    AutoReplyMatchType.ends_with.value,
+                    AutoReplyMatchType.regex.value,
+                ]
+                current = getattr(rule, "match_type", AutoReplyMatchType.contains.value)
+                next_index = (ordered.index(current) + 1) % len(ordered) if current in ordered else 0
+                await update_auto_reply_rule(session, rule_id, match_type=ordered[next_index])
+            elif field == "delay":
+                values = [0, 30, 60, 300, 600]
+                current_delay = int(getattr(rule, "delete_reply_delay_seconds", 0) or 0)
+                next_index = (values.index(current_delay) + 1) % len(values) if current_delay in values else 0
+                await update_auto_reply_rule(session, rule_id, delete_reply_delay_seconds=values[next_index])
+            else:
+                await session.commit()
+                await q.answer("无效配置项", show_alert=True)
+                return
+        await session.commit()
+
+    await _show_auto_reply_rule_detail(update, context, chat_id=target_chat_id, rule_id=rule_id)
+
+
+async def auto_reply_move_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _ensure_callback_update(update):
+        return
+    q = update.callback_query
+    await q.answer()
+
+    target_chat_id = await _resolve_auto_reply_target_chat_id(update, context)
+    if target_chat_id is None:
+        return
+
+    parts = (q.data or "").split(":")
+    if len(parts) < 5:
+        await q.answer("移动失败", show_alert=True)
+        return
+    try:
+        rule_id = int(parts[3])
+    except ValueError:
+        await q.answer("移动失败", show_alert=True)
+        return
+    direction = parts[4]
+
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        moved = await move_auto_reply_rule(
+            session,
+            chat_id=target_chat_id,
+            rule_id=rule_id,
+            direction=direction,
+        )
+        await session.commit()
+
+    if not moved:
+        await q.answer("已经不能再移动了", show_alert=True)
+        return
+
+    await q.answer("顺序已更新")
+    await auto_reply_list_callback(update, context)
+
+
+async def auto_reply_delete_confirm_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _ensure_callback_update(update):
+        return
+    q = update.callback_query
+    await q.answer()
+
+    target_chat_id = await _resolve_auto_reply_target_chat_id(update, context)
+    if target_chat_id is None:
+        return
+
+    parts = (q.data or "").split(":")
+    if len(parts) < 5:
+        await q.edit_message_text("删除失败")
+        return
+    try:
+        rule_id = int(parts[3])
+    except ValueError:
+        await q.edit_message_text("删除失败")
+        return
+
+    from bot.keyboards.content.auto_reply import auto_reply_delete_confirm_keyboard
+
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        rule = await get_auto_reply_rule(session, rule_id)
+        await session.commit()
+
+    if rule is None or rule.chat_id != target_chat_id:
+        await q.edit_message_text("规则不存在")
+        return
+
+    text = "\n".join([
+        "⚠️ 确认删除自动回复规则？",
+        "",
+        f"规则 #{rule.sort_order} [{rule.id}]",
+        f"关键词: {', '.join(rule.keywords)}",
+        "",
+        "删除后将不再参与匹配。",
+    ])
+    await q.edit_message_text(
+        text,
+        reply_markup=auto_reply_delete_confirm_keyboard(rule.id, target_chat_id),
+    )
+
+
+async def auto_reply_delete_do_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _ensure_callback_update(update):
+        return
+    q = update.callback_query
+    await q.answer()
+
+    target_chat_id = await _resolve_auto_reply_target_chat_id(update, context)
+    if target_chat_id is None:
+        return
+
+    parts = (q.data or "").split(":")
+    if len(parts) < 5:
+        await q.edit_message_text("删除失败")
+        return
+    try:
+        rule_id = int(parts[3])
+    except ValueError:
+        await q.edit_message_text("删除失败")
+        return
+
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        success = await delete_auto_reply_rule(session, rule_id)
+        await session.commit()
+
+    if not success:
+        await q.answer("删除失败", show_alert=True)
+        return
+
+    await q.answer("规则已删除")
+    await auto_reply_list_callback(update, context)
 
 
 # Handler 类定义（使用 BaseHandler）
@@ -452,7 +915,40 @@ _auto_reply_toggle_handler = AutoReplyToggleHandler()
 
 # 适配器函数（保持 Router 兼容）
 async def auto_reply_toggle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """切换自动回复规则状态回调（适配器函数）"""
+    """切换自动回复规则状态回调（兼容新旧格式）"""
+    if not _ensure_callback_update(update):
+        return
+    q = update.callback_query
+    await q.answer()
+
+    data = q.data or ""
+    if data.startswith("auto_reply:toggle:"):
+        target_chat_id = await _resolve_auto_reply_target_chat_id(update, context)
+        if target_chat_id is None:
+            return
+        parts = data.split(":")
+        if len(parts) < 4:
+            await q.answer("规则不存在", show_alert=True)
+            return
+        try:
+            rule_id = int(parts[3])
+        except ValueError:
+            await q.answer("规则不存在", show_alert=True)
+            return
+
+        db = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            success = await toggle_auto_reply_rule(session, rule_id)
+            await session.commit()
+
+        if not success:
+            await q.answer("规则不存在", show_alert=True)
+            return
+
+        await q.answer("状态已切换")
+        await _show_auto_reply_rule_detail(update, context, chat_id=target_chat_id, rule_id=rule_id)
+        return
+
     await _auto_reply_toggle_handler.handle_callback(update, context, require_admin=False)
 
 
@@ -543,10 +1039,6 @@ async def auto_reply_config_handler(update: Update, context: ContextTypes.DEFAUL
         user = update.effective_user
         text = update.effective_message.text or ""
 
-        # 只在私聊或群聊中处理
-        if not text:
-            return
-
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
             # 获取用户状态 - 私聊中使用 chat.id 查询状态（与设置状态时一致）
@@ -564,22 +1056,35 @@ async def auto_reply_config_handler(update: Update, context: ContextTypes.DEFAUL
             )
 
             # 静默忽略非自动回复创建状态，避免干扰其他功能
-            if state is None or state.state_type != ConversationStateType.auto_reply_create.value:
+            supported_states = {
+                ConversationStateType.auto_reply_create.value,
+                ConversationStateType.auto_reply_edit_keywords.value,
+                ConversationStateType.auto_reply_edit_content.value,
+                ConversationStateType.auto_reply_edit_cover.value,
+                ConversationStateType.auto_reply_edit_buttons.value,
+            }
+
+            if state is None or state.state_type not in supported_states:
                 log.info("auto_reply_state_not_match", state_type=state.state_type if state else None)
                 await session.commit()
                 # 不 return，让函数自然结束，允许后续 handlers 执行
             else:
-                # 状态匹配，执行处理逻辑
-                step = state.state_data.get("step")
-                log.info("auto_reply_step", step=step)
+                if state.state_type == ConversationStateType.auto_reply_create.value:
+                    step = state.state_data.get("step")
+                    log.info("auto_reply_step", step=step)
 
-                if step == "config":
-                    log.info("auto_reply_calling_parse")
-                    await _parse_auto_reply_config(update, session, state, text)
-                    log.info("auto_reply_parse_done")
-                    # 注意：_parse_auto_reply_config 内部已经 commit 了会话，不需要再次 commit
+                    if step == "config":
+                        if not text:
+                            await session.commit()
+                            return
+                        log.info("auto_reply_calling_parse")
+                        await _parse_auto_reply_config(update, session, state, text)
+                        log.info("auto_reply_parse_done")
+                    else:
+                        await session.commit()
                 else:
-                    await session.commit()
+                    await _handle_auto_reply_edit_input(update, context, session, state, text)
+                # 注意：各子处理器内部已经 commit 了会话，不需要再次 commit
 
             log.info("auto_reply_handler_done")
     except Exception as e:
@@ -610,20 +1115,28 @@ async def _parse_auto_reply_config(update: Update, session, state: object, text:
         # 解析匹配类型
         match_type = AutoReplyMatchType.contains.value  # 默认
         case_sensitive = False  # 默认
+        delete_source = False
+        delete_reply_delay_seconds = 0
 
-        # 解析匹配类型和区分大小写
-        for i in range(1, min(3, len(lines))):
+        # 解析匹配类型和附加配置
+        for i in range(1, min(6, len(lines))):
             line = lines[i].strip()
             if line.startswith("匹配类型:"):
                 match_type = line.split(":", 1)[1].strip()
             elif line.startswith("区分大小写:"):
                 case_sensitive_str = line.split(":", 1)[1].strip().lower()
                 case_sensitive = case_sensitive_str in ["true", "1", "yes"]
+            elif line.startswith("删除来源:"):
+                delete_source_str = line.split(":", 1)[1].strip().lower()
+                delete_source = delete_source_str in ["true", "1", "yes"]
+            elif line.startswith("延迟删除:"):
+                delay_text = line.split(":", 1)[1].strip().rstrip("秒sS")
+                delete_reply_delay_seconds = int(delay_text or "0")
 
         # 解析回复内容
         reply_start = False
         reply_lines = []
-        for i in range(2, len(lines)):
+        for i in range(1, len(lines)):
             line = lines[i]
             if line.strip().startswith("回复内容:"):
                 reply_start = True
@@ -652,6 +1165,8 @@ async def _parse_auto_reply_config(update: Update, session, state: object, text:
             reply_content=reply_content,
             match_type=match_type,
             case_sensitive=case_sensitive,
+            delete_source=delete_source,
+            delete_reply_delay_seconds=delete_reply_delay_seconds,
         )
 
         if not result.success:
@@ -659,6 +1174,7 @@ async def _parse_auto_reply_config(update: Update, session, state: object, text:
                 "invalid_keywords": "关键词格式无效",
                 "invalid_reply": "回复内容无效",
                 "invalid_match_type": "匹配类型无效",
+                "invalid_delete_delay": "延迟删除必须是大于等于 0 的整数",
             }
             raise ValueError(error_messages.get(result.reason, "创建失败"))
 
@@ -668,19 +1184,25 @@ async def _parse_auto_reply_config(update: Update, session, state: object, text:
         await session.commit()
 
         # 返回成功消息
-        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-
         reply_text = f"✅ 自动回复规则创建成功！\n\n"
         reply_text += f"🔑 关键词: {', '.join(keywords)}\n"
+        reply_text += f"🔢 顺序: #{result.entity.sort_order}\n"
         reply_text += f"📋 匹配类型: {_get_match_type_label(match_type)}\n"
         reply_text += f"🔤 区分大小写: {'是' if case_sensitive else '否'}\n"
+        reply_text += f"🧹 删除来源: {'是' if delete_source else '否'}\n"
+        reply_text += (
+            f"⏱️ 延迟删除: {delete_reply_delay_seconds} 秒\n"
+            if delete_reply_delay_seconds else
+            "⏱️ 延迟删除: 不删除\n"
+        )
         reply_text += f"💬 回复: {reply_content[:50]}{'...' if len(reply_content) > 50 else ''}\n"
-        reply_text += f"\n规则ID: {result.entity.id}"
+        reply_text += f"\n规则ID: {result.entity.id}\n\n可继续进入详情页补充封面和按钮。"
 
         # 显示多级返回按钮：返回自动回复管理 / 返回主菜单
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔙 返回自动回复管理", callback_data=f"autoreply:menu:{target_chat_id}")],
-            [InlineKeyboardButton("🏠 返回主菜单", callback_data=f"adm:menu:{target_chat_id}")]
+            [InlineKeyboardButton("📄 规则详情", callback_data=f"auto_reply:detail:{target_chat_id}:{result.entity.id}")],
+            [InlineKeyboardButton("🔙 返回自动回复管理", callback_data=f"adm:menu:autoreply:{target_chat_id}")],
+            [InlineKeyboardButton("🏠 返回主菜单", callback_data=f"adm:menu:main:{target_chat_id}")]
         ])
 
         await update.effective_message.reply_text(reply_text, reply_markup=keyboard)
@@ -691,6 +1213,49 @@ async def _parse_auto_reply_config(update: Update, session, state: object, text:
     except Exception as e:
         await update.effective_message.reply_text(f"❌ 解析失败: {e}\n\n请检查格式后重新发送。")
         await session.commit()
+
+
+async def _handle_auto_reply_edit_input(update: Update, context: ContextTypes.DEFAULT_TYPE, session, state: object, text: str) -> None:
+    state_type = state.state_type
+    state_data = state.state_data or {}
+    target_chat_id = state_data.get("target_chat_id")
+    rule_id = state_data.get("rule_id")
+    if not target_chat_id or not rule_id:
+        await update.effective_message.reply_text("❌ 自动回复状态异常，请重新进入规则详情页。")
+        await clear_user_state(session, chat_id=update.effective_chat.id, user_id=update.effective_user.id)
+        await session.commit()
+        return
+
+    if state_type == ConversationStateType.auto_reply_edit_keywords.value:
+        keywords = [item.strip() for item in text.split(",") if item.strip()]
+        await update_auto_reply_rule(session, rule_id, keywords=keywords)
+    elif state_type == ConversationStateType.auto_reply_edit_content.value:
+        await update_auto_reply_rule(session, rule_id, reply_content=text.strip())
+    elif state_type == ConversationStateType.auto_reply_edit_cover.value:
+        message = update.effective_message
+        if text.strip() == "清空":
+            await update_auto_reply_rule(session, rule_id, cover_media_type=None, cover_media_file_id=None)
+        elif message.photo:
+            await update_auto_reply_rule(session, rule_id, cover_media_type="photo", cover_media_file_id=message.photo[-1].file_id)
+        elif message.video:
+            await update_auto_reply_rule(session, rule_id, cover_media_type="video", cover_media_file_id=message.video.file_id)
+        else:
+            await update.effective_message.reply_text("❌ 请发送图片、视频，或发送“清空”。")
+            await session.commit()
+            return
+    elif state_type == ConversationStateType.auto_reply_edit_buttons.value:
+        if text.strip() == "清空":
+            await update_auto_reply_rule(session, rule_id, buttons=[])
+        else:
+            buttons = _parse_auto_reply_buttons_input(text)
+            await update_auto_reply_rule(session, rule_id, buttons=buttons)
+
+    await clear_user_state(session, chat_id=update.effective_chat.id, user_id=update.effective_user.id)
+    await session.commit()
+    await update.effective_message.reply_text(
+        "✅ 自动回复规则已更新。",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回规则详情", callback_data=f"auto_reply:detail:{target_chat_id}:{rule_id}")]]),
+    )
 
 
 async def auto_reply_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -709,9 +1274,30 @@ async def auto_reply_message_handler(update: Update, context: ContextTypes.DEFAU
         result = await match_auto_reply(session, chat.id, message_text)
         await session.commit()
 
-    if result.success and result.reply_content:
+    if result.success and result.reply_content and result.rule is not None:
         try:
-            await update.effective_message.reply_text(result.reply_content)
+            sent = await _send_auto_reply_payload(
+                context,
+                chat_id=chat.id,
+                text=result.reply_content,
+                rule=result.rule,
+                reply_to_message_id=update.effective_message.message_id,
+            )
+            if getattr(result.rule, "delete_source", False):
+                try:
+                    await update.effective_message.delete()
+                except Exception as exc:
+                    log.debug("auto_reply_delete_source_failed", error=str(exc))
+            delete_after = getattr(result.rule, "delete_reply_delay_seconds", 0) or 0
+            if delete_after > 0:
+                async def _delete_later():
+                    await asyncio.sleep(delete_after)
+                    try:
+                        await sent.delete()
+                    except Exception:
+                        return
+
+                asyncio.create_task(_delete_later())
         except Exception as e:
             log.debug("auto_reply_send_failed", error=str(e))  # 静默失败，避免循环
 
@@ -756,7 +1342,7 @@ async def auto_reply_cancel_callback(update: Update, context: ContextTypes.DEFAU
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
         # 清除配置状态
-        state_chat_id = user.id if chat.type == "private" else chat.id
+        state_chat_id = chat.id
         await clear_user_state(session, state_chat_id, user.id)
         await session.commit()
 

@@ -3,17 +3,26 @@ import structlog
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ConversationHandler, MessageHandler, filters
 from bot.handlers.invite_link_handler import (
     invite_link_cancel_callback,
+    invite_link_buttons_callback,
+    invite_link_cover_callback,
     invite_link_create_expire_message,
     invite_link_create_limit_message,
     invite_link_create_name_message,
     invite_link_create_start_callback,
     invite_link_delete_callback,
     invite_link_detail_callback,
+    invite_link_export_callback,
+    invite_link_home_callback,
     invite_link_list_callback,
     invite_link_menu_callback,
+    invite_link_mode_callback,
+    invite_link_preview_callback,
+    invite_link_reset_callback,
+    invite_link_toggle_callback,
     invite_link_refresh_callback,
     invite_link_revoke_callback,
     invite_link_stats_callback,
+    invite_link_text_callback,
     link_command,
     user_invite_create_callback,
     user_invite_list_callback,
@@ -39,12 +48,21 @@ class InviteRouter(BaseRouter):
         
         # 回调处理器
         app.add_handler(CallbackQueryHandler(invite_link_menu_callback, pattern=r"^inv:menu$"))
+        app.add_handler(CallbackQueryHandler(invite_link_home_callback, pattern=r"^inv:home:"))
+        app.add_handler(CallbackQueryHandler(invite_link_toggle_callback, pattern=r"^inv:toggle:"))
+        app.add_handler(CallbackQueryHandler(invite_link_mode_callback, pattern=r"^inv:mode:"))
+        app.add_handler(CallbackQueryHandler(invite_link_cover_callback, pattern=r"^inv:cover"))
+        app.add_handler(CallbackQueryHandler(invite_link_text_callback, pattern=r"^inv:text"))
+        app.add_handler(CallbackQueryHandler(invite_link_buttons_callback, pattern=r"^inv:buttons"))
+        app.add_handler(CallbackQueryHandler(invite_link_preview_callback, pattern=r"^inv:preview"))
+        app.add_handler(CallbackQueryHandler(invite_link_reset_callback, pattern=r"^inv:reset:"))
+        app.add_handler(CallbackQueryHandler(invite_link_export_callback, pattern=r"^inv:export"))
         app.add_handler(CallbackQueryHandler(invite_link_list_callback, pattern=r"^inv:list"))
-        app.add_handler(CallbackQueryHandler(invite_link_stats_callback, pattern=r"^inv:stats$"))
-        app.add_handler(CallbackQueryHandler(invite_link_detail_callback, pattern=r"^inv:detail:\d+$"))
-        app.add_handler(CallbackQueryHandler(invite_link_refresh_callback, pattern=r"^inv:refresh:\d+$"))
-        app.add_handler(CallbackQueryHandler(invite_link_revoke_callback, pattern=r"^inv:revoke:\d+$"))
-        app.add_handler(CallbackQueryHandler(invite_link_delete_callback, pattern=r"^inv:delete:\d+$"))
+        app.add_handler(CallbackQueryHandler(invite_link_stats_callback, pattern=r"^inv:stats"))
+        app.add_handler(CallbackQueryHandler(invite_link_detail_callback, pattern=r"^inv:detail:\d+(?::-?\d+)?$"))
+        app.add_handler(CallbackQueryHandler(invite_link_refresh_callback, pattern=r"^inv:refresh:\d+(?::-?\d+)?$"))
+        app.add_handler(CallbackQueryHandler(invite_link_revoke_callback, pattern=r"^inv:revoke:\d+(?::-?\d+)?$"))
+        app.add_handler(CallbackQueryHandler(invite_link_delete_callback, pattern=r"^inv:delete:\d+(?::-?\d+)?$"))
         
         # 用户邀请链接回调
         app.add_handler(CallbackQueryHandler(user_invite_create_callback, pattern=r"^inv:user:create:\-?\d+$"))

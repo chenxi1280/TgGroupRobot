@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import csv
 import datetime as dt
+import io
 import structlog
 from dataclasses import dataclass
 from typing import Literal, NamedTuple
@@ -143,7 +145,7 @@ async def create_user_invite_link(
         create_kwargs = {
             "name": name,
             "member_limit": settings.invite_link_max_joins,
-            "creates_join_request": False,
+            "creates_join_request": settings.invite_link_mode == "relay",
         }
         if expire_date:
             create_kwargs["expire_date"] = expire_date
@@ -273,6 +275,55 @@ async def get_link_stats(session: AsyncSession, chat_id: int) -> dict[str, int]:
         "expired": sum(1 for l in links if l.status == InviteLinkStatus.expired.value),
         "total_members": sum(l.member_count for l in links),
     }
+
+
+async def clear_invite_counts(session: AsyncSession, chat_id: int) -> int:
+    result = await session.execute(
+        delete(InviteTracking).where(InviteTracking.chat_id == chat_id)
+    )
+    links = await get_chat_invite_links(session, chat_id)
+    for link in links:
+        link.member_count = 0
+    await session.flush()
+    return int(result.rowcount or 0)
+
+
+async def clear_chat_invite_links(session: AsyncSession, chat_id: int) -> list[InviteLink]:
+    links = await get_chat_invite_links(session, chat_id)
+    for link in links:
+        await session.delete(link)
+    await session.flush()
+    return links
+
+
+async def export_invite_tracking_csv(session: AsyncSession, chat_id: int) -> tuple[str, bytes]:
+    result = await session.execute(
+        select(
+            InviteTracking.inviter_user_id,
+            InviteTracking.invited_user_id,
+            InviteTracking.points_awarded,
+            InviteTracking.joined_at,
+            TgUser.username,
+        )
+        .join(TgUser, InviteTracking.inviter_user_id == TgUser.id)
+        .where(InviteTracking.chat_id == chat_id)
+        .order_by(InviteTracking.joined_at.desc())
+    )
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(["inviter_user_id", "inviter_username", "invitee_user_id", "points_awarded", "joined_at"])
+    for row in result:
+        writer.writerow(
+            [
+                row.inviter_user_id,
+                row.username or "",
+                row.invited_user_id,
+                int(bool(row.points_awarded)),
+                row.joined_at.isoformat() if row.joined_at else "",
+            ]
+        )
+    filename = f"invite_export_{chat_id}.csv"
+    return filename, buffer.getvalue().encode("utf-8")
 
 
 # 邀请奖励

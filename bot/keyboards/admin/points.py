@@ -1,64 +1,106 @@
-"""积分配置键盘
-
-提供积分管理的键盘生成。
-"""
+"""积分配置键盘"""
 from __future__ import annotations
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-from bot.keyboards.base.helpers import create_separator
+
+def _toggle_labels(enabled: bool, on_text: str = "启动", off_text: str = "关闭") -> tuple[str, str]:
+    return (f"✅ {on_text}", off_text) if enabled else (on_text, f"✅ {off_text}")
 
 
 def points_config_keyboard(settings, chat_id: int) -> InlineKeyboardMarkup:
-    """积分配置键盘"""
-    # 签到状态
-    sign_status = "✅ 开启" if settings.sign_enabled else "❌ 关闭"
-    sign_consecutive = (
-        f"{settings.sign_consecutive_days}天+{settings.sign_consecutive_bonus}分"
-        if settings.sign_consecutive_days > 0
-        else "未设置"
-    )
+    """主积分首页键盘（基础版积分中心）"""
+    all_enabled = bool(settings.sign_enabled or settings.message_points_enabled or settings.invite_points_enabled)
+    state_on, state_off = _toggle_labels(all_enabled)
+    checkin_on, checkin_off = _toggle_labels(settings.sign_enabled)
+    speech_on, speech_off = _toggle_labels(settings.message_points_enabled)
+    invite_on, invite_off = _toggle_labels(settings.invite_points_enabled)
 
-    # 发言积分状态
-    msg_status = "✅ 开启" if settings.message_points_enabled else "❌ 关闭"
-    msg_daily = f"{settings.message_points_daily_limit}" if settings.message_points_daily_limit else "无限制"
-    msg_min_len = f"{settings.message_min_length}字" if settings.message_min_length else "无限制"
-
-    # 邀请积分状态
-    inv_status = "✅ 开启" if settings.invite_points_enabled else "❌ 关闭"
-    inv_daily = f"{settings.invite_points_daily_limit}" if settings.invite_points_daily_limit else "无限制"
-
-    separator = create_separator()
-
-    buttons = [
-        # 签到规则
-        [InlineKeyboardButton(f"签到: {sign_status}", callback_data=f"pts:toggle:sign_enabled:{chat_id}")],
-        [InlineKeyboardButton(f"签到积分: {settings.sign_points}", callback_data=f"pts:edit:sign_points:{chat_id}")],
-        [InlineKeyboardButton(f"连续奖励: {sign_consecutive}", callback_data=f"pts:edit:sign_consecutive:{chat_id}")],
-        # 分隔
-        [separator],
-        # 发言规则
-        [InlineKeyboardButton(f"发言积分: {msg_status}", callback_data=f"pts:toggle:message_points_enabled:{chat_id}")],
-        [InlineKeyboardButton(f"每次积分: {settings.message_points}", callback_data=f"pts:edit:message_points:{chat_id}")],
-        [InlineKeyboardButton(f"每日上限: {msg_daily}", callback_data=f"pts:edit:message_daily_limit:{chat_id}")],
-        [InlineKeyboardButton(f"最小字数: {msg_min_len}", callback_data=f"pts:edit:message_min_length:{chat_id}")],
-        # 分隔
-        [separator],
-        # 邀请规则
-        [InlineKeyboardButton(f"邀请积分: {inv_status}", callback_data=f"pts:toggle:invite_points_enabled:{chat_id}")],
-        [InlineKeyboardButton(f"每次积分: {settings.invite_points}", callback_data=f"pts:edit:invite_points:{chat_id}")],
-        [InlineKeyboardButton(f"每日上限: {inv_daily}", callback_data=f"pts:edit:invite_daily_limit:{chat_id}")],
-        # 分隔
-        [separator],
-        # 别名设置
-        [InlineKeyboardButton(f"积分别名: {settings.points_alias}", callback_data=f"pts:edit:points_alias:{chat_id}")],
-        [InlineKeyboardButton(f"排行别名: {settings.points_rank_alias}", callback_data=f"pts:edit:points_rank_alias:{chat_id}")],
-        # 返回
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("⚙️ 状态：", callback_data=f"pts:home:{chat_id}"),
+            InlineKeyboardButton(state_on, callback_data=f"pts:toggle:all_enabled:{chat_id}:1"),
+            InlineKeyboardButton(state_off, callback_data=f"pts:toggle:all_enabled:{chat_id}:0"),
+        ],
+        [
+            InlineKeyboardButton("📘 展示规则：", callback_data=f"pts:todo:display_rules:{chat_id}"),
+            InlineKeyboardButton("🕒 待实现", callback_data=f"pts:todo:display_rules:{chat_id}"),
+        ],
+        [
+            InlineKeyboardButton("🏆 发言总排行", callback_data=f"pts:todo:speech_rank:{chat_id}"),
+            InlineKeyboardButton("🕒 待实现", callback_data=f"pts:todo:speech_rank:{chat_id}"),
+        ],
+        [
+            InlineKeyboardButton("👤 个人发言量", callback_data=f"pts:todo:personal_speech:{chat_id}"),
+            InlineKeyboardButton("🕒 待实现", callback_data=f"pts:todo:personal_speech:{chat_id}"),
+        ],
+        [
+            InlineKeyboardButton("📅 签到规则", callback_data=f"pts:rule:checkin:{chat_id}"),
+            InlineKeyboardButton("💬 发言规则", callback_data=f"pts:rule:speech:{chat_id}"),
+            InlineKeyboardButton("🔗 邀请规则", callback_data=f"pts:rule:invite:{chat_id}"),
+        ],
+        [
+            InlineKeyboardButton("🔄 转让积分", callback_data=f"pts:todo:transfer:{chat_id}"),
+            InlineKeyboardButton("🏷️ 积分别名", callback_data=f"pts:edit:points_alias:{chat_id}"),
+            InlineKeyboardButton("🥇 排行别名", callback_data=f"pts:edit:points_rank_alias:{chat_id}"),
+        ],
+        [
+            InlineKeyboardButton("➕ 增加积分", callback_data=f"pts:todo:admin_add:{chat_id}"),
+            InlineKeyboardButton("➖ 扣除积分", callback_data=f"pts:todo:admin_deduct:{chat_id}"),
+        ],
+        [
+            InlineKeyboardButton("🎁 积分抽奖", callback_data=f"pts:todo:lottery:{chat_id}"),
+            InlineKeyboardButton("🧩 额外规则", callback_data=f"pts:todo:extra_rules:{chat_id}"),
+        ],
+        [
+            InlineKeyboardButton("📤 导出操作日志", callback_data=f"pts:todo:export_logs:{chat_id}"),
+            InlineKeyboardButton("🧹 清空积分", callback_data=f"pts:todo:clear_points:{chat_id}"),
+        ],
         [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
-    ]
-    return InlineKeyboardMarkup(buttons)
+    ])
 
 
-def back_button(chat_id: int) -> InlineKeyboardMarkup:
+def points_rule_keyboard(rule_type: str, settings, chat_id: int) -> InlineKeyboardMarkup:
+    """签到/发言/邀请规则页键盘。"""
+    if rule_type == "checkin":
+        on_label, off_label = _toggle_labels(settings.sign_enabled)
+        return InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("⚙️ 状态：", callback_data=f"pts:rule:checkin:{chat_id}"),
+                InlineKeyboardButton(on_label, callback_data=f"pts:toggle:sign_enabled:{chat_id}:1"),
+                InlineKeyboardButton(off_label, callback_data=f"pts:toggle:sign_enabled:{chat_id}:0"),
+            ],
+            [InlineKeyboardButton("🎯 设置获得数量", callback_data=f"pts:edit:sign_points:{chat_id}")],
+            [InlineKeyboardButton("🔥 连续奖励", callback_data=f"pts:edit:sign_consecutive:{chat_id}")],
+            [InlineKeyboardButton("🔙 返回", callback_data=f"pts:home:{chat_id}")],
+        ])
+    if rule_type == "speech":
+        on_label, off_label = _toggle_labels(settings.message_points_enabled)
+        return InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("⚙️ 状态：", callback_data=f"pts:rule:speech:{chat_id}"),
+                InlineKeyboardButton(on_label, callback_data=f"pts:toggle:message_points_enabled:{chat_id}:1"),
+                InlineKeyboardButton(off_label, callback_data=f"pts:toggle:message_points_enabled:{chat_id}:0"),
+            ],
+            [InlineKeyboardButton("🎯 设置获得数量", callback_data=f"pts:edit:message_points:{chat_id}")],
+            [InlineKeyboardButton("📈 每日上限", callback_data=f"pts:edit:message_daily_limit:{chat_id}")],
+            [InlineKeyboardButton("🔡 最小字数长度限制", callback_data=f"pts:edit:message_min_length:{chat_id}")],
+            [InlineKeyboardButton("🔙 返回", callback_data=f"pts:home:{chat_id}")],
+        ])
+    on_label, off_label = _toggle_labels(settings.invite_points_enabled)
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("⚙️ 状态：", callback_data=f"pts:rule:invite:{chat_id}"),
+            InlineKeyboardButton(on_label, callback_data=f"pts:toggle:invite_points_enabled:{chat_id}:1"),
+            InlineKeyboardButton(off_label, callback_data=f"pts:toggle:invite_points_enabled:{chat_id}:0"),
+        ],
+        [InlineKeyboardButton("🎯 设置获得数量", callback_data=f"pts:edit:invite_points:{chat_id}")],
+        [InlineKeyboardButton("📈 设置每日上限", callback_data=f"pts:edit:invite_daily_limit:{chat_id}")],
+        [InlineKeyboardButton("🔙 返回", callback_data=f"pts:home:{chat_id}")],
+    ])
+
+
+def back_button(chat_id: int, callback_data: str | None = None) -> InlineKeyboardMarkup:
     """返回按钮"""
-    return InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")]])
+    target = callback_data or f"pts:home:{chat_id}"
+    return InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=target)]])

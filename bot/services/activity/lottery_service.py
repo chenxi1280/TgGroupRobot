@@ -13,7 +13,9 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.models.core import Lottery, LotteryParticipant, LotteryWinner, TgUser
+from bot.models.expansion import EngagementChatStat, LotterySetting
 from bot.models.enums import PointsTxnType
+from bot.models.core import InviteTracking
 
 log = structlog.get_logger(__name__)
 
@@ -24,6 +26,7 @@ log = structlog.get_logger(__name__)
 @dataclass
 class ParsedLotteryConfig:
     """解析后的抽奖配置"""
+    lottery_type: str
     title: str
     description: str | None
     draw_time: dt.datetime
@@ -31,6 +34,11 @@ class ParsedLotteryConfig:
     participation_cost: int
     max_participants: int
     requirement_days: int
+    qualification_window_days: int
+    required_invites: int
+    required_activity_count: int
+    finalist_limit: int
+    selection_mode: str
     prizes: list[dict]
 
 
@@ -46,6 +54,9 @@ class JoinResult:
         "lottery_closed",
         "lottery_completed",
         "insufficient_points",
+        "insufficient_invites",
+        "insufficient_activity",
+        "ranking_auto_selection",
         "max_participants_reached",
         "not_member_long_enough",
         "outside_join_time",
@@ -72,10 +83,19 @@ def format_lottery_stats_message(stats: dict[str, int]) -> str:
     )
 
 
+def _lottery_type_label(lottery_type: str) -> str:
+    return {
+        "common": "🎁 通用抽奖",
+        "points": "💰 积分抽奖",
+        "invite": "👥 邀请抽奖",
+        "activity": "🔥 群活跃抽奖",
+    }.get(lottery_type, "🎁 抽奖")
+
+
 # ==================== 配置解析 ====================
 
 
-def parse_lottery_config_text(text: str) -> ParsedLotteryConfig:
+def parse_lottery_config_text(text: str, lottery_type: str = "common", selection_mode: str = "threshold_random") -> ParsedLotteryConfig:
     """
     解析抽奖配置文本
 
@@ -126,9 +146,15 @@ def parse_lottery_config_text(text: str) -> ParsedLotteryConfig:
     participation_cost = 0
     max_participants = 0
     requirement_days = 0
+    qualification_window_days = 0
+    required_invites = 0
+    required_activity_count = 0
+    finalist_limit = 0
 
-    for line in lines[2:6]:
+    for line in lines[2:]:
         line = line.strip()
+        if not line or line == "奖品:":
+            continue
         if line.startswith("最低积分:"):
             try:
                 value = int(line.split(":", 1)[1].strip())
@@ -153,6 +179,30 @@ def parse_lottery_config_text(text: str) -> ParsedLotteryConfig:
                 requirement_days = max(0, value)
             except ValueError:
                 raise ValueError("入群天数必须是有效数字")
+        elif line.startswith("邀请人数:"):
+            try:
+                value = int(line.split(":", 1)[1].strip())
+                required_invites = max(0, value)
+            except ValueError:
+                raise ValueError("邀请人数必须是有效数字")
+        elif line.startswith("活跃消息数:"):
+            try:
+                value = int(line.split(":", 1)[1].strip())
+                required_activity_count = max(0, value)
+            except ValueError:
+                raise ValueError("活跃消息数必须是有效数字")
+        elif line.startswith("统计天数:"):
+            try:
+                value = int(line.split(":", 1)[1].strip())
+                qualification_window_days = max(0, value)
+            except ValueError:
+                raise ValueError("统计天数必须是有效数字")
+        elif line.startswith("入围人数:"):
+            try:
+                value = int(line.split(":", 1)[1].strip())
+                finalist_limit = max(0, value)
+            except ValueError:
+                raise ValueError("入围人数必须是有效数字")
 
     # 解析奖品
     prizes = []
@@ -183,7 +233,17 @@ def parse_lottery_config_text(text: str) -> ParsedLotteryConfig:
     if not prizes:
         raise ValueError("至少需要一个奖品")
 
+    if lottery_type == "invite" and required_invites <= 0:
+        raise ValueError("邀请抽奖必须配置邀请人数，格式如：邀请人数: 3")
+    if lottery_type == "activity" and required_activity_count <= 0:
+        raise ValueError("群活跃抽奖必须配置活跃消息数，格式如：活跃消息数: 200")
+    if lottery_type in {"invite", "activity"} and qualification_window_days <= 0:
+        qualification_window_days = 7
+    if selection_mode == "ranking_random" and finalist_limit <= 0:
+        raise ValueError("排名入围随机玩法必须配置入围人数，格式如：入围人数: 10")
+
     return ParsedLotteryConfig(
+        lottery_type=lottery_type,
         title=title,
         description=description,
         draw_time=draw_time_utc,
@@ -191,6 +251,11 @@ def parse_lottery_config_text(text: str) -> ParsedLotteryConfig:
         participation_cost=participation_cost,
         max_participants=max_participants,
         requirement_days=requirement_days,
+        qualification_window_days=qualification_window_days,
+        required_invites=required_invites,
+        required_activity_count=required_activity_count,
+        finalist_limit=finalist_limit,
+        selection_mode=selection_mode,
         prizes=prizes,
     )
 
@@ -205,7 +270,7 @@ def format_lottery_announcement_text(config: ParsedLotteryConfig) -> str:
     Returns:
         格式化后的公告文本
     """
-    text = f"🎁【抽奖活动】\n\n"
+    text = f"{_lottery_type_label(config.lottery_type)}\n\n"
     text += f"📢 {config.title}"
     if config.description:
         text += f"\n\n{config.description}"
@@ -214,6 +279,14 @@ def format_lottery_announcement_text(config: ParsedLotteryConfig) -> str:
         text += f"\n💰 最低积分: {config.min_points}"
     if config.participation_cost > 0:
         text += f"\n💸 参与费用: {config.participation_cost} 积分"
+    if config.required_invites > 0:
+        text += f"\n👥 邀请人数门槛: {config.required_invites}"
+    if config.required_activity_count > 0:
+        text += f"\n🔥 活跃消息门槛: {config.required_activity_count}"
+    if config.qualification_window_days > 0:
+        text += f"\n📊 统计天数: 最近 {config.qualification_window_days} 天"
+    if config.selection_mode == "ranking_random" and config.finalist_limit > 0:
+        text += f"\n🏆 排名入围人数: 前 {config.finalist_limit} 名"
     if config.max_participants > 0:
         text += f"\n👥 最大人数: {config.max_participants}"
     if config.requirement_days > 0:
@@ -221,7 +294,10 @@ def format_lottery_announcement_text(config: ParsedLotteryConfig) -> str:
     text += f"\n\n🎁 奖品:"
     for prize in config.prizes:
         text += f"\n  • {prize['name']} x {prize['quantity']}"
-    text += f"\n\n💡 点击下方按钮参与抽奖！"
+    if config.selection_mode == "ranking_random":
+        text += "\n\n💡 本玩法会在开奖时按排行自动生成入围名单，再随机开奖。"
+    else:
+        text += f"\n\n💡 点击下方按钮参与抽奖！"
     return text
 
 
@@ -235,6 +311,8 @@ async def create_lottery(
     draw_time: dt.datetime,
     prizes: list[dict],
     description: str | None = None,
+    lottery_type: str = "common",
+    qualification_rules: dict | None = None,
     min_points: int = 0,
     max_participants: int = 0,
     participation_cost: int = 0,
@@ -268,9 +346,11 @@ async def create_lottery(
         created_by_user_id=created_by_user_id,
         title=title,
         description=description,
+        lottery_type=lottery_type,
         draw_time=draw_time,
         prizes=prizes,
         status="pending",
+        qualification_rules=qualification_rules or {},
         min_points=min_points,
         max_participants=max_participants,
         participation_cost=participation_cost,
@@ -281,6 +361,24 @@ async def create_lottery(
     session.add(lottery)
     await session.flush()
     return lottery
+
+
+async def get_or_create_lottery_setting(session: AsyncSession, chat_id: int) -> LotterySetting:
+    setting = await session.get(LotterySetting, chat_id)
+    if setting is None:
+        setting = LotterySetting(chat_id=chat_id)
+        session.add(setting)
+        await session.flush()
+    return setting
+
+
+async def update_lottery_setting(session: AsyncSession, chat_id: int, **updates) -> LotterySetting:
+    setting = await get_or_create_lottery_setting(session, chat_id)
+    for key, value in updates.items():
+        if hasattr(setting, key):
+            setattr(setting, key, value)
+    await session.flush()
+    return setting
 
 
 async def get_lottery(session: AsyncSession, lottery_id: int) -> Lottery | None:
@@ -303,6 +401,7 @@ async def get_chat_lotteries(
     session: AsyncSession,
     chat_id: int,
     status: str | None = None,
+    lottery_type: str | None = None,
 ) -> list[Lottery]:
     """
     获取群组的抽奖列表
@@ -318,9 +417,24 @@ async def get_chat_lotteries(
     stmt = select(Lottery).where(Lottery.chat_id == chat_id)
     if status:
         stmt = stmt.where(Lottery.status == status)
+    if lottery_type and lottery_type != "all":
+        stmt = stmt.where(Lottery.lottery_type == lottery_type)
     stmt = stmt.order_by(Lottery.created_at.desc())
     result = await session.execute(stmt)
     return list(result.scalars().all())
+
+
+async def count_lotteries_by_type(session: AsyncSession, chat_id: int) -> dict[str, int]:
+    stmt = (
+        select(Lottery.lottery_type, func.count(Lottery.id))
+        .where(Lottery.chat_id == chat_id)
+        .group_by(Lottery.lottery_type)
+    )
+    result = await session.execute(stmt)
+    counts = {"common": 0, "points": 0, "invite": 0, "activity": 0}
+    for lottery_type, count in result.all():
+        counts[lottery_type] = int(count)
+    return counts
 
 
 async def get_lottery_stats(
@@ -461,6 +575,40 @@ async def can_join_lottery(
     if user_points < total_required:
         return JoinResult(success=False, reason="insufficient_points")
 
+    qualification_rules = lottery.qualification_rules or {}
+    if qualification_rules.get("selection_mode") == "ranking_random":
+        return JoinResult(success=False, reason="ranking_auto_selection")
+    window_days = int(qualification_rules.get("window_days") or 0)
+    if lottery.lottery_type == "invite":
+        required_invites = int(qualification_rules.get("required_invites") or 0)
+        if required_invites > 0:
+            invite_stmt = select(func.count(InviteTracking.id)).where(
+                InviteTracking.chat_id == lottery.chat_id,
+                InviteTracking.inviter_user_id == user_id,
+            )
+            if window_days > 0:
+                since = now - dt.timedelta(days=window_days)
+                invite_stmt = invite_stmt.where(InviteTracking.joined_at >= since)
+            invite_result = await session.execute(invite_stmt)
+            invite_count = int(invite_result.scalar() or 0)
+            if invite_count < required_invites:
+                return JoinResult(success=False, reason="insufficient_invites")
+
+    if lottery.lottery_type == "activity":
+        required_activity = int(qualification_rules.get("required_activity_count") or 0)
+        if required_activity > 0:
+            activity_stmt = select(func.coalesce(func.sum(EngagementChatStat.message_count), 0)).where(
+                EngagementChatStat.chat_id == lottery.chat_id,
+                EngagementChatStat.user_id == user_id,
+            )
+            if window_days > 0:
+                since_date = (now - dt.timedelta(days=window_days)).date()
+                activity_stmt = activity_stmt.where(EngagementChatStat.biz_date >= since_date)
+            activity_result = await session.execute(activity_stmt)
+            message_count = int(activity_result.scalar() or 0)
+            if message_count < required_activity:
+                return JoinResult(success=False, reason="insufficient_activity")
+
     # 检查最大参与人数
     if lottery.max_participants > 0:
         count_stmt = select(func.count(LotteryParticipant.id)).where(
@@ -520,6 +668,54 @@ async def join_lottery(
     return JoinResult(success=True, reason="ok")
 
 
+async def build_ranked_finalists(session: AsyncSession, lottery: Lottery) -> list[LotteryParticipant]:
+    qualification_rules = lottery.qualification_rules or {}
+    finalist_limit = max(int(qualification_rules.get("finalist_limit") or 0), 0)
+    window_days = max(int(qualification_rules.get("window_days") or 0), 0)
+    required_invites = max(int(qualification_rules.get("required_invites") or 0), 0)
+    required_activity = max(int(qualification_rules.get("required_activity_count") or 0), 0)
+    if finalist_limit <= 0:
+        return []
+
+    now = dt.datetime.now(dt.timezone.utc)
+    user_ids: list[int] = []
+    if lottery.lottery_type == "invite":
+        stmt = (
+            select(InviteTracking.inviter_user_id, func.count(InviteTracking.id).label("cnt"))
+            .where(
+                InviteTracking.chat_id == lottery.chat_id,
+                InviteTracking.inviter_user_id.is_not(None),
+            )
+            .group_by(InviteTracking.inviter_user_id)
+            .order_by(func.count(InviteTracking.id).desc(), InviteTracking.inviter_user_id.asc())
+            .limit(finalist_limit)
+        )
+        if window_days > 0:
+            stmt = stmt.where(InviteTracking.joined_at >= now - dt.timedelta(days=window_days))
+        result = await session.execute(stmt)
+        user_ids = [int(row[0]) for row in result.all() if row[0] is not None and int(row[1] or 0) >= required_invites]
+    elif lottery.lottery_type == "activity":
+        since_date = (now - dt.timedelta(days=window_days)).date() if window_days > 0 else None
+        stmt = (
+            select(EngagementChatStat.user_id, func.coalesce(func.sum(EngagementChatStat.message_count), 0).label("cnt"))
+            .where(EngagementChatStat.chat_id == lottery.chat_id)
+            .group_by(EngagementChatStat.user_id)
+            .order_by(func.sum(EngagementChatStat.message_count).desc(), EngagementChatStat.user_id.asc())
+            .limit(finalist_limit)
+        )
+        if since_date is not None:
+            stmt = stmt.where(EngagementChatStat.biz_date >= since_date)
+        result = await session.execute(stmt)
+        user_ids = [int(row[0]) for row in result.all() if int(row[1] or 0) >= required_activity]
+
+    finalists: list[LotteryParticipant] = []
+    for user_id in user_ids:
+        bal = 0
+        existing = LotteryParticipant(lottery_id=lottery.id, user_id=user_id, points_balance=bal)
+        finalists.append(existing)
+    return finalists
+
+
 # ==================== 开奖功能 ====================
 
 async def create_lottery_winner(
@@ -572,6 +768,9 @@ async def perform_random_draw(
     """
     # 获取所有参与者
     participants = await get_lottery_participants(session, lottery.id)
+    qualification_rules = lottery.qualification_rules or {}
+    if qualification_rules.get("selection_mode") == "ranking_random" and lottery.lottery_type in {"invite", "activity"}:
+        participants = await build_ranked_finalists(session, lottery)
     if not participants:
         return []
 
@@ -637,7 +836,7 @@ def generate_lottery_announcement(
     Returns:
         开奖公告文本
     """
-    text = f"🎉 抽奖【{lottery.title}】开奖结果\n\n"
+    text = f"🎉 {_lottery_type_label(lottery.lottery_type)}【{lottery.title}】开奖结果\n\n"
     text += f"🎁 中奖名单：\n"
 
     for winner in winners:

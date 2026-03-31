@@ -6,8 +6,15 @@ from bot.handlers.auto_reply_handler import (
     auto_reply_config_handler,
     auto_reply_create_start,
     auto_reply_delete_callback,
+    auto_reply_delete_confirm_callback,
+    auto_reply_delete_do_callback,
+    auto_reply_detail_callback,
+    auto_reply_edit_callback,
     auto_reply_list_callback,
     auto_reply_menu_callback,
+    auto_reply_move_callback,
+    auto_reply_preview_callback,
+    auto_reply_rule_config_callback,
     auto_reply_toggle_callback,
 )
 from bot.routers.base import BaseRouter
@@ -28,6 +35,14 @@ class AutoReplyRouter(BaseRouter):
         app.add_handler(CallbackQueryHandler(auto_reply_create_start, pattern=r"^auto_reply:create"))
         app.add_handler(CallbackQueryHandler(auto_reply_cancel_callback, pattern=r"^autoreply:cancel:"))
         app.add_handler(CallbackQueryHandler(auto_reply_list_callback, pattern=r"^auto_reply:list"))
+        app.add_handler(CallbackQueryHandler(auto_reply_detail_callback, pattern=r"^auto_reply:detail:"))
+        app.add_handler(CallbackQueryHandler(auto_reply_preview_callback, pattern=r"^auto_reply:preview:"))
+        app.add_handler(CallbackQueryHandler(auto_reply_edit_callback, pattern=r"^auto_reply:edit:"))
+        app.add_handler(CallbackQueryHandler(auto_reply_rule_config_callback, pattern=r"^auto_reply:(?:cycle|togglecfg):"))
+        app.add_handler(CallbackQueryHandler(auto_reply_move_callback, pattern=r"^auto_reply:move:"))
+        app.add_handler(CallbackQueryHandler(auto_reply_toggle_callback, pattern=r"^auto_reply:toggle:"))
+        app.add_handler(CallbackQueryHandler(auto_reply_delete_confirm_callback, pattern=r"^auto_reply:delete:.*:confirm$"))
+        app.add_handler(CallbackQueryHandler(auto_reply_delete_do_callback, pattern=r"^auto_reply:delete:.*:do$"))
         app.add_handler(CallbackQueryHandler(auto_reply_toggle_callback, pattern=r"^auto_reply_toggle_"))
         app.add_handler(CallbackQueryHandler(auto_reply_delete_callback, pattern=r"^auto_reply_delete_"))
         app.add_handler(CallbackQueryHandler(auto_reply_menu_callback, pattern=r"^auto_reply:menu"))

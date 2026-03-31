@@ -7,7 +7,7 @@ from telegram.error import BadRequest
 
 from bot.db.session import Database
 from bot.handlers.base.base_handler import BaseHandler
-from bot.keyboards.admin.points import back_button, points_config_keyboard
+from bot.keyboards.admin.points import back_button, points_config_keyboard, points_rule_keyboard
 from bot.services.core.chat_service import get_chat_settings
 from bot.utils.callback_parser import CallbackParser
 
@@ -57,12 +57,87 @@ class PointsConfigHandler(BaseHandler):
         field = callback_data.get(2)
 
         # 根据操作类型分发
+        if action == "home":
+            await self._show_points_home(update, context, target_chat_id, changed=False)
         if action == "toggle":
             await self._handle_toggle(update, context, target_chat_id, field)
         elif action == "edit":
             await self._handle_edit(update, context, target_chat_id, field)
+        elif action == "rule":
+            await self._handle_rule(update, context, target_chat_id, field)
+        elif action == "todo":
+            await self._handle_todo(update, target_chat_id, field)
         elif action == "cancel":
             await self._handle_cancel(update, context, target_chat_id)
+
+    async def _load_settings(self, context: ContextTypes.DEFAULT_TYPE, chat_id: int):
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            settings = await get_chat_settings(session, chat_id)
+            await session.commit()
+        return settings
+
+    async def _show_points_home(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+        *,
+        changed: bool = False,
+    ) -> None:
+        settings = await self._load_settings(context, chat_id)
+        text = "💰 主积分（基础版）\n\n"
+        if changed:
+            text += "配置已更新。\n\n"
+        text += (
+            f"状态：{'✅ 启动' if (settings.sign_enabled or settings.message_points_enabled or settings.invite_points_enabled) else '❌ 关闭'}\n"
+            f"签到：{'✅ 启动' if settings.sign_enabled else '❌ 关闭'}｜{settings.sign_points}分\n"
+            f"发言：{'✅ 启动' if settings.message_points_enabled else '❌ 关闭'}｜{settings.message_points}分\n"
+            f"邀请：{'✅ 启动' if settings.invite_points_enabled else '❌ 关闭'}｜{settings.invite_points}分\n"
+            f"积分别名：{settings.points_alias}\n"
+            f"排行别名：{settings.points_rank_alias}\n\n"
+            "说明：当前先提供基础版积分中心，文档中的转让、日志导出、清空积分等入口已收口为待实现。"
+        )
+        await self.message_helper.safe_edit(update, text=text, reply_markup=points_config_keyboard(settings, chat_id))
+
+    async def _show_rule_page(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+        rule_type: str,
+        *,
+        changed: bool = False,
+    ) -> None:
+        settings = await self._load_settings(context, chat_id)
+        if rule_type == "checkin":
+            text = (
+                "💰 主积分 | 签到规则\n\n"
+                f"状态：{'✅ 启动' if settings.sign_enabled else '❌ 关闭'}\n"
+                f"获得数量：{settings.sign_points}\n"
+                f"连续奖励：{settings.sign_consecutive_days}天 + {settings.sign_consecutive_bonus}分\n"
+            )
+        elif rule_type == "speech":
+            daily_limit = settings.message_points_daily_limit or "无限制"
+            min_length = settings.message_min_length or "无限制"
+            text = (
+                "💰 主积分 | 发言规则\n\n"
+                f"状态：{'✅ 启动' if settings.message_points_enabled else '❌ 关闭'}\n"
+                f"获得数量：{settings.message_points}\n"
+                f"每日上限：{daily_limit}\n"
+                f"最小字数：{min_length}\n"
+            )
+        else:
+            daily_limit = settings.invite_points_daily_limit or "无限制"
+            text = (
+                "💰 主积分 | 邀请规则\n\n"
+                f"状态：{'✅ 启动' if settings.invite_points_enabled else '❌ 关闭'}\n"
+                f"获得数量：{settings.invite_points}\n"
+                f"每日上限：{daily_limit}\n"
+            )
+        if changed:
+            text += "\n配置已更新。"
+        await self.message_helper.safe_edit(update, text=text, reply_markup=points_rule_keyboard(rule_type, settings, chat_id))
 
     async def _handle_toggle(
         self,
@@ -72,25 +147,38 @@ class PointsConfigHandler(BaseHandler):
         field: str,
     ) -> None:
         """处理开关切换"""
+        callback_data = CallbackParser.parse(update.callback_query.data or "")
         db: Database = context.application.bot_data["db"]
 
         async with db.session_factory() as session:
             settings = await get_chat_settings(session, chat_id)
+            explicit_value = callback_data.get_int_optional(4)
+            if field == "all_enabled":
+                next_value = bool(explicit_value) if explicit_value in {0, 1} else not (
+                    settings.sign_enabled or settings.message_points_enabled or settings.invite_points_enabled
+                )
+                settings.sign_enabled = next_value
+                settings.message_points_enabled = next_value
+                settings.invite_points_enabled = next_value
+                await session.commit()
+                await self._show_points_home(update, context, chat_id, changed=True)
+                return
             if hasattr(settings, field):
                 current = bool(getattr(settings, field))
-                setattr(settings, field, not current)
+                next_value = bool(explicit_value) if explicit_value in {0, 1} else not current
+                setattr(settings, field, next_value)
                 await session.commit()
-
-            # 重新显示键盘
-            settings = await get_chat_settings(session, chat_id)
             await session.commit()
 
-        keyboard = points_config_keyboard(settings, chat_id)
-        await self.message_helper.safe_edit(
-            update,
-            text="💰 积分配置\n\n配置已更新",
-            reply_markup=keyboard
-        )
+        rule_map = {
+            "sign_enabled": "checkin",
+            "message_points_enabled": "speech",
+            "invite_points_enabled": "invite",
+        }
+        if field in rule_map:
+            await self._show_rule_page(update, context, chat_id, rule_map[field], changed=True)
+        else:
+            await self._show_points_home(update, context, chat_id, changed=True)
 
     async def _handle_edit(
         self,
@@ -136,6 +224,41 @@ class PointsConfigHandler(BaseHandler):
         # 状态值需要通过其他方式传递
         return WAIT_VALUE
 
+    async def _handle_rule(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+        rule_type: str,
+    ) -> None:
+        await self._show_rule_page(update, context, chat_id, rule_type)
+
+    async def _handle_todo(
+        self,
+        update: Update,
+        chat_id: int,
+        feature: str,
+    ) -> None:
+        title_map = {
+            "display_rules": "展示规则",
+            "speech_rank": "发言总排行",
+            "personal_speech": "个人发言量",
+            "transfer": "转让积分",
+            "admin_add": "增加积分",
+            "admin_deduct": "扣除积分",
+            "lottery": "积分抽奖",
+            "extra_rules": "额外规则",
+            "export_logs": "导出操作日志",
+            "clear_points": "清空积分",
+        }
+        title = title_map.get(feature, "该功能")
+        text = (
+            f"💰 主积分 | {title}\n\n"
+            "当前只有重构设计，基础版积分中心尚未接入这一能力。\n"
+            "本轮已保留入口位置，避免首页继续和文档细节错位。"
+        )
+        await self.message_helper.safe_edit(update, text=text, reply_markup=back_button(chat_id))
+
     async def _handle_cancel(
         self,
         update: Update,
@@ -147,17 +270,7 @@ class PointsConfigHandler(BaseHandler):
         context.user_data.pop("points_edit_field", None)
         context.user_data.pop("points_edit_chat_id", None)
 
-        db: Database = context.application.bot_data["db"]
-        async with db.session_factory() as session:
-            settings = await get_chat_settings(session, chat_id)
-            await session.commit()
-
-        keyboard = points_config_keyboard(settings, chat_id)
-        await self.message_helper.safe_edit(
-            update,
-            text="💰 积分配置",
-            reply_markup=keyboard
-        )
+        await self._show_points_home(update, context, chat_id)
 
 
 # 创建单例实例

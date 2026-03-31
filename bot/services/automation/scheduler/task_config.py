@@ -37,4 +37,29 @@ TASK_CONFIG = {
         "enabled": True,
         "max_consecutive_failures": 10,
     },
+    "auction": {
+        "interval": 30,
+        "enabled": True,
+        "max_consecutive_failures": 10,
+    },
+    "bottom_button": {
+        "interval": 60,
+        "enabled": True,
+        "max_consecutive_failures": 10,
+    },
+    "game": {
+        "interval": 60,
+        "enabled": True,
+        "max_consecutive_failures": 10,
+    },
+    "guess": {
+        "interval": 30,
+        "enabled": True,
+        "max_consecutive_failures": 10,
+    },
+    "engagement": {
+        "interval": 60,
+        "enabled": True,
+        "max_consecutive_failures": 10,
+    },
 }

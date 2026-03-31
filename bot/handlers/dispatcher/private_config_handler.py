@@ -45,11 +45,18 @@ class PrivateConfigHandler:
             "anti_flood_config": self._handle_anti_flood_config,
             "anti_spam_config": self._handle_anti_spam_config,
             "auto_reply_create": self._handle_auto_reply_config,
+            "auto_reply_edit_keywords": self._handle_auto_reply_config,
+            "auto_reply_edit_content": self._handle_auto_reply_config,
+            "auto_reply_edit_cover": self._handle_auto_reply_config,
+            "auto_reply_edit_buttons": self._handle_auto_reply_config,
             "banned_word_add": self._handle_banned_word_config,
             "lottery_create": self._handle_lottery_config,
             "ads_create_config": self._handle_ads_config,
             "solitaire_create": self._handle_solitaire_config,
             "invite_link_create": self._handle_invite_link_config,
+            "invite_link_cover_input": self._handle_invite_link_config,
+            "invite_link_text_input": self._handle_invite_link_config,
+            "invite_link_buttons_input": self._handle_invite_link_config,
             "renewal_card_input": self._handle_renewal_card_input,
             "force_subscribe_channel_1_input": self._handle_force_subscribe_input,
             "force_subscribe_channel_2_input": self._handle_force_subscribe_input,
@@ -96,6 +103,28 @@ class PrivateConfigHandler:
             "points_mall_product_description_input": self._handle_points_extended_input,
             "points_mall_product_sort_input": self._handle_points_extended_input,
             "points_mall_product_cover_input": self._handle_points_extended_input,
+            "bottom_button_text_input": self._handle_bottom_button_input,
+            "bottom_button_button_text_input": self._handle_bottom_button_input,
+            "bottom_button_payload_input": self._handle_bottom_button_input,
+            "game_wait_rake_ratio": self._handle_game_input,
+            "game_wait_rake_owner": self._handle_game_input,
+            "game_wait_auto_start_time": self._handle_game_input,
+            "game_wait_auto_stop_time": self._handle_game_input,
+            "guess_wait_title": self._handle_guess_input,
+            "guess_wait_cover": self._handle_guess_input,
+            "guess_wait_description": self._handle_guess_input,
+            "guess_wait_banker": self._handle_guess_input,
+            "guess_wait_pool": self._handle_guess_input,
+            "guess_wait_options": self._handle_guess_input,
+            "guess_wait_command": self._handle_guess_input,
+            "guess_wait_deadline": self._handle_guess_input,
+            "guess_wait_rake_ratio": self._handle_guess_input,
+            "guess_wait_rake_owner": self._handle_guess_input,
+            "engagement_wait_egg_template": self._handle_engagement_input,
+            "engagement_wait_chat_target": self._handle_engagement_input,
+            "engagement_wait_chat_plan": self._handle_engagement_input,
+            "engagement_wait_chat_command": self._handle_engagement_input,
+            "inherit_wait_token_input": self._handle_account_inherit_input,
             # 定时消息 FSM 状态
             "sm_edit_text": self._handle_scheduled_message_input,
             "sm_edit_media": self._handle_scheduled_message_media,
@@ -304,9 +333,16 @@ class PrivateConfigHandler:
         message_text: str,
     ) -> None:
         """处理邀请链接配置"""
-        from bot.handlers.invite_link_handler import invite_link_create_name_message
+        from bot.handlers.invite_link_handler import (
+            handle_invite_link_config_input,
+            invite_link_create_name_message,
+        )
 
-        await invite_link_create_name_message(update, context)
+        if state.state_type == "invite_link_create":
+            await invite_link_create_name_message(update, context)
+            return
+
+        await handle_invite_link_config_input(update, context, session, state, message_text)
 
     async def _handle_renewal_card_input(
         self,
@@ -320,6 +356,66 @@ class PrivateConfigHandler:
         from bot.handlers.renewal_handler import handle_renewal_card_input
 
         await handle_renewal_card_input(update, context, session, state, message_text)
+
+    async def _handle_bottom_button_input(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        session: AsyncSession,
+        state: Any,
+        message_text: str,
+    ) -> None:
+        from bot.handlers.admin_handler import handle_bottom_button_input
+
+        await handle_bottom_button_input(update, context, session, state, message_text)
+
+    async def _handle_game_input(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        session: AsyncSession,
+        state: Any,
+        message_text: str,
+    ) -> None:
+        from bot.handlers.admin_handler import handle_game_input
+
+        await handle_game_input(update, context, session, state, message_text)
+
+    async def _handle_guess_input(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        session: AsyncSession,
+        state: Any,
+        message_text: str,
+    ) -> None:
+        from bot.handlers.admin_handler import handle_guess_input
+
+        await handle_guess_input(update, context, session, state, message_text)
+
+    async def _handle_engagement_input(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        session: AsyncSession,
+        state: Any,
+        message_text: str,
+    ) -> None:
+        from bot.handlers.admin_handler import handle_engagement_input
+
+        await handle_engagement_input(update, context, session, state, message_text)
+
+    async def _handle_account_inherit_input(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        session: AsyncSession,
+        state: Any,
+        message_text: str,
+    ) -> None:
+        from bot.handlers.account_inherit_handler import handle_account_inherit_input
+
+        await handle_account_inherit_input(update, context, session, state, message_text)
 
     async def _handle_force_subscribe_input(
         self,

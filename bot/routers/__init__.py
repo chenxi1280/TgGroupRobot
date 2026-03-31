@@ -11,6 +11,8 @@ from bot.routers.group_router import GroupRouter
 from bot.routers.verification_router import VerificationRouter
 from bot.routers.nearby_router import NearbyRouter
 from bot.routers.renewal_router import RenewalRouter
+from bot.routers.bottom_button_router import BottomButtonRouter
+from bot.routers.game_runtime_router import GameRuntimeRouter
 
 __all__ = [
     "AdminRouter",
@@ -26,4 +28,6 @@ __all__ = [
     "VerificationRouter",
     "NearbyRouter",
     "RenewalRouter",
+    "BottomButtonRouter",
+    "GameRuntimeRouter",
 ]

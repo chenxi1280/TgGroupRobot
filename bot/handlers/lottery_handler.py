@@ -16,22 +16,29 @@ from bot.models.core import ChatMember, TgUser
 from bot.services.core.chat_service import ensure_chat, get_chat_settings
 from bot.services.core.permission_service import is_user_admin
 from bot.services.activity.lottery_service import (
+    count_lotteries_by_type,
     create_lottery,
     create_lottery_winner,
     format_lottery_announcement_text,
     format_lottery_stats_message,
     get_lottery,
+    get_chat_lotteries,
     get_lottery_participant_count,
     get_lottery_participants,
+    get_or_create_lottery_setting,
     get_lottery_stats,
     join_lottery,
     JoinResult,
     parse_lottery_config_text,
     ParsedLotteryConfig,
+    update_lottery_setting,
 )
 from bot.services.activity.points_service import change_points, get_balance
 from bot.services.state.state_service import clear_user_state, get_user_state, set_user_state
 from bot.keyboards.activity.lottery import (
+    lottery_menu_keyboard,
+    lottery_mode_keyboard,
+    lottery_type_keyboard,
     manual_draw_prize_keyboard,
     manual_draw_summary_keyboard,
     manual_draw_summary_keyboard_with_winners,
@@ -41,6 +48,24 @@ from bot.utils.callback_parser import CallbackParser
 from sqlalchemy import select
 
 log = structlog.get_logger(__name__)
+
+
+def _lottery_type_title(lottery_type: str) -> str:
+    return {
+        "common": "🎁 通用抽奖",
+        "points": "💰 积分抽奖",
+        "invite": "👥 邀请抽奖",
+        "activity": "🔥 群活跃抽奖",
+    }.get(lottery_type, "🎁 抽奖")
+
+
+def _lottery_status_title(status: str) -> str:
+    return {
+        "all": "全部活动",
+        "pending": "待开奖",
+        "completed": "已开奖",
+        "cancelled": "已取消",
+    }.get(status, "活动")
 
 
 class LotteryHandler(BaseHandler):
@@ -85,7 +110,12 @@ class LotteryHandler(BaseHandler):
 
         chat_title = target_chat.title if target_chat else f"群组{target_chat_id}"
         # 使用 service 层格式化消息
-        text = f"🎁[{chat_title}]抽奖\n\n{format_lottery_stats_message(stats)}"
+        text = (
+            f"🎁[{chat_title}]抽奖\n\n"
+            f"{format_lottery_stats_message(stats)}\n\n"
+            "当前支持 4 类抽奖：通用 / 积分 / 邀请 / 群活跃。\n"
+            "不同类型会按各自资格条件校验参与资格。"
+        )
 
         from bot.keyboards.activity.lottery import lottery_menu_keyboard
 
@@ -95,11 +125,211 @@ class LotteryHandler(BaseHandler):
             reply_markup=lottery_menu_keyboard(target_chat_id)
         )
 
+    async def show_create_type_menu(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        target_chat_id: int,
+    ) -> None:
+        text = "\n".join(
+            [
+                "🎁 发起抽奖活动",
+                "",
+                "请选择抽奖类型：",
+                "• 🎁 通用抽奖：普通参与资格",
+                "• 💰 积分抽奖：按积分门槛/费用参与",
+                "• 👥 邀请抽奖：按邀请人数参与",
+                "• 🔥 群活跃抽奖：按近 N 天发言数参与",
+            ]
+        )
+        await self.message_helper.safe_edit(update, text=text, reply_markup=lottery_type_keyboard(target_chat_id))
+
+    async def show_mode_menu(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        target_chat_id: int,
+        lottery_type: str,
+    ) -> None:
+        text = "\n".join(
+            [
+                f"{_lottery_type_title(lottery_type)} | 选择玩法",
+                "",
+                "• 达标随机：满足门槛的成员可手动参与，再随机开奖",
+                "• 排名入围随机：系统按排行生成入围名单，再从入围名单随机开奖",
+            ]
+        )
+        await self.message_helper.safe_edit(update, text=text, reply_markup=lottery_mode_keyboard(target_chat_id, lottery_type))
+
+    async def show_activity_list(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        target_chat_id: int,
+        status: str = "all",
+        lottery_type: str = "all",
+        page: int = 0,
+        page_size: int = 6,
+    ) -> None:
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            lotteries = await get_chat_lotteries(
+                session,
+                target_chat_id,
+                None if status == "all" else status,
+                lottery_type=lottery_type,
+            )
+            await session.commit()
+        start = max(page, 0) * page_size
+        subset = lotteries[start:start + page_size]
+        lines = [
+            f"📋 抽奖活动列表 | {_lottery_status_title(status)} | {_lottery_type_title(lottery_type) if lottery_type != 'all' else '🧭 全部类型'}",
+            "",
+        ]
+        if not subset:
+            lines.append("暂无活动。")
+        else:
+            for lottery in subset:
+                rules = lottery.qualification_rules or {}
+                mode = rules.get("selection_mode", "threshold_random")
+                mode_label = "🏆 排名入围随机" if mode == "ranking_random" else "🎯 达标随机"
+                lines.append(
+                    f"• #{lottery.id} {_lottery_type_title(lottery.lottery_type)} | {mode_label} | {lottery.title} | {lottery.status} | {lottery.draw_time.strftime('%m-%d %H:%M')}"
+                )
+        keyboard_rows = []
+        for lottery in subset:
+            keyboard_rows.append(
+                [
+                    InlineKeyboardButton(
+                        f"🔎 #{lottery.id} {lottery.title[:16]}",
+                        callback_data=f"lot:detail:{target_chat_id}:{lottery.id}",
+                    )
+                ]
+            )
+        filter_row = [
+            InlineKeyboardButton(("✅ 全部" if status == "all" else "全部"), callback_data=f"lot:list:{target_chat_id}:all:{lottery_type}:0"),
+            InlineKeyboardButton(("✅ 待开奖" if status == "pending" else "待开奖"), callback_data=f"lot:list:{target_chat_id}:pending:{lottery_type}:0"),
+            InlineKeyboardButton(("✅ 已开奖" if status == "completed" else "已开奖"), callback_data=f"lot:list:{target_chat_id}:completed:{lottery_type}:0"),
+        ]
+        keyboard_rows.append(filter_row)
+        keyboard_rows.append(
+            [
+                InlineKeyboardButton("✅ 全部类型" if lottery_type == "all" else "全部类型", callback_data=f"lot:list:{target_chat_id}:{status}:all:0"),
+                InlineKeyboardButton("🎁 通用", callback_data=f"lot:list:{target_chat_id}:{status}:common:0"),
+                InlineKeyboardButton("💰 积分", callback_data=f"lot:list:{target_chat_id}:{status}:points:0"),
+            ]
+        )
+        keyboard_rows.append(
+            [
+                InlineKeyboardButton("👥 邀请", callback_data=f"lot:list:{target_chat_id}:{status}:invite:0"),
+                InlineKeyboardButton("🔥 活跃", callback_data=f"lot:list:{target_chat_id}:{status}:activity:0"),
+            ]
+        )
+        nav_row = []
+        if page > 0:
+            nav_row.append(InlineKeyboardButton("⬅️ 上一页", callback_data=f"lot:list:{target_chat_id}:{status}:{lottery_type}:{page - 1}"))
+        if start + page_size < len(lotteries):
+            nav_row.append(InlineKeyboardButton("下一页 ➡️", callback_data=f"lot:list:{target_chat_id}:{status}:{lottery_type}:{page + 1}"))
+        if nav_row:
+            keyboard_rows.append(nav_row)
+        keyboard_rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:lottery:{target_chat_id}")])
+        await self.message_helper.safe_edit(update, text="\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard_rows))
+
+    async def show_activity_detail(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        target_chat_id: int,
+        lottery_id: int,
+    ) -> None:
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            lottery = await get_lottery(session, lottery_id)
+            if lottery is None or lottery.chat_id != target_chat_id:
+                await session.commit()
+                await self.message_helper.safe_edit(
+                    update,
+                    "抽奖不存在或已被删除。",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"lot:list:{target_chat_id}:all:all:0")]]),
+                )
+                return
+            participant_count = await get_lottery_participant_count(session, lottery_id)
+            await session.commit()
+        rules = lottery.qualification_rules or {}
+        selection_mode = rules.get("selection_mode", "threshold_random")
+        lines = [
+            f"{_lottery_type_title(lottery.lottery_type)} | 活动详情",
+            "",
+            f"🆔 活动ID：{lottery.id}",
+            f"📢 标题：{lottery.title}",
+            f"📌 状态：{lottery.status}",
+            f"🎛 玩法：{'🏆 排名入围随机' if selection_mode == 'ranking_random' else '🎯 达标随机'}",
+            f"🕒 开奖时间：{lottery.draw_time.strftime('%Y-%m-%d %H:%M')}",
+            f"👥 参与人数：{participant_count}",
+            f"🎁 奖品数：{sum(int(item.get('quantity', 1)) for item in (lottery.prizes or []))}",
+        ]
+        if lottery.min_points > 0:
+            lines.append(f"💰 最低积分：{lottery.min_points}")
+        if lottery.participation_cost > 0:
+            lines.append(f"💸 参与费用：{lottery.participation_cost}")
+        if rules.get("required_invites"):
+            lines.append(f"👥 邀请门槛：{rules['required_invites']}（最近 {rules.get('window_days', 7)} 天）")
+        if rules.get("required_activity_count"):
+            lines.append(f"🔥 活跃门槛：{rules['required_activity_count']}（最近 {rules.get('window_days', 7)} 天）")
+        if selection_mode == "ranking_random":
+            lines.append(f"🏆 入围人数：前 {int(rules.get('finalist_limit') or 0)} 名")
+        keyboard_rows = []
+        if lottery.status == "pending":
+            keyboard_rows.append([InlineKeyboardButton("🎯 立即开奖", callback_data=f"lot:draw:{target_chat_id}:{lottery.id}")])
+        keyboard_rows.append([InlineKeyboardButton("🔙 返回列表", callback_data=f"lot:list:{target_chat_id}:all:all:0")])
+        await self.message_helper.safe_edit(update, text="\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard_rows))
+
+    async def show_settings_menu(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        target_chat_id: int,
+    ) -> None:
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            setting = await get_or_create_lottery_setting(session, target_chat_id)
+            await session.commit()
+        text = "\n".join(
+            [
+                "⚙️ 抽奖设置",
+                "",
+                f"📌 发布置顶：{'✅ 开启' if setting.publish_pin_enabled else '❌ 关闭'}",
+                f"📣 结果置顶：{'✅ 开启' if setting.result_pin_enabled else '❌ 关闭'}",
+                f"🧹 删除参与消息：{'✅ 开启' if setting.delete_join_message_enabled else '❌ 关闭'}",
+            ]
+        )
+        keyboard = InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton("📌 发布置顶", callback_data=f"lot:setting:{target_chat_id}:publish_pin:{0 if setting.publish_pin_enabled else 1}"),
+                    InlineKeyboardButton("📣 结果置顶", callback_data=f"lot:setting:{target_chat_id}:result_pin:{0 if setting.result_pin_enabled else 1}"),
+                ],
+                [
+                    InlineKeyboardButton("🧹 删除参与消息", callback_data=f"lot:setting:{target_chat_id}:delete_join:{0 if setting.delete_join_message_enabled else 1}"),
+                ],
+                [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:lottery:{target_chat_id}")],
+            ]
+        )
+        await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
+
     async def start_create_flow(
         self,
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         target_chat_id: int,
+        lottery_type: str = "common",
+        selection_mode: str = "threshold_random",
     ) -> None:
         """开始创建抽奖流程"""
         q = update.callback_query
@@ -124,11 +354,15 @@ class LotteryHandler(BaseHandler):
                 chat_id=q.message.chat.id,  # 使用当前聊天（私聊）存储状态
                 user_id=user.id,
                 state_type=ConversationStateType.lottery_create.value,
-                state_data={"step": "config", "target_chat_id": target_chat_id},
+                state_data={"step": "config", "target_chat_id": target_chat_id, "lottery_type": lottery_type, "selection_mode": selection_mode},
             )
             await session.commit()
 
-        text = "🎁创建抽奖  ( /cancel 取消)\n\n"
+        text = f"{_lottery_type_title(lottery_type)} | 创建抽奖  ( /cancel 取消)\n\n"
+        if selection_mode == "ranking_random":
+            text += "当前玩法：🏆 排名入围随机\n\n"
+        elif lottery_type in {"invite", "activity"}:
+            text += "当前玩法：🎯 达标随机\n\n"
         text += "请按以下格式一次性发送配置：\n\n"
         text += "```\n"
         text += "标题|描述（可选）\n"
@@ -137,6 +371,16 @@ class LotteryHandler(BaseHandler):
         text += "参与费用: 0\n"
         text += "最大人数: 0（0=无限制）\n"
         text += "入群天数: 0（0=无限制）\n"
+        if lottery_type == "invite":
+            text += "邀请人数: 3\n"
+            text += "统计天数: 7\n"
+            if selection_mode == "ranking_random":
+                text += "入围人数: 10\n"
+        elif lottery_type == "activity":
+            text += "活跃消息数: 200\n"
+            text += "统计天数: 7\n"
+            if selection_mode == "ranking_random":
+                text += "入围人数: 10\n"
         text += "奖品:\n"
         text += "奖品1名称,数量\n"
         text += "奖品2名称,数量\n"
@@ -146,10 +390,20 @@ class LotteryHandler(BaseHandler):
         text += "```\n"
         text += "新年大抽奖|祝大家新年快乐！\n"
         text += "开奖时间: 2025-12-31 20:00\n"
-        text += "最低积分: 100\n"
-        text += "参与费用: 10\n"
+        text += f"最低积分: {100 if lottery_type == 'points' else 0}\n"
+        text += f"参与费用: {10 if lottery_type == 'points' else 0}\n"
         text += "最大人数: 50\n"
         text += "入群天数: 7\n"
+        if lottery_type == "invite":
+            text += "邀请人数: 3\n"
+            text += "统计天数: 7\n"
+            if selection_mode == "ranking_random":
+                text += "入围人数: 10\n"
+        elif lottery_type == "activity":
+            text += "活跃消息数: 200\n"
+            text += "统计天数: 7\n"
+            if selection_mode == "ranking_random":
+                text += "入围人数: 10\n"
         text += "奖品:\n"
         text += "一等奖:100U,1\n"
         text += "二等奖:50U,3\n"
@@ -219,6 +473,9 @@ class LotteryHandler(BaseHandler):
                         "lottery_closed": "抽奖已结束",
                         "lottery_completed": "抽奖已开奖",
                         "insufficient_points": f"积分不足，需要至少 {lottery.min_points} 积分",
+                        "insufficient_invites": "邀请人数未达标，暂时不能参与该抽奖",
+                        "insufficient_activity": "最近活跃消息数未达标，暂时不能参与该抽奖",
+                        "ranking_auto_selection": "本玩法无需手动参与，系统会在开奖时按排行自动生成入围名单",
                         "max_participants_reached": "参与人数已满",
                         "not_member_long_enough": f"入群天数不足，需要 {lottery.requirement_days} 天以上",
                         "outside_join_time": "不在参与时间内",
@@ -257,6 +514,7 @@ class LotteryHandler(BaseHandler):
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         lottery_id: int,
+        target_chat_id: int | None = None,
     ) -> None:
         """处理开奖"""
         q = update.callback_query
@@ -270,7 +528,8 @@ class LotteryHandler(BaseHandler):
                 await session.commit()
                 return
 
-            if lottery.chat_id != chat.id:
+            current_chat_id = target_chat_id if target_chat_id is not None else chat.id
+            if lottery.chat_id != current_chat_id:
                 await self.message_helper.safe_edit(update, "此抽奖不属于当前群组。")
                 await session.commit()
                 return
@@ -344,6 +603,7 @@ class LotteryHandler(BaseHandler):
 
                 # 发放积分奖励
                 await distribute_lottery_rewards(session, lottery, winners)
+                setting = await get_or_create_lottery_setting(session, lottery.chat_id)
 
                 # 更新抽奖状态
                 lottery.status = "completed"
@@ -353,7 +613,19 @@ class LotteryHandler(BaseHandler):
                 announcement = generate_lottery_announcement(lottery, winners, users)
 
                 await session.commit()
-                await self.message_helper.safe_edit(update, text=announcement, parse_mode="Markdown")
+                if target_chat_id is not None and update.effective_chat and update.effective_chat.type == "private":
+                    sent = await context.bot.send_message(chat_id=lottery.chat_id, text=announcement, parse_mode="Markdown")
+                    if setting.result_pin_enabled:
+                        try:
+                            await context.bot.pin_chat_message(chat_id=lottery.chat_id, message_id=sent.message_id)
+                        except Exception:
+                            pass
+                    await self.message_helper.safe_edit(
+                        update,
+                        text="✅ 已在群内完成开奖并发布结果。",
+                    )
+                else:
+                    await self.message_helper.safe_edit(update, text=announcement, parse_mode="Markdown")
             else:
                 await self.message_helper.safe_edit(update, "没有人参与抽奖。")
                 await session.commit()
@@ -402,6 +674,112 @@ async def lottery_menu_callback(update: Update, context: ContextTypes.DEFAULT_TY
     await _lottery_handler.show_menu(update, context, target_chat_id)
 
 
+async def lottery_create_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
+        return
+    q = update.callback_query
+    await q.answer()
+    cb = CallbackParser.parse(q.data or "")
+    target_chat_id = cb.get_int(2)
+    if target_chat_id is None:
+        target_chat_id = update.effective_chat.id
+    await _lottery_handler.show_create_type_menu(update, context, target_chat_id)
+
+
+async def lottery_mode_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.callback_query is None:
+        return
+    q = update.callback_query
+    await q.answer()
+    cb = CallbackParser.parse(q.data or "")
+    target_chat_id = cb.get_int(2)
+    lottery_type = cb.get(3, "invite") or "invite"
+    if target_chat_id is None:
+        return
+    await _lottery_handler.show_mode_menu(update, context, target_chat_id, lottery_type)
+
+
+async def lottery_list_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.callback_query is None:
+        return
+    q = update.callback_query
+    await q.answer()
+    cb = CallbackParser.parse(q.data or "")
+    target_chat_id = cb.get_int(2)
+    status = cb.get(3, "all") or "all"
+    lottery_type = cb.get(4, "all") or "all"
+    page = cb.get_int(5, default=0)
+    if target_chat_id is None:
+        return
+    await _lottery_handler.show_activity_list(update, context, target_chat_id, status=status, lottery_type=lottery_type, page=page)
+
+
+async def lottery_detail_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.callback_query is None:
+        return
+    q = update.callback_query
+    await q.answer()
+    cb = CallbackParser.parse(q.data or "")
+    target_chat_id = cb.get_int(2)
+    lottery_id = cb.get_int(3)
+    if target_chat_id is None or lottery_id is None:
+        return
+    await _lottery_handler.show_activity_detail(update, context, target_chat_id, lottery_id)
+
+
+async def lottery_settings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.callback_query is None:
+        return
+    q = update.callback_query
+    await q.answer()
+    cb = CallbackParser.parse(q.data or "")
+    target_chat_id = cb.get_int(2)
+    if target_chat_id is None:
+        return
+    await _lottery_handler.show_settings_menu(update, context, target_chat_id)
+
+
+async def lottery_setting_toggle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.callback_query is None:
+        return
+    q = update.callback_query
+    await q.answer()
+    cb = CallbackParser.parse(q.data or "")
+    target_chat_id = cb.get_int(2)
+    setting_key = cb.get(3)
+    enabled = cb.get(4) == "1"
+    if target_chat_id is None or not setting_key:
+        return
+    field_map = {
+        "publish_pin": "publish_pin_enabled",
+        "result_pin": "result_pin_enabled",
+        "delete_join": "delete_join_message_enabled",
+    }
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        field = field_map.get(setting_key)
+        if field:
+            await update_lottery_setting(session, target_chat_id, **{field: enabled})
+        await session.commit()
+    await _lottery_handler.show_settings_menu(update, context, target_chat_id)
+
+
+async def lottery_admin_draw_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.callback_query is None or update.effective_user is None:
+        return
+    q = update.callback_query
+    await q.answer()
+    cb = CallbackParser.parse(q.data or "")
+    target_chat_id = cb.get_int(2)
+    lottery_id = cb.get_int(3)
+    if target_chat_id is None or lottery_id is None:
+        return
+    if not await is_user_admin(context, target_chat_id, update.effective_user.id):
+        await _lottery_handler.message_helper.safe_edit(update, "需要管理员权限。")
+        return
+    await _lottery_handler.handle_draw(update, context, lottery_id, target_chat_id=target_chat_id)
+
+
 async def lottery_create_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """开始创建抽奖流程"""
     try:
@@ -419,11 +797,23 @@ async def lottery_create_start(update: Update, context: ContextTypes.DEFAULT_TYP
         # 从回调数据中提取目标群组ID
         data = q.data or ""
         target_chat_id = None
+        lottery_type = "common"
+        selection_mode = "threshold_random"
         if data.startswith("lot:create:"):
             cb = CallbackParser.parse(data)
             target_chat_id = cb.get_int(2)
+            lottery_type = cb.get(3, "common") or "common"
+            selection_mode = cb.get(4, "threshold_random") or "threshold_random"
 
-        log.info("lottery_create_start_called", callback_data=data, target_chat_id=target_chat_id, user_id=user.id, chat_type=chat.type)
+        log.info(
+            "lottery_create_start_called",
+            callback_data=data,
+            target_chat_id=target_chat_id,
+            lottery_type=lottery_type,
+            selection_mode=selection_mode,
+            user_id=user.id,
+            chat_type=chat.type,
+        )
 
         # 如果没有指定群组ID，使用当前群组
         if target_chat_id is None:
@@ -445,7 +835,7 @@ async def lottery_create_start(update: Update, context: ContextTypes.DEFAULT_TYP
             return
 
         # 使用 Handler 处理
-        await _lottery_handler.start_create_flow(update, context, target_chat_id)
+        await _lottery_handler.start_create_flow(update, context, target_chat_id, lottery_type, selection_mode)
         log.info("lottery_create_start_success")
     except Exception as e:
         log.exception("lottery_create_start_error", error=str(e))
@@ -516,7 +906,9 @@ async def _parse_lottery_config(update: Update, context: ContextTypes.DEFAULT_TY
     """解析抽奖配置（使用 service 层解析）"""
     try:
         # 使用 service 层解析配置
-        config: ParsedLotteryConfig = parse_lottery_config_text(text)
+        lottery_type = state.state_data.get("lottery_type", "common")
+        selection_mode = state.state_data.get("selection_mode", "threshold_random")
+        config: ParsedLotteryConfig = parse_lottery_config_text(text, lottery_type=lottery_type, selection_mode=selection_mode)
 
         # 从状态中获取目标群组ID
         target_chat_id = state.state_data.get("target_chat_id")
@@ -532,6 +924,14 @@ async def _parse_lottery_config(update: Update, context: ContextTypes.DEFAULT_TY
             draw_time=config.draw_time,
             prizes=config.prizes,
             description=config.description,
+            lottery_type=config.lottery_type,
+            qualification_rules={
+                "window_days": config.qualification_window_days,
+                "required_invites": config.required_invites,
+                "required_activity_count": config.required_activity_count,
+                "finalist_limit": config.finalist_limit,
+                "selection_mode": config.selection_mode,
+            },
             min_points=config.min_points,
             max_participants=config.max_participants,
             participation_cost=config.participation_cost,
@@ -548,13 +948,17 @@ async def _parse_lottery_config(update: Update, context: ContextTypes.DEFAULT_TY
 
         # 向目标群组发送抽奖公告
         try:
-            from bot.keyboards.activity.lottery import get_join_keyboard
-            keyboard = get_join_keyboard(lottery.id)
-            await context.bot.send_message(
-                chat_id=target_chat_id,
-                text=announcement_text,
-                reply_markup=keyboard
-            )
+            keyboard = None
+            if config.selection_mode != "ranking_random":
+                from bot.keyboards.activity.lottery import get_join_keyboard
+                keyboard = get_join_keyboard(lottery.id)
+            sent_message = await context.bot.send_message(chat_id=target_chat_id, text=announcement_text, reply_markup=keyboard)
+            setting = await get_or_create_lottery_setting(session, target_chat_id)
+            if setting.publish_pin_enabled:
+                try:
+                    await context.bot.pin_chat_message(chat_id=target_chat_id, message_id=sent_message.message_id)
+                except Exception:
+                    pass
             log.info("lottery_announcement_sent", lottery_id=lottery.id, target_chat_id=target_chat_id)
         except Exception as e:
             log.error("lottery_announcement_failed", lottery_id=lottery.id, target_chat_id=target_chat_id, error=str(e))
@@ -562,7 +966,7 @@ async def _parse_lottery_config(update: Update, context: ContextTypes.DEFAULT_TY
         # 返回成功消息给用户
         from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-        reply_text = f"✅ 抽奖创建成功！\n\n"
+        reply_text = f"✅ {_lottery_type_title(config.lottery_type)}创建成功！\n\n"
         reply_text += f"📢 标题: {config.title}\n"
         reply_text += f"🕐 开奖时间: {config.draw_time.strftime('%Y-%m-%d %H:%M:%S')}\n"
         reply_text += f"🎁 奖品数: {len(config.prizes)}\n"
@@ -570,6 +974,12 @@ async def _parse_lottery_config(update: Update, context: ContextTypes.DEFAULT_TY
             reply_text += f"💰 最低积分: {config.min_points}\n"
         if config.participation_cost > 0:
             reply_text += f"💸 参与费用: {config.participation_cost} 积分\n"
+        if config.required_invites > 0:
+            reply_text += f"👥 邀请人数门槛: {config.required_invites}\n"
+        if config.required_activity_count > 0:
+            reply_text += f"🔥 活跃消息门槛: {config.required_activity_count}\n"
+        if config.qualification_window_days > 0:
+            reply_text += f"📊 统计天数: 最近 {config.qualification_window_days} 天\n"
         if config.max_participants > 0:
             reply_text += f"👥 最大人数: {config.max_participants}\n"
         if config.requirement_days > 0:

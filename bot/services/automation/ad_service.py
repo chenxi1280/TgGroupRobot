@@ -260,6 +260,45 @@ async def lock_ad_for_sending(
     return ad
 
 
+def is_rotation_ad(ad: AdCampaign) -> bool:
+    """判断广告是否属于循环轮播任务。"""
+    if ad.interval_hours and ad.interval_hours > 0:
+        return True
+    return ad.frequency in {"daily", "weekly", "monthly"}
+
+
+def is_ad_exhausted(ad: AdCampaign) -> bool:
+    """判断广告是否已达到最大推送次数。"""
+    return bool(ad.max_send_count and (ad.send_count or 0) >= ad.max_send_count)
+
+
+def get_ad_next_send_time(ad: AdCampaign) -> dt.datetime | None:
+    """计算广告下一次理论发送时间。"""
+    if not ad.enabled or is_ad_exhausted(ad):
+        return None
+
+    base_start = ad.start_time or ad.schedule_time or ad.created_at
+
+    if ad.interval_hours and ad.interval_hours > 0:
+        if ad.last_sent_at:
+            return ad.last_sent_at + dt.timedelta(hours=ad.interval_hours)
+        return base_start
+
+    if ad.frequency in (None, "once"):
+        if ad.last_sent_at:
+            return None
+        return ad.schedule_time or ad.created_at
+
+    if ad.frequency == "daily":
+        return (ad.last_sent_at or base_start) + dt.timedelta(days=1) if ad.last_sent_at else base_start
+    if ad.frequency == "weekly":
+        return (ad.last_sent_at or base_start) + dt.timedelta(days=7) if ad.last_sent_at else base_start
+    if ad.frequency == "monthly":
+        return (ad.last_sent_at or base_start) + dt.timedelta(days=30) if ad.last_sent_at else base_start
+
+    return None
+
+
 def should_send_ad(ad: AdCampaign) -> bool:
     """
     检查广告是否应该发送

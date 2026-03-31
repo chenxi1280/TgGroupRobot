@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -241,3 +241,40 @@ class GarageForwardService:
             )
         )
         await session.flush()
+
+    @staticmethod
+    async def list_audits(
+        session: AsyncSession,
+        *,
+        chat_id: int,
+        result: str = "all",
+        limit: int = 20,
+    ) -> list[GarageForwardAuditLog]:
+        stmt = select(GarageForwardAuditLog).where(GarageForwardAuditLog.chat_id == chat_id)
+        if result and result != "all":
+            stmt = stmt.where(GarageForwardAuditLog.result == result)
+        res = await session.execute(
+            stmt.order_by(GarageForwardAuditLog.id.desc()).limit(limit)
+        )
+        return list(res.scalars().all())
+
+    @staticmethod
+    async def count_audits_by_result(
+        session: AsyncSession,
+        *,
+        chat_id: int,
+    ) -> dict[str, int]:
+        res = await session.execute(
+            select(GarageForwardAuditLog.result, func.count(GarageForwardAuditLog.id))
+            .where(GarageForwardAuditLog.chat_id == chat_id)
+            .group_by(GarageForwardAuditLog.result)
+        )
+        stats: dict[str, int] = {"all": 0, "success": 0, "skipped": 0, "failed": 0}
+        for result, count in res.all():
+            key = str(result or "")
+            if key in stats:
+                stats[key] = int(count or 0)
+            else:
+                stats[key] = int(count or 0)
+        stats["all"] = sum(v for k, v in stats.items() if k != "all")
+        return stats

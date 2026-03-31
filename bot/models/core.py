@@ -96,6 +96,14 @@ class ChatSettings(Base):
     invite_link_expire_days: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 链接过期的天数，null=无限制
     invite_link_max_joins: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 单个链接最大加入人数，null=无限制
     invite_link_user_limit: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 每个用户可生成链接数量上限，null=无限制
+    invite_link_mode: Mapped[str] = mapped_column(String(16), default="direct")  # relay/direct
+    invite_link_cover_media_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    invite_link_cover_file_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    invite_link_text_template: Mapped[str] = mapped_column(
+        Text,
+        default="🔗 邀请好友加入 {group}\n邀请人：{inviter}\n新成员：{invitee}",
+    )
+    invite_link_buttons: Mapped[list[dict]] = mapped_column(JSONB, default=list)
 
     # 自动删除配置
     auto_delete_enabled: Mapped[bool] = mapped_column(Boolean, default=False)  # 是否开启自动删除
@@ -117,6 +125,22 @@ class ChatSettings(Base):
     verification_restrict_can_send: Mapped[bool] = mapped_column(Boolean, default=False)
     verification_timeout_action: Mapped[str] = mapped_column(String(16), default="mute")  # 超时处理动作：mute（禁言）或 kick（踢出）
     verification_mute_duration: Mapped[int] = mapped_column(Integer, default=86400)  # 禁言时长（秒），默认1天
+    join_spam_guard_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    join_spam_detect_rules_count: Mapped[int] = mapped_column(Integer, default=2)
+    join_spam_send_invalid_msg_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    join_spam_mute_member_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    join_spam_kick_member_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    join_spam_tip_delete_after_seconds: Mapped[int] = mapped_column(Integer, default=60)
+    join_self_review_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    join_self_review_timeout_seconds: Mapped[int] = mapped_column(Integer, default=300)
+    join_self_review_timeout_action: Mapped[str] = mapped_column(String(32), default="reject_allow_retry")
+    join_self_review_wrong_action: Mapped[str] = mapped_column(String(32), default="reject_block")
+    join_burst_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    join_burst_window_seconds: Mapped[int] = mapped_column(Integer, default=30)
+    join_burst_threshold_count: Mapped[int] = mapped_column(Integer, default=10)
+    join_burst_mute_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    join_burst_kick_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    join_burst_tip_mode: Mapped[str] = mapped_column(String(16), default="tip_and_delete")
 
     # 内容审核（基础）
     moderation_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -658,6 +682,49 @@ class ChatSubscription(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC))
 
 
+class RenewalCardKey(Base):
+    __tablename__ = "renewal_card_keys"
+    __table_args__ = (
+        UniqueConstraint("card_key_hash", name="uq_renewal_card_key_hash"),
+        {"schema": "bot"},
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    card_key_hash: Mapped[str] = mapped_column(String(128), index=True)
+    duration_seconds: Mapped[int] = mapped_column(Integer)
+    expires_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    used: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    used_by_chat_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("bot.tg_chats.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    used_by_user_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("bot.tg_users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    used_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC))
+
+
+class RenewalAuditLog(Base):
+    __tablename__ = "renewal_audit_logs"
+    __table_args__ = {"schema": "bot"}
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("bot.tg_chats.id", ondelete="CASCADE"), index=True)
+    operator_user_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("bot.tg_users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    action: Mapped[str] = mapped_column(String(32), index=True)
+    reason: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    payload: Mapped[dict] = mapped_column(JSONB, default=dict)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC), index=True)
+
+
 class AdCampaign(Base):
     """广告活动"""
     __tablename__ = "ad_campaigns"
@@ -736,11 +803,13 @@ class Lottery(Base):
     created_by_user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("bot.tg_users.id", ondelete="SET NULL"), nullable=True)
     title: Mapped[str] = mapped_column(String(128), default="通用抽奖")
     description: Mapped[str | None] = mapped_column(Text, nullable=True)  # 抽奖描述说明
+    lottery_type: Mapped[str] = mapped_column(String(16), default="common")  # 抽奖类型: common/points/invite/activity
     draw_time: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), index=True)  # 开奖时间
     prizes: Mapped[list[dict]] = mapped_column(JSONB, default=list)  # [{"name": "1USDT", "quantity": 1}, ...]
     draw_mode: Mapped[str] = mapped_column(String(16), default=LotteryDrawMode.manual.value)  # 开奖模式: random/manual
     status: Mapped[str] = mapped_column(String(16), default="pending", index=True)  # pending/completed/cancelled
     message_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 抽奖消息ID
+    qualification_rules: Mapped[dict] = mapped_column(JSONB, default=dict)  # 类型附加资格规则
     # 参与限制条件
     min_points: Mapped[int] = mapped_column(Integer, default=0)  # 最低积分要求
     max_participants: Mapped[int] = mapped_column(Integer, default=0)  # 最大参与人数（0=无限制）
@@ -815,7 +884,13 @@ class AutoReplyRule(Base):
     created_by_user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("bot.tg_users.id", ondelete="SET NULL"), nullable=True)
     keywords: Mapped[list[str]] = mapped_column(JSONB, default=list)  # 触发关键词列表
     reply_content: Mapped[str] = mapped_column(Text)  # 回复内容
+    cover_media_type: Mapped[str | None] = mapped_column(String(16), nullable=True)  # 封面类型
+    cover_media_file_id: Mapped[str | None] = mapped_column(String(256), nullable=True)  # 封面文件 ID
+    buttons: Mapped[list] = mapped_column(JSONB, default=list)  # 回复按钮
     match_type: Mapped[str] = mapped_column(String(16), default=AutoReplyMatchType.contains.value)  # 匹配类型
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)  # 命中顺序，越小越优先
+    delete_source: Mapped[bool] = mapped_column(Boolean, default=False)  # 命中后是否删除触发消息
+    delete_reply_delay_seconds: Mapped[int] = mapped_column(Integer, default=0)  # 回复延迟删除秒数（0=不删除）
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)  # 是否激活
     match_count: Mapped[int] = mapped_column(Integer, default=0)  # 匹配次数统计
     case_sensitive: Mapped[bool] = mapped_column(Boolean, default=False)  # 是否区分大小写

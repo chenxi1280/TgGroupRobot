@@ -646,10 +646,10 @@ async def test_points_handler_skips_level_restriction_for_teacher_when_excluded(
 
 @pytest.mark.asyncio
 async def test_handle_points_mall_orders_routes_with_product_scope(monkeypatch):
-    calls: list[tuple[int, int | None]] = []
+    calls: list[tuple[int, int | None, str]] = []
 
-    async def fake_show_orders(update, context, chat_id: int, product_id: int | None = None):
-        calls.append((chat_id, product_id))
+    async def fake_show_orders(update, context, chat_id: int, product_id: int | None = None, status: str = "all"):
+        calls.append((chat_id, product_id, status))
 
     monkeypatch.setattr(admin_handler._admin_handler, "_show_points_mall_orders_placeholder", fake_show_orders)
 
@@ -659,11 +659,29 @@ async def test_handle_points_mall_orders_routes_with_product_scope(monkeypatch):
 
     await admin_handler._admin_handler._handle_points_mall(update, context, -1001, cb)
 
-    assert calls == [(-1001, 7)]
+    assert calls == [(-1001, 7, "all")]
 
 
 @pytest.mark.asyncio
-async def test_show_points_level_menu_uses_zero_pages_when_empty(monkeypatch):
+async def test_handle_points_mall_orders_status_short_code(monkeypatch):
+    calls: list[tuple[int, int | None, str]] = []
+
+    async def fake_show_orders(update, context, chat_id: int, product_id: int | None = None, status: str = "all"):
+        calls.append((chat_id, product_id, status))
+
+    monkeypatch.setattr(admin_handler._admin_handler, "_show_points_mall_orders_placeholder", fake_show_orders)
+
+    update = SimpleNamespace(callback_query=SimpleNamespace())
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(_FakeSession())}))
+    cb = CallbackParser.parse("adm:mall:-1001:orders_status:c:7")
+
+    await admin_handler._admin_handler._handle_points_mall(update, context, -1001, cb)
+
+    assert calls == [(-1001, 7, "created")]
+
+
+@pytest.mark.asyncio
+async def test_show_points_level_menu_uses_one_page_when_empty(monkeypatch):
     rendered: list[str] = []
 
     async def fake_set_current_chat(*args, **kwargs):
@@ -689,7 +707,7 @@ async def test_show_points_level_menu_uses_zero_pages_when_empty(monkeypatch):
     await admin_handler._admin_handler._show_points_level_menu(update, context, -1001)
 
     assert rendered
-    assert "0 条数据，第 1 页/共 0 页" in rendered[0]
+    assert "0 条数据，第 1 页/共 1 页" in rendered[0]
 
 
 @pytest.mark.asyncio

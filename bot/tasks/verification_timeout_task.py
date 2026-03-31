@@ -16,6 +16,7 @@ from bot.services.automation.scheduler.core import ScheduledTask
 from bot.services.automation.scheduler.task_config import TASK_CONFIG
 from bot.services.base import ServiceBase
 from bot.services.core.chat_service import get_chat_settings
+from bot.services.verification_service import is_self_review_question
 from sqlalchemy import select
 
 
@@ -125,9 +126,12 @@ async def check_verification_timeouts(app: Application) -> None:
             try:
                 # 获取群组设置
                 settings = await get_chat_settings(session, ch.chat_id)
+                is_self_review = is_self_review_question(ch.question)
 
                 # 根据配置执行超时处理
-                if settings.verification_timeout_action == "kick":
+                if is_self_review and settings.join_self_review_timeout_action == "reject_block":
+                    await kick_user(app, ch.chat_id, ch.user_id)
+                elif settings.verification_timeout_action == "kick":
                     # 踢出群聊
                     await kick_user(app, ch.chat_id, ch.user_id)
                 else:
@@ -138,10 +142,15 @@ async def check_verification_timeouts(app: Application) -> None:
                     if muted:
                         mention = f'<a href="tg://user?id={ch.user_id}">用户</a>'
                         try:
+                            reason_text = (
+                                f"⛔ {mention} 自助审核超时，已按配置处理。\n"
+                                if is_self_review
+                                else f"⛔ {mention} 验证超时，已被禁言 {duration} 秒。\n"
+                            )
                             await app.bot.send_message(
                                 chat_id=ch.chat_id,
                                 text=(
-                                    f"⛔ {mention} 验证超时，已被禁言 {duration} 秒。\n"
+                                    reason_text +
                                     f"管理员可直接点击“管理员一键解封”，"
                                     f"或回复该用户消息发送“解封”。"
                                 ),

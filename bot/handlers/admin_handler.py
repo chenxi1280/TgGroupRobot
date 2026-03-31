@@ -28,6 +28,7 @@ from bot.keyboards.admin.points_extended import (
     custom_points_list_keyboard,
     points_level_detail_keyboard,
     points_level_list_keyboard,
+    points_mall_command_keyboard,
     points_mall_cover_keyboard,
     points_mall_home_keyboard,
     points_mall_notice_keyboard,
@@ -41,14 +42,102 @@ from bot.services.core.chat_service import ensure_chat, get_chat_settings, get_s
 from bot.services.core.permission_service import PermissionPolicyService, is_user_admin
 from bot.services.core.user_service import ensure_user
 from bot.services.activity.points_extended_service import PointsExtendedService
+from bot.services.activity.auction_service import (
+    format_auction_settings_text,
+    get_or_create_setting as get_auction_setting,
+    list_recent_auctions,
+    update_setting as update_auction_setting,
+)
+from bot.services.activity.game_service import (
+    format_game_menu_text,
+    get_or_create_setting as get_game_setting,
+    get_round_participants as get_game_round_participants,
+    get_rake_owner_label as get_game_rake_owner_label,
+    list_recent_rounds as list_recent_game_rounds,
+    parse_ratio as parse_game_ratio,
+    resolve_rake_owner as resolve_game_rake_owner,
+    update_setting as update_game_setting,
+    validate_hhmm as validate_game_hhmm,
+)
+from bot.services.activity.guess_service import (
+    count_events_by_status,
+    create_event as create_guess_event,
+    format_event_preview,
+    format_event_runtime,
+    get_event as get_guess_event,
+    get_or_create_setting as get_guess_setting,
+    list_events as list_guess_events,
+    parse_deadline as parse_guess_deadline,
+    parse_options as parse_guess_options,
+    parse_ratio as parse_guess_ratio,
+    resolve_user_id as resolve_guess_user_id,
+    settle_event as settle_guess_event,
+    cancel_event as cancel_guess_event,
+    update_setting as update_guess_setting,
+)
+from bot.services.activity.engagement_service import (
+    archive_egg_snapshot,
+    create_egg_event,
+    get_chat_reward_top_users,
+    get_or_create_chat_reward as get_engagement_chat_reward,
+    get_egg_event,
+    get_egg_event_counts,
+    get_latest_running_egg_event,
+    get_recent_chat_reward_claims,
+    get_recent_chat_reward_stats,
+    list_egg_events,
+    list_egg_history,
+    parse_reward_plan as parse_engagement_reward_plan,
+    publish_next_clue,
+    update_chat_reward as update_engagement_chat_reward,
+    update_egg_event,
+    update_egg_event_from_template,
+)
 from bot.services.base import ValidationError
 from bot.services.scheduled_message_service import ScheduledMessageService
-from bot.services.state.state_service import set_user_state, clear_user_state
+from bot.services.integration.bottom_button_service import (
+    add_layout_button,
+    build_management_layout_preview,
+    clear_layouts as clear_bottom_button_layouts,
+    compact_layouts as compact_bottom_button_layouts,
+    generate_buttons as generate_bottom_buttons,
+    get_layout as get_bottom_button_layout,
+    get_or_create_setting as get_bottom_button_setting,
+    list_layouts as list_bottom_button_layouts,
+    update_layout_button,
+    update_setting as update_bottom_button_setting,
+    delete_layout_button,
+)
+from bot.services.integration.account_inherit_service import build_summary as build_inherit_summary
+from bot.services.state.state_service import set_user_state, clear_user_state, get_user_state
 from bot.utils.callback_parser import CallbackParser
 from bot.utils.telegram_errors import answer_callback_query_safely, build_public_error_text, mark_callback_query_answered
 
 
 log = structlog.get_logger(__name__)
+
+JOIN_SPAM_RULE_VALUES = [1, 2, 3, 4, 5]
+JOIN_SPAM_TIP_DELETE_VALUES = [30, 60, 120, 300]
+JOIN_SELF_REVIEW_TIMEOUT_VALUES = [60, 120, 300, 600]
+JOIN_BURST_WINDOW_VALUES = [10, 30, 60, 120]
+JOIN_BURST_THRESHOLD_VALUES = [3, 5, 10, 15]
+
+JOIN_SELF_REVIEW_ACTION_LABELS = {
+    "reject_allow_retry": "🔁 驳回可重试",
+    "reject_block": "⛔ 驳回并拉黑",
+}
+
+JOIN_BURST_TIP_MODE_LABELS = {
+    "no_tip": "🔕 不提示",
+    "tip_and_delete": "🧹 提示后删除",
+}
+
+
+def _cycle_config_value[T](current: T, options: list[T]) -> T:
+    if current not in options:
+        return options[0]
+    idx = options.index(current)
+    return options[(idx + 1) % len(options)]
 
 
 def _resolve_private_admin_target_chat_id(cb: CallbackParser) -> int | None:
@@ -97,6 +186,8 @@ def _resolve_private_scoped_target_chat_id(cb: CallbackParser) -> int | None:
         action = cb.get(1)
         if action == "home":
             return cb.get_int_optional(2)
+        if action == "audit":
+            return cb.get_int_optional(2)
         if action == "source":
             return cb.get_int_optional(3)
         if action in {"toggle", "mode"}:
@@ -131,7 +222,52 @@ def _resolve_private_scoped_target_chat_id(cb: CallbackParser) -> int | None:
         action = cb.get(1)
         if action == "home":
             return cb.get_int_optional(2)
-        if action in {"toggle", "mode", "lookup", "publish_target", "approver", "template", "reward", "submit_cmd", "rank_cmd"}:
+        if action in {
+            "toggle",
+            "mode",
+            "lookup",
+            "publish_target",
+            "approver",
+            "template",
+            "reward",
+            "submit_cmd",
+            "rank_cmd",
+            "fields",
+            "reports",
+            "report",
+        }:
+            return cb.get_int_optional(2)
+        return None
+
+    if prefix == "auc":
+        action = cb.get(1)
+        if action in {"home", "toggle", "perm", "points_mode"}:
+            return cb.get_int_optional(2)
+        return None
+
+    if prefix == "btm":
+        action = cb.get(1)
+        if action in {"home", "toggle", "text", "layout", "generate", "repeat"}:
+            return cb.get_int_optional(2)
+        if action == "button":
+            return cb.get_int_optional(2)
+        return None
+
+    if prefix == "gm":
+        action = cb.get(1)
+        if action in {"home", "toggle", "rake", "auto", "delete_mode"}:
+            return cb.get_int_optional(2)
+        return None
+
+    if prefix == "guess":
+        action = cb.get(1)
+        if action in {"home", "create", "list", "settings", "detail", "open", "cancel"}:
+            return cb.get_int_optional(2)
+        return None
+
+    if prefix == "act":
+        action = cb.get(1)
+        if action in {"home", "egg", "chat"}:
             return cb.get_int_optional(2)
         return None
 
@@ -175,6 +311,21 @@ class AdminHandler(BaseHandler):
         if prefix == "crv":
             await self._handle_car_review(update, context, target_chat_id, callback_data)
             return
+        if prefix == "auc":
+            await self._handle_auction(update, context, target_chat_id, callback_data)
+            return
+        if prefix == "btm":
+            await self._handle_bottom_button(update, context, target_chat_id, callback_data)
+            return
+        if prefix == "gm":
+            await self._handle_game(update, context, target_chat_id, callback_data)
+            return
+        if prefix == "guess":
+            await self._handle_guess(update, context, target_chat_id, callback_data)
+            return
+        if prefix == "act":
+            await self._handle_engagement(update, context, target_chat_id, callback_data)
+            return
 
         action = callback_data.get(1)
 
@@ -193,6 +344,8 @@ class AdminHandler(BaseHandler):
             await self._handle_toggle(update, context, target_chat_id, callback_data)
         elif action == "vfy_config":
             await self._handle_verification_config_start(update, context, target_chat_id)
+        elif action == "vfy_home":
+            await self._handle_verification_home(update, context, target_chat_id, callback_data)
         elif action == "af_config":
             from bot.handlers.anti_flood_config_handler import start_anti_flood_config
 
@@ -219,6 +372,8 @@ class AdminHandler(BaseHandler):
             await self._handle_points_level(update, context, target_chat_id, callback_data)
         elif action == "mall":
             await self._handle_points_mall(update, context, target_chat_id, callback_data)
+        elif action == "todo":
+            await self._show_unimplemented_feature(update, target_chat_id, callback_data)
 
     async def _handle_menu(
         self,
@@ -266,6 +421,12 @@ class AdminHandler(BaseHandler):
             "points_mall_command": self._show_points_mall_command_placeholder,
             "points_mall_products": self._show_points_mall_products_placeholder,
             "points_mall_orders": self._show_points_mall_orders_placeholder,
+            "auction": self._show_auction_menu,
+            "bottom_button": self._show_bottom_button_menu,
+            "game": self._show_game_menu,
+            "guess": self._show_guess_home,
+            "engagement": self._show_engagement_home,
+            "inherit": self._show_account_inherit_menu,
         }
 
         handler = handlers.get(menu_action, self._show_main_menu)
@@ -333,6 +494,38 @@ class AdminHandler(BaseHandler):
 
         await self._show_renewal_menu(update, context, chat_id)
 
+    async def _show_unimplemented_feature(
+        self,
+        update: Update,
+        chat_id: int,
+        callback_data: CallbackParser,
+    ) -> None:
+        feature_key = callback_data.get(3)
+        feature_meta = {
+            "auction": ("💰 拍卖", "当前只有重构设计，独立拍卖模块尚未接入。"),
+            "game": ("🎮 游戏", "当前只有重构设计，独立游戏模块尚未接入。"),
+            "guess": ("⚽ 竞猜", "当前只有重构设计，独立竞猜模块尚未接入。"),
+            "inherit": ("💥 炸号继承", "当前只有重构设计，继承流程与账本迁移尚未接入。"),
+            "bottom_button": ("⌨️ 底部按钮", "当前只有重构设计，底部快捷按钮生成能力尚未接入。"),
+        }
+        feature_name, feature_desc = feature_meta.get(
+            feature_key,
+            ("🚧 功能开发中", "该功能当前只有设计稿，尚未实现可用链路。"),
+        )
+        text = "\n".join(
+            [
+                feature_name,
+                "",
+                feature_desc,
+                "",
+                "当前主菜单已取消错误跳转，避免把你带进不相干的模块。",
+            ]
+        )
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔙 返回主菜单", callback_data=f"adm:menu:main:{chat_id}")],
+        ])
+        await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
+
     async def _handle_toggle(
         self,
         update: Update,
@@ -398,7 +591,7 @@ class AdminHandler(BaseHandler):
                 reply_markup=InlineKeyboardMarkup(
                     [
                         [InlineKeyboardButton("确认清空", callback_data=f"adm:cpt:{chat_id}:clear:{type_id}")],
-                        [InlineKeyboardButton("返回", callback_data=f"adm:cpt:{chat_id}:detail:{type_id}")],
+                        [InlineKeyboardButton("🔙 返回", callback_data=f"adm:cpt:{chat_id}:detail:{type_id}")],
                     ]
                 ),
             )
@@ -446,7 +639,7 @@ class AdminHandler(BaseHandler):
                 reply_markup=InlineKeyboardMarkup(
                     [
                         [InlineKeyboardButton("确认删除", callback_data=f"adm:cpt:{chat_id}:delete:{type_id}")],
-                        [InlineKeyboardButton("返回", callback_data=f"adm:cpt:{chat_id}:detail:{type_id}")],
+                        [InlineKeyboardButton("🔙 返回", callback_data=f"adm:cpt:{chat_id}:detail:{type_id}")],
                     ]
                 ),
             )
@@ -465,7 +658,7 @@ class AdminHandler(BaseHandler):
                 )
                 await session.commit()
             prompt = "👉 现在输入积分名字：" if field == "name" else "👉 现在输入排行指令："
-            await self.message_helper.safe_edit(update, text=prompt, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("返回", callback_data=f"adm:cpt:{chat_id}:detail:{type_id}")]]))
+            await self.message_helper.safe_edit(update, text=prompt, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"adm:cpt:{chat_id}:detail:{type_id}")]]))
             return
         if op == "adjust":
             mode = callback_data.get(4)
@@ -493,7 +686,7 @@ class AdminHandler(BaseHandler):
                 update,
                 text=prompt,
                 reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("返回", callback_data=f"adm:cpt:{chat_id}:detail:{type_id}")]]
+                    [[InlineKeyboardButton("🔙 返回", callback_data=f"adm:cpt:{chat_id}:detail:{type_id}")]]
                 ),
             )
             return
@@ -597,7 +790,7 @@ class AdminHandler(BaseHandler):
                 )
                 await session.commit()
             prompt = "👉 请输入新的等级名称：" if field == "name" else "👉 请输入新的积分门槛："
-            await self.message_helper.safe_edit(update, text=prompt, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("返回", callback_data=f"adm:lvl:{chat_id}:detail:{level_id}")]]))
+            await self.message_helper.safe_edit(update, text=prompt, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"adm:lvl:{chat_id}:detail:{level_id}")]]))
             return
         if op == "perm":
             level_id = callback_data.get_int(4)
@@ -709,13 +902,22 @@ class AdminHandler(BaseHandler):
             return
         if op == "orders":
             product_id = callback_data.get_int_optional(4)
-            await self._show_points_mall_orders_placeholder(update, context, chat_id, product_id=product_id)
+            status = _normalize_mall_order_status(callback_data.get(5) or "a")
+            await self._show_points_mall_orders_placeholder(update, context, chat_id, product_id=product_id, status=status)
+            return
+        if op == "orders_status":
+            status = _normalize_mall_order_status(callback_data.get(4) or "a")
+            product_id = callback_data.get_int_optional(5)
+            await self._show_points_mall_orders_placeholder(update, context, chat_id, product_id=product_id, status=status)
             return
         if op == "order":
             sub = callback_data.get(4)
             order_id = callback_data.get_int(5)
+            status = _normalize_mall_order_status(callback_data.get(6) or "a")
+            product_token = callback_data.get_int_optional(7)
+            product_id = None if product_token in {None, 0} else product_token
             if sub == "detail":
-                await self._show_points_mall_order_detail(update, context, chat_id, order_id)
+                await self._show_points_mall_order_detail(update, context, chat_id, order_id, status=status, product_id=product_id)
                 return
             async with db.session_factory() as session:
                 if sub == "fulfill":
@@ -745,7 +947,7 @@ class AdminHandler(BaseHandler):
                     return
                 await session.commit()
             await answer_callback_query_safely(update, message, show_alert=not success)
-            await self._show_points_mall_order_detail(update, context, chat_id, order_id)
+            await self._show_points_mall_order_detail(update, context, chat_id, order_id, status=status, product_id=product_id)
             return
         if op == "product":
             sub = callback_data.get(4)
@@ -804,7 +1006,7 @@ class AdminHandler(BaseHandler):
                     reply_markup=InlineKeyboardMarkup(
                         [
                             [InlineKeyboardButton("确认删除", callback_data=f"adm:mall:{chat_id}:product:delete:{product_id}")],
-                            [InlineKeyboardButton("返回", callback_data=f"adm:mall:{chat_id}:product:detail:{product_id}")],
+                            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:mall:{chat_id}:product:detail:{product_id}")],
                         ]
                     ),
                 )
@@ -826,7 +1028,7 @@ class AdminHandler(BaseHandler):
                         update,
                         text="🛍️ 管理商品 | 上传封面\n\n👉 请发送图片或视频文件，或输入 清空",
                         reply_markup=InlineKeyboardMarkup(
-                            [[InlineKeyboardButton("返回", callback_data=f"adm:mall:{chat_id}:product:detail:{product_id}")]]
+                            [[InlineKeyboardButton("🔙 返回", callback_data=f"adm:mall:{chat_id}:product:detail:{product_id}")]]
                         ),
                     )
                     return
@@ -857,7 +1059,7 @@ class AdminHandler(BaseHandler):
                     update,
                     text=prompt,
                     reply_markup=InlineKeyboardMarkup(
-                        [[InlineKeyboardButton("返回", callback_data=f"adm:mall:{chat_id}:product:detail:{product_id}")]]
+                        [[InlineKeyboardButton("🔙 返回", callback_data=f"adm:mall:{chat_id}:product:detail:{product_id}")]]
                     ),
                 )
                 return
@@ -937,19 +1139,26 @@ class AdminHandler(BaseHandler):
     ) -> None:
         """显示抽奖管理菜单"""
         from bot.keyboards.activity.lottery import lottery_menu_keyboard
-        from bot.services.activity.lottery_service import get_lottery_stats
+        from bot.services.activity.lottery_service import count_lotteries_by_type, get_lottery_stats
 
         db: Database = context.application.bot_data["db"]
         await self._set_current_chat(db, update.effective_user.id, chat_id)
 
         async with db.session_factory() as session:
             stats = await get_lottery_stats(session, chat_id)
+            type_counts = await count_lotteries_by_type(session, chat_id)
             await session.commit()
 
         chat_title = await self._get_chat_title(db, chat_id)
         text = f"🎁[{chat_title}]抽奖\n\n"
         text += f"创建的抽奖次数:{stats['total']}\n\n"
-        text += f"已开奖:{stats['completed']}       未开奖:{stats['pending']}       取消:{stats['cancelled']}"
+        text += f"已开奖:{stats['completed']}       未开奖:{stats['pending']}       取消:{stats['cancelled']}\n\n"
+        text += (
+            f"🎁 通用:{type_counts['common']}  "
+            f"💰 积分:{type_counts['points']}  "
+            f"👥 邀请:{type_counts['invite']}  "
+            f"🔥 活跃:{type_counts['activity']}"
+        )
 
         keyboard = lottery_menu_keyboard(chat_id)
 
@@ -979,15 +1188,12 @@ class AdminHandler(BaseHandler):
         chat_id: int,
     ) -> None:
         """显示邀请链接管理菜单"""
-        from bot.keyboards.integration.invite_link import invite_link_menu_keyboard
+        from bot.handlers.invite_link_handler import _invite_link_handler
 
         db: Database = context.application.bot_data["db"]
         await self._set_current_chat(db, update.effective_user.id, chat_id)
-
-        text = "🔗 邀请链接管理\n\n请选择操作："
-        keyboard = invite_link_menu_keyboard(chat_id)
-
-        await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
+        chat_title = await self._get_chat_title(db, chat_id)
+        await _invite_link_handler.show_menu(update, context, chat_id, chat_title)
 
     async def _show_autoreply_menu(
         self,
@@ -1044,13 +1250,13 @@ class AdminHandler(BaseHandler):
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
     ) -> None:
-        """显示广告管理菜单"""
+        """显示轮播广告菜单"""
         from bot.keyboards.content.ads import ads_menu_keyboard
 
         db: Database = context.application.bot_data["db"]
         await self._set_current_chat(db, update.effective_user.id, chat_id)
 
-        text = "📢 广告管理\n\n请选择操作："
+        text = "🎠 轮播广告（基础版）\n\n请选择操作："
         keyboard = ads_menu_keyboard(chat_id)
 
         await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
@@ -1095,7 +1301,13 @@ class AdminHandler(BaseHandler):
             buttons.append([InlineKeyboardButton(f"{prefix} {label}", callback_data=f"adm:perm:{chat_id}:{value}")])
         buttons.append([InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")])
 
-        text = "⚙️控制权限\n\n你可以制定哪些管理员能够设置机器人"
+        current_label = next((label for label, value in rows if value == current), "拥有添加管理员权限")
+        text = (
+            "⚙️ 控制权限\n\n"
+            "你可以制定哪些管理员能够设置机器人。\n\n"
+            f"当前策略：{current_label}\n\n"
+            "当前统一影响以下管理能力：设置页、风控页、功能工作台。"
+        )
         await self.message_helper.safe_edit(update, text=text, reply_markup=InlineKeyboardMarkup(buttons))
 
     async def _show_group_lock_menu(
@@ -1137,7 +1349,7 @@ class AdminHandler(BaseHandler):
         )
         keyboard = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("⚙️ 话术开关", callback_data=f"adm:menu:closegroup:{chat_id}"),
+                InlineKeyboardButton("⚙️ 话术开关：", callback_data=f"adm:menu:closegroup:{chat_id}"),
                 InlineKeyboardButton(on_label(phrase_enabled), callback_data=f"adm:gl:{chat_id}:set:phrase:1"),
                 InlineKeyboardButton(off_label(phrase_enabled), callback_data=f"adm:gl:{chat_id}:set:phrase:0"),
             ],
@@ -1150,7 +1362,7 @@ class AdminHandler(BaseHandler):
                 InlineKeyboardButton(close_phrase[:12], callback_data=f"adm:gl:{chat_id}:input:close_phrase"),
             ],
             [
-                InlineKeyboardButton("⚙️ 定时开关", callback_data=f"adm:menu:closegroup:{chat_id}"),
+                InlineKeyboardButton("⚙️ 定时开关：", callback_data=f"adm:menu:closegroup:{chat_id}"),
                 InlineKeyboardButton(on_label(schedule_enabled), callback_data=f"adm:gl:{chat_id}:set:schedule:1"),
                 InlineKeyboardButton(off_label(schedule_enabled), callback_data=f"adm:gl:{chat_id}:set:schedule:0"),
             ],
@@ -1204,7 +1416,7 @@ class AdminHandler(BaseHandler):
             [InlineKeyboardButton("📝 设置提示消息", callback_data=f"adm:rm:{chat_id}:input:text")],
             [InlineKeyboardButton("🏖️ 预览效果", callback_data=f"adm:rm:{chat_id}:preview")],
             [
-                InlineKeyboardButton("🧹 删除提示消息", callback_data=f"adm:menu:renamewatch:{chat_id}"),
+                InlineKeyboardButton("🧹 删除提示消息：", callback_data=f"adm:menu:renamewatch:{chat_id}"),
                 InlineKeyboardButton(f"{delete_after}秒后删除", callback_data=f"adm:rm:{chat_id}:cycle_delete_after"),
             ],
             [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
@@ -1217,6 +1429,8 @@ class AdminHandler(BaseHandler):
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
     ) -> None:
+        from bot.models.enums import ForceSubscribeAction
+
         db: Database = context.application.bot_data["db"]
         await self._set_current_chat(db, update.effective_user.id, chat_id)
         async with db.session_factory() as session:
@@ -1232,6 +1446,19 @@ class AdminHandler(BaseHandler):
         custom_buttons = bool(getattr(settings, "force_subscribe_custom_buttons_enabled", False))
         buttons = getattr(settings, "force_subscribe_buttons", None) or []
         button_summary = f"{len(buttons)} 行" if buttons else "未配置"
+        check_mode = getattr(settings, "force_subscribe_check_mode", "all")
+        check_mode_label = "✅ 全部频道都订阅" if check_mode == "all" else "🟡 任一频道已订阅"
+        action = getattr(
+            settings,
+            "force_subscribe_not_subscribed_action",
+            ForceSubscribeAction.delete_and_warn.value,
+        )
+        action_label = {
+            ForceSubscribeAction.delete_and_warn.value: "删除消息并提示订阅",
+            ForceSubscribeAction.delete_only.value: "仅删除消息",
+            ForceSubscribeAction.warn_only.value: "仅提示订阅",
+            ForceSubscribeAction.mute.value: "禁言并提示订阅",
+        }.get(action, "删除消息并提示订阅")
         text = (
             "📣 强制订阅频道\n\n"
             "新用户需要订阅指定的频道，没订阅将无法发言。\n\n"
@@ -1240,21 +1467,23 @@ class AdminHandler(BaseHandler):
             f"绑定频道2: {ch2}\n"
             f"设置封面: {'已设置' if cover_set else '未设置'}\n"
             f"自定义按钮: {'✅启用' if custom_buttons else '跟随频道按钮'}（{button_summary}）\n"
-            "没订阅时处理: 删除消息并提示订阅\n"
+            f"订阅判定: {check_mode_label}\n"
+            f"没订阅时处理: {action_label}\n"
             f"删除提示消息: {delete_after}秒后删除\n\n"
             f"当前文案:\n{guide_text}"
         )
         keyboard = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("⚙️ 状态", callback_data=f"adm:fs:{chat_id}:toggle:enabled"),
-                InlineKeyboardButton("✅ 启动" if enabled else "❌ 关闭", callback_data=f"adm:fs:{chat_id}:toggle:enabled"),
+                InlineKeyboardButton("⚙️ 状态：", callback_data=f"adm:menu:forcesub:{chat_id}"),
+                InlineKeyboardButton("✅ 启动" if enabled else "启动", callback_data=f"adm:fs:{chat_id}:toggle:enabled"),
+                InlineKeyboardButton("关闭" if enabled else "❌ 关闭", callback_data=f"adm:fs:{chat_id}:toggle:enabled"),
             ],
             [
-                InlineKeyboardButton("⚙️ 绑定频道1", callback_data=f"adm:fs:{chat_id}:input:channel1"),
+                InlineKeyboardButton("⚙️ 绑定频道1：", callback_data=f"adm:fs:{chat_id}:input:channel1"),
                 InlineKeyboardButton(ch1[:16], callback_data=f"adm:fs:{chat_id}:input:channel1"),
             ],
             [
-                InlineKeyboardButton("⚙️ 绑定频道2", callback_data=f"adm:fs:{chat_id}:input:channel2"),
+                InlineKeyboardButton("⚙️ 绑定频道2：", callback_data=f"adm:fs:{chat_id}:input:channel2"),
                 InlineKeyboardButton(ch2[:16], callback_data=f"adm:fs:{chat_id}:input:channel2"),
             ],
             [
@@ -1262,13 +1491,22 @@ class AdminHandler(BaseHandler):
                 InlineKeyboardButton("📝 设置文案", callback_data=f"adm:fs:{chat_id}:input:text"),
             ],
             [
-                InlineKeyboardButton("⌨️ 自定义按钮", callback_data=f"adm:fs:{chat_id}:toggle:buttons"),
-                InlineKeyboardButton(button_summary, callback_data=f"adm:fs:{chat_id}:input:buttons"),
+                InlineKeyboardButton("⌨️ 编辑自定义按钮", callback_data=f"adm:fs:{chat_id}:input:buttons"),
+                InlineKeyboardButton("👀 预览效果", callback_data=f"adm:fs:{chat_id}:preview"),
             ],
             [
-                InlineKeyboardButton("⚙️ 删除提示消息", callback_data=f"adm:fs:{chat_id}:delete_after:60"),
+                InlineKeyboardButton("⚙️ 订阅判定：", callback_data=f"adm:menu:forcesub:{chat_id}"),
+                InlineKeyboardButton(check_mode_label, callback_data=f"adm:fs:{chat_id}:cycle_check_mode"),
+            ],
+            [
+                InlineKeyboardButton("⚙️ 没订阅时处理：", callback_data=f"adm:menu:forcesub:{chat_id}"),
+                InlineKeyboardButton(action_label, callback_data=f"adm:fs:{chat_id}:cycle_action"),
+            ],
+            [
+                InlineKeyboardButton("⚙️ 删除提示消息：", callback_data=f"adm:menu:forcesub:{chat_id}"),
                 InlineKeyboardButton(f"{delete_after}秒后删除", callback_data=f"adm:fs:{chat_id}:cycle_delete_after"),
             ],
+            [InlineKeyboardButton("🧹 清空封面", callback_data=f"adm:fs:{chat_id}:clear_cover")],
             [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
         ])
         await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
@@ -1346,14 +1584,20 @@ class AdminHandler(BaseHandler):
             f"⭕ 设置按钮：{'【等待设置】' if not item.buttons else f'{len(item.buttons)} 行已配置'}\n\n"
             f"⏱️ 延迟删除：{delete_label}"
         )
+        status_on = "✅ 启用" if item.enabled else "启用"
+        status_off = "关闭" if item.enabled else "❌ 关闭"
+        mode_after_verify = "✅ 验证后欢迎" if item.welcome_mode == WelcomeMode.after_verify.value else "验证后欢迎"
+        mode_on_join = "进群欢迎" if item.welcome_mode == WelcomeMode.after_verify.value else "✅ 进群欢迎"
         keyboard = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("状态：", callback_data=f"adm:wel:{chat_id}:toggle:{welcome_id}"),
-                InlineKeyboardButton("启用" if item.enabled else "关闭", callback_data=f"adm:wel:{chat_id}:toggle:{welcome_id}"),
+                InlineKeyboardButton("⚙️ 状态：", callback_data=f"adm:wel:{chat_id}:toggle:{welcome_id}"),
+                InlineKeyboardButton(status_on, callback_data=f"adm:wel:{chat_id}:toggle:{welcome_id}"),
+                InlineKeyboardButton(status_off, callback_data=f"adm:wel:{chat_id}:toggle:{welcome_id}"),
             ],
             [
-                InlineKeyboardButton("模式：", callback_data=f"adm:wel:{chat_id}:mode:{welcome_id}"),
-                InlineKeyboardButton(mode_label, callback_data=f"adm:wel:{chat_id}:mode:{welcome_id}"),
+                InlineKeyboardButton("⚙️ 模式：", callback_data=f"adm:wel:{chat_id}:mode:{welcome_id}"),
+                InlineKeyboardButton(mode_after_verify, callback_data=f"adm:wel:{chat_id}:mode:{welcome_id}"),
+                InlineKeyboardButton(mode_on_join, callback_data=f"adm:wel:{chat_id}:mode:{welcome_id}"),
             ],
             [
                 InlineKeyboardButton("标题备注", callback_data=f"adm:wel:{chat_id}:input:{welcome_id}:title"),
@@ -1367,8 +1611,10 @@ class AdminHandler(BaseHandler):
                 InlineKeyboardButton("🏖️ 预览效果", callback_data=f"adm:wel:{chat_id}:preview:{welcome_id}"),
                 InlineKeyboardButton("⏱️ 延迟删除", callback_data=f"adm:wel:{chat_id}:cycle_delete:{welcome_id}"),
             ],
-            [InlineKeyboardButton("❌ 删除配置", callback_data=f"adm:wel:{chat_id}:delete:{welcome_id}")],
-            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:welcome:{chat_id}")],
+            [
+                InlineKeyboardButton("❌ 删除配置", callback_data=f"adm:wel:{chat_id}:delete:{welcome_id}"),
+                InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:welcome:{chat_id}"),
+            ],
         ])
         await self.message_helper.safe_edit(update, text, reply_markup=keyboard)
 
@@ -1385,6 +1631,7 @@ class AdminHandler(BaseHandler):
         async with db.session_factory() as session:
             alliance = await AllianceService.get_alliance_by_chat(session, chat_id)
             setting = await AllianceService.get_setting(session, chat_id)
+            members = await AllianceService.list_members(session, alliance.alliance_id) if alliance is not None else []
             await session.commit()
 
         if alliance is None:
@@ -1393,9 +1640,9 @@ class AdminHandler(BaseHandler):
                 "群组可以组建自己的联盟，在同一联盟中的群组，可以实现同步封禁等共享能力。"
             )
             keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("创建联盟", callback_data=f"ali:create:input:{chat_id}")],
-                [InlineKeyboardButton("加入联盟", callback_data=f"ali:join:input:{chat_id}")],
-                [InlineKeyboardButton("返回", callback_data=f"adm:menu:main:{chat_id}")],
+                [InlineKeyboardButton("🆕 创建联盟", callback_data=f"ali:create:input:{chat_id}")],
+                [InlineKeyboardButton("🤝 加入联盟", callback_data=f"ali:join:input:{chat_id}")],
+                [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
             ])
             await self.message_helper.safe_edit(update, text, reply_markup=keyboard)
             return
@@ -1405,6 +1652,8 @@ class AdminHandler(BaseHandler):
         text = (
             "🖐 联盟功能\n\n"
             f"🟩 联盟名字：{alliance.name}\n\n"
+            f"👥 联盟成员：{len(members)} 个\n"
+            f"联合封禁状态：{'✅ 启动' if joint_ban_enabled else '❌ 关闭'}\n\n"
             "🚫 联合封禁\n"
             "└ 联盟群使用 t 指令封禁用户，该用户加入联合封禁列表\n"
             "└ 联合封禁列表中的用户，在联盟其他群中发言，会被自动封禁\n\n"
@@ -1413,9 +1662,9 @@ class AdminHandler(BaseHandler):
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("💥 查看联盟成员", callback_data=f"ali:members:{chat_id}")],
             [
-                InlineKeyboardButton("联合封禁", callback_data=f"ali:home:{chat_id}"),
+                InlineKeyboardButton("⚙️ 联合封禁：", callback_data=f"ali:home:{chat_id}"),
                 InlineKeyboardButton("✅ 启动" if joint_ban_enabled else "启动", callback_data=f"ali:jointban:toggle:{chat_id}:1"),
-                InlineKeyboardButton("✅ 关闭" if not joint_ban_enabled else "关闭", callback_data=f"ali:jointban:toggle:{chat_id}:0"),
+                InlineKeyboardButton("关闭" if joint_ban_enabled else "✅ 关闭", callback_data=f"ali:jointban:toggle:{chat_id}:0"),
             ],
             [
                 InlineKeyboardButton(
@@ -1424,7 +1673,7 @@ class AdminHandler(BaseHandler):
                 ),
                 InlineKeyboardButton("🚪 退出联盟", callback_data=f"ali:leave:{chat_id}:confirm"),
             ],
-            [InlineKeyboardButton("返回", callback_data=f"adm:menu:main:{chat_id}")],
+            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
         ])
         await self.message_helper.safe_edit(update, text, reply_markup=keyboard)
 
@@ -1456,7 +1705,7 @@ class AdminHandler(BaseHandler):
             title = chat.title if chat and chat.title else str(member.chat_id)
             owner_mark = "（创建群）" if alliance.owner_chat_id == member.chat_id else ""
             lines.append(f"{index}. {title}{owner_mark}")
-        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("返回", callback_data=f"ali:home:{chat_id}")]])
+        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"ali:home:{chat_id}")]])
         await self.message_helper.safe_edit(update, "\n".join(lines), reply_markup=keyboard)
 
     async def _show_garage_forward_prompt(
@@ -1472,6 +1721,7 @@ class AdminHandler(BaseHandler):
         async with db.session_factory() as session:
             setting = await GarageForwardService.ensure_setting(session, chat_id)
             sources = await GarageForwardService.list_sources(session, chat_id)
+            audit_counts = await GarageForwardService.count_audits_by_result(session, chat_id=chat_id)
             await session.commit()
 
         lines = [
@@ -1483,6 +1733,11 @@ class AdminHandler(BaseHandler):
             f"状态：{'✅ 启动' if setting.enabled else '❌ 关闭'}",
             f"同步模式：{_garage_forward_mode_label(setting.sync_mode)}",
             f"关键词规则：{('、'.join(str(item) for item in (setting.keyword_rules or [])[:8])) if setting.keyword_rules else '未配置'}",
+            (
+                f"审计统计：✅ 成功 {audit_counts.get('success', 0)}"
+                f"｜🟡 跳过 {audit_counts.get('skipped', 0)}"
+                f"｜❌ 失败 {audit_counts.get('failed', 0)}"
+            ),
             "同步来源：",
         ]
         if sources:
@@ -1494,29 +1749,122 @@ class AdminHandler(BaseHandler):
 
         keyboard_rows = [
             [
-                InlineKeyboardButton("状态", callback_data=f"gfw:home:{chat_id}"),
-                InlineKeyboardButton("启动", callback_data=f"gfw:toggle:{chat_id}:1"),
-                InlineKeyboardButton("关闭", callback_data=f"gfw:toggle:{chat_id}:0"),
+                InlineKeyboardButton("⚙️ 状态：", callback_data=f"gfw:home:{chat_id}"),
+                InlineKeyboardButton("✅ 启动" if setting.enabled else "启动", callback_data=f"gfw:toggle:{chat_id}:1"),
+                InlineKeyboardButton("关闭" if setting.enabled else "❌ 关闭", callback_data=f"gfw:toggle:{chat_id}:0"),
             ],
             [
-                InlineKeyboardButton("模式", callback_data=f"gfw:home:{chat_id}"),
-                InlineKeyboardButton("全部", callback_data=f"gfw:mode:{chat_id}:all"),
-                InlineKeyboardButton("仅文本", callback_data=f"gfw:mode:{chat_id}:text"),
+                InlineKeyboardButton("⚙️ 模式：", callback_data=f"gfw:home:{chat_id}"),
+                InlineKeyboardButton("✅ 全部" if setting.sync_mode == "all" else "全部", callback_data=f"gfw:mode:{chat_id}:all"),
+                InlineKeyboardButton(
+                    "✅ 仅文本" if setting.sync_mode == "text" else "仅文本",
+                    callback_data=f"gfw:mode:{chat_id}:text",
+                ),
             ],
             [
-                InlineKeyboardButton("仅媒体", callback_data=f"gfw:mode:{chat_id}:media"),
-                InlineKeyboardButton("关键词", callback_data=f"gfw:mode:{chat_id}:keyword"),
+                InlineKeyboardButton(
+                    "✅ 仅媒体" if setting.sync_mode == "media" else "仅媒体",
+                    callback_data=f"gfw:mode:{chat_id}:media",
+                ),
+                InlineKeyboardButton(
+                    "✅ 关键词" if setting.sync_mode == "keyword" else "关键词",
+                    callback_data=f"gfw:mode:{chat_id}:keyword",
+                ),
             ],
             [InlineKeyboardButton("✏️ 关键词规则", callback_data=f"gfw:keywords:input:{chat_id}")],
             [InlineKeyboardButton("➕ 添加来源频道", callback_data=f"gfw:source:add:{chat_id}")],
+            [InlineKeyboardButton("📜 转发日志", callback_data=f"gfw:audit:{chat_id}:a")],
         ]
         for item in sources[:10]:
             keyboard_rows.append(
                 [InlineKeyboardButton(f"🗑 移除 {item.source_name or item.source_channel_id}", callback_data=f"gfw:source:remove:{chat_id}:{item.id}")]
             )
-        keyboard_rows.append([InlineKeyboardButton("返回", callback_data=f"adm:menu:main:{chat_id}")])
+        keyboard_rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")])
         keyboard = InlineKeyboardMarkup(keyboard_rows)
         await self.message_helper.safe_edit(update, text="\n".join(lines), reply_markup=keyboard)
+
+    async def _show_garage_forward_audit_menu(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+        *,
+        result: str = "all",
+    ) -> None:
+        from bot.services.integration.garage_forward_service import GarageForwardService
+
+        normalized_result = _normalize_gfw_audit_result(result)
+        title_map = {
+            "all": "全部",
+            "success": "成功",
+            "skipped": "跳过",
+            "failed": "失败",
+        }
+        icon_map = {
+            "success": "✅",
+            "skipped": "🟡",
+            "failed": "❌",
+        }
+
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            audits = await GarageForwardService.list_audits(
+                session,
+                chat_id=chat_id,
+                result=normalized_result,
+                limit=20,
+            )
+            counts = await GarageForwardService.count_audits_by_result(session, chat_id=chat_id)
+            await session.commit()
+
+        lines = [
+            "🔁 车库转发 | 转发日志",
+            "",
+            f"当前筛选：{title_map.get(normalized_result, '全部')}",
+            (
+                f"📊 全部 {counts.get('all', 0)}"
+                f"｜✅ 成功 {counts.get('success', 0)}"
+                f"｜🟡 跳过 {counts.get('skipped', 0)}"
+                f"｜❌ 失败 {counts.get('failed', 0)}"
+            ),
+            "",
+        ]
+        if audits:
+            for item in audits:
+                timestamp = item.created_at.strftime("%m-%d %H:%M") if item.created_at else "--"
+                icon = icon_map.get(item.result, "📄")
+                lines.append(
+                    f"{icon} #{item.id}｜{timestamp}｜源 {item.source_channel_id}｜消息 {item.source_message_id or '-'}"
+                )
+                lines.append(f"动作：{item.action}｜结果：{item.result}｜原因：{item.reason or '-'}")
+                lines.append("")
+        else:
+            lines.append("暂无日志记录")
+
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton(
+                    ("✅ " if normalized_result == "all" else "") + f"📋 全部({counts.get('all', 0)})",
+                    callback_data=f"gfw:audit:{chat_id}:{_gfw_audit_result_code('all')}",
+                ),
+                InlineKeyboardButton(
+                    ("✅ " if normalized_result == "success" else "") + f"✅ 成功({counts.get('success', 0)})",
+                    callback_data=f"gfw:audit:{chat_id}:{_gfw_audit_result_code('success')}",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    ("✅ " if normalized_result == "skipped" else "") + f"🟡 跳过({counts.get('skipped', 0)})",
+                    callback_data=f"gfw:audit:{chat_id}:{_gfw_audit_result_code('skipped')}",
+                ),
+                InlineKeyboardButton(
+                    ("✅ " if normalized_result == "failed" else "") + f"❌ 失败({counts.get('failed', 0)})",
+                    callback_data=f"gfw:audit:{chat_id}:{_gfw_audit_result_code('failed')}",
+                ),
+            ],
+            [InlineKeyboardButton("🔙 返回", callback_data=f"gfw:home:{chat_id}")],
+        ])
+        await self.message_helper.safe_edit(update, "\n".join(lines), reply_markup=keyboard)
 
     async def _show_garage_auth_menu(
         self,
@@ -1556,25 +1904,25 @@ class AdminHandler(BaseHandler):
         )
         keyboard = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("状态：", callback_data=f"grg:home:{chat_id}"),
-                InlineKeyboardButton("启动", callback_data=f"grg:toggle:{chat_id}:1"),
-                InlineKeyboardButton("关闭", callback_data=f"grg:toggle:{chat_id}:0"),
+                InlineKeyboardButton("⚙️ 状态：", callback_data=f"grg:home:{chat_id}"),
+                InlineKeyboardButton("✅ 启动" if settings.garage_auth_enabled else "启动", callback_data=f"grg:toggle:{chat_id}:1"),
+                InlineKeyboardButton("关闭" if settings.garage_auth_enabled else "❌ 关闭", callback_data=f"grg:toggle:{chat_id}:0"),
             ],
             [
                 InlineKeyboardButton("⚙️ 认证图标", callback_data=f"grg:badge:{chat_id}"),
-                InlineKeyboardButton("🤝", callback_data=f"grg:badge:{chat_id}"),
+                InlineKeyboardButton(settings.garage_auth_badge or "🤝", callback_data=f"grg:badge:{chat_id}"),
             ],
             [InlineKeyboardButton("💌 手动认证老师", callback_data=f"grg:teacher:list:{chat_id}:0")],
             [InlineKeyboardButton("🧾 生成老师汇总信息", callback_data=f"grg:summary:gen:{chat_id}")],
             [
-                InlineKeyboardButton("限制发言", callback_data=f"grg:home:{chat_id}"),
-                InlineKeyboardButton("开启", callback_data=f"grg:limit:toggle:{chat_id}:1"),
-                InlineKeyboardButton("关闭", callback_data=f"grg:limit:toggle:{chat_id}:0"),
+                InlineKeyboardButton("⚙️ 限制发言：", callback_data=f"grg:home:{chat_id}"),
+                InlineKeyboardButton("✅ 开启" if settings.garage_limit_enabled else "开启", callback_data=f"grg:limit:toggle:{chat_id}:1"),
+                InlineKeyboardButton("关闭" if settings.garage_limit_enabled else "❌ 关闭", callback_data=f"grg:limit:toggle:{chat_id}:0"),
             ],
             [
-                InlineKeyboardButton("图", callback_data=f"grg:limit:mode:{chat_id}:image"),
-                InlineKeyboardButton("文+图", callback_data=f"grg:limit:mode:{chat_id}:image_text"),
-                InlineKeyboardButton("关闭", callback_data=f"grg:limit:mode:{chat_id}:none"),
+                InlineKeyboardButton("✅ 图" if settings.garage_limit_mode == "image" else "图", callback_data=f"grg:limit:mode:{chat_id}:image"),
+                InlineKeyboardButton("✅ 文+图" if settings.garage_limit_mode == "image_text" else "文+图", callback_data=f"grg:limit:mode:{chat_id}:image_text"),
+                InlineKeyboardButton("✅ 关闭" if settings.garage_limit_mode == "none" else "关闭", callback_data=f"grg:limit:mode:{chat_id}:none"),
             ],
             [
                 InlineKeyboardButton(f"时间间隔（{settings.garage_limit_interval_sec // 3600}小时）", callback_data=f"grg:limit:interval:{chat_id}"),
@@ -1582,14 +1930,14 @@ class AdminHandler(BaseHandler):
             ],
             [InlineKeyboardButton("📄 限制发言白名单", callback_data=f"grg:wl:list:{chat_id}:0")],
             [
-                InlineKeyboardButton("地区", callback_data=f"grg:summary:partition:{chat_id}:region"),
-                InlineKeyboardButton("价格", callback_data=f"grg:summary:partition:{chat_id}:price"),
+                InlineKeyboardButton("✅ 地区" if settings.garage_summary_partition_by == "region" else "地区", callback_data=f"grg:summary:partition:{chat_id}:region"),
+                InlineKeyboardButton("✅ 价格" if settings.garage_summary_partition_by == "price" else "价格", callback_data=f"grg:summary:partition:{chat_id}:price"),
             ],
             [
-                InlineKeyboardButton("只显开课：开", callback_data=f"grg:summary:open:{chat_id}:1"),
-                InlineKeyboardButton("只显开课：关", callback_data=f"grg:summary:open:{chat_id}:0"),
+                InlineKeyboardButton("✅ 只显开课：开" if settings.garage_summary_only_open_course else "只显开课：开", callback_data=f"grg:summary:open:{chat_id}:1"),
+                InlineKeyboardButton("只显开课：关" if settings.garage_summary_only_open_course else "✅ 只显开课：关", callback_data=f"grg:summary:open:{chat_id}:0"),
             ],
-            [InlineKeyboardButton("返回", callback_data=f"adm:menu:main:{chat_id}")],
+            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
         ])
         await self.message_helper.safe_edit(update, text, reply_markup=keyboard)
 
@@ -1619,7 +1967,7 @@ class AdminHandler(BaseHandler):
         for item, user in rows[page * 10: page * 10 + 10]:
             title = f"删除 {('@' + user.username) if user and user.username else item.user_id}"
             keyboard_rows.append([InlineKeyboardButton(title[:48], callback_data=f"grg:teacher:del:{chat_id}:{item.user_id}")])
-        keyboard_rows.append([InlineKeyboardButton("返回", callback_data=f"grg:home:{chat_id}")])
+        keyboard_rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"grg:home:{chat_id}")])
         await self.message_helper.safe_edit(update, "\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard_rows))
 
     async def _show_garage_whitelist_menu(
@@ -1648,7 +1996,7 @@ class AdminHandler(BaseHandler):
         for item, user in rows[page * 10: page * 10 + 10]:
             title = f"删除 {('@' + user.username) if user and user.username else item.user_id}"
             keyboard_rows.append([InlineKeyboardButton(title[:48], callback_data=f"grg:wl:del:{chat_id}:{item.user_id}")])
-        keyboard_rows.append([InlineKeyboardButton("返回", callback_data=f"grg:home:{chat_id}")])
+        keyboard_rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"grg:home:{chat_id}")])
         await self.message_helper.safe_edit(update, "\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard_rows))
 
     async def _show_teacher_search_menu(
@@ -1666,6 +2014,12 @@ class AdminHandler(BaseHandler):
             open_teachers = await TeacherSearchService.list_open_course_teachers(session, chat_id)
             await session.commit()
 
+        def _toggle_labels(enabled: bool) -> tuple[str, str]:
+            return ("✅ 启动", "关闭") if enabled else ("启动", "✅ 关闭")
+
+        tag_on, tag_off = _toggle_labels(setting.tag_search_enabled)
+        attendance_on, attendance_off = _toggle_labels(setting.attendance_enabled)
+        nearby_on, nearby_off = _toggle_labels(setting.nearby_search_enabled)
         delete_label = "不删除" if setting.delete_mode == "none" else "删除"
         footer_label = setting.footer_button_label or "无"
         text = (
@@ -1675,45 +2029,79 @@ class AdminHandler(BaseHandler):
             "附近搜索：群友发送附近可查询周边老师\n"
             "开课打卡：当日发言老师可视为开课\n"
             "强制录入：未录入位置可限制功能使用\n\n"
-            f"标签搜索：{'✅ 启动' if setting.tag_search_enabled else '❌ 关闭'}\n"
-            f"开课打卡：{'✅ 启动' if setting.attendance_enabled else '❌ 关闭'}\n"
-            f"附近搜索：{'✅ 启动' if setting.nearby_search_enabled else '❌ 关闭'}\n"
+            f"标签搜索：{tag_on if setting.tag_search_enabled else tag_off}\n"
+            f"开课打卡：{attendance_on if setting.attendance_enabled else attendance_off}\n"
+            f"附近搜索：{nearby_on if setting.nearby_search_enabled else nearby_off}\n"
+            f"强制录入：{'✅ 启动' if setting.force_location_enabled else '❌ 关闭'}\n"
             f"底部按钮：{footer_label}\n"
             f"删除消息：{delete_label}\n"
             f"开课老师：{len(open_teachers)} 人"
         )
         keyboard = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("标签搜索：", callback_data=f"tsearch:home:{chat_id}"),
-                InlineKeyboardButton("✅ 启动", callback_data=f"tsearch:toggle:tag:{chat_id}:1"),
-                InlineKeyboardButton("关闭", callback_data=f"tsearch:toggle:tag:{chat_id}:0"),
+                InlineKeyboardButton("⚙️ 标签搜索：", callback_data=f"tsearch:home:{chat_id}"),
+                InlineKeyboardButton(tag_on, callback_data=f"tsearch:toggle:tag:{chat_id}:1"),
+                InlineKeyboardButton(tag_off, callback_data=f"tsearch:toggle:tag:{chat_id}:0"),
             ],
             [
-                InlineKeyboardButton("开课打卡：", callback_data=f"tsearch:home:{chat_id}"),
-                InlineKeyboardButton("✅ 启动", callback_data=f"tsearch:toggle:attendance:{chat_id}:1"),
-                InlineKeyboardButton("关闭", callback_data=f"tsearch:toggle:attendance:{chat_id}:0"),
+                InlineKeyboardButton("⚙️ 开课打卡：", callback_data=f"tsearch:attendance:menu:{chat_id}"),
+                InlineKeyboardButton(attendance_on, callback_data=f"tsearch:toggle:attendance:{chat_id}:1"),
+                InlineKeyboardButton(attendance_off, callback_data=f"tsearch:toggle:attendance:{chat_id}:0"),
             ],
             [
-                InlineKeyboardButton("附近搜索：", callback_data=f"tsearch:home:{chat_id}"),
-                InlineKeyboardButton("✅ 启动", callback_data=f"tsearch:toggle:nearby:{chat_id}:1"),
-                InlineKeyboardButton("关闭", callback_data=f"tsearch:toggle:nearby:{chat_id}:0"),
+                InlineKeyboardButton("⚙️ 附近搜索：", callback_data=f"tsearch:home:{chat_id}"),
+                InlineKeyboardButton(nearby_on, callback_data=f"tsearch:toggle:nearby:{chat_id}:1"),
+                InlineKeyboardButton(nearby_off, callback_data=f"tsearch:toggle:nearby:{chat_id}:0"),
             ],
             [
-                InlineKeyboardButton("强制录入：", callback_data=f"tsearch:home:{chat_id}"),
-                InlineKeyboardButton("✅ 启动", callback_data=f"tsearch:toggle:force_loc:{chat_id}:1"),
-                InlineKeyboardButton("关闭", callback_data=f"tsearch:toggle:force_loc:{chat_id}:0"),
+                InlineKeyboardButton("🔘 底部按钮：", callback_data=f"tsearch:home:{chat_id}"),
+                InlineKeyboardButton(f"🔖 {footer_label}", callback_data=f"tsearch:home:{chat_id}"),
             ],
             [
-                InlineKeyboardButton("底部按钮", callback_data=f"tsearch:home:{chat_id}"),
-                InlineKeyboardButton(footer_label, callback_data=f"tsearch:home:{chat_id}"),
-            ],
-            [
-                InlineKeyboardButton("删除消息：", callback_data=f"tsearch:home:{chat_id}"),
-                InlineKeyboardButton(delete_label, callback_data=f"tsearch:delete_mode:{chat_id}:{'delete' if setting.delete_mode == 'none' else 'none'}"),
+                InlineKeyboardButton("🧹 删除消息：", callback_data=f"tsearch:home:{chat_id}"),
+                InlineKeyboardButton("✅ 删除" if setting.delete_mode != "none" else "❌ 不删除", callback_data=f"tsearch:delete_mode:{chat_id}:{'delete' if setting.delete_mode == 'none' else 'none'}"),
             ],
             [InlineKeyboardButton("📍 代录老师位置", callback_data=f"tsearch:delegate:start:{chat_id}")],
-            [InlineKeyboardButton("📚 开课老师", callback_data=f"tsearch:open_course:list:{chat_id}:0")],
-            [InlineKeyboardButton("返回", callback_data=f"adm:menu:main:{chat_id}")],
+            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
+        ])
+        await self.message_helper.safe_edit(update, text, reply_markup=keyboard)
+
+    async def _show_teacher_search_attendance_menu(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+    ) -> None:
+        from bot.services.integration.garage_features_service import TeacherSearchService
+
+        db: Database = context.application.bot_data["db"]
+        await self._set_current_chat(db, update.effective_user.id, chat_id)
+        async with db.session_factory() as session:
+            setting = await TeacherSearchService.get_setting(session, chat_id)
+            open_teachers = await TeacherSearchService.list_open_course_teachers(session, chat_id)
+            await session.commit()
+
+        force_on = "✅ 启动" if setting.force_location_enabled else "启动"
+        force_off = "关闭" if setting.force_location_enabled else "✅ 关闭"
+        open_count = f"{len(open_teachers)} 人"
+        text = (
+            "🔎 老师搜索 | 开课详情\n\n"
+            f"开课打卡：{'✅ 启动' if setting.attendance_enabled else '❌ 关闭'}\n"
+            f"强制录入：{'✅ 启动' if setting.force_location_enabled else '❌ 关闭'}\n"
+            f"开课老师：{open_count}\n\n"
+            "说明：为了保持首页与文档布局一致，强制录入与开课老师查询收纳到本页。"
+        )
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("⚙️ 强制录入：", callback_data=f"tsearch:attendance:menu:{chat_id}"),
+                InlineKeyboardButton(force_on, callback_data=f"tsearch:toggle:force_loc:{chat_id}:1"),
+                InlineKeyboardButton(force_off, callback_data=f"tsearch:toggle:force_loc:{chat_id}:0"),
+            ],
+            [
+                InlineKeyboardButton("📚 开课老师", callback_data=f"tsearch:open_course:list:{chat_id}:0"),
+                InlineKeyboardButton(open_count, callback_data=f"tsearch:open_course:list:{chat_id}:0"),
+            ],
+            [InlineKeyboardButton("🔙 返回", callback_data=f"tsearch:home:{chat_id}")],
         ])
         await self.message_helper.safe_edit(update, text, reply_markup=keyboard)
 
@@ -1731,12 +2119,15 @@ class AdminHandler(BaseHandler):
         async with db.session_factory() as session:
             setting = await CarReviewService.get_setting(session, chat_id)
             fields = await CarReviewService.list_custom_fields(session, chat_id)
+            reports = await CarReviewService.list_recent_reports(session, chat_id, limit=20)
             approver = await session.get(TgUser, setting.approver_user_id) if setting.approver_user_id else None
             await session.commit()
 
         mode_label = "默认" if setting.review_mode == "default" else "简易"
         lookup_label = {"exact": "精准", "contains": "包含", "off": "关闭"}.get(setting.teacher_lookup_mode, setting.teacher_lookup_mode)
         approver_label = f"@{approver.username}" if approver and approver.username else ("未指定" if not setting.approver_user_id else str(setting.approver_user_id))
+        pending_count = sum(1 for item in reports if item.report_status == "pending")
+        enabled_fields_count = sum(1 for item in fields if item.enabled)
         text = (
             "💯 车评系统\n\n"
             "群友可以对榜上的老师进行评价，审核通过可以自动发布，并给提交者奖励积分。\n\n"
@@ -1748,37 +2139,220 @@ class AdminHandler(BaseHandler):
             f"报告发布：主群={'✅' if setting.publish_to_main_group else '❌'} / 评论区={'✅' if setting.publish_to_comment_group else '❌'} / 频道={'✅' if setting.publish_to_bound_channel else '❌'}\n"
             f"积分奖励：加 {setting.reward_points} 积分\n"
             f"审核人员：{approver_label}\n"
-            f"自定义项：{len(fields)} 项"
+            f"自定义项：{enabled_fields_count}/{len(fields)} 项启用\n"
+            f"最近报告：{len(reports)} 条（待审核 {pending_count} 条）"
         )
         keyboard = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("⚙️ 开关", callback_data=f"crv:home:{chat_id}"),
-                InlineKeyboardButton("启动", callback_data=f"crv:toggle:{chat_id}:1"),
-                InlineKeyboardButton("关闭", callback_data=f"crv:toggle:{chat_id}:0"),
+                InlineKeyboardButton("⚙️ 开关：", callback_data=f"crv:home:{chat_id}"),
+                InlineKeyboardButton("✅ 启动" if setting.enabled else "启动", callback_data=f"crv:toggle:{chat_id}:1"),
+                InlineKeyboardButton("关闭" if setting.enabled else "❌ 关闭", callback_data=f"crv:toggle:{chat_id}:0"),
             ],
             [
-                InlineKeyboardButton("⚙️ 模式", callback_data=f"crv:home:{chat_id}"),
-                InlineKeyboardButton("✅ 默认", callback_data=f"crv:mode:{chat_id}:default"),
-                InlineKeyboardButton("简易", callback_data=f"crv:mode:{chat_id}:simple"),
+                InlineKeyboardButton("⚙️ 模式：", callback_data=f"crv:home:{chat_id}"),
+                InlineKeyboardButton("✅ 默认" if setting.review_mode == "default" else "默认", callback_data=f"crv:mode:{chat_id}:default"),
+                InlineKeyboardButton("✅ 简易" if setting.review_mode == "simple" else "简易", callback_data=f"crv:mode:{chat_id}:simple"),
             ],
             [
-                InlineKeyboardButton("⚙️ 查车评", callback_data=f"crv:home:{chat_id}"),
-                InlineKeyboardButton("精准", callback_data=f"crv:lookup:{chat_id}:exact"),
-                InlineKeyboardButton("包含", callback_data=f"crv:lookup:{chat_id}:contains"),
+                InlineKeyboardButton("⚙️ 查车评：", callback_data=f"crv:home:{chat_id}"),
+                InlineKeyboardButton("✅ 精准" if setting.teacher_lookup_mode == "exact" else "精准", callback_data=f"crv:lookup:{chat_id}:exact"),
+                InlineKeyboardButton("✅ 包含" if setting.teacher_lookup_mode == "contains" else "包含", callback_data=f"crv:lookup:{chat_id}:contains"),
             ],
-            [InlineKeyboardButton("🚫 关闭查车评", callback_data=f"crv:lookup:{chat_id}:off")],
+            [InlineKeyboardButton("✅ 关闭查车评" if setting.teacher_lookup_mode == "off" else "🚫 关闭查车评", callback_data=f"crv:lookup:{chat_id}:off")],
             [InlineKeyboardButton("💬 提交评价指令", callback_data=f"crv:submit_cmd:edit:{chat_id}")],
             [InlineKeyboardButton("🥇 查询排行指令", callback_data=f"crv:rank_cmd:edit:{chat_id}")],
             [InlineKeyboardButton("📤 报告发布", callback_data=f"crv:publish_target:{chat_id}:menu")],
             [InlineKeyboardButton(f"🪙 积分奖励：加 {setting.reward_points} 积分", callback_data=f"crv:reward:{chat_id}")],
             [InlineKeyboardButton(f"🕵️ 审核人员：{approver_label}", callback_data=f"crv:approver:set:{chat_id}")],
-            [InlineKeyboardButton("✏️ 自定义项", callback_data=f"crv:home:{chat_id}")],
+            [InlineKeyboardButton(f"✏️ 自定义项（{enabled_fields_count}/{len(fields)}）", callback_data=f"crv:fields:{chat_id}")],
             [InlineKeyboardButton("📝 报告模版", callback_data=f"crv:template:edit:{chat_id}")],
-            [InlineKeyboardButton("📂 评价管理", callback_data=f"crv:home:{chat_id}")],
+            [InlineKeyboardButton(f"📂 评价管理（待审核 {pending_count}）", callback_data=f"crv:reports:{chat_id}")],
             [InlineKeyboardButton("👩 在榜老师", callback_data=f"tsearch:open_course:list:{chat_id}:0")],
-            [InlineKeyboardButton("返回", callback_data=f"adm:menu:main:{chat_id}")],
+            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
         ])
         await self.message_helper.safe_edit(update, text, reply_markup=keyboard)
+
+    async def _show_car_review_fields_menu(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+    ) -> None:
+        from bot.services.integration.garage_features_service import CarReviewService
+
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            fields = await CarReviewService.list_custom_fields(session, chat_id)
+            await session.commit()
+
+        lines = [
+            "💯 车评系统 | 自定义项",
+            "",
+            "当前为基础版字段清单，启停和排序能力已入库，但管理页仍未完全展开。",
+            "",
+        ]
+        for item in fields:
+            lines.append(f"{item.field_label}（键：{item.field_key}｜{'✅ 启用' if item.enabled else '❌ 关闭'}）")
+        if not fields:
+            lines.append("暂无自定义项")
+        await self.message_helper.safe_edit(
+            update,
+            "\n".join(lines),
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"crv:home:{chat_id}")]]),
+        )
+
+    async def _show_car_review_reports_menu(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+        *,
+        status: str = "all",
+    ) -> None:
+        from bot.services.integration.garage_features_service import CarReviewService
+
+        normalized_status = _normalize_car_review_report_status(status)
+        selected_code = _car_review_report_status_code(normalized_status)
+        status_items = [
+            ("all", "📋 全部"),
+            ("pending", "🟡 待审核"),
+            ("approved", "✅ 已通过"),
+            ("published", "📢 已发布"),
+            ("rejected", "❌ 已驳回"),
+        ]
+        status_icon_map = {
+            "pending": "🟡",
+            "approved": "✅",
+            "published": "📢",
+            "rejected": "❌",
+        }
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            reports = await CarReviewService.list_reports(session, chat_id, status=normalized_status, limit=10)
+            counts = await CarReviewService.count_reports_by_status(session, chat_id)
+            await session.commit()
+
+        summary = (
+            f"📊 全部 {counts.get('all', 0)}"
+            f"｜🟡 待审核 {counts.get('pending', 0)}"
+            f"｜✅ 已通过 {counts.get('approved', 0)}"
+            f"｜📢 已发布 {counts.get('published', 0)}"
+            f"｜❌ 已驳回 {counts.get('rejected', 0)}"
+        )
+        current_status_name = {
+            "all": "全部",
+            "pending": "待审核",
+            "approved": "已通过",
+            "published": "已发布",
+            "rejected": "已驳回",
+        }.get(normalized_status, "全部")
+        lines = [
+            "💯 车评系统 | 评价管理",
+            "",
+            f"当前筛选：{current_status_name}",
+            summary,
+            "",
+        ]
+        keyboard_rows: list[list[InlineKeyboardButton]] = []
+        filter_row_1: list[InlineKeyboardButton] = []
+        filter_row_2: list[InlineKeyboardButton] = []
+        for idx, (item_status, item_title) in enumerate(status_items):
+            code = _car_review_report_status_code(item_status)
+            label = f"{item_title}({counts.get(item_status, 0)})"
+            if item_status == normalized_status:
+                label = f"✅ {label}"
+            button = InlineKeyboardButton(label, callback_data=f"crv:reports:{chat_id}:{code}")
+            if idx < 3:
+                filter_row_1.append(button)
+            else:
+                filter_row_2.append(button)
+        keyboard_rows.append(filter_row_1)
+        keyboard_rows.append(filter_row_2)
+        if reports:
+            for report in reports:
+                status_icon = status_icon_map.get(report.report_status, "📄")
+                lines.extend(
+                    [
+                        f"报告#{report.report_id}｜老师 {report.teacher_user_id or '未识别'}",
+                        f"状态：{report.report_status}｜提交人：{report.author_user_id or '未知'}",
+                        "",
+                    ]
+                )
+                keyboard_rows.append(
+                    [
+                        InlineKeyboardButton(
+                            f"{status_icon} 报告#{report.report_id}｜老师 {report.teacher_user_id or '未识别'}",
+                            callback_data=f"crv:report:{chat_id}:detail:{report.report_id}:{selected_code}",
+                        )
+                    ]
+                )
+        else:
+            lines.append("0 条数据，第 1 页/共 1 页")
+        keyboard_rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"crv:home:{chat_id}")])
+        await self.message_helper.safe_edit(
+            update,
+            "\n".join(lines),
+            reply_markup=InlineKeyboardMarkup(keyboard_rows),
+        )
+
+    async def _show_car_review_report_detail(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+        report_id: int,
+        *,
+        status: str = "all",
+    ) -> None:
+        from bot.services.integration.garage_features_service import CarReviewService
+
+        normalized_status = _normalize_car_review_report_status(status)
+        status_code = _car_review_report_status_code(normalized_status)
+        status_text_map = {
+            "pending": "🟡 待审核",
+            "approved": "✅ 已通过",
+            "published": "📢 已发布",
+            "rejected": "❌ 已驳回",
+        }
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            report = await CarReviewService.get_report(session, chat_id, report_id)
+            logs = await CarReviewService.list_audit_logs(session, chat_id=chat_id, report_id=report_id, limit=8)
+            await session.commit()
+        if report is None:
+            await answer_callback_query_safely(update, "报告不存在", show_alert=True)
+            await self._show_car_review_reports_menu(update, context, chat_id, status=normalized_status)
+            return
+        score_total = (report.scores or {}).get("total_score", "-")
+        logs_lines = ["审核日志："]
+        if not logs:
+            logs_lines.append("- 暂无日志")
+        else:
+            for item in logs:
+                timestamp = item.created_at.strftime("%m-%d %H:%M") if item.created_at else "--"
+                logs_lines.append(f"- {timestamp}｜{item.action}｜操作人 {item.operator_user_id or '-'}")
+        lines = [
+            "💯 车评系统 | 报告详情",
+            "",
+            f"报告编号：{report.report_id}",
+            f"老师用户：{report.teacher_user_id or '未识别'}",
+            f"提交用户：{report.author_user_id or '未知'}",
+            f"当前状态：{status_text_map.get(report.report_status, report.report_status)}",
+            f"综合评分：{score_total}",
+            f"评价内容：{(report.review_text or '无').strip()[:200]}",
+            "",
+            *logs_lines,
+        ]
+        keyboard_rows: list[list[InlineKeyboardButton]] = []
+        if report.report_status == "pending":
+            keyboard_rows.append(
+                [
+                    InlineKeyboardButton("✅ 审核通过", callback_data=f"crv:report:{chat_id}:approve:{report.report_id}:{status_code}"),
+                    InlineKeyboardButton("❌ 驳回", callback_data=f"crv:report:{chat_id}:reject:{report.report_id}:{status_code}"),
+                ]
+            )
+        keyboard_rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"crv:reports:{chat_id}:{status_code}")])
+        await self.message_helper.safe_edit(update, "\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard_rows))
 
     async def _show_car_review_publish_menu(
         self,
@@ -1803,13 +2377,12 @@ class AdminHandler(BaseHandler):
         )
         keyboard = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("带图发送：开启", callback_data=f"crv:home:{chat_id}"),
-                InlineKeyboardButton("❌ 关闭", callback_data=f"crv:home:{chat_id}"),
+                InlineKeyboardButton("🖼️ 首图发送：基础版固定开启", callback_data=f"crv:home:{chat_id}"),
             ],
             [InlineKeyboardButton(("✅ " if setting.publish_to_main_group else "") + "直接发到主群", callback_data=f"crv:publish_target:{chat_id}:main")],
             [InlineKeyboardButton(("✅ " if setting.publish_to_comment_group else "") + "评论车库帖子", callback_data=f"crv:publish_target:{chat_id}:comment")],
             [InlineKeyboardButton(("✅ " if setting.publish_to_bound_channel else "") + "发送指定频道", callback_data=f"crv:publish_target:{chat_id}:channel")],
-            [InlineKeyboardButton("返回", callback_data=f"crv:home:{chat_id}")],
+            [InlineKeyboardButton("🔙 返回", callback_data=f"crv:home:{chat_id}")],
         ])
         await self.message_helper.safe_edit(update, text, reply_markup=keyboard)
 
@@ -2048,7 +2621,7 @@ class AdminHandler(BaseHandler):
         chat_id: int,
         callback_data: CallbackParser,
     ) -> None:
-        from bot.models.enums import ConversationStateType
+        from bot.models.enums import ConversationStateType, ForceSubscribeAction
 
         op = callback_data.get(3)
         arg = callback_data.get(4)
@@ -2089,13 +2662,32 @@ class AdminHandler(BaseHandler):
                 "channel2": "👉 请回复需要绑定的频道2（频道id、用户名或链接）：",
                 "text": "👉 现在输入新的文案内容：",
                 "cover": "👉 请发送图片或视频文件；发送“清空”可移除封面。",
-                "buttons": "👉 请输入按钮 JSON，例如 [[{\"text\":\"加入频道\",\"url\":\"https://t.me/example\"}]]；发送“清空”可移除按钮。",
+                "buttons": (
+                    "👉 请输入按钮配置。\n"
+                    "支持两种格式：\n"
+                    "1) JSON：[[{\"text\":\"加入频道\",\"url\":\"https://t.me/example\"}]]\n"
+                    "2) 文本行：每行一个按钮，格式“按钮文案|https://t.me/example”\n"
+                    "发送“清空”可移除按钮。"
+                ),
             }[arg]
             await self.message_helper.safe_edit(
                 update,
                 prompt,
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:forcesub:{chat_id}")]]),
             )
+            return
+
+        if op == "preview":
+            db: Database = context.application.bot_data["db"]
+            async with db.session_factory() as session:
+                settings = await get_chat_settings(session, chat_id)
+                await session.commit()
+            text = (
+                "👀 强制订阅 | 预览效果\n\n"
+                "这是用户未订阅时会收到的提示样式预览。"
+            )
+            reply_markup = _build_force_subscribe_preview_markup(settings, chat_id)
+            await self.message_helper.safe_edit(update, text, reply_markup=reply_markup)
             return
 
         if op in {"delete_after", "cycle_delete_after"}:
@@ -2111,6 +2703,47 @@ class AdminHandler(BaseHandler):
                 settings.force_subscribe_delete_warn_after_seconds = next_seconds
                 await session.commit()
             await self._show_force_subscribe_menu(update, context, chat_id)
+            return
+
+        if op == "cycle_check_mode":
+            options = ["all", "any"]
+            async with db.session_factory() as session:
+                settings = await get_chat_settings(session, chat_id)
+                current = getattr(settings, "force_subscribe_check_mode", "all")
+                next_mode = options[(options.index(current) + 1) % len(options)] if current in options else options[0]
+                settings.force_subscribe_check_mode = next_mode
+                await session.commit()
+            await self._show_force_subscribe_menu(update, context, chat_id)
+            return
+
+        if op == "cycle_action":
+            options = [
+                ForceSubscribeAction.delete_and_warn.value,
+                ForceSubscribeAction.delete_only.value,
+                ForceSubscribeAction.warn_only.value,
+                ForceSubscribeAction.mute.value,
+            ]
+            async with db.session_factory() as session:
+                settings = await get_chat_settings(session, chat_id)
+                current = getattr(
+                    settings,
+                    "force_subscribe_not_subscribed_action",
+                    ForceSubscribeAction.delete_and_warn.value,
+                )
+                next_action = options[(options.index(current) + 1) % len(options)] if current in options else options[0]
+                settings.force_subscribe_not_subscribed_action = next_action
+                await session.commit()
+            await self._show_force_subscribe_menu(update, context, chat_id)
+            return
+
+        if op == "clear_cover":
+            async with db.session_factory() as session:
+                settings = await get_chat_settings(session, chat_id)
+                settings.force_subscribe_cover_media_type = None
+                settings.force_subscribe_cover_file_id = None
+                await session.commit()
+            await self._show_force_subscribe_menu(update, context, chat_id)
+            return
 
     async def _handle_welcome(
         self,
@@ -2279,7 +2912,7 @@ class AdminHandler(BaseHandler):
             await self.message_helper.safe_edit(
                 update,
                 "🖐 联盟功能 | 创建联盟\n\n👉 请取一个联盟名称：",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("返回", callback_data=f"ali:home:{chat_id}")]]),
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"ali:home:{chat_id}")]]),
             )
             return
 
@@ -2294,7 +2927,7 @@ class AdminHandler(BaseHandler):
             await self.message_helper.safe_edit(
                 update,
                 "🖐 联盟功能 | 加入联盟\n\n👉 请输入联盟邀请码：",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("返回", callback_data=f"ali:home:{chat_id}")]]),
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"ali:home:{chat_id}")]]),
             )
             return
 
@@ -2401,7 +3034,7 @@ class AdminHandler(BaseHandler):
             await self.message_helper.safe_edit(
                 update,
                 "🔁 车库转发 | 关键词规则\n\n👉 请输入关键词，使用空格、逗号或换行分隔：",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("返回", callback_data=f"gfw:home:{chat_id}")]]),
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"gfw:home:{chat_id}")]]),
             )
             return
 
@@ -2416,7 +3049,7 @@ class AdminHandler(BaseHandler):
             await self.message_helper.safe_edit(
                 update,
                 "🔁 车库转发 | 添加来源频道\n\n👉 请输入来源频道 ID、用户名或邀请链接：",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("返回", callback_data=f"gfw:home:{chat_id}")]]),
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"gfw:home:{chat_id}")]]),
             )
             return
 
@@ -2432,6 +3065,11 @@ class AdminHandler(BaseHandler):
                 await answer_callback_query_safely(update, "来源频道不存在", show_alert=True)
                 return
             await self._show_garage_forward_prompt(update, context, chat_id)
+            return
+
+        if action == "audit":
+            result = _normalize_gfw_audit_result(callback_data.get(3) or "a")
+            await self._show_garage_forward_audit_menu(update, context, chat_id, result=result)
             return
 
         await self._show_garage_forward_prompt(update, context, chat_id)
@@ -2473,7 +3111,7 @@ class AdminHandler(BaseHandler):
             await self.message_helper.safe_edit(
                 update,
                 "🚗 车库认证 | 认证图标\n\n👉 请输入新的认证图标：",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("返回", callback_data=f"grg:home:{chat_id}")]]),
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"grg:home:{chat_id}")]]),
             )
             return
         if action == "teacher":
@@ -2492,7 +3130,7 @@ class AdminHandler(BaseHandler):
                 await self.message_helper.safe_edit(
                     update,
                     "🚗 车库认证 | 手动添加认证老师\n\n👉 请输入用户名或ID：",
-                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("返回", callback_data=f"grg:teacher:list:{chat_id}:0")]]),
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"grg:teacher:list:{chat_id}:0")]]),
                 )
                 return
             if sub == "del":
@@ -2541,7 +3179,7 @@ class AdminHandler(BaseHandler):
                 await self.message_helper.safe_edit(
                     update,
                     prompt,
-                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("返回", callback_data=f"grg:home:{chat_id}")]]),
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"grg:home:{chat_id}")]]),
                 )
                 return
         if action == "wl":
@@ -2560,7 +3198,7 @@ class AdminHandler(BaseHandler):
                 await self.message_helper.safe_edit(
                     update,
                     "📄 老师发言限制 | 添加白名单\n\n👉 请输入用户名或ID：",
-                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("返回", callback_data=f"grg:wl:list:{chat_id}:0")]]),
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"grg:wl:list:{chat_id}:0")]]),
                 )
                 return
             if sub == "del":
@@ -2596,7 +3234,14 @@ class AdminHandler(BaseHandler):
                 await self._show_garage_auth_menu(update, context, chat_id)
                 return
             if sub == "gen":
-                await answer_callback_query_safely(update, "老师汇总功能已接通配置，生成内容将在后续消息链路里使用。", show_alert=True)
+                async with db.session_factory() as session:
+                    summary_text = await GarageAuthService.build_teacher_summary(session, chat_id)
+                    await session.commit()
+                await self.message_helper.safe_edit(
+                    update,
+                    summary_text,
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"grg:home:{chat_id}")]]),
+                )
                 return
         await self._show_garage_auth_menu(update, context, chat_id)
 
@@ -2615,6 +3260,9 @@ class AdminHandler(BaseHandler):
 
         if action == "home":
             await self._show_teacher_search_menu(update, context, chat_id)
+            return
+        if action == "attendance" and callback_data.get(2) == "menu":
+            await self._show_teacher_search_attendance_menu(update, context, chat_id)
             return
         if action == "toggle":
             field = callback_data.get(2)
@@ -2635,7 +3283,10 @@ class AdminHandler(BaseHandler):
             async with db.session_factory() as session:
                 await TeacherSearchService.update_setting(session, chat_id, **{setting_field: bool(value)})
                 await session.commit()
-            await self._show_teacher_search_menu(update, context, chat_id)
+            if field == "force_loc":
+                await self._show_teacher_search_attendance_menu(update, context, chat_id)
+            else:
+                await self._show_teacher_search_menu(update, context, chat_id)
             return
         if action == "delete_mode":
             mode = callback_data.get(3)
@@ -2658,7 +3309,7 @@ class AdminHandler(BaseHandler):
             await self.message_helper.safe_edit(
                 update,
                 "📍 代替老师录入位置\n\n👉 请输入上牌老师的用户名或ID：",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("返回", callback_data=f"tsearch:home:{chat_id}")]]),
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"tsearch:home:{chat_id}")]]),
             )
             return
         if action == "open_course" and callback_data.get(2) == "list":
@@ -2676,7 +3327,7 @@ class AdminHandler(BaseHandler):
             await self.message_helper.safe_edit(
                 update,
                 "\n".join(lines),
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("返回", callback_data=f"tsearch:home:{chat_id}")]]),
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"tsearch:home:{chat_id}")]]),
             )
             return
         await self._show_teacher_search_menu(update, context, chat_id)
@@ -2729,11 +3380,11 @@ class AdminHandler(BaseHandler):
             return
         if action == "submit_cmd" and callback_data.get(2) == "edit":
             await self._start_text_input_state(context, update.effective_user.id, chat_id, ConversationStateType.car_review_submit_command_input.value, {"target_chat_id": chat_id})
-            await self.message_helper.safe_edit(update, "💯 车评系统 | 提交报告指令\n\n👉 请输入新的指令：", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("返回", callback_data=f"crv:home:{chat_id}")]]))
+            await self.message_helper.safe_edit(update, "💯 车评系统 | 提交报告指令\n\n👉 请输入新的指令：", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"crv:home:{chat_id}")]]))
             return
         if action == "rank_cmd" and callback_data.get(2) == "edit":
             await self._start_text_input_state(context, update.effective_user.id, chat_id, ConversationStateType.car_review_rank_command_input.value, {"target_chat_id": chat_id})
-            await self.message_helper.safe_edit(update, "💯 车评系统 | 查询排行指令\n\n👉 请输入新的指令：", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("返回", callback_data=f"crv:home:{chat_id}")]]))
+            await self.message_helper.safe_edit(update, "💯 车评系统 | 查询排行指令\n\n👉 请输入新的指令：", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"crv:home:{chat_id}")]]))
             return
         if action == "publish_target":
             target = callback_data.get(3)
@@ -2757,15 +3408,60 @@ class AdminHandler(BaseHandler):
             return
         if action == "approver" and callback_data.get(2) == "set":
             await self._start_text_input_state(context, update.effective_user.id, chat_id, ConversationStateType.car_review_approver_input.value, {"target_chat_id": chat_id})
-            await self.message_helper.safe_edit(update, "💯 车评系统 | 指定审核人\n\n👉 请输入用户名或ID，发送“清空”取消：", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("返回", callback_data=f"crv:home:{chat_id}")]]))
+            await self.message_helper.safe_edit(update, "💯 车评系统 | 指定审核人\n\n👉 请输入用户名或ID，发送“清空”取消：", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"crv:home:{chat_id}")]]))
             return
         if action == "template" and callback_data.get(2) == "edit":
             await self._start_text_input_state(context, update.effective_user.id, chat_id, ConversationStateType.car_review_template_input.value, {"target_chat_id": chat_id})
-            await self.message_helper.safe_edit(update, "💯 车评系统 | 评价模板\n\n👉 请输入新的模板：", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("返回", callback_data=f"crv:home:{chat_id}")]]))
+            await self.message_helper.safe_edit(update, "💯 车评系统 | 评价模板\n\n👉 请输入新的模板：", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"crv:home:{chat_id}")]]))
             return
         if action == "reward":
             await self._start_text_input_state(context, update.effective_user.id, chat_id, ConversationStateType.car_review_reward_points_input.value, {"target_chat_id": chat_id})
-            await self.message_helper.safe_edit(update, "💯 车评系统 | 积分奖励\n\n👉 请输入奖励积分：", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("返回", callback_data=f"crv:home:{chat_id}")]]))
+            await self.message_helper.safe_edit(update, "💯 车评系统 | 积分奖励\n\n👉 请输入奖励积分：", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"crv:home:{chat_id}")]]))
+            return
+        if action == "fields":
+            await self._show_car_review_fields_menu(update, context, chat_id)
+            return
+        if action == "reports":
+            status = _normalize_car_review_report_status(callback_data.get(3) or "0")
+            await self._show_car_review_reports_menu(update, context, chat_id, status=status)
+            return
+        if action == "report":
+            sub = callback_data.get(3)
+            report_id = callback_data.get_int_optional(4)
+            status = _normalize_car_review_report_status(callback_data.get(5) or "0")
+            if report_id is None:
+                await answer_callback_query_safely(update, "报告参数无效", show_alert=True)
+                await self._show_car_review_reports_menu(update, context, chat_id, status=status)
+                return
+            if sub == "detail":
+                await self._show_car_review_report_detail(update, context, chat_id, report_id, status=status)
+                return
+            async with db.session_factory() as session:
+                if sub == "approve":
+                    report = await CarReviewService.approve_report(
+                        session,
+                        chat_id=chat_id,
+                        report_id=report_id,
+                        approver_user_id=update.effective_user.id,
+                    )
+                    message = "报告已通过审核" if report is not None else "报告不存在"
+                elif sub == "reject":
+                    report = await CarReviewService.reject_report(
+                        session,
+                        chat_id=chat_id,
+                        report_id=report_id,
+                        operator_user_id=update.effective_user.id,
+                        reason="管理员驳回",
+                    )
+                    message = "报告已驳回" if report is not None else "报告不存在"
+                else:
+                    await session.commit()
+                    await answer_callback_query_safely(update, "暂不支持该审核操作", show_alert=True)
+                    await self._show_car_review_report_detail(update, context, chat_id, report_id, status=status)
+                    return
+                await session.commit()
+            await answer_callback_query_safely(update, message, show_alert=False)
+            await self._show_car_review_report_detail(update, context, chat_id, report_id, status=status)
             return
         await self._show_car_review_menu(update, context, chat_id)
 
@@ -2920,38 +3616,265 @@ class AdminHandler(BaseHandler):
             await session.commit()
 
         chat_title = await self._get_chat_title(db, chat_id)
-
-        # 格式化当前配置
         mode_label = {
             "button": "按钮验证",
             "math": "数学题",
             "captcha": "验证码",
             "admin": "管理员确认",
         }.get(settings.verification_mode, settings.verification_mode)
-
-        action_label = "禁言" if settings.verification_timeout_action == "mute" else "踢出"
         status_label = "✅ 开启" if settings.verification_enabled else "❌ 关闭"
+        spam_label = "✅ 开启" if bool(getattr(settings, "join_spam_guard_enabled", False)) else "❌ 关闭"
+        review_label = "✅ 开启" if bool(getattr(settings, "join_self_review_enabled", False)) else "❌ 关闭"
+        burst_label = "✅ 开启" if bool(getattr(settings, "join_burst_enabled", False)) else "❌ 关闭"
 
-        text = f"🤖 [{chat_title}] 新人验证\n\n"
-        text += f"状态: {status_label}\n"
-        text += f"验证方式: {mode_label}\n"
-        text += f"超时时间: {settings.verification_timeout_seconds} 秒\n"
-        text += f"超时处理: {action_label}\n"
-        if settings.verification_timeout_action == "mute":
-            text += f"禁言时长: {settings.verification_mute_duration} 秒\n"
-        text += f"限制发言: {'是' if settings.verification_restrict_can_send else '否'}\n\n"
-        text += f"💡 点击下方按钮修改配置"
+        text = (
+            f"🛡️ [{chat_title}] 进群验证\n\n"
+            f"进群验证：{status_label}｜当前方式：{mode_label}\n"
+            f"垃圾拦截：{spam_label}\n"
+            f"进群自助审核：{review_label}\n"
+            f"禁止批量进群：{burst_label}\n\n"
+            "当前已接通基础验证链路与三个辅助子页配置；执行侧仍会继续向完整 join guard 流水线补齐。"
+        )
 
-        # 创建配置按钮
         buttons = [
-            [InlineKeyboardButton("📝 修改配置", callback_data=f"adm:vfy_config:{chat_id}")],
-            [InlineKeyboardButton("返回", callback_data=f"adm:menu:main:{chat_id}")],
+            [InlineKeyboardButton("🛡️ 进群验证", callback_data=f"adm:vfy_config:{chat_id}")],
+            [InlineKeyboardButton("🚯 垃圾拦截", callback_data=f"adm:vfy_home:{chat_id}:spam")],
+            [InlineKeyboardButton("📝 进群自助审核", callback_data=f"adm:vfy_home:{chat_id}:self_review")],
+            [InlineKeyboardButton("🚪 禁止批量进群", callback_data=f"adm:vfy_home:{chat_id}:burst")],
+            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
         ]
         keyboard = InlineKeyboardMarkup(buttons)
 
         log.info("=== CALLING SAFE_EDIT FOR VERIFICATION MENU ===")
         await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
         log.info("=== SAFE_EDIT COMPLETED ===")
+
+    async def _show_join_spam_guard_menu(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+    ) -> None:
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            settings = await get_chat_settings(session, chat_id)
+            await session.commit()
+
+        lines = [
+            "🚯 进群验证 | 垃圾拦截",
+            "",
+            f"📌 状态：{'✅ 开启' if settings.join_spam_guard_enabled else '❌ 关闭'}",
+            f"🧪 命中阈值：{settings.join_spam_detect_rules_count} 条",
+            f"💬 提示消息：{'✅ 开启' if settings.join_spam_send_invalid_msg_enabled else '❌ 关闭'}",
+            f"🔇 禁言新人：{'✅ 开启' if settings.join_spam_mute_member_enabled else '❌ 关闭'}",
+            f"👢 踢出新人：{'✅ 开启' if settings.join_spam_kick_member_enabled else '❌ 关闭'}",
+            f"⏱️ 提示删除：{settings.join_spam_tip_delete_after_seconds} 秒",
+        ]
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("✅ 状态" if settings.join_spam_guard_enabled else "❌ 状态", callback_data=f"adm:vfy_home:{chat_id}:spam:toggle:enabled"),
+                InlineKeyboardButton(f"🧪 阈值 {settings.join_spam_detect_rules_count}", callback_data=f"adm:vfy_home:{chat_id}:spam:cycle:rules"),
+            ],
+            [
+                InlineKeyboardButton(("💬 提示 ✅" if settings.join_spam_send_invalid_msg_enabled else "💬 提示 ❌"), callback_data=f"adm:vfy_home:{chat_id}:spam:toggle:notify"),
+                InlineKeyboardButton(("🔇 禁言 ✅" if settings.join_spam_mute_member_enabled else "🔇 禁言 ❌"), callback_data=f"adm:vfy_home:{chat_id}:spam:toggle:mute"),
+            ],
+            [
+                InlineKeyboardButton(("👢 踢出 ✅" if settings.join_spam_kick_member_enabled else "👢 踢出 ❌"), callback_data=f"adm:vfy_home:{chat_id}:spam:toggle:kick"),
+                InlineKeyboardButton(f"⏱️ 删除 {settings.join_spam_tip_delete_after_seconds}s", callback_data=f"adm:vfy_home:{chat_id}:spam:cycle:tip_sec"),
+            ],
+            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:verification:{chat_id}")],
+        ])
+        await self.message_helper.safe_edit(update, "\n".join(lines), reply_markup=keyboard)
+
+    async def _show_join_self_review_menu(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+    ) -> None:
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            settings = await get_chat_settings(session, chat_id)
+            await session.commit()
+
+        timeout_action_label = JOIN_SELF_REVIEW_ACTION_LABELS.get(
+            settings.join_self_review_timeout_action,
+            settings.join_self_review_timeout_action,
+        )
+        wrong_action_label = JOIN_SELF_REVIEW_ACTION_LABELS.get(
+            settings.join_self_review_wrong_action,
+            settings.join_self_review_wrong_action,
+        )
+        lines = [
+            "📝 进群验证 | 自助审核",
+            "",
+            f"📌 状态：{'✅ 开启' if settings.join_self_review_enabled else '❌ 关闭'}",
+            f"⏱️ 超时：{settings.join_self_review_timeout_seconds} 秒",
+            f"⌛ 超时策略：{timeout_action_label}",
+            f"❓ 答错策略：{wrong_action_label}",
+        ]
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("✅ 状态" if settings.join_self_review_enabled else "❌ 状态", callback_data=f"adm:vfy_home:{chat_id}:self_review:toggle:enabled"),
+                InlineKeyboardButton(f"⏱️ 超时 {settings.join_self_review_timeout_seconds}s", callback_data=f"adm:vfy_home:{chat_id}:self_review:cycle:timeout"),
+            ],
+            [
+                InlineKeyboardButton(timeout_action_label, callback_data=f"adm:vfy_home:{chat_id}:self_review:cycle:timeout_action"),
+            ],
+            [
+                InlineKeyboardButton(wrong_action_label, callback_data=f"adm:vfy_home:{chat_id}:self_review:cycle:wrong_action"),
+            ],
+            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:verification:{chat_id}")],
+        ])
+        await self.message_helper.safe_edit(update, "\n".join(lines), reply_markup=keyboard)
+
+    async def _show_join_burst_guard_menu(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+    ) -> None:
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            settings = await get_chat_settings(session, chat_id)
+            await session.commit()
+
+        tip_mode_label = JOIN_BURST_TIP_MODE_LABELS.get(settings.join_burst_tip_mode, settings.join_burst_tip_mode)
+        lines = [
+            "🚪 进群验证 | 禁止批量进群",
+            "",
+            f"📌 状态：{'✅ 开启' if settings.join_burst_enabled else '❌ 关闭'}",
+            f"🪟 时间窗口：{settings.join_burst_window_seconds} 秒",
+            f"👥 触发人数：{settings.join_burst_threshold_count} 人",
+            f"🔇 禁言：{'✅ 开启' if settings.join_burst_mute_enabled else '❌ 关闭'}",
+            f"👢 踢出：{'✅ 开启' if settings.join_burst_kick_enabled else '❌ 关闭'}",
+            f"💬 提示策略：{tip_mode_label}",
+        ]
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("✅ 状态" if settings.join_burst_enabled else "❌ 状态", callback_data=f"adm:vfy_home:{chat_id}:burst:toggle:enabled"),
+                InlineKeyboardButton(f"🪟 窗口 {settings.join_burst_window_seconds}s", callback_data=f"adm:vfy_home:{chat_id}:burst:cycle:window"),
+            ],
+            [
+                InlineKeyboardButton(f"👥 阈值 {settings.join_burst_threshold_count}", callback_data=f"adm:vfy_home:{chat_id}:burst:cycle:threshold"),
+                InlineKeyboardButton(("🔇 禁言 ✅" if settings.join_burst_mute_enabled else "🔇 禁言 ❌"), callback_data=f"adm:vfy_home:{chat_id}:burst:toggle:mute"),
+            ],
+            [
+                InlineKeyboardButton(("👢 踢出 ✅" if settings.join_burst_kick_enabled else "👢 踢出 ❌"), callback_data=f"adm:vfy_home:{chat_id}:burst:toggle:kick"),
+                InlineKeyboardButton(tip_mode_label, callback_data=f"adm:vfy_home:{chat_id}:burst:cycle:tip_mode"),
+            ],
+            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:verification:{chat_id}")],
+        ])
+        await self.message_helper.safe_edit(update, "\n".join(lines), reply_markup=keyboard)
+
+    async def _handle_verification_home(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+        callback_data: CallbackParser,
+    ) -> None:
+        section = callback_data.get(3)
+        action = callback_data.get(4)
+        key = callback_data.get(5)
+        db: Database = context.application.bot_data["db"]
+
+        if section == "spam":
+            if action in {"", "home"}:
+                await self._show_join_spam_guard_menu(update, context, chat_id)
+                return
+            async with db.session_factory() as session:
+                settings = await get_chat_settings(session, chat_id)
+                if action == "toggle":
+                    field_map = {
+                        "enabled": "join_spam_guard_enabled",
+                        "notify": "join_spam_send_invalid_msg_enabled",
+                        "mute": "join_spam_mute_member_enabled",
+                        "kick": "join_spam_kick_member_enabled",
+                    }
+                    field = field_map.get(key)
+                    if field:
+                        setattr(settings, field, not bool(getattr(settings, field)))
+                elif action == "cycle":
+                    if key == "rules":
+                        settings.join_spam_detect_rules_count = _cycle_config_value(
+                            settings.join_spam_detect_rules_count,
+                            JOIN_SPAM_RULE_VALUES,
+                        )
+                    elif key == "tip_sec":
+                        settings.join_spam_tip_delete_after_seconds = _cycle_config_value(
+                            settings.join_spam_tip_delete_after_seconds,
+                            JOIN_SPAM_TIP_DELETE_VALUES,
+                        )
+                await session.commit()
+            await self._show_join_spam_guard_menu(update, context, chat_id)
+            return
+
+        if section == "self_review":
+            if action in {"", "home"}:
+                await self._show_join_self_review_menu(update, context, chat_id)
+                return
+            async with db.session_factory() as session:
+                settings = await get_chat_settings(session, chat_id)
+                if action == "toggle" and key == "enabled":
+                    settings.join_self_review_enabled = not bool(settings.join_self_review_enabled)
+                elif action == "cycle":
+                    if key == "timeout":
+                        settings.join_self_review_timeout_seconds = _cycle_config_value(
+                            settings.join_self_review_timeout_seconds,
+                            JOIN_SELF_REVIEW_TIMEOUT_VALUES,
+                        )
+                    elif key == "timeout_action":
+                        settings.join_self_review_timeout_action = _cycle_config_value(
+                            settings.join_self_review_timeout_action,
+                            list(JOIN_SELF_REVIEW_ACTION_LABELS.keys()),
+                        )
+                    elif key == "wrong_action":
+                        settings.join_self_review_wrong_action = _cycle_config_value(
+                            settings.join_self_review_wrong_action,
+                            list(JOIN_SELF_REVIEW_ACTION_LABELS.keys()),
+                        )
+                await session.commit()
+            await self._show_join_self_review_menu(update, context, chat_id)
+            return
+
+        if section == "burst":
+            if action in {"", "home"}:
+                await self._show_join_burst_guard_menu(update, context, chat_id)
+                return
+            async with db.session_factory() as session:
+                settings = await get_chat_settings(session, chat_id)
+                if action == "toggle":
+                    field_map = {
+                        "enabled": "join_burst_enabled",
+                        "mute": "join_burst_mute_enabled",
+                        "kick": "join_burst_kick_enabled",
+                    }
+                    field = field_map.get(key)
+                    if field:
+                        setattr(settings, field, not bool(getattr(settings, field)))
+                elif action == "cycle":
+                    if key == "window":
+                        settings.join_burst_window_seconds = _cycle_config_value(
+                            settings.join_burst_window_seconds,
+                            JOIN_BURST_WINDOW_VALUES,
+                        )
+                    elif key == "threshold":
+                        settings.join_burst_threshold_count = _cycle_config_value(
+                            settings.join_burst_threshold_count,
+                            JOIN_BURST_THRESHOLD_VALUES,
+                        )
+                    elif key == "tip_mode":
+                        settings.join_burst_tip_mode = _cycle_config_value(
+                            settings.join_burst_tip_mode,
+                            list(JOIN_BURST_TIP_MODE_LABELS.keys()),
+                        )
+                await session.commit()
+            await self._show_join_burst_guard_menu(update, context, chat_id)
+            return
+
+        await self._show_verification_menu(update, context, chat_id)
 
     async def _show_points_menu(
         self,
@@ -2970,8 +3893,15 @@ class AdminHandler(BaseHandler):
             await session.commit()
 
         chat_title = await self._get_chat_title(db, chat_id)
-        text = f"💰 [{chat_title}] 积分配置\n\n"
-        text += f"请选择要修改的项目："
+        all_enabled = bool(settings.sign_enabled or settings.message_points_enabled or settings.invite_points_enabled)
+        text = (
+            f"💰 [{chat_title}] 主积分（基础版）\n\n"
+            f"状态：{'✅ 启动' if all_enabled else '❌ 关闭'}\n"
+            f"签到：{'✅ 启动' if settings.sign_enabled else '❌ 关闭'}｜{settings.sign_points}分\n"
+            f"发言：{'✅ 启动' if settings.message_points_enabled else '❌ 关闭'}｜{settings.message_points}分\n"
+            f"邀请：{'✅ 启动' if settings.invite_points_enabled else '❌ 关闭'}｜{settings.invite_points}分\n\n"
+            "当前先提供基础版积分中心，转让、日志导出、清空积分等仍按待实现入口收口。"
+        )
 
         keyboard = points_config_keyboard(settings, chat_id)
 
@@ -3008,7 +3938,7 @@ class AdminHandler(BaseHandler):
                 )
             lines.append(f"{len(items)} 条数据，第 1 页/共 1 页")
         else:
-            lines.append("0 条数据，第 1 页/共 0 页")
+            lines.append("0 条数据，第 1 页/共 1 页")
 
         await self.message_helper.safe_edit(
             update,
@@ -3060,7 +3990,7 @@ class AdminHandler(BaseHandler):
         else:
             level_lines.append("待配置（积分门槛线 > 0）")
             level_lines.append("")
-        total_pages = 1 if levels else 0
+        total_pages = 1
         text = "\n".join(
             [
                 "👨‍💻 积分等级",
@@ -3167,7 +4097,7 @@ class AdminHandler(BaseHandler):
         await self.message_helper.safe_edit(
             update,
             text=text,
-            reply_markup=points_mall_orders_keyboard(chat_id),
+            reply_markup=points_mall_command_keyboard(chat_id),
         )
 
     async def _show_points_mall_products_placeholder(
@@ -3197,7 +4127,7 @@ class AdminHandler(BaseHandler):
             chunks.append(f"{len(products)} 条数据，第 1 页/共 1 页")
             text = "\n".join(chunks)
         else:
-            text = "🛍️ 管理商品 | 商品列表\n\n0 条数据，第 1 页/共 0 页"
+            text = "🛍️ 管理商品 | 商品列表\n\n0 条数据，第 1 页/共 1 页"
         await self.message_helper.safe_edit(
             update,
             text=text,
@@ -3210,8 +4140,17 @@ class AdminHandler(BaseHandler):
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
         product_id: int | None = None,
+        status: str = "all",
     ) -> None:
         """显示积分商城订单管理页"""
+        normalized_status = status if status in {"all", "created", "fulfilled", "canceled", "refunded"} else "all"
+        status_name_map = {
+            "all": "全部",
+            "created": "待处理",
+            "fulfilled": "已发放",
+            "canceled": "已取消",
+            "refunded": "已退款",
+        }
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
             orders = await PointsExtendedService.list_recent_orders(
@@ -3219,11 +4158,24 @@ class AdminHandler(BaseHandler):
                 chat_id,
                 limit=20,
                 product_id=product_id,
+                order_status=normalized_status,
+            )
+            status_counts = await PointsExtendedService.count_orders_by_status(
+                session,
+                chat_id=chat_id,
+                product_id=product_id,
             )
             await session.commit()
+        summary = (
+            f"📊 全部 {status_counts.get('all', 0)}"
+            f"｜🟡 待处理 {status_counts.get('created', 0)}"
+            f"｜✅ 已发放 {status_counts.get('fulfilled', 0)}"
+            f"｜❌ 已取消 {status_counts.get('canceled', 0)}"
+            f"｜💸 已退款 {status_counts.get('refunded', 0)}"
+        )
         if orders:
             title = "🧾 管理订单" if product_id is None else f"🧾 管理订单 | 商品 {product_id}"
-            lines = [title, ""]
+            lines = [title, f"当前筛选：{status_name_map.get(normalized_status, '全部')}", summary, ""]
             for order in orders:
                 lines.extend(
                     [
@@ -3238,15 +4190,1385 @@ class AdminHandler(BaseHandler):
             text = "\n".join(lines)
         else:
             text = (
-                "🧾 管理订单\n\n0 条数据，第 1 页/共 0 页"
+                f"🧾 管理订单\n当前筛选：{status_name_map.get(normalized_status, '全部')}\n{summary}\n\n0 条数据，第 1 页/共 1 页"
                 if product_id is None
-                else f"🧾 管理订单 | 商品 {product_id}\n\n0 条数据，第 1 页/共 0 页"
+                else f"🧾 管理订单 | 商品 {product_id}\n当前筛选：{status_name_map.get(normalized_status, '全部')}\n{summary}\n\n0 条数据，第 1 页/共 1 页"
             )
         await self.message_helper.safe_edit(
             update,
             text=text,
-            reply_markup=points_mall_orders_keyboard(chat_id, orders=orders, product_id=product_id),
+            reply_markup=points_mall_orders_keyboard(
+                chat_id,
+                orders=orders,
+                product_id=product_id,
+                status=normalized_status,
+                status_counts=status_counts,
+            ),
         )
+
+    async def _show_auction_menu(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+    ) -> None:
+        db: Database = context.application.bot_data["db"]
+        await self._set_current_chat(db, update.effective_user.id, chat_id)
+        async with db.session_factory() as session:
+            setting = await get_auction_setting(session, chat_id)
+            auctions = await list_recent_auctions(session, chat_id, limit=5)
+            await session.commit()
+        chat_title = await self._get_chat_title(db, chat_id)
+        lines = [format_auction_settings_text(chat_title, setting), "", "📋 最近拍卖："]
+        if auctions:
+            for item in auctions:
+                lines.append(f"#{item.id} {item.title or '未命名'}｜{item.status}｜当前价 {item.current_price}")
+        else:
+            lines.append("暂无拍卖记录")
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("⚙️ 状态：", callback_data=f"auc:home:{chat_id}"),
+                InlineKeyboardButton("✅ 启动" if setting.enabled else "启动", callback_data=f"auc:toggle:{chat_id}:enabled:1"),
+                InlineKeyboardButton("✅ 关闭" if not setting.enabled else "关闭", callback_data=f"auc:toggle:{chat_id}:enabled:0"),
+            ],
+            [
+                InlineKeyboardButton("📌 消息置顶：", callback_data=f"auc:home:{chat_id}"),
+                InlineKeyboardButton("✅ 启动" if setting.pin_message_enabled else "启动", callback_data=f"auc:toggle:{chat_id}:pin:1"),
+                InlineKeyboardButton("✅ 关闭" if not setting.pin_message_enabled else "关闭", callback_data=f"auc:toggle:{chat_id}:pin:0"),
+            ],
+            [
+                InlineKeyboardButton("⏱ 自动延时：", callback_data=f"auc:home:{chat_id}"),
+                InlineKeyboardButton("✅ 启动" if setting.auto_extend_enabled else "启动", callback_data=f"auc:toggle:{chat_id}:auto_extend:1"),
+                InlineKeyboardButton("✅ 关闭" if not setting.auto_extend_enabled else "关闭", callback_data=f"auc:toggle:{chat_id}:auto_extend:0"),
+            ],
+            [
+                InlineKeyboardButton("👮 仅管理员" + (" ✅" if setting.create_permission == "admin" else ""), callback_data=f"auc:perm:{chat_id}:admin"),
+                InlineKeyboardButton("👥 所有人" + (" ✅" if setting.create_permission == "all" else ""), callback_data=f"auc:perm:{chat_id}:all"),
+            ],
+            [
+                InlineKeyboardButton("🚫 不关联" + (" ✅" if setting.points_mode == "none" else ""), callback_data=f"auc:points_mode:{chat_id}:none"),
+                InlineKeyboardButton("🌑 主积分" + (" ✅" if setting.points_mode == "group_points" else ""), callback_data=f"auc:points_mode:{chat_id}:group_points"),
+            ],
+            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
+        ])
+        await self.message_helper.safe_edit(update, text="\n".join(lines), reply_markup=keyboard)
+
+    async def _handle_auction(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+        callback_data: CallbackParser,
+    ) -> None:
+        action = callback_data.get(1)
+        db: Database = context.application.bot_data["db"]
+        if action == "home":
+            await self._show_auction_menu(update, context, chat_id)
+            return
+
+        async with db.session_factory() as session:
+            if action == "toggle":
+                field = callback_data.get(3)
+                enabled = callback_data.get(4) == "1"
+                updates = {
+                    "enabled": enabled,
+                    "pin_message_enabled": enabled if field == "pin" else None,
+                    "auto_extend_enabled": enabled if field == "auto_extend" else None,
+                }
+                if field == "enabled":
+                    updates = {"enabled": enabled}
+                elif field == "pin":
+                    updates = {"pin_message_enabled": enabled}
+                elif field == "auto_extend":
+                    updates = {"auto_extend_enabled": enabled}
+                await update_auction_setting(session, chat_id, **updates)
+            elif action == "perm":
+                await update_auction_setting(session, chat_id, create_permission=callback_data.get(3))
+            elif action == "points_mode":
+                await update_auction_setting(session, chat_id, points_mode=callback_data.get(3))
+            await session.commit()
+        await self._show_auction_menu(update, context, chat_id)
+
+    async def _show_bottom_button_menu(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+    ) -> None:
+        db: Database = context.application.bot_data["db"]
+        await self._set_current_chat(db, update.effective_user.id, chat_id)
+        async with db.session_factory() as session:
+            setting = await get_bottom_button_setting(session, chat_id)
+            layouts = await list_bottom_button_layouts(session, chat_id)
+            await session.commit()
+        text = "\n".join(
+            [
+                "⌨️ 底部按钮",
+                "",
+                f"⚙️ 状态：{'✅ 启用' if setting.enabled else '❌ 关闭'}",
+                f"📝 文案：{setting.header_text}",
+                f"🔢 按钮数：{len(layouts)}",
+                f"⏱ 重复生成：{'✅ 启用' if setting.repeat_generate_enabled else '❌ 关闭'}",
+                "",
+                "提示：发送模式会由 Bot 直接发出内容；填充模式会把内容填到当前输入框。",
+            ]
+        )
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("⚙️ 状态：", callback_data=f"btm:home:{chat_id}"),
+                InlineKeyboardButton("✅ 启用" if setting.enabled else "启用", callback_data=f"btm:toggle:{chat_id}:1"),
+                InlineKeyboardButton("✅ 关闭" if not setting.enabled else "关闭", callback_data=f"btm:toggle:{chat_id}:0"),
+            ],
+            [
+                InlineKeyboardButton("✏️ 文案设置", callback_data=f"btm:text:{chat_id}:edit"),
+                InlineKeyboardButton("⌨️ 按钮设置", callback_data=f"btm:layout:{chat_id}:edit"),
+            ],
+            [
+                InlineKeyboardButton("✅ 立刻生成", callback_data=f"btm:generate:{chat_id}:now"),
+                InlineKeyboardButton(("✅ " if setting.repeat_generate_enabled else "⏱ ") + "重复生成", callback_data=f"btm:repeat:{chat_id}:{0 if setting.repeat_generate_enabled else 1}"),
+            ],
+            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
+        ])
+        await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
+
+    async def _show_bottom_button_layout_menu(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+    ) -> None:
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            layouts = await compact_bottom_button_layouts(session, chat_id)
+            await session.commit()
+
+        grid: list[list[InlineKeyboardButton]] = []
+        position_map = {(item.row_no, item.col_no): item for item in layouts}
+        max_row = max([item.row_no for item in layouts], default=1)
+        for row_no in range(1, min(max_row + 1, 3) + 1):
+            row: list[InlineKeyboardButton] = []
+            for col_no in range(1, 5):
+                item = position_map.get((row_no, col_no))
+                if item is None:
+                    row.append(InlineKeyboardButton("➕ 按钮", callback_data=f"btm:layout:{chat_id}:add"))
+                else:
+                    row.append(InlineKeyboardButton(item.button_text, callback_data=f"btm:button:{chat_id}:detail:{item.id}"))
+            grid.append(row)
+        keyboard_rows = [
+            *grid,
+            [
+                InlineKeyboardButton("♻️ 清空按钮", callback_data=f"btm:layout:{chat_id}:clear"),
+                InlineKeyboardButton("🔙 返回", callback_data=f"btm:home:{chat_id}"),
+            ],
+        ]
+        text = "\n".join(
+            [
+                "⌨️ 底部按钮 | 按钮设置",
+                "",
+                "先配置按钮布局（每行最多4个按钮）再点击按钮配置文案。",
+                "",
+                build_management_layout_preview(layouts),
+            ]
+        )
+        await self.message_helper.safe_edit(update, text=text, reply_markup=InlineKeyboardMarkup(keyboard_rows))
+
+    async def _show_bottom_button_detail(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+        layout_id: int,
+    ) -> None:
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            layout = await get_bottom_button_layout(session, chat_id, layout_id)
+            await session.commit()
+        if layout is None:
+            await answer_callback_query_safely(update, "❌ 按钮不存在", show_alert=True)
+            await self._show_bottom_button_layout_menu(update, context, chat_id)
+            return
+        text = "\n".join(
+            [
+                "⌨️ 底部按钮 | 编辑按钮",
+                "",
+                f"按钮文字：{layout.button_text}",
+                f"发送内容：{layout.payload_text or layout.button_text}",
+                f"当前模式：{'📨 直接发送' if layout.action_mode == 'send' else '✍️ 仅填充'}",
+                "",
+                "建议按钮文字不超过 4 个字。",
+            ]
+        )
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("✏️ 修改文字", callback_data=f"btm:button:{chat_id}:text:{layout.id}"),
+                InlineKeyboardButton("📝 修改内容", callback_data=f"btm:button:{chat_id}:payload:{layout.id}"),
+            ],
+            [
+                InlineKeyboardButton("📨 直接发送" + (" ✅" if layout.action_mode == "send" else ""), callback_data=f"btm:button:{chat_id}:mode:{layout.id}:send"),
+                InlineKeyboardButton("✍️ 仅填充" + (" ✅" if layout.action_mode == "fill" else ""), callback_data=f"btm:button:{chat_id}:mode:{layout.id}:fill"),
+            ],
+            [
+                InlineKeyboardButton("❌ 删除按钮", callback_data=f"btm:button:{chat_id}:delete:{layout.id}"),
+                InlineKeyboardButton("🔙 返回", callback_data=f"btm:layout:{chat_id}:edit"),
+            ],
+        ])
+        await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
+
+    async def _handle_bottom_button(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+        callback_data: CallbackParser,
+    ) -> None:
+        action = callback_data.get(1)
+        db: Database = context.application.bot_data["db"]
+        if action == "home":
+            await self._show_bottom_button_menu(update, context, chat_id)
+            return
+
+        async with db.session_factory() as session:
+            if action == "toggle":
+                await update_bottom_button_setting(session, chat_id, enabled=callback_data.get(3) == "1")
+                await session.commit()
+                await self._show_bottom_button_menu(update, context, chat_id)
+                return
+            if action == "text" and callback_data.get(3) == "edit":
+                await self._start_text_input_state(
+                    context,
+                    update.effective_user.id,
+                    update.effective_user.id,
+                    "bottom_button_text_input",
+                    {"target_chat_id": chat_id},
+                )
+                setting = await get_bottom_button_setting(session, chat_id)
+                await session.commit()
+                await self.message_helper.safe_edit(
+                    update,
+                    f"⌨️ 底部按钮 | 修改文本内容\n\n当前的文本内容：\n{setting.header_text}\n\n👉 现在输入新的文本内容：",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"btm:home:{chat_id}")]]),
+                )
+                return
+            if action == "layout":
+                sub = callback_data.get(3)
+                if sub == "edit":
+                    await session.commit()
+                    await self._show_bottom_button_layout_menu(update, context, chat_id)
+                    return
+                if sub == "add":
+                    await add_layout_button(session, chat_id)
+                    await session.commit()
+                    await self._show_bottom_button_layout_menu(update, context, chat_id)
+                    return
+                if sub == "clear":
+                    await clear_bottom_button_layouts(session, chat_id)
+                    await session.commit()
+                    await self._show_bottom_button_layout_menu(update, context, chat_id)
+                    return
+            if action == "button":
+                sub = callback_data.get(3)
+                layout_id = callback_data.get_int(4)
+                if sub == "detail":
+                    await session.commit()
+                    await self._show_bottom_button_detail(update, context, chat_id, layout_id)
+                    return
+                if sub == "mode":
+                    await update_layout_button(session, chat_id=chat_id, layout_id=layout_id, action_mode=callback_data.get(5))
+                    await session.commit()
+                    await self._show_bottom_button_detail(update, context, chat_id, layout_id)
+                    return
+                if sub == "delete":
+                    await delete_layout_button(session, chat_id, layout_id)
+                    await session.commit()
+                    await self._show_bottom_button_layout_menu(update, context, chat_id)
+                    return
+                if sub in {"text", "payload"}:
+                    state_type = "bottom_button_button_text_input" if sub == "text" else "bottom_button_payload_input"
+                    await self._start_text_input_state(
+                        context,
+                        update.effective_user.id,
+                        update.effective_user.id,
+                        state_type,
+                        {"target_chat_id": chat_id, "layout_id": layout_id},
+                    )
+                    await session.commit()
+                    prompt = "👉 现在输入按钮文字：" if sub == "text" else "👉 现在输入按钮发送内容："
+                    await self.message_helper.safe_edit(
+                        update,
+                        ("⌨️ 底部按钮 | 编辑按钮文字" if sub == "text" else "⌨️ 底部按钮 | 编辑按钮内容") + f"\n\n{prompt}",
+                        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"btm:button:{chat_id}:detail:{layout_id}")]]),
+                    )
+                    return
+            if action == "generate" and callback_data.get(3) == "now":
+                await update_bottom_button_setting(session, chat_id, enabled=True)
+                await generate_bottom_buttons(context, session, chat_id)
+                await session.commit()
+                await self._show_bottom_button_menu(update, context, chat_id)
+                return
+            if action == "repeat":
+                await update_bottom_button_setting(session, chat_id, repeat_generate_enabled=callback_data.get(3) == "1")
+                await session.commit()
+                await self._show_bottom_button_menu(update, context, chat_id)
+                return
+
+    async def _show_game_menu(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+    ) -> None:
+        db: Database = context.application.bot_data["db"]
+        await self._set_current_chat(db, update.effective_user.id, chat_id)
+        async with db.session_factory() as session:
+            setting = await get_game_setting(session, chat_id)
+            rake_owner = await get_game_rake_owner_label(session, setting.rake_owner_user_id)
+            await session.commit()
+        chat_title = await self._get_chat_title(db, chat_id)
+        text = format_game_menu_text(
+            chat_title,
+            k3_enabled=setting.k3_enabled,
+            blackjack_enabled=setting.blackjack_enabled,
+            rake_ratio=setting.rake_ratio,
+            rake_owner=rake_owner,
+            auto_schedule_enabled=setting.auto_schedule_enabled,
+            auto_start_time=setting.auto_start_time,
+            auto_stop_time=setting.auto_stop_time,
+            delete_mode=setting.delete_game_message_mode,
+        )
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("🎲 快3", callback_data=f"gm:home:{chat_id}"),
+                InlineKeyboardButton("✅ 启动" if setting.k3_enabled else "启动", callback_data=f"gm:toggle:{chat_id}:k3:1"),
+                InlineKeyboardButton("✅ 关闭" if not setting.k3_enabled else "关闭", callback_data=f"gm:toggle:{chat_id}:k3:0"),
+            ],
+            [
+                InlineKeyboardButton("🃏 黑杰克", callback_data=f"gm:home:{chat_id}"),
+                InlineKeyboardButton("✅ 启动" if setting.blackjack_enabled else "启动", callback_data=f"gm:toggle:{chat_id}:blackjack:1"),
+                InlineKeyboardButton("✅ 关闭" if not setting.blackjack_enabled else "关闭", callback_data=f"gm:toggle:{chat_id}:blackjack:0"),
+            ],
+            [
+                InlineKeyboardButton("💧 抽水比例", callback_data=f"gm:rake:{chat_id}:ratio"),
+                InlineKeyboardButton("👤 抽水归属", callback_data=f"gm:rake:{chat_id}:owner"),
+            ],
+            [
+                InlineKeyboardButton("⏰ 定时启停", callback_data=f"gm:home:{chat_id}"),
+                InlineKeyboardButton("✅ 启动" if setting.auto_schedule_enabled else "启动", callback_data=f"gm:auto:{chat_id}:toggle:1"),
+                InlineKeyboardButton("✅ 关闭" if not setting.auto_schedule_enabled else "关闭", callback_data=f"gm:auto:{chat_id}:toggle:0"),
+            ],
+            [
+                InlineKeyboardButton("🕒 启动时间", callback_data=f"gm:auto:{chat_id}:start_time"),
+                InlineKeyboardButton("🌙 关停时间", callback_data=f"gm:auto:{chat_id}:stop_time"),
+            ],
+            [
+                InlineKeyboardButton("🧹 删除游戏消息：", callback_data=f"gm:home:{chat_id}"),
+                InlineKeyboardButton("🗑 删除" + (" ✅" if setting.delete_game_message_mode == "delete" else ""), callback_data=f"gm:delete_mode:{chat_id}:delete"),
+                InlineKeyboardButton("💾 不删除" + (" ✅" if setting.delete_game_message_mode == "keep" else ""), callback_data=f"gm:delete_mode:{chat_id}:keep"),
+            ],
+            [
+                InlineKeyboardButton("📋 最近牌局", callback_data=f"gm:rounds:{chat_id}"),
+                InlineKeyboardButton("📘 指令帮助", callback_data=f"gm:help:{chat_id}"),
+            ],
+            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
+        ])
+        await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
+
+    async def _show_game_rounds(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+    ) -> None:
+        async with context.application.bot_data["db"].session_factory() as session:
+            rounds = await list_recent_game_rounds(session, chat_id, limit=8)
+            await session.commit()
+        lines = ["📋 最近牌局", ""]
+        if not rounds:
+            lines.append("暂无牌局记录。")
+        else:
+            for round_obj in rounds:
+                lines.append(
+                    f"• #{round_obj.id} | {round_obj.game_type} | {round_obj.status} | {round_obj.created_at.strftime('%m-%d %H:%M')}"
+                )
+        keyboard_rows = [
+            [InlineKeyboardButton(f"🔎 查看 #{round_obj.id}", callback_data=f"gm:detail:{chat_id}:{round_obj.id}")]
+            for round_obj in rounds
+        ]
+        keyboard_rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"gm:home:{chat_id}")])
+        await self.message_helper.safe_edit(update, text="\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard_rows))
+
+    async def _show_game_round_detail(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+        round_id: int,
+    ) -> None:
+        async with context.application.bot_data["db"].session_factory() as session:
+            rounds = await list_recent_game_rounds(session, chat_id, limit=50)
+            round_obj = next((item for item in rounds if item.id == round_id), None)
+            participants = await get_game_round_participants(session, round_id)
+            await session.commit()
+        if round_obj is None:
+            await self.message_helper.safe_edit(
+                update,
+                "未找到该牌局。",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"gm:rounds:{chat_id}")]]),
+            )
+            return
+        result_data = round_obj.result_data or {}
+        lines = [
+            "🎮 牌局详情",
+            "",
+            f"🆔 局号：{round_obj.id}",
+            f"🎯 类型：{round_obj.game_type}",
+            f"📌 状态：{round_obj.status}",
+            f"🕒 创建时间：{round_obj.created_at.strftime('%Y-%m-%d %H:%M:%S')}",
+        ]
+        if round_obj.game_type == "k3":
+            lines.append(f"🎲 开奖结果：{result_data.get('dice') or '未开奖'}")
+            if result_data.get("label"):
+                lines.append(f"🏷 结果标签：{result_data.get('label')}")
+        if round_obj.game_type == "blackjack":
+            lines.append(f"🃏 玩家牌：{result_data.get('player_cards') or []}")
+            lines.append(f"🤖 庄家牌：{result_data.get('dealer_cards') or []}")
+        lines.append("")
+        lines.append("👥 参与情况：")
+        if participants:
+            for participant in participants:
+                lines.append(
+                    f"• 用户 {participant.user_id} | 下注 {participant.bet_points} | 状态 {participant.status} | 结算 {participant.payout_points}"
+                )
+        else:
+            lines.append("• 暂无参与记录")
+        await self.message_helper.safe_edit(
+            update,
+            "\n".join(lines),
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"gm:rounds:{chat_id}")]]),
+        )
+
+    async def _show_game_help(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+    ) -> None:
+        text = "\n".join(
+            [
+                "📘 游戏指令帮助",
+                "",
+                "🎲 快3：",
+                "• 发送 `快3` 查看玩法",
+                "• 发送 `快3 大 100` / `快3 小 100` / `快3 单 100` / `快3 双 100` / `快3 豹子 100` 下注",
+                "",
+                "🃏 黑杰克：",
+                "• 发送 `黑杰克` 查看玩法",
+                "• 发送 `黑杰克 100` 开局",
+                "• 发送 `要牌` / `停牌` 继续本局",
+            ]
+        )
+        await self.message_helper.safe_edit(
+            update,
+            text,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"gm:home:{chat_id}")]]),
+        )
+
+    async def _handle_game(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+        callback_data: CallbackParser,
+    ) -> None:
+        action = callback_data.get(1)
+        db: Database = context.application.bot_data["db"]
+        if action == "home":
+            await self._show_game_menu(update, context, chat_id)
+            return
+        if action == "rounds":
+            await self._show_game_rounds(update, context, chat_id)
+            return
+        if action == "detail":
+            await self._show_game_round_detail(update, context, chat_id, callback_data.get_int(3, default=0))
+            return
+        if action == "help":
+            await self._show_game_help(update, context, chat_id)
+            return
+        async with db.session_factory() as session:
+            if action == "toggle":
+                field = callback_data.get(3)
+                enabled = callback_data.get(4) == "1"
+                await update_game_setting(session, chat_id, **{f"{field}_enabled": enabled})
+                await session.commit()
+                await self._show_game_menu(update, context, chat_id)
+                return
+            if action == "rake":
+                sub = callback_data.get(3)
+                if sub == "ratio":
+                    await self._start_text_input_state(context, update.effective_user.id, update.effective_user.id, "game_wait_rake_ratio", {"target_chat_id": chat_id})
+                    await session.commit()
+                    await self.message_helper.safe_edit(update, "🎮 游戏 | 抽水比例\n\n请输入抽水比例\n例如：0.1 就是抽水10%", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"gm:home:{chat_id}")]]))
+                    return
+                if sub == "owner":
+                    await self._start_text_input_state(context, update.effective_user.id, update.effective_user.id, "game_wait_rake_owner", {"target_chat_id": chat_id})
+                    await session.commit()
+                    await self.message_helper.safe_edit(update, "🎮 游戏 | 抽水归属\n\n请输入用户名或用户ID，发送“清空”可注销抽水归属。", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"gm:home:{chat_id}")]]))
+                    return
+            if action == "auto":
+                sub = callback_data.get(3)
+                if sub == "toggle":
+                    await update_game_setting(session, chat_id, auto_schedule_enabled=callback_data.get(4) == "1")
+                elif sub == "start_time":
+                    await self._start_text_input_state(context, update.effective_user.id, update.effective_user.id, "game_wait_auto_start_time", {"target_chat_id": chat_id})
+                    await session.commit()
+                    await self.message_helper.safe_edit(update, "🎮 游戏 | 自动启动时间\n\n游戏自动启动时间 格式:时:分 例如:23:05", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"gm:home:{chat_id}")]]))
+                    return
+                elif sub == "stop_time":
+                    await self._start_text_input_state(context, update.effective_user.id, update.effective_user.id, "game_wait_auto_stop_time", {"target_chat_id": chat_id})
+                    await session.commit()
+                    await self.message_helper.safe_edit(update, "🎮 游戏 | 自动关停时间\n\n游戏自动关停时间 格式:时:分", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"gm:home:{chat_id}")]]))
+                    return
+                await session.commit()
+                await self._show_game_menu(update, context, chat_id)
+                return
+            if action == "delete_mode":
+                await update_game_setting(session, chat_id, delete_game_message_mode=callback_data.get(3))
+                await session.commit()
+                await self._show_game_menu(update, context, chat_id)
+                return
+
+    async def _show_guess_home(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+    ) -> None:
+        db: Database = context.application.bot_data["db"]
+        await self._set_current_chat(db, update.effective_user.id, chat_id)
+        async with db.session_factory() as session:
+            counts = await count_events_by_status(session, chat_id)
+            await session.commit()
+        text = "\n".join(
+            [
+                "⚽ 竞猜",
+                "",
+                f"🟡 待开奖：{counts['pending']}",
+                f"🟢 进行中：{counts['running']}",
+                f"✅ 已开奖：{counts['opened']}",
+                f"❌ 已取消：{counts['cancelled']}",
+            ]
+        )
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🚀 发起竞猜", callback_data=f"guess:create:{chat_id}:start")],
+            [
+                InlineKeyboardButton(f"🟡 待开奖 ({counts['pending']})", callback_data=f"guess:list:{chat_id}:pending"),
+                InlineKeyboardButton(f"🟢 进行中 ({counts['running']})", callback_data=f"guess:list:{chat_id}:running"),
+            ],
+            [
+                InlineKeyboardButton(f"✅ 已开奖 ({counts['opened']})", callback_data=f"guess:list:{chat_id}:opened"),
+                InlineKeyboardButton(f"❌ 已取消 ({counts['cancelled']})", callback_data=f"guess:list:{chat_id}:cancelled"),
+            ],
+            [
+                InlineKeyboardButton("⚙️ 规则设置", callback_data=f"guess:settings:{chat_id}:home"),
+                InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}"),
+            ],
+        ])
+        await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
+
+    async def _show_guess_create_menu(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+        draft: dict,
+    ) -> None:
+        text = format_event_preview(draft)
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("🏷️ 活动名字", callback_data=f"guess:create:{chat_id}:title"),
+                InlineKeyboardButton("🖼️ 活动封面", callback_data=f"guess:create:{chat_id}:cover"),
+                InlineKeyboardButton("📝 活动说明", callback_data=f"guess:create:{chat_id}:description"),
+            ],
+            [
+                InlineKeyboardButton("👑 本局庄家", callback_data=f"guess:create:{chat_id}:banker"),
+                InlineKeyboardButton("🏦 公共奖池", callback_data=f"guess:create:{chat_id}:pool"),
+                InlineKeyboardButton("🎯 竞猜选项", callback_data=f"guess:create:{chat_id}:options"),
+            ],
+            [
+                InlineKeyboardButton("⌨️ 群内指令", callback_data=f"guess:create:{chat_id}:command"),
+                InlineKeyboardButton("⏰ 截止时间", callback_data=f"guess:create:{chat_id}:deadline"),
+                InlineKeyboardButton(("✅ " if draft.get("allow_repeat_bet") else "❌ ") + "下注限制", callback_data=f"guess:create:{chat_id}:repeat"),
+            ],
+            [
+                InlineKeyboardButton("👀 预览效果", callback_data=f"guess:create:{chat_id}:preview"),
+                InlineKeyboardButton("✅ 发布活动", callback_data=f"guess:create:{chat_id}:publish"),
+            ],
+            [
+                InlineKeyboardButton("♻️ 清空配置", callback_data=f"guess:create:{chat_id}:clear"),
+                InlineKeyboardButton("🔙 返回", callback_data=f"guess:home:{chat_id}"),
+            ],
+        ])
+        await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
+
+    async def _show_guess_settings(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+    ) -> None:
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            setting = await get_guess_setting(session, chat_id)
+            owner_label = await get_game_rake_owner_label(session, setting.rake_owner_user_id)
+            await session.commit()
+        text = "\n".join(
+            [
+                "⚽ 竞猜 | 规则设置",
+                "",
+                f"💧 抽水比例：{setting.rake_ratio or '未设置'}",
+                f"👤 抽水归属：{owner_label}",
+                f"🧹 删除消息：{'🗑 删除' if setting.delete_message_mode == 'delete' else '💾 不删除'}",
+            ]
+        )
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("💧 抽水比例", callback_data=f"guess:settings:{chat_id}:rake_ratio"),
+                InlineKeyboardButton("👤 抽水归属", callback_data=f"guess:settings:{chat_id}:rake_owner"),
+            ],
+            [
+                InlineKeyboardButton("🗑 删除消息" + (" ✅" if setting.delete_message_mode == "delete" else ""), callback_data=f"guess:settings:{chat_id}:delete_mode:delete"),
+                InlineKeyboardButton("💾 不删除" + (" ✅" if setting.delete_message_mode == "keep" else ""), callback_data=f"guess:settings:{chat_id}:delete_mode:keep"),
+            ],
+            [InlineKeyboardButton("🔙 返回", callback_data=f"guess:home:{chat_id}")],
+        ])
+        await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
+
+    async def _show_guess_event_list(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+        status: str,
+    ) -> None:
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            events = await list_guess_events(session, chat_id, status)
+            await session.commit()
+        lines = [f"⚽ 竞猜 | {status}", ""]
+        if events:
+            for event in events:
+                lines.append(f"#{event.id} {event.title}｜{event.command_keyword}｜{event.deadline_at.astimezone().strftime('%m-%d %H:%M')}")
+        else:
+            lines.append("暂无数据")
+        keyboard_rows = [[InlineKeyboardButton(f"📄 {event.title}", callback_data=f"guess:detail:{chat_id}:{event.id}")] for event in events]
+        keyboard_rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"guess:home:{chat_id}")])
+        await self.message_helper.safe_edit(update, "\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard_rows))
+
+    async def _show_guess_event_detail(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+        event_id: int,
+    ) -> None:
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            event = await get_guess_event(session, chat_id, event_id)
+            await session.commit()
+        if event is None:
+            await answer_callback_query_safely(update, "❌ 活动不存在", show_alert=True)
+            await self._show_guess_home(update, context, chat_id)
+            return
+        keyboard_rows = []
+        if event.status in {"pending", "running"}:
+            open_buttons = [
+                InlineKeyboardButton(f"🏁 开 {item['key']}", callback_data=f"guess:open:{chat_id}:{event.id}:{item['key']}")
+                for item in (event.options_json or [])
+            ]
+            keyboard_rows.extend([open_buttons[i:i+2] for i in range(0, len(open_buttons), 2)])
+            keyboard_rows.append([InlineKeyboardButton("❌ 取消活动", callback_data=f"guess:cancel:{chat_id}:{event.id}")])
+        keyboard_rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"guess:list:{chat_id}:{event.status}")])
+        await self.message_helper.safe_edit(update, format_event_runtime(event), parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard_rows))
+
+    async def _handle_guess(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+        callback_data: CallbackParser,
+    ) -> None:
+        action = callback_data.get(1)
+        db: Database = context.application.bot_data["db"]
+        if action == "home":
+            await self._show_guess_home(update, context, chat_id)
+            return
+        async with db.session_factory() as session:
+            if action == "create":
+                sub = callback_data.get(3)
+                state = await get_user_state(session, update.effective_user.id, update.effective_user.id)
+                draft = dict((state.state_data or {}) if state and state.state_type.startswith("guess_wait_") else {})
+                if sub == "start":
+                    await self._start_text_input_state(context, update.effective_user.id, update.effective_user.id, "guess_wait_title", {"target_chat_id": chat_id})
+                    await session.commit()
+                    await self.message_helper.safe_edit(update, "⚽ 竞猜 | 活动名字\n\n👉 请输入活动名字：", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"guess:home:{chat_id}")]]))
+                    return
+                if sub in {"title", "cover", "description", "banker", "pool", "options", "command", "deadline"}:
+                    state_map = {
+                        "title": "guess_wait_title",
+                        "cover": "guess_wait_cover",
+                        "description": "guess_wait_description",
+                        "banker": "guess_wait_banker",
+                        "pool": "guess_wait_pool",
+                        "options": "guess_wait_options",
+                        "command": "guess_wait_command",
+                        "deadline": "guess_wait_deadline",
+                    }
+                    prompt_map = {
+                        "title": "⚽ 竞猜 | 活动名字\n\n👉 请输入活动名字：",
+                        "cover": "⚽ 竞猜 | 活动封面\n\n请发送图片，或发送“清空”移除封面。",
+                        "description": "⚽ 竞猜 | 活动说明\n\n👉 请输入活动说明：",
+                        "banker": "⚽ 竞猜 | 本局庄家\n\n请输入用户名或用户ID，发送“清空”切回无庄模式。",
+                        "pool": "⚽ 竞猜 | 公共奖池\n\n👉 请输入公共奖池积分：",
+                        "options": "⚽ 竞猜 | 竞猜选项\n\n每行一个选项，支持 `编号:文案`。",
+                        "command": "⚽ 竞猜 | 群内指令\n\n👉 请输入群内指令，例如：竞猜",
+                        "deadline": "⚽ 竞猜 | 截止时间\n\n请输入分钟数或 HH:MM，例如 30 / 23:05",
+                    }
+                    await self._start_text_input_state(context, update.effective_user.id, update.effective_user.id, state_map[sub], {"target_chat_id": chat_id, **draft})
+                    await session.commit()
+                    await self.message_helper.safe_edit(update, prompt_map[sub], reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"guess:create:{chat_id}:preview")]]))
+                    return
+                if sub == "repeat":
+                    draft["allow_repeat_bet"] = not bool(draft.get("allow_repeat_bet", False))
+                    await set_user_state(session, update.effective_user.id, update.effective_user.id, "guess_wait_title", {"target_chat_id": chat_id, **draft})
+                    await session.commit()
+                    await self._show_guess_create_menu(update, context, chat_id, draft)
+                    return
+                if sub == "clear":
+                    await clear_user_state(session, update.effective_user.id, update.effective_user.id)
+                    await session.commit()
+                    await self._show_guess_create_menu(update, context, chat_id, {})
+                    return
+                if sub == "preview":
+                    await session.commit()
+                    await self._show_guess_create_menu(update, context, chat_id, draft)
+                    return
+                if sub == "publish":
+                    required = {"title", "options", "command_keyword", "deadline_at"}
+                    if not required.issubset(set(draft.keys())):
+                        await session.commit()
+                        await answer_callback_query_safely(update, "❌ 请先补齐活动名字、竞猜选项、群内指令和截止时间。", show_alert=True)
+                        return
+                    event = await create_guess_event(session, chat_id, update.effective_user.id, draft)
+                    sent = await context.bot.send_message(chat_id=chat_id, text=format_event_runtime(event), parse_mode="Markdown")
+                    event.announcement_message_id = sent.message_id
+                    await clear_user_state(session, update.effective_user.id, update.effective_user.id)
+                    await session.commit()
+                    await self._show_guess_event_detail(update, context, chat_id, event.id)
+                    return
+            if action == "settings":
+                sub = callback_data.get(3)
+                if sub == "home":
+                    await session.commit()
+                    await self._show_guess_settings(update, context, chat_id)
+                    return
+                if sub == "rake_ratio":
+                    await self._start_text_input_state(context, update.effective_user.id, update.effective_user.id, "guess_wait_rake_ratio", {"target_chat_id": chat_id})
+                    await session.commit()
+                    await self.message_helper.safe_edit(update, "⚽ 竞猜 | 抽水比例\n\n请输入 0 到 1 之间的小数，例如 0.1。", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"guess:settings:{chat_id}:home")]]))
+                    return
+                if sub == "rake_owner":
+                    await self._start_text_input_state(context, update.effective_user.id, update.effective_user.id, "guess_wait_rake_owner", {"target_chat_id": chat_id})
+                    await session.commit()
+                    await self.message_helper.safe_edit(update, "⚽ 竞猜 | 抽水归属\n\n请输入用户名或用户ID，发送“清空”清除。", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"guess:settings:{chat_id}:home")]]))
+                    return
+                if sub == "delete_mode":
+                    await update_guess_setting(session, chat_id, delete_message_mode=callback_data.get(4))
+                    await session.commit()
+                    await self._show_guess_settings(update, context, chat_id)
+                    return
+            if action == "list":
+                await session.commit()
+                await self._show_guess_event_list(update, context, chat_id, callback_data.get(3))
+                return
+            if action == "detail":
+                await session.commit()
+                await self._show_guess_event_detail(update, context, chat_id, callback_data.get_int(3))
+                return
+            if action == "open":
+                event = await get_guess_event(session, chat_id, callback_data.get_int(3))
+                if event is None:
+                    await session.commit()
+                    await answer_callback_query_safely(update, "❌ 活动不存在", show_alert=True)
+                    return
+                note = await settle_guess_event(session, event=event, winner_option=callback_data.get(4))
+                await context.bot.send_message(chat_id=chat_id, text=f"{format_event_runtime(event)}\n\n{note}", parse_mode="Markdown")
+                await session.commit()
+                await self._show_guess_event_detail(update, context, chat_id, event.id)
+                return
+            if action == "cancel":
+                event = await get_guess_event(session, chat_id, callback_data.get_int(3))
+                if event is None:
+                    await session.commit()
+                    await answer_callback_query_safely(update, "❌ 活动不存在", show_alert=True)
+                    return
+                await cancel_guess_event(session, event=event)
+                await session.commit()
+                await self._show_guess_event_detail(update, context, chat_id, event.id)
+                return
+
+    async def _show_engagement_home(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+    ) -> None:
+        db: Database = context.application.bot_data["db"]
+        await self._set_current_chat(db, update.effective_user.id, chat_id)
+        async with db.session_factory() as session:
+            counts = await get_egg_event_counts(session, chat_id)
+            latest_running = await get_latest_running_egg_event(session, chat_id)
+            reward = await get_engagement_chat_reward(session, chat_id)
+            recent_stats = await get_recent_chat_reward_stats(session, chat_id, days=7)
+            await session.commit()
+        reward_type_label = "📈 递增奖励" if reward.reward_type == "daily_increment" else "🔁 周期奖励"
+        recent_claims = sum(item["claim_count"] for item in recent_stats)
+        text = "\n".join(
+            [
+                "✨ 促活工具",
+                "",
+                f"🥚 彩蛋活动：📋 总数 {counts['all']} | 🟢 运行中 {counts['running']} | ✅ 已结束 {counts['finished']}",
+                (
+                    f"🧩 当前活动：{latest_running.title} | 线索 {latest_running.published_clue_count}/{len(latest_running.clues or [])}"
+                    if latest_running is not None
+                    else "🧩 当前活动：暂无运行中的彩蛋"
+                ),
+                f"💬 水群激励：{'✅ 开启' if reward.enabled else '❌ 关闭'} | {reward_type_label}",
+                f"🎯 发言目标：{reward.daily_message_target}",
+                f"⌨️ 领奖口令：{reward.command_keyword}",
+                f"📊 近7日领取次数：{recent_claims}",
+            ]
+        )
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("🥚 彩蛋活动", callback_data=f"act:egg:{chat_id}:list:all"),
+                InlineKeyboardButton("💬 水群激励", callback_data=f"act:chat:{chat_id}:home"),
+            ],
+            [
+                InlineKeyboardButton("📚 彩蛋历史", callback_data=f"act:egg:{chat_id}:history"),
+                InlineKeyboardButton("📈 近7日统计", callback_data=f"act:chat:{chat_id}:stats"),
+                InlineKeyboardButton("🧾 领奖记录", callback_data=f"act:chat:{chat_id}:history"),
+            ],
+            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
+        ])
+        await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
+
+    async def _show_engagement_egg_list(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+        status: str = "all",
+    ) -> None:
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            counts = await get_egg_event_counts(session, chat_id)
+            events = await list_egg_events(session, chat_id, status=status, limit=12)
+            await session.commit()
+        lines = [
+            "🥚 有奖彩蛋 | 活动列表",
+            "",
+            f"📋 全部 {counts['all']} | ⚪ 草稿/暂停 {counts['idle']} | 🟢 运行中 {counts['running']} | ✅ 已结束 {counts['finished']}",
+            "",
+        ]
+        if not events:
+            lines.append("• 当前筛选下暂无活动")
+        else:
+            for event in events:
+                status_icon = {"idle": "⚪", "running": "🟢", "finished": "✅"}.get(event.status, "⚪")
+                lines.append(
+                    f"• #{event.id} {status_icon} {event.title} | 线索 {event.published_clue_count}/{len(event.clues or [])} | {'✅ 开启' if event.enabled else '❌ 关闭'}"
+                )
+        keyboard_rows = [
+            [
+                InlineKeyboardButton("🆕 新建活动", callback_data=f"act:egg:{chat_id}:new"),
+                InlineKeyboardButton("📚 历史记录", callback_data=f"act:egg:{chat_id}:history"),
+            ],
+            [
+                InlineKeyboardButton("✅ 全部" if status == "all" else "全部", callback_data=f"act:egg:{chat_id}:list:all"),
+                InlineKeyboardButton("✅ 运行中" if status == "running" else "运行中", callback_data=f"act:egg:{chat_id}:list:running"),
+                InlineKeyboardButton("✅ 已结束" if status == "finished" else "已结束", callback_data=f"act:egg:{chat_id}:list:finished"),
+            ],
+        ]
+        for event in events[:8]:
+            keyboard_rows.append(
+                [InlineKeyboardButton(f"🔎 #{event.id} {event.title[:18]}", callback_data=f"act:egg:{chat_id}:detail:{event.id}")]
+            )
+        keyboard_rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"act:home:{chat_id}")])
+        keyboard = InlineKeyboardMarkup(keyboard_rows)
+        await self.message_helper.safe_edit(update, text="\n".join(lines), reply_markup=keyboard)
+
+    async def _show_engagement_egg(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+        event_id: int,
+    ) -> None:
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            event = await get_egg_event(session, chat_id, event_id)
+            await session.commit()
+        if event is None:
+            await self.message_helper.safe_edit(
+                update,
+                "❌ 彩蛋活动不存在或已删除。",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"act:egg:{chat_id}:list:all")]]),
+            )
+            return
+        clues = event.clues or []
+        rewards = event.clue_rewards or []
+        clue_times = event.clue_times or []
+        status_icon = {"idle": "⚪", "running": "🟢", "finished": "✅"}.get(event.status, "⚪")
+        reward_preview = " / ".join(str(item) for item in rewards) if rewards else "未配置"
+        time_preview = " / ".join(clue_times) if clue_times else "未配置"
+        answer_preview = event.answer or "未配置"
+        winner_preview = str(event.winner_user_id) if event.winner_user_id else "暂无"
+        text = "\n".join(
+            [
+                f"🥚 有奖彩蛋 | #{event.id} {event.title}",
+                "",
+                f"📌 状态：{'✅ 开启' if event.enabled else '❌ 关闭'}",
+                f"🚦 运行态：{status_icon} {event.status}",
+                f"🔐 当前答案：{answer_preview}",
+                f"🧩 线索数量：{len(clues)}/4",
+                f"📤 已发布线索：{event.published_clue_count}/{len(clues)}",
+                f"🎁 奖励数组：{reward_preview}",
+                f"⏰ 发布时间：{time_preview}",
+                f"🏆 当前中奖者：{winner_preview}",
+            ]
+        )
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton(("✅ 状态" if event.enabled else "❌ 状态"), callback_data=f"act:egg:{chat_id}:toggle:{event.id}:{0 if event.enabled else 1}"),
+                InlineKeyboardButton("🧩 编辑模板", callback_data=f"act:egg:{chat_id}:template:{event.id}"),
+            ],
+            [
+                InlineKeyboardButton("👀 预览配置", callback_data=f"act:egg:{chat_id}:preview:{event.id}"),
+                InlineKeyboardButton("📤 立即发布", callback_data=f"act:egg:{chat_id}:publish:{event.id}"),
+            ],
+            [
+                InlineKeyboardButton("⏸ 暂停" if event.status == "running" else "▶️ 恢复", callback_data=f"act:egg:{chat_id}:status:{event.id}:{'idle' if event.status == 'running' else 'running'}"),
+                InlineKeyboardButton("♻️ 重置活动", callback_data=f"act:egg:{chat_id}:reset:{event.id}"),
+            ],
+            [InlineKeyboardButton("🔙 返回列表", callback_data=f"act:egg:{chat_id}:list:all")],
+        ])
+        await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
+
+    async def _show_engagement_chat_reward(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+    ) -> None:
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            reward = await get_engagement_chat_reward(session, chat_id)
+            await session.commit()
+        plan_preview = " ".join(str(item) for item in (reward.reward_points_plan or [])) or "未配置"
+        type_label = "📈 递增奖励" if reward.reward_type == "daily_increment" else "🔁 周期奖励"
+        after_7d_label = "♻️ 重置奖励" if reward.after_7d_mode == "reset" else "➡️ 延续奖励"
+        text = "\n".join(
+            [
+                "💬 水群激励",
+                "",
+                f"📌 状态：{'✅ 开启' if reward.enabled else '❌ 关闭'}",
+                f"🎛 奖励类型：{type_label}",
+                f"🎯 达标发言：{reward.daily_message_target}",
+                f"🎁 七日奖励：{plan_preview}",
+                f"🗓 7日后策略：{after_7d_label}",
+                f"⌨️ 领奖口令：{reward.command_keyword}",
+            ]
+        )
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton(("✅ 状态" if reward.enabled else "❌ 状态"), callback_data=f"act:chat:{chat_id}:toggle:{0 if reward.enabled else 1}"),
+                InlineKeyboardButton(type_label, callback_data=f"act:chat:{chat_id}:type:{'weekly_cycle' if reward.reward_type == 'daily_increment' else 'daily_increment'}"),
+            ],
+            [
+                InlineKeyboardButton("🎯 发言数量", callback_data=f"act:chat:{chat_id}:target"),
+                InlineKeyboardButton("🎁 奖励设置", callback_data=f"act:chat:{chat_id}:plan"),
+            ],
+            [
+                InlineKeyboardButton("♻️ 7日后重置" + (" ✅" if reward.after_7d_mode == "reset" else ""), callback_data=f"act:chat:{chat_id}:after7:reset"),
+                InlineKeyboardButton("➡️ 7日后延续" + (" ✅" if reward.after_7d_mode == "continue" else ""), callback_data=f"act:chat:{chat_id}:after7:continue"),
+            ],
+            [
+                InlineKeyboardButton("⌨️ 领奖口令", callback_data=f"act:chat:{chat_id}:command"),
+                InlineKeyboardButton("👀 预览配置", callback_data=f"act:chat:{chat_id}:preview"),
+            ],
+            [
+                InlineKeyboardButton("📈 近7日统计", callback_data=f"act:chat:{chat_id}:stats"),
+                InlineKeyboardButton("🧾 领奖记录", callback_data=f"act:chat:{chat_id}:history"),
+            ],
+            [InlineKeyboardButton("🔙 返回", callback_data=f"act:home:{chat_id}")],
+        ])
+        await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
+
+    async def _show_engagement_chat_stats(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+    ) -> None:
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            stats = await get_recent_chat_reward_stats(session, chat_id, days=7)
+            top_users = await get_chat_reward_top_users(session, chat_id, days=7, limit=5)
+            await session.commit()
+        stat_lines = [f"• {item['biz_date']}: 消息 {item['message_total']} / 领奖 {item['claim_count']} / 发放 {item['reward_total']} 积分" for item in stats] or ["• 暂无统计数据"]
+        top_lines = [f"• {item['label']}: {item['message_total']} 条" for item in top_users] or ["• 暂无排行数据"]
+        text = "\n".join(
+            [
+                "📈 水群激励 | 近7日统计",
+                "",
+                "📊 每日概览：",
+                *stat_lines,
+                "",
+                "🏆 活跃排行：",
+                *top_lines,
+            ]
+        )
+        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"act:chat:{chat_id}:home")]])
+        await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
+
+    async def _show_engagement_chat_history(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+    ) -> None:
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            claims = await get_recent_chat_reward_claims(session, chat_id, limit=10)
+            await session.commit()
+        lines = [
+            f"• {item['biz_date']} | {item['label']} | 奖励 {item['rewarded_points']} | 连续 {item['streak_days']} 天 | 发言 {item['message_count']}"
+            for item in claims
+        ] or ["• 暂无领奖记录"]
+        text = "\n".join(["🧾 水群激励 | 最近领奖记录", "", *lines])
+        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"act:chat:{chat_id}:home")]])
+        await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
+
+    async def _show_engagement_egg_history(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+    ) -> None:
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            history_rows = await list_egg_history(session, chat_id, limit=10)
+            await session.commit()
+        lines = ["📚 有奖彩蛋 | 历史记录", ""]
+        if not history_rows:
+            lines.append("• 暂无历史记录")
+        else:
+            for row in history_rows:
+                lines.append(
+                    f"• {row.created_at.strftime('%Y-%m-%d %H:%M')} | #{row.event_id or '-'} {row.title or '未命名活动'} | 状态 {row.status} | 中奖者 {row.winner_user_id or '暂无'} | 奖励 {row.reward_points}"
+                )
+        await self.message_helper.safe_edit(
+            update,
+            "\n".join(lines),
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"act:egg:{chat_id}:list:all")]]),
+        )
+
+    async def _handle_engagement(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+        callback_data: CallbackParser,
+    ) -> None:
+        action = callback_data.get(1)
+        db: Database = context.application.bot_data["db"]
+        if action == "home":
+            await self._show_engagement_home(update, context, chat_id)
+            return
+
+        async with db.session_factory() as session:
+            if action == "egg":
+                sub = callback_data.get(3)
+                if sub in {"home", "list"}:
+                    await session.commit()
+                    await self._show_engagement_egg_list(update, context, chat_id, status=callback_data.get(4, "all") or "all")
+                    return
+                if sub == "new":
+                    await self._start_text_input_state(
+                        context,
+                        update.effective_user.id,
+                        update.effective_user.id,
+                        "engagement_wait_egg_template",
+                        {"target_chat_id": chat_id},
+                    )
+                    await session.commit()
+                    await self.message_helper.safe_edit(
+                        update,
+                        (
+                            "🥚 有奖彩蛋 | 新建活动\n\n"
+                            "请按以下格式发送：\n"
+                            "标题=四月彩蛋（可选）\n"
+                            "答案=xxx\n线索1=...\n奖励1=100\n时间1=09:00\n"
+                            "线索2=...\n奖励2=80\n时间2=10:00\n"
+                            "线索3=...\n奖励3=60\n时间3=11:00\n"
+                            "线索4=...\n奖励4=40\n时间4=12:00"
+                        ),
+                        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"act:egg:{chat_id}:list:all")]]),
+                    )
+                    return
+                if sub == "detail":
+                    event_id = callback_data.get_int(4)
+                    await session.commit()
+                    if event_id is None:
+                        await self._show_engagement_egg_list(update, context, chat_id)
+                        return
+                    await self._show_engagement_egg(update, context, chat_id, event_id)
+                    return
+                if sub == "history":
+                    await session.commit()
+                    await self._show_engagement_egg_history(update, context, chat_id)
+                    return
+                if sub == "toggle":
+                    event = await get_egg_event(session, chat_id, callback_data.get_int(4))
+                    enabled = callback_data.get(5) == "1"
+                    if event is None:
+                        await session.commit()
+                        await self._show_engagement_egg_list(update, context, chat_id)
+                        return
+                    event.enabled = enabled
+                    if enabled and event.answer and event.clues and event.clue_times and event.winner_user_id is None:
+                        event.status = "running"
+                    elif not enabled and event.status != "finished":
+                        event.status = "idle"
+                    await session.commit()
+                    await self._show_engagement_egg(update, context, chat_id, event.id)
+                    return
+                if sub == "status":
+                    event = await get_egg_event(session, chat_id, callback_data.get_int(4))
+                    target_status = callback_data.get(5)
+                    if event is None:
+                        await session.commit()
+                        await self._show_engagement_egg_list(update, context, chat_id)
+                        return
+                    if target_status == "running" and event.enabled and event.answer and event.clues and event.clue_times and event.winner_user_id is None:
+                        event.status = "running"
+                    elif target_status == "idle":
+                        event.status = "idle"
+                    await session.commit()
+                    await self._show_engagement_egg(update, context, chat_id, event.id)
+                    return
+                if sub == "template":
+                    event_id = callback_data.get_int(4)
+                    await self._start_text_input_state(
+                        context,
+                        update.effective_user.id,
+                        update.effective_user.id,
+                        "engagement_wait_egg_template",
+                        {"target_chat_id": chat_id, "event_id": event_id},
+                    )
+                    await session.commit()
+                    await self.message_helper.safe_edit(
+                        update,
+                        (
+                            "🥚 有奖彩蛋 | 模板输入\n\n"
+                            "请按以下格式发送：\n"
+                            "标题=四月彩蛋（可选）\n"
+                            "答案=xxx\n线索1=...\n奖励1=100\n时间1=09:00\n"
+                            "线索2=...\n奖励2=80\n时间2=10:00\n"
+                            "线索3=...\n奖励3=60\n时间3=11:00\n"
+                            "线索4=...\n奖励4=40\n时间4=12:00"
+                        ),
+                        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"act:egg:{chat_id}:detail:{event_id}" if event_id else f"act:egg:{chat_id}:list:all")]]),
+                    )
+                    return
+                if sub == "preview":
+                    event = await get_egg_event(session, chat_id, callback_data.get_int(4))
+                    await session.commit()
+                    if event is None:
+                        await self._show_engagement_egg_list(update, context, chat_id)
+                        return
+                    preview_lines = [
+                        f"🥚 有奖彩蛋 | 预览配置 #{event.id}",
+                        "",
+                        f"🏷 活动标题：{event.title}",
+                        f"🔐 答案：{event.answer or '未配置'}",
+                        f"🧩 线索：{event.clues or []}",
+                        f"🎁 奖励：{event.clue_rewards or []}",
+                        f"⏰ 时间：{event.clue_times or []}",
+                    ]
+                    await self.message_helper.safe_edit(
+                        update,
+                        "\n".join(preview_lines),
+                        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"act:egg:{chat_id}:detail:{event.id}")]]),
+                    )
+                    return
+                if sub == "publish":
+                    event_id = callback_data.get_int(4)
+                    published = await publish_next_clue(session, chat_id, event_id=event_id)
+                    await session.commit()
+                    if published is None:
+                        await self.message_helper.safe_edit(
+                            update,
+                            "🥚 当前没有可立即发布的线索，请先启用活动或检查是否已经全部发布。",
+                            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"act:egg:{chat_id}:detail:{event_id}" if event_id else f"act:egg:{chat_id}:list:all")]]),
+                        )
+                        return
+                    event, clue_index, clue_text, reward_points = published
+                    await context.bot.send_message(
+                        chat_id=chat_id,
+                        text=(
+                            f"🥚 有奖彩蛋【{event.title}】| 第 {clue_index + 1} 条线索\n"
+                            f"🧩 线索：{clue_text}\n"
+                            f"🎁 当前命中奖励：{reward_points} 积分"
+                        ),
+                    )
+                    await self._show_engagement_egg(update, context, chat_id, event.id)
+                    return
+                if sub == "reset":
+                    event = await get_egg_event(session, chat_id, callback_data.get_int(4))
+                    if event is None:
+                        await session.commit()
+                        await self._show_engagement_egg_list(update, context, chat_id)
+                        return
+                    await archive_egg_snapshot(session, event, reward_points=0)
+                    event.enabled = False
+                    event.answer = None
+                    event.clues = []
+                    event.clue_rewards = []
+                    event.clue_times = []
+                    event.winner_user_id = None
+                    event.status = "idle"
+                    event.published_clue_count = 0
+                    await session.commit()
+                    await self._show_engagement_egg(update, context, chat_id, event.id)
+                    return
+                await session.commit()
+                await self._show_engagement_egg_list(update, context, chat_id)
+                return
+
+            if action == "chat":
+                sub = callback_data.get(3)
+                if sub == "home":
+                    await session.commit()
+                    await self._show_engagement_chat_reward(update, context, chat_id)
+                    return
+                if sub == "toggle":
+                    await update_engagement_chat_reward(session, chat_id, enabled=callback_data.get(4) == "1")
+                    await session.commit()
+                    await self._show_engagement_chat_reward(update, context, chat_id)
+                    return
+                if sub == "preview":
+                    reward = await get_engagement_chat_reward(session, chat_id)
+                    await session.commit()
+                    preview_text = "\n".join(
+                        [
+                            "💬 水群激励 | 预览配置",
+                            "",
+                            f"🎯 达标发言：{reward.daily_message_target}",
+                            f"🎁 奖励计划：{reward.reward_points_plan or []}",
+                            f"🗓 7日后策略：{reward.after_7d_mode}",
+                            f"⌨️ 领奖口令：{reward.command_keyword}",
+                        ]
+                    )
+                    await self.message_helper.safe_edit(
+                        update,
+                        preview_text,
+                        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"act:chat:{chat_id}:home")]]),
+                    )
+                    return
+                if sub == "stats":
+                    await session.commit()
+                    await self._show_engagement_chat_stats(update, context, chat_id)
+                    return
+                if sub == "history":
+                    await session.commit()
+                    await self._show_engagement_chat_history(update, context, chat_id)
+                    return
+                if sub == "type":
+                    await update_engagement_chat_reward(session, chat_id, reward_type=callback_data.get(4))
+                    await session.commit()
+                    await self._show_engagement_chat_reward(update, context, chat_id)
+                    return
+                if sub == "after7":
+                    await update_engagement_chat_reward(session, chat_id, after_7d_mode=callback_data.get(4))
+                    await session.commit()
+                    await self._show_engagement_chat_reward(update, context, chat_id)
+                    return
+                if sub in {"target", "plan", "command"}:
+                    state_map = {
+                        "target": "engagement_wait_chat_target",
+                        "plan": "engagement_wait_chat_plan",
+                        "command": "engagement_wait_chat_command",
+                    }
+                    prompt_map = {
+                        "target": "💬 水群激励 | 发言数量\n\n请输入每日发言达标数，例如：200",
+                        "plan": "💬 水群激励 | 奖励设置\n\n请输入 7 个非递减整数，用空格分隔。\n例如：10 20 30 40 50 60 70",
+                        "command": "💬 水群激励 | 领奖口令\n\n请输入新的领奖口令，例如：我爱水群",
+                    }
+                    await self._start_text_input_state(
+                        context,
+                        update.effective_user.id,
+                        update.effective_user.id,
+                        state_map[sub],
+                        {"target_chat_id": chat_id},
+                    )
+                    await session.commit()
+                    await self.message_helper.safe_edit(
+                        update,
+                        prompt_map[sub],
+                        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"act:chat:{chat_id}:home")]]),
+                    )
+                    return
+                await session.commit()
+                await self._show_engagement_chat_reward(update, context, chat_id)
+                return
+
+    async def _show_account_inherit_menu(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+    ) -> None:
+        db: Database = context.application.bot_data["db"]
+        await self._set_current_chat(db, update.effective_user.id, chat_id)
+        async with db.session_factory() as session:
+            summary = await build_inherit_summary(session, chat_id)
+            await session.commit()
+        enabled = bool(summary["enabled"])
+        text = "\n".join(
+            [
+                "💥 炸号继承",
+                "",
+                f"📌 允许继承：{'✅ 允许' if enabled else '❌ 不允许'}",
+                f"⏱️ Token 有效期：{summary['token_expire_minutes']} 分钟",
+                f"🎟️ 活跃令牌：{summary['active_tokens']}",
+                f"🧾 已使用令牌：{summary['used_tokens']}",
+                "",
+                "旧号生成一次性 token，新号在私聊里使用 token 继承主积分和自定义积分。",
+            ]
+        )
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("允许继承：", callback_data=f"inh:manage:{chat_id}"),
+                InlineKeyboardButton("允许" + (" ✅" if enabled else ""), callback_data=f"inh:toggle:{chat_id}:1"),
+                InlineKeyboardButton("不允许" + (" ✅" if not enabled else ""), callback_data=f"inh:toggle:{chat_id}:0"),
+            ],
+            [
+                InlineKeyboardButton("🎟️ 旧号生成令牌", callback_data=f"inh:token:gen:{chat_id}"),
+                InlineKeyboardButton("🔓 新号使用令牌", callback_data=f"inh:token:use:{chat_id}"),
+            ],
+            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
+        ])
+        await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
 
     async def _show_points_mall_order_detail(
         self,
@@ -3254,15 +5576,29 @@ class AdminHandler(BaseHandler):
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
         order_id: int,
+        *,
+        status: str = "all",
+        product_id: int | None = None,
     ) -> None:
+        normalized_status = status if status in {"all", "created", "fulfilled", "canceled", "refunded"} else "all"
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
             order = await PointsExtendedService.get_order(session, chat_id, order_id)
+            logs = await PointsExtendedService.list_order_logs(session, order_id=order_id, limit=5)
             await session.commit()
         if order is None:
             await answer_callback_query_safely(update, "订单不存在", show_alert=True)
-            await self._show_points_mall_orders_placeholder(update, context, chat_id)
+            await self._show_points_mall_orders_placeholder(update, context, chat_id, product_id=product_id, status=normalized_status)
             return
+        log_lines = ["最近操作："]
+        if not logs:
+            log_lines.append("- 暂无日志")
+        else:
+            for item in logs:
+                payload = item.payload or {}
+                operator = payload.get("operator_user_id", "-")
+                timestamp = item.created_at.strftime("%m-%d %H:%M") if item.created_at else "--"
+                log_lines.append(f"- {timestamp}｜{item.action}｜操作人 {operator}")
         text = "\n".join(
             [
                 "🧾 管理订单 | 订单详情",
@@ -3274,12 +5610,19 @@ class AdminHandler(BaseHandler):
                 f"数量：{order.quantity}",
                 f"订单状态：{order.order_status}",
                 f"操作人员：{order.operator_user_id or '未处理'}",
+                "",
+                *log_lines,
             ]
         )
         await self.message_helper.safe_edit(
             update,
             text=text,
-            reply_markup=points_mall_order_detail_keyboard(chat_id, order),
+            reply_markup=points_mall_order_detail_keyboard(
+                chat_id,
+                order,
+                status=normalized_status,
+                product_id=product_id,
+            ),
         )
 
     async def _show_custom_point_detail(
@@ -3366,7 +5709,7 @@ class AdminHandler(BaseHandler):
             reply_markup=InlineKeyboardMarkup(
                 [
                     [InlineKeyboardButton("确认删除", callback_data=f"adm:lvl:{chat_id}:delete:{level_id}")],
-                    [InlineKeyboardButton("返回", callback_data=f"adm:lvl:{chat_id}:detail:{level_id}")],
+                    [InlineKeyboardButton("🔙 返回", callback_data=f"adm:lvl:{chat_id}:detail:{level_id}")],
                 ]
             ),
         )
@@ -3436,7 +5779,7 @@ class AdminHandler(BaseHandler):
             update,
             text=text,
             reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("返回", callback_data=f"adm:mall:{chat_id}:product:detail:{product_id}")]]
+                [[InlineKeyboardButton("🔙 返回", callback_data=f"adm:mall:{chat_id}:product:detail:{product_id}")]]
             ),
         )
 
@@ -3456,8 +5799,34 @@ class AdminHandler(BaseHandler):
             settings = await get_chat_settings(session, chat_id)
             await session.commit()
 
-        text = "🧹 删除系统提示\n\n"
-        text += "本功能会自动清除系统提示消息"
+        enabled_keys = [
+            bool(getattr(settings, "auto_delete_join", False)),
+            bool(getattr(settings, "auto_delete_left", False)),
+            bool(getattr(settings, "auto_delete_pinned", False)),
+            bool(getattr(settings, "auto_delete_avatar", False)),
+            bool(getattr(settings, "auto_delete_title", False)),
+            bool(getattr(settings, "auto_delete_anonymous", False)),
+        ]
+        enabled_labels = [
+            label
+            for enabled, label in [
+                (bool(getattr(settings, "auto_delete_join", False)), "进群"),
+                (bool(getattr(settings, "auto_delete_left", False)), "退群"),
+                (bool(getattr(settings, "auto_delete_pinned", False)), "置顶"),
+                (bool(getattr(settings, "auto_delete_avatar", False)), "头像"),
+                (bool(getattr(settings, "auto_delete_title", False)), "群名"),
+                (bool(getattr(settings, "auto_delete_anonymous", False)), "匿名消息"),
+            ]
+            if enabled
+        ]
+        text = (
+            "🧹 删除系统提示\n\n"
+            "本功能会自动清除系统提示消息。\n\n"
+            f"总开关状态：{'✅ 已生效' if any(enabled_keys) else '❌ 未生效'}\n"
+            f"已开启类型：{sum(enabled_keys)}/{len(enabled_keys)}\n"
+            f"当前明细：{'、'.join(enabled_labels) if enabled_labels else '暂无'}\n\n"
+            "可删除对象：进群 / 退群 / 置顶 / 修改头像 / 修改群名 / 匿名消息。"
+        )
 
         keyboard = auto_delete_config_keyboard(settings, chat_id)
 
@@ -3653,7 +6022,7 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # 私聊中的管理回调 - 使用 Handler 处理
     if update.effective_chat.type == "private":
         cb = CallbackParser.parse(data)
-        if cb.get(0) in {"adm", "ali", "gfw", "grg", "tsearch", "crv"}:
+        if cb.get(0) in {"adm", "ali", "gfw", "grg", "tsearch", "crv", "auc", "btm", "gm", "guess", "act"}:
             # 提取 target_chat_id（如果有）
             action = cb.get(1)
             log.info("=== ADMIN_CALLBACK_ACTION ===", action=action, cb_parts=[cb.get(i) for i in range(cb.length())])
@@ -3775,6 +6144,63 @@ def _is_valid_hhmm(value: str) -> bool:
     return bool(re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", value))
 
 
+def _parse_force_subscribe_buttons_input(raw_text: str) -> list[list[dict]]:
+    text = (raw_text or "").strip()
+    if not text:
+        raise ValidationError("按钮配置不能为空。")
+    if text.startswith("["):
+        return json.loads(text)
+
+    rows: list[list[dict]] = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if "|" not in line:
+            raise ValidationError("文本格式错误：每行必须包含“按钮文案|URL”。")
+        button_text, button_url = [part.strip() for part in line.split("|", 1)]
+        if not button_text or not button_url:
+            raise ValidationError("按钮文案和 URL 不能为空。")
+        rows.append([{"text": button_text[:32], "url": button_url}])
+    if not rows:
+        raise ValidationError("未解析到有效按钮。")
+    return rows
+
+
+def _build_force_subscribe_channel_button_preview(value: str | None) -> InlineKeyboardButton | None:
+    if not value:
+        return None
+    normalized = value.strip()
+    if not normalized:
+        return None
+    if normalized.startswith("@"):
+        return InlineKeyboardButton(normalized, url=f"https://t.me/{normalized[1:]}")
+    if normalized.startswith("https://t.me/") or normalized.startswith("http://t.me/"):
+        return InlineKeyboardButton(normalized, url=normalized)
+    return None
+
+
+def _build_force_subscribe_preview_markup(settings, chat_id: int) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    custom_enabled = bool(getattr(settings, "force_subscribe_custom_buttons_enabled", False))
+    custom_buttons = getattr(settings, "force_subscribe_buttons", None) or []
+    if custom_enabled and custom_buttons:
+        try:
+            normalized = ScheduledMessageService.normalize_buttons_config(custom_buttons)
+            for row in normalized:
+                rows.append([InlineKeyboardButton(item["text"], url=item["url"]) for item in row])
+        except Exception:
+            rows = []
+    if not rows:
+        fallback_buttons = [
+            _build_force_subscribe_channel_button_preview(getattr(settings, "force_subscribe_bound_channel_1", None)),
+            _build_force_subscribe_channel_button_preview(getattr(settings, "force_subscribe_bound_channel_2", None)),
+        ]
+        rows.extend([[button] for button in fallback_buttons if button is not None])
+    rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:forcesub:{chat_id}")])
+    return InlineKeyboardMarkup(rows)
+
+
 async def handle_force_subscribe_channel_input(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -3801,20 +6227,26 @@ async def handle_force_subscribe_channel_input(
 
     if state.state_type == "force_subscribe_channel_1_input":
         field = "force_subscribe_bound_channel_1"
-        setattr(settings, field, message_text.strip())
+        value = message_text.strip()
+        setattr(settings, field, None if value in {"", "清空"} else value)
     elif state.state_type == "force_subscribe_channel_2_input":
         field = "force_subscribe_bound_channel_2"
-        setattr(settings, field, message_text.strip())
+        value = message_text.strip()
+        setattr(settings, field, None if value in {"", "清空"} else value)
     elif state.state_type == "force_subscribe_text_input":
         field = "force_subscribe_guide_text"
-        setattr(settings, field, message_text.strip())
+        value = message_text.strip()
+        if not value:
+            await update.effective_message.reply_text("文案不能为空。")
+            return
+        setattr(settings, field, value)
     elif state.state_type == "force_subscribe_buttons_input":
         if message_text.strip() == "清空":
             settings.force_subscribe_buttons = []
             settings.force_subscribe_custom_buttons_enabled = False
         else:
             try:
-                buttons = json.loads(message_text)
+                buttons = _parse_force_subscribe_buttons_input(message_text)
                 settings.force_subscribe_buttons = ScheduledMessageService.normalize_buttons_config(buttons)
                 settings.force_subscribe_custom_buttons_enabled = True
             except (json.JSONDecodeError, ValidationError) as exc:
@@ -4659,6 +7091,280 @@ async def handle_points_extended_input(
     await update.effective_message.reply_text("当前积分扩展配置状态不支持该输入，请重新进入配置页面。")
 
 
+async def handle_bottom_button_input(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    session,
+    state,
+    message_text: str,
+) -> None:
+    if update.effective_user is None or update.effective_message is None:
+        return
+
+    target_chat_id = state.state_data.get("target_chat_id", state.chat_id)
+    if not isinstance(target_chat_id, int):
+        await update.effective_message.reply_text("底部按钮状态异常，请重新进入页面。")
+        return
+
+    async def _clear_state() -> None:
+        await clear_user_state(session, chat_id=target_chat_id, user_id=update.effective_user.id)
+        await clear_user_state(session, chat_id=update.effective_user.id, user_id=update.effective_user.id)
+
+    text_value = message_text.strip()
+    state_type = str(state.state_type)
+
+    if state_type == "bottom_button_text_input":
+        if not text_value:
+            await update.effective_message.reply_text("文本内容不能为空。")
+            return
+        await update_bottom_button_setting(session, target_chat_id, header_text=text_value)
+        await _clear_state()
+        await session.commit()
+        await _admin_handler._show_bottom_button_menu(update, context, target_chat_id)
+        return
+
+    layout_id = state.state_data.get("layout_id")
+    if not isinstance(layout_id, int):
+        await _clear_state()
+        await session.commit()
+        await update.effective_message.reply_text("按钮状态异常，请重新进入页面。")
+        return
+
+    if state_type == "bottom_button_button_text_input":
+        try:
+            await update_layout_button(
+                session,
+                chat_id=target_chat_id,
+                layout_id=layout_id,
+                button_text=text_value,
+            )
+        except ValidationError as exc:
+            await update.effective_message.reply_text(str(exc))
+            return
+        await _clear_state()
+        await session.commit()
+        await _admin_handler._show_bottom_button_detail(update, context, target_chat_id, layout_id)
+        return
+
+    if state_type == "bottom_button_payload_input":
+        try:
+            await update_layout_button(
+                session,
+                chat_id=target_chat_id,
+                layout_id=layout_id,
+                payload_text=text_value,
+            )
+        except ValidationError as exc:
+            await update.effective_message.reply_text(str(exc))
+            return
+        await _clear_state()
+        await session.commit()
+        await _admin_handler._show_bottom_button_detail(update, context, target_chat_id, layout_id)
+        return
+
+    await update.effective_message.reply_text("当前底部按钮配置状态不支持该输入，请重新进入配置页面。")
+
+
+async def handle_game_input(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    session,
+    state,
+    message_text: str,
+) -> None:
+    if update.effective_user is None or update.effective_message is None:
+        return
+    target_chat_id = state.state_data.get("target_chat_id", state.chat_id)
+    if not isinstance(target_chat_id, int):
+        await update.effective_message.reply_text("游戏配置状态异常，请重新进入页面。")
+        return
+
+    async def _clear_state() -> None:
+        await clear_user_state(session, chat_id=target_chat_id, user_id=update.effective_user.id)
+        await clear_user_state(session, chat_id=update.effective_user.id, user_id=update.effective_user.id)
+
+    value = message_text.strip()
+    state_type = str(state.state_type)
+    try:
+        if state_type == "game_wait_rake_ratio":
+            await update_game_setting(session, target_chat_id, rake_ratio=parse_game_ratio(value))
+        elif state_type == "game_wait_rake_owner":
+            await update_game_setting(session, target_chat_id, rake_owner_user_id=await resolve_game_rake_owner(session, value))
+        elif state_type == "game_wait_auto_start_time":
+            await update_game_setting(session, target_chat_id, auto_start_time=validate_game_hhmm(value))
+        elif state_type == "game_wait_auto_stop_time":
+            await update_game_setting(session, target_chat_id, auto_stop_time=validate_game_hhmm(value))
+        else:
+            await update.effective_message.reply_text("当前游戏配置状态不支持该输入，请重新进入配置页面。")
+            return
+    except ValidationError as exc:
+        await update.effective_message.reply_text(str(exc))
+        return
+    await _clear_state()
+    await session.commit()
+    await _admin_handler._show_game_menu(update, context, target_chat_id)
+
+
+async def handle_guess_input(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    session,
+    state,
+    message_text: str,
+) -> None:
+    if update.effective_user is None or update.effective_message is None:
+        return
+    target_chat_id = state.state_data.get("target_chat_id", state.chat_id)
+    if not isinstance(target_chat_id, int):
+        await update.effective_message.reply_text("竞猜配置状态异常，请重新进入页面。")
+        return
+
+    state_type = str(state.state_type)
+    draft = dict(state.state_data or {})
+    value = message_text.strip()
+
+    async def _save_draft(next_type: str = "guess_wait_title") -> None:
+        await clear_user_state(session, chat_id=target_chat_id, user_id=update.effective_user.id)
+        await set_user_state(
+            session,
+            chat_id=update.effective_user.id,
+            user_id=update.effective_user.id,
+            state_type=next_type,
+            state_data=draft,
+        )
+
+    if state_type == "guess_wait_rake_ratio":
+        try:
+            await update_guess_setting(session, target_chat_id, rake_ratio=parse_guess_ratio(value))
+        except ValidationError as exc:
+            await update.effective_message.reply_text(str(exc))
+            return
+        await clear_user_state(session, chat_id=update.effective_user.id, user_id=update.effective_user.id)
+        await session.commit()
+        await _admin_handler._show_guess_settings(update, context, target_chat_id)
+        return
+
+    if state_type == "guess_wait_rake_owner":
+        try:
+            await update_guess_setting(session, target_chat_id, rake_owner_user_id=await resolve_guess_user_id(session, value))
+        except ValidationError as exc:
+            await update.effective_message.reply_text(str(exc))
+            return
+        await clear_user_state(session, chat_id=update.effective_user.id, user_id=update.effective_user.id)
+        await session.commit()
+        await _admin_handler._show_guess_settings(update, context, target_chat_id)
+        return
+
+    try:
+        if state_type == "guess_wait_title":
+            if not value:
+                await update.effective_message.reply_text("活动名字不能为空。")
+                return
+            draft["title"] = value[:128]
+        elif state_type == "guess_wait_cover":
+            if value == "清空":
+                draft["cover_file_id"] = None
+            elif update.effective_message.photo:
+                draft["cover_file_id"] = update.effective_message.photo[-1].file_id
+            else:
+                await update.effective_message.reply_text("请发送图片，或发送“清空”。")
+                return
+        elif state_type == "guess_wait_description":
+            draft["description"] = value
+        elif state_type == "guess_wait_banker":
+            banker_user_id = await resolve_guess_user_id(session, value)
+            draft["banker_user_id"] = banker_user_id
+            draft["mode"] = "banker" if banker_user_id else "no_banker"
+        elif state_type == "guess_wait_pool":
+            if not re.fullmatch(r"\d+", value):
+                await update.effective_message.reply_text("公共奖池必须是非负整数。")
+                return
+            draft["public_pool"] = int(value)
+        elif state_type == "guess_wait_options":
+            draft["options"] = parse_guess_options(value)
+        elif state_type == "guess_wait_command":
+            if not value:
+                await update.effective_message.reply_text("群内指令不能为空。")
+                return
+            draft["command_keyword"] = value[:32]
+        elif state_type == "guess_wait_deadline":
+            draft["deadline_at"] = parse_guess_deadline(value).isoformat()
+        else:
+            await update.effective_message.reply_text("当前竞猜配置状态不支持该输入，请重新进入配置页面。")
+            return
+    except ValidationError as exc:
+        await update.effective_message.reply_text(str(exc))
+        return
+
+    await _save_draft()
+    await session.commit()
+    await _admin_handler._show_guess_create_menu(update, context, target_chat_id, draft)
+
+
+async def handle_engagement_input(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    session,
+    state,
+    message_text: str,
+) -> None:
+    if update.effective_user is None or update.effective_message is None:
+        return
+    target_chat_id = state.state_data.get("target_chat_id", state.chat_id)
+    if not isinstance(target_chat_id, int):
+        await update.effective_message.reply_text("促活工具配置状态异常，请重新进入页面。")
+        return
+
+    async def _clear_state() -> None:
+        await clear_user_state(session, chat_id=target_chat_id, user_id=update.effective_user.id)
+        await clear_user_state(session, chat_id=update.effective_user.id, user_id=update.effective_user.id)
+
+    state_type = str(state.state_type)
+    value = message_text.strip()
+
+    try:
+        if state_type == "engagement_wait_egg_template":
+            event = await update_egg_event_from_template(
+                session,
+                target_chat_id,
+                value,
+                event_id=state.state_data.get("event_id"),
+            )
+            await _clear_state()
+            await session.commit()
+            await _admin_handler._show_engagement_egg(update, context, target_chat_id, event.id)
+            return
+        if state_type == "engagement_wait_chat_target":
+            if not re.fullmatch(r"\d+", value):
+                await update.effective_message.reply_text("发言达标数量必须是正整数。")
+                return
+            await update_engagement_chat_reward(session, target_chat_id, daily_message_target=max(int(value), 1))
+            await _clear_state()
+            await session.commit()
+            await _admin_handler._show_engagement_chat_reward(update, context, target_chat_id)
+            return
+        if state_type == "engagement_wait_chat_plan":
+            await update_engagement_chat_reward(session, target_chat_id, reward_points_plan=parse_engagement_reward_plan(value))
+            await _clear_state()
+            await session.commit()
+            await _admin_handler._show_engagement_chat_reward(update, context, target_chat_id)
+            return
+        if state_type == "engagement_wait_chat_command":
+            if not value:
+                await update.effective_message.reply_text("领奖口令不能为空。")
+                return
+            await update_engagement_chat_reward(session, target_chat_id, command_keyword=value[:32])
+            await _clear_state()
+            await session.commit()
+            await _admin_handler._show_engagement_chat_reward(update, context, target_chat_id)
+            return
+    except ValidationError as exc:
+        await update.effective_message.reply_text(str(exc))
+        return
+
+    await update.effective_message.reply_text("当前促活工具配置状态不支持该输入，请重新进入配置页面。")
+
+
 def _get_action_label(action: str) -> str:
     """获取惩罚动作标签"""
     labels = {
@@ -4667,6 +7373,76 @@ def _get_action_label(action: str) -> str:
         "ban": "封禁",
     }
     return labels.get(action, action)
+
+
+def _normalize_mall_order_status(raw_status: str) -> str:
+    normalized = (raw_status or "").strip().lower()
+    mapping = {
+        "a": "all",
+        "c": "created",
+        "f": "fulfilled",
+        "x": "canceled",
+        "r": "refunded",
+        "all": "all",
+        "created": "created",
+        "fulfilled": "fulfilled",
+        "canceled": "canceled",
+        "refunded": "refunded",
+    }
+    return mapping.get(normalized, "all")
+
+
+def _normalize_car_review_report_status(raw_status: str) -> str:
+    normalized = (raw_status or "").strip().lower()
+    mapping = {
+        "0": "all",
+        "p": "pending",
+        "a": "approved",
+        "u": "published",
+        "r": "rejected",
+        "all": "all",
+        "pending": "pending",
+        "approved": "approved",
+        "published": "published",
+        "rejected": "rejected",
+    }
+    return mapping.get(normalized, "all")
+
+
+def _car_review_report_status_code(status: str) -> str:
+    mapping = {
+        "all": "0",
+        "pending": "p",
+        "approved": "a",
+        "published": "u",
+        "rejected": "r",
+    }
+    return mapping.get((status or "").strip().lower(), "0")
+
+
+def _normalize_gfw_audit_result(raw: str) -> str:
+    normalized = (raw or "").strip().lower()
+    mapping = {
+        "a": "all",
+        "s": "success",
+        "k": "skipped",
+        "f": "failed",
+        "all": "all",
+        "success": "success",
+        "skipped": "skipped",
+        "failed": "failed",
+    }
+    return mapping.get(normalized, "all")
+
+
+def _gfw_audit_result_code(result: str) -> str:
+    mapping = {
+        "all": "a",
+        "success": "s",
+        "skipped": "k",
+        "failed": "f",
+    }
+    return mapping.get((result or "").strip().lower(), "a")
 
 
 def _garage_forward_mode_label(mode: str) -> str:

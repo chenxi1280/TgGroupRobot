@@ -10,7 +10,12 @@ from bot.keyboards.integration.renewal import renewal_entry_keyboard
 from bot.models.enums import ConversationStateType
 from bot.services.core.module_settings_service import ModuleSettingsService
 from bot.services.integration.chat_group_service import get_user_current_chat
-from bot.services.integration.renewal_service import format_renewal_entry_text, get_renewal_snapshot
+from bot.services.integration.renewal_service import (
+    format_renewal_entry_text,
+    get_renewal_snapshot,
+    mask_card_code,
+    redeem_renewal_card,
+)
 from bot.services.state.conversation_state_service import ConversationStateService
 from bot.utils.callback_parser import CallbackParser
 from bot.utils.telegram_errors import (
@@ -211,18 +216,32 @@ async def handle_renewal_card_input(
         await update.effective_message.reply_text("❌ 卡密不能为空")
         return
 
-    masked = card_code[:4] + "*" * max(len(card_code) - 4, 0)
+    masked = mask_card_code(card_code)
     log.info(
         "renewal_card_received",
         user_id=update.effective_user.id,
         chat_id=target_chat_id,
         masked_card=masked,
     )
-    if hasattr(session, "commit"):
-        await session.commit()
-    await update.effective_message.reply_text(
-        "卡密核销功能尚未接入，本轮已先保留续费入口和联系购买流程。"
-    )
+    try:
+        result = await redeem_renewal_card(
+            session,
+            chat_id=target_chat_id,
+            operator_user_id=update.effective_user.id,
+            card_code=card_code,
+        )
+        if hasattr(session, "commit"):
+            await session.commit()
+    except Exception as exc:
+        if hasattr(session, "rollback"):
+            await session.rollback()
+        log.exception("renewal_card_redeem_failed", chat_id=target_chat_id, error=str(exc))
+        await update.effective_message.reply_text(f"❌ {build_public_error_text(exc)}")
+        await _show_menu(update, context, chat_id=target_chat_id)
+        return
+
+    prefix = "✅" if result.success else "❌"
+    await update.effective_message.reply_text(f"{prefix} {result.message}")
     await _show_menu(update, context, chat_id=target_chat_id)
 
 

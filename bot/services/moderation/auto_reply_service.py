@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import re
 
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.models.core import AutoReplyRule
 from bot.models.enums import AutoReplyMatchType
 from bot.services.base import ServiceBase
+from bot.services.scheduled_message_service import ScheduledMessageService
 from bot.services.shared.result import CreateResult, MatchResult
 
 
@@ -18,6 +20,11 @@ async def create_auto_reply_rule(
     reply_content: str,
     match_type: str = AutoReplyMatchType.contains.value,
     case_sensitive: bool = False,
+    delete_source: bool = False,
+    delete_reply_delay_seconds: int = 0,
+    cover_media_type: str | None = None,
+    cover_media_file_id: str | None = None,
+    buttons: list | None = None,
 ) -> CreateResult:
     """
     创建自动回复规则
@@ -42,6 +49,16 @@ async def create_auto_reply_rule(
     if not reply_content or not reply_content.strip():
         return CreateResult(success=False, reason="invalid_reply")
 
+    if delete_reply_delay_seconds < 0:
+        return CreateResult(success=False, reason="invalid_delete_delay")
+
+    normalized_buttons: list[list[dict[str, str]]] = []
+    if buttons:
+        try:
+            normalized_buttons = ScheduledMessageService.normalize_buttons_config(buttons)
+        except Exception:
+            return CreateResult(success=False, reason="invalid_buttons")
+
     # 验证匹配类型
     valid_types = [e.value for e in AutoReplyMatchType]
     if match_type not in valid_types:
@@ -55,17 +72,54 @@ async def create_auto_reply_rule(
             except re.error:
                 return CreateResult(success=False, reason="invalid_keywords")
 
+    sort_order = await get_next_sort_order(session, chat_id)
     rule = AutoReplyRule(
         chat_id=chat_id,
         created_by_user_id=created_by_user_id,
         keywords=[k.strip() for k in keywords],
         reply_content=reply_content,
+        cover_media_type=cover_media_type,
+        cover_media_file_id=cover_media_file_id,
+        buttons=normalized_buttons,
         match_type=match_type,
         case_sensitive=case_sensitive,
+        sort_order=sort_order,
+        delete_source=delete_source,
+        delete_reply_delay_seconds=delete_reply_delay_seconds,
     )
     session.add(rule)
     await session.flush()
     return CreateResult(success=True, reason="ok", entity=rule, entity_id=rule.id)
+
+
+async def update_auto_reply_rule(
+    session: AsyncSession,
+    rule_id: int,
+    **updates,
+) -> AutoReplyRule | None:
+    rule = await get_auto_reply_rule(session, rule_id)
+    if rule is None:
+        return None
+
+    if "keywords" in updates and updates["keywords"] is not None:
+        keywords = [item.strip() for item in updates["keywords"] if str(item).strip()]
+        if not keywords:
+            raise ValueError("关键词不能为空")
+        updates["keywords"] = keywords
+
+    if "reply_content" in updates and updates["reply_content"] is not None:
+        if not str(updates["reply_content"]).strip():
+            raise ValueError("回复内容不能为空")
+
+    if "delete_reply_delay_seconds" in updates and updates["delete_reply_delay_seconds"] is not None:
+        if int(updates["delete_reply_delay_seconds"]) < 0:
+            raise ValueError("延迟删除必须大于等于 0")
+
+    if "buttons" in updates and updates["buttons"] is not None:
+        updates["buttons"] = ScheduledMessageService.normalize_buttons_config(updates["buttons"])
+
+    await ServiceBase._update_entity(session, rule, updates)
+    return rule
 
 
 async def get_auto_reply_rule(session: AsyncSession, rule_id: int) -> AutoReplyRule | None:
@@ -98,14 +152,22 @@ async def get_chat_auto_reply_rules(
     Returns:
         自动回复规则列表
     """
-    return await ServiceBase._get_list(
-        session,
-        AutoReplyRule,
-        filters={"chat_id": chat_id},
-        active_only=active_only,
-        order_by="created_at",
-        descending=True,
+    stmt = (
+        select(AutoReplyRule)
+        .where(AutoReplyRule.chat_id == chat_id)
+        .order_by(AutoReplyRule.sort_order.asc(), AutoReplyRule.id.asc())
     )
+    if active_only:
+        stmt = stmt.where(AutoReplyRule.is_active == True)
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def get_next_sort_order(session: AsyncSession, chat_id: int) -> int:
+    stmt = select(func.max(AutoReplyRule.sort_order)).where(AutoReplyRule.chat_id == chat_id)
+    result = await session.execute(stmt)
+    max_sort = result.scalar_one_or_none()
+    return int(max_sort or 0) + 1
 
 
 async def toggle_auto_reply_rule(
@@ -151,6 +213,37 @@ async def delete_auto_reply_rule(
     if not rule:
         return False
     await ServiceBase._delete_entity(session, rule)
+    return True
+
+
+async def move_auto_reply_rule(
+    session: AsyncSession,
+    *,
+    chat_id: int,
+    rule_id: int,
+    direction: str,
+) -> bool:
+    rules = await get_chat_auto_reply_rules(session, chat_id)
+    current_index = next((idx for idx, rule in enumerate(rules) if rule.id == rule_id), None)
+    if current_index is None:
+        return False
+
+    if direction == "up":
+        swap_index = current_index - 1
+    elif direction == "down":
+        swap_index = current_index + 1
+    else:
+        return False
+
+    if swap_index < 0 or swap_index >= len(rules):
+        return False
+
+    current_rule = rules[current_index]
+    swap_rule = rules[swap_index]
+    current_order = current_rule.sort_order
+    current_rule.sort_order = swap_rule.sort_order
+    swap_rule.sort_order = current_order
+    await session.flush()
     return True
 
 

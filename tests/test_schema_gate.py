@@ -66,11 +66,19 @@ def _full_tables() -> dict[str, dict]:
                 "message_points", "message_points_daily_limit", "message_min_length",
                 "invite_points_enabled", "invite_points", "invite_points_daily_limit",
                 "invite_link_enabled", "invite_link_notify", "invite_link_expire_days",
-                "invite_link_max_joins", "invite_link_user_limit", "auto_delete_enabled",
+                "invite_link_max_joins", "invite_link_user_limit", "invite_link_mode",
+                "invite_link_cover_media_type", "invite_link_cover_file_id",
+                "invite_link_text_template", "invite_link_buttons", "auto_delete_enabled",
                 "auto_delete_join", "auto_delete_left", "auto_delete_pinned", "auto_delete_avatar",
                 "auto_delete_title", "auto_delete_anonymous", "points_alias", "points_rank_alias",
                 "verification_enabled", "verification_mode", "verification_timeout_seconds",
                 "verification_restrict_can_send", "verification_timeout_action", "verification_mute_duration",
+                "join_spam_guard_enabled", "join_spam_detect_rules_count", "join_spam_send_invalid_msg_enabled",
+                "join_spam_mute_member_enabled", "join_spam_kick_member_enabled", "join_spam_tip_delete_after_seconds",
+                "join_self_review_enabled", "join_self_review_timeout_seconds", "join_self_review_timeout_action",
+                "join_self_review_wrong_action", "join_burst_enabled", "join_burst_window_seconds",
+                "join_burst_threshold_count", "join_burst_mute_enabled", "join_burst_kick_enabled",
+                "join_burst_tip_mode",
                 "moderation_enabled", "moderation_block_links", "moderation_action", "moderation_keywords",
                 "ads_enabled", "monetization_enabled", "welcome_enabled", "welcome_message",
                 "anti_flood_enabled", "anti_flood_messages", "anti_flood_seconds", "anti_flood_action",
@@ -164,6 +172,17 @@ def _full_tables() -> dict[str, dict]:
         "verification_challenges": {"columns": {"id", "chat_id", "user_id", "token", "expires_at", "solved", "verification_type", "question", "answer", "timeout_handled", "created_at"}},
         "subscription_plans": {"columns": {"id", "code", "name", "price_cents", "duration_days", "feature_flags", "created_at"}},
         "chat_subscriptions": {"columns": {"id", "chat_id", "plan_id", "status", "start_at", "end_at", "created_at"}},
+        "renewal_card_keys": {
+            "columns": {
+                "id", "card_key_hash", "duration_seconds", "expires_at", "used",
+                "used_by_chat_id", "used_by_user_id", "used_at", "created_at",
+            },
+            "uniques": [{"name": "uq_renewal_card_key_hash", "column_names": ["card_key_hash"]}],
+        },
+        "renewal_audit_logs": {
+            "columns": {"id", "chat_id", "operator_user_id", "action", "reason", "payload", "created_at"},
+            "indexes": [{"name": "ix_renewal_audit_logs_created_at", "column_names": ["created_at"], "unique": False}],
+        },
         "ad_campaigns": {
             "columns": {
                 "id", "chat_id", "created_by_user_id", "title", "content", "image_file_id", "image_url",
@@ -174,15 +193,23 @@ def _full_tables() -> dict[str, dict]:
         "conversation_states": {"columns": {"id", "chat_id", "user_id", "state_type", "state_data", "created_at", "updated_at"}},
         "lotteries": {
             "columns": {
-                "id", "chat_id", "created_by_user_id", "title", "description", "draw_time", "prizes",
-                "draw_mode", "status", "message_id", "min_points", "max_participants", "participation_cost",
-                "join_start_time", "join_end_time", "requirement_days", "created_at", "drawn_at",
+                "id", "chat_id", "created_by_user_id", "title", "description", "lottery_type",
+                "draw_time", "prizes", "draw_mode", "status", "message_id", "qualification_rules",
+                "min_points", "max_participants", "participation_cost", "join_start_time",
+                "join_end_time", "requirement_days", "created_at", "drawn_at",
             },
         },
         "lottery_participants": {"columns": {"id", "lottery_id", "user_id", "points_balance", "created_at"}},
         "lottery_winners": {"columns": {"id", "lottery_id", "user_id", "prize_name", "prize_index", "points_reward", "created_at"}},
         "scheduled_messages": {"columns": {"id", "chat_id", "created_by_user_id", "content", "schedule_type", "interval_minutes", "is_active", "next_send_time", "last_sent_at", "send_count", "repeat_enabled", "created_at", "updated_at"}},
-        "auto_reply_rules": {"columns": {"id", "chat_id", "created_by_user_id", "keywords", "reply_content", "match_type", "is_active", "match_count", "case_sensitive", "created_at", "updated_at"}},
+        "auto_reply_rules": {
+            "columns": {
+                "id", "chat_id", "created_by_user_id", "keywords", "reply_content",
+                "cover_media_type", "cover_media_file_id", "buttons", "match_type",
+                "sort_order", "delete_source", "delete_reply_delay_seconds",
+                "is_active", "match_count", "case_sensitive", "created_at", "updated_at",
+            },
+        },
         "banned_words": {"columns": {"id", "chat_id", "created_by_user_id", "word", "match_type", "action", "mute_duration", "notify", "notify_message", "is_active", "trigger_count", "case_sensitive", "created_at", "updated_at"}},
         "invite_links": {"columns": {"id", "chat_id", "created_by_user_id", "invite_link", "name", "status", "member_limit", "member_count", "expire_date", "creates_join_request", "created_at", "updated_at"}},
         "invite_tracking": {"columns": {"id", "chat_id", "inviter_user_id", "invited_user_id", "invite_link_id", "points_awarded", "joined_at", "created_at"}},
@@ -308,6 +335,127 @@ def _full_tables() -> dict[str, dict]:
         },
         "car_review_audit_logs": {
             "columns": {"id", "report_id", "chat_id", "action", "operator_user_id", "payload", "created_at"},
+        },
+        "auction_settings": {
+            "columns": {
+                "chat_id", "enabled", "pin_message_enabled", "auto_extend_enabled",
+                "create_permission", "points_mode", "updated_at",
+            },
+        },
+        "lottery_settings": {
+            "columns": {
+                "chat_id", "publish_pin_enabled", "result_pin_enabled", "delete_join_message_enabled", "updated_at",
+            },
+        },
+        "auction_items": {
+            "columns": {
+                "id", "chat_id", "creator_user_id", "source_message_id", "title",
+                "start_price", "current_price", "status", "start_at", "end_at",
+                "winner_user_id", "winner_bid_id", "last_announce_message_id",
+                "created_at", "updated_at",
+            },
+        },
+        "auction_bids": {
+            "columns": {"id", "auction_id", "chat_id", "bid_user_id", "bid_amount", "created_at"},
+        },
+        "bottom_button_settings": {
+            "columns": {
+                "chat_id", "enabled", "header_text", "generated_message_id",
+                "repeat_generate_enabled", "repeat_interval_seconds",
+                "last_generated_at", "updated_at",
+            },
+        },
+        "bottom_button_layouts": {
+            "columns": {
+                "id", "chat_id", "row_no", "col_no", "button_text", "payload_text",
+                "action_mode", "sort_key", "created_at", "updated_at",
+            },
+            "uniques": [{"name": "uq_bottom_button_layout_chat_pos", "column_names": ["chat_id", "row_no", "col_no"]}],
+        },
+        "game_settings": {
+            "columns": {
+                "chat_id", "k3_enabled", "blackjack_enabled", "rake_ratio", "rake_owner_user_id",
+                "auto_schedule_enabled", "auto_start_time", "auto_stop_time",
+                "delete_game_message_mode", "k3_panel_message_id", "blackjack_panel_message_id", "updated_at",
+            },
+        },
+        "game_rounds": {
+            "columns": {
+                "id", "chat_id", "game_type", "creator_user_id", "status", "settle_at",
+                "announcement_message_id", "result_data", "created_at", "updated_at",
+            },
+        },
+        "game_participants": {
+            "columns": {
+                "id", "round_id", "chat_id", "user_id", "bet_points", "status",
+                "choice_data", "payout_points", "created_at", "updated_at",
+            },
+            "uniques": [{"name": "uq_game_participant_round_user", "column_names": ["round_id", "user_id"]}],
+        },
+        "guess_settings": {
+            "columns": {"chat_id", "rake_ratio", "rake_owner_user_id", "delete_message_mode", "updated_at"},
+        },
+        "guess_events": {
+            "columns": {
+                "id", "chat_id", "creator_user_id", "title", "cover_file_id", "description",
+                "mode", "banker_user_id", "public_pool", "options_json", "command_keyword",
+                "deadline_at", "allow_repeat_bet", "status", "winner_option",
+                "announcement_message_id", "created_at", "updated_at",
+            },
+        },
+        "guess_bets": {
+            "columns": {"id", "event_id", "chat_id", "user_id", "option_key", "bet_points", "created_at"},
+        },
+        "engagement_settings": {
+            "columns": {"chat_id", "updated_at"},
+        },
+        "engagement_egg": {
+            "columns": {
+                "chat_id", "enabled", "answer", "clues", "clue_rewards", "clue_times",
+                "winner_user_id", "status", "published_clue_count", "updated_at",
+            },
+        },
+        "engagement_egg_events": {
+            "columns": {
+                "id", "chat_id", "title", "enabled", "answer", "clues", "clue_rewards",
+                "clue_times", "winner_user_id", "status", "published_clue_count",
+                "created_at", "updated_at",
+            },
+        },
+        "engagement_egg_history": {
+            "columns": {
+                "id", "chat_id", "event_id", "title", "answer", "winner_user_id", "reward_points", "status",
+                "published_clue_count", "snapshot_data", "created_at",
+            },
+        },
+        "engagement_chat_reward": {
+            "columns": {
+                "chat_id", "enabled", "reward_type", "daily_message_target",
+                "reward_points_plan", "after_7d_mode", "command_keyword", "updated_at",
+            },
+        },
+        "engagement_chat_stats": {
+            "columns": {
+                "id", "chat_id", "user_id", "biz_date", "message_count",
+                "streak_days", "reward_claimed", "rewarded_points", "updated_at",
+            },
+            "uniques": [{"name": "uq_engagement_chat_stats_daily", "column_names": ["chat_id", "user_id", "biz_date"]}],
+        },
+        "account_inherit_settings": {
+            "columns": {"chat_id", "enabled", "token_expire_minutes", "updated_at"},
+        },
+        "account_inherit_tokens": {
+            "columns": {
+                "id", "chat_id", "old_user_id", "token_hash", "expires_at",
+                "used", "used_by_user_id", "used_at", "created_at",
+            },
+            "uniques": [{"name": "uq_account_inherit_token_hash", "column_names": ["token_hash"]}],
+        },
+        "account_inherit_audit": {
+            "columns": {
+                "id", "chat_id", "old_user_id", "new_user_id",
+                "asset_snapshot", "result", "reason", "created_at",
+            },
         },
     }
 
