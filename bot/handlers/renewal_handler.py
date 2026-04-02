@@ -207,7 +207,6 @@ async def handle_renewal_card_input(
         return
 
     target_chat_id = state.state_data.get("target_chat_id", state.chat_id) if state.state_data else state.chat_id
-    await ConversationStateService.clear(session, target_chat_id, update.effective_user.id)
 
     card_code = (message_text or "").strip()
     if not card_code:
@@ -242,6 +241,12 @@ async def handle_renewal_card_input(
 
     prefix = "✅" if result.success else "❌"
     await update.effective_message.reply_text(f"{prefix} {result.message}")
+    if not result.success:
+        await _show_menu(update, context, chat_id=target_chat_id)
+        return
+    await ConversationStateService.clear(session, target_chat_id, update.effective_user.id)
+    if hasattr(session, "commit"):
+        await session.commit()
     await _show_menu(update, context, chat_id=target_chat_id)
 
 

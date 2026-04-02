@@ -113,6 +113,7 @@ async def test_renewal_code_message_handler_clears_state_and_redisplays(monkeypa
 async def test_renewal_code_message_handler_reports_failure_reason(monkeypatch) -> None:
     replies: list[tuple[str, dict]] = []
     shown: list[int] = []
+    clears: list[tuple[int, int]] = []
 
     update = SimpleNamespace(
         effective_message=SimpleNamespace(reply_text=_async_collector(replies)),
@@ -122,7 +123,7 @@ async def test_renewal_code_message_handler_reports_failure_reason(monkeypatch) 
     state = SimpleNamespace(chat_id=-1001, state_data={"target_chat_id": -1001})
 
     async def fake_clear(session, chat_id, user_id):
-        return None
+        clears.append((chat_id, user_id))
 
     async def fake_show(update, context, *, chat_id):
         shown.append(chat_id)
@@ -136,6 +137,7 @@ async def test_renewal_code_message_handler_reports_failure_reason(monkeypatch) 
 
     await renewal_handler.renewal_code_message_handler(update, context, object(), state, "ABC123")
 
+    assert clears == []
     assert shown == [-1001]
     assert replies == [("❌ 卡密已使用", {})]
 

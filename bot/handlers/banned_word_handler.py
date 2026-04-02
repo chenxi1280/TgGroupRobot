@@ -11,6 +11,7 @@ from bot.models.enums import BannedWordMatchType, ConversationStateType
 from bot.services.moderation.banned_word_service import (
     create_banned_word,
     delete_banned_word,
+    get_banned_word_in_chat,
     get_chat_banned_words,
     get_trigger_stats,
     match_banned_words,
@@ -23,6 +24,7 @@ from bot.services.core.permission_service import is_user_admin
 from bot.services.core.user_service import ensure_user
 from bot.utils.callback_parser import CallbackParser
 from bot.utils.chat_context import PrivateChatContext
+from bot.utils.telegram_errors import answer_callback_query_safely, mark_callback_query_answered
 
 
 log = structlog.get_logger(__name__)
@@ -396,7 +398,7 @@ class BannedWordToggleHandler(BaseHandler):
             return
 
         # 切换违禁词状态
-        success = await self._toggle_word(context, word_id)
+        success = await self._toggle_word(context, word_id, target_chat_id)
 
         if success:
             await self.message_helper.safe_answer(update, "状态已切换")
@@ -405,7 +407,12 @@ class BannedWordToggleHandler(BaseHandler):
         else:
             await self.message_helper.safe_answer(update, "违禁词不存在", show_alert=True)
 
-    async def _toggle_word(self, context: ContextTypes.DEFAULT_TYPE, word_id: int) -> bool:
+    async def _toggle_word(
+        self,
+        context: ContextTypes.DEFAULT_TYPE,
+        word_id: int,
+        target_chat_id: int,
+    ) -> bool:
         """切换违禁词状态
 
         Args:
@@ -417,7 +424,7 @@ class BannedWordToggleHandler(BaseHandler):
         """
         db = context.application.bot_data["db"]
         async with db.session_factory() as session:
-            success = await toggle_banned_word(session, word_id)
+            success = await toggle_banned_word(session, word_id, chat_id=target_chat_id)
             await session.commit()
         return success
 
@@ -502,7 +509,6 @@ async def banned_word_delete_callback(update: Update, context: ContextTypes.DEFA
     if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
         return
     q = update.callback_query
-    await q.answer()
 
     chat = update.effective_chat
     user = update.effective_user
@@ -527,22 +533,23 @@ async def banned_word_delete_callback(update: Update, context: ContextTypes.DEFA
             db: Database = context.application.bot_data["db"]
             target_chat_id = await ChatResolver.get_current_chat(db, user.id)
             if target_chat_id is None:
-                await q.answer("请先选择一个群组", show_alert=True)
+                await answer_callback_query_safely(update, "请先选择一个群组", show_alert=True)
                 return
     else:
         target_chat_id = chat.id
 
     if not await is_user_admin(context, target_chat_id, user.id):
-        await q.answer("没有该群组的管理权限", show_alert=True)
+        await answer_callback_query_safely(update, "没有该群组的管理权限", show_alert=True)
         return
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
-        success = await delete_banned_word(session, word_id)
+        success = await delete_banned_word(session, word_id, chat_id=target_chat_id)
         await session.commit()
 
     if success:
         await q.answer("违禁词已删除")
+        mark_callback_query_answered(update)
         # 重新显示列表
         async with db.session_factory() as session:
             words = await get_chat_banned_words(session, target_chat_id)
@@ -568,7 +575,7 @@ async def banned_word_delete_callback(update: Update, context: ContextTypes.DEFA
         from bot.keyboards.content.banned_word import banned_word_list_keyboard
         await q.edit_message_text(text, reply_markup=banned_word_list_keyboard(words, target_chat_id))
     else:
-        await q.answer("删除失败", show_alert=True)
+        await answer_callback_query_safely(update, "删除失败", show_alert=True)
 
 
 # ============================================

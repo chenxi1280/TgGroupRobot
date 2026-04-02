@@ -894,6 +894,7 @@ class AutoReplyRule(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)  # 是否激活
     match_count: Mapped[int] = mapped_column(Integer, default=0)  # 匹配次数统计
     case_sensitive: Mapped[bool] = mapped_column(Boolean, default=False)  # 是否区分大小写
+    stop_after_match: Mapped[bool] = mapped_column(Boolean, default=True)  # 命中后是否停止继续匹配
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC))
     updated_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True),

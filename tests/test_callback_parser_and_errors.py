@@ -92,3 +92,21 @@ async def test_mark_callback_query_answered_prevents_duplicate_answer() -> None:
     await answer_callback_query_safely(update, "不会再次发送", show_alert=True)
 
     assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_manual_answer_then_mark_prevents_safe_reanswer() -> None:
+    calls: list[tuple[str, bool]] = []
+
+    class FakeCallbackQuery:
+        id = "cb-manual"
+
+        async def answer(self, text: str = "", show_alert: bool = False) -> None:
+            calls.append((text, show_alert))
+
+    update = SimpleNamespace(callback_query=FakeCallbackQuery())
+    await update.callback_query.answer()
+    mark_callback_query_answered(update)
+    await answer_callback_query_safely(update, "后续提示", show_alert=True)
+
+    assert calls == [("", False)]

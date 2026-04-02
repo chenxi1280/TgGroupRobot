@@ -98,6 +98,19 @@ async def get_banned_word(session: AsyncSession, word_id: int) -> BannedWord | N
     return await ServiceBase._get_by_id(session, BannedWord, word_id)
 
 
+async def get_banned_word_in_chat(
+    session: AsyncSession,
+    chat_id: int,
+    word_id: int,
+) -> BannedWord | None:
+    """按群组作用域获取违禁词，避免跨群访问。"""
+    return await ServiceBase._get_by_filters(
+        session,
+        BannedWord,
+        {"id": word_id, "chat_id": chat_id},
+    )
+
+
 async def get_banned_word_by_content(
     session: AsyncSession,
     chat_id: int,
@@ -150,6 +163,8 @@ async def get_chat_banned_words(
 async def toggle_banned_word(
     session: AsyncSession,
     word_id: int,
+    *,
+    chat_id: int | None = None,
 ) -> bool:
     """
     切换违禁词激活状态
@@ -161,7 +176,11 @@ async def toggle_banned_word(
     Returns:
         是否切换成功
     """
-    word = await get_banned_word(session, word_id)
+    word = await (
+        get_banned_word_in_chat(session, chat_id, word_id)
+        if chat_id is not None
+        else get_banned_word(session, word_id)
+    )
     if not word:
         return False
     await ServiceBase._update_entity(
@@ -175,6 +194,8 @@ async def toggle_banned_word(
 async def delete_banned_word(
     session: AsyncSession,
     word_id: int,
+    *,
+    chat_id: int | None = None,
 ) -> bool:
     """
     删除违禁词
@@ -186,7 +207,11 @@ async def delete_banned_word(
     Returns:
         是否删除成功
     """
-    word = await get_banned_word(session, word_id)
+    word = await (
+        get_banned_word_in_chat(session, chat_id, word_id)
+        if chat_id is not None
+        else get_banned_word(session, word_id)
+    )
     if not word:
         return False
     await ServiceBase._delete_entity(session, word)

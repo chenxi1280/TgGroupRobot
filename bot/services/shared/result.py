@@ -111,6 +111,9 @@ class MatchResult(ServiceResult):
     reply_content: str | None = None
     """回复内容"""
 
+    matched_rules: list[Any] = field(default_factory=list)
+    """按顺序命中的规则列表"""
+
 
 @dataclass
 class ToggleResult(ServiceResult):

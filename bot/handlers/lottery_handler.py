@@ -561,27 +561,17 @@ class LotteryHandler(BaseHandler):
                 for p in participants:
                     p.user_info = users.get(p.user_id)
 
-                # 构建奖品列表
-                prize_list = []
-                for i, prize in enumerate(lottery.prizes):
-                    quantity = prize.get("quantity", 1)
-                    for j in range(quantity):
-                        prize_list.append({
-                            "prize_index": i * 10 + j,
-                            "name": prize["name"],
-                            "original_index": i,
-                        })
-
+                prize_count = sum(int(prize.get("quantity", 1)) for prize in lottery.prizes)
                 text = f"📋 手动选择中奖人\n\n"
                 text += f"抽奖: {lottery.title}\n"
                 text += f"参与人数: {len(participants)}\n"
-                text += f"奖品数量: {len(prize_list)}\n\n"
+                text += f"奖品数量: {prize_count}\n\n"
                 text += f"请为每个奖项选择中奖人："
 
                 await self.message_helper.safe_edit(
                     update,
                     text=text,
-                    reply_markup=manual_draw_summary_keyboard(lottery_id, prize_list),
+                    reply_markup=manual_draw_summary_keyboard(lottery.chat_id, lottery_id, lottery.prizes),
                 )
                 return
 
@@ -1089,23 +1079,26 @@ async def manual_draw_select_prize_callback(update: Update, context: ContextType
     chat = update.effective_chat
     user = update.effective_user
 
-    if not await is_user_admin(context, chat.id, user.id):
-        await _lottery_handler.message_helper.safe_edit(update, "需要管理员权限。")
-        return
-
     data = q.data or ""
     cb = CallbackParser.parse(data)
-    if cb.length() < 5:
+    if cb.length() < 6:
         return
 
-    lottery_id = cb.get_int(2)
-    prize_index = cb.get_int(3)
-    prize_name = cb.get(4)
+    target_chat_id = cb.get_int(2)
+    lottery_id = cb.get_int(3)
+    prize_index = cb.get_int(4)
+    prize_name = cb.get(5)
+    if target_chat_id is None or lottery_id is None or prize_index is None or not prize_name:
+        return
+
+    if not await is_user_admin(context, target_chat_id, user.id):
+        await _lottery_handler.message_helper.safe_edit(update, "需要管理员权限。")
+        return
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
         lottery = await get_lottery(session, lottery_id)
-        if not lottery:
+        if not lottery or lottery.chat_id != target_chat_id:
             await _lottery_handler.message_helper.safe_edit(update, "抽奖不存在。")
             await session.commit()
             return
@@ -1132,7 +1125,7 @@ async def manual_draw_select_prize_callback(update: Update, context: ContextType
     await _lottery_handler.message_helper.safe_edit(
         update,
         text=text,
-        reply_markup=manual_draw_prize_keyboard(lottery_id, prize_index, prize_name, participants),
+        reply_markup=manual_draw_prize_keyboard(target_chat_id, lottery_id, prize_index, prize_name, participants),
     )
 
 
@@ -1147,47 +1140,51 @@ async def manual_draw_select_winner_callback(update: Update, context: ContextTyp
     chat = update.effective_chat
     user = update.effective_user
 
-    if not await is_user_admin(context, chat.id, user.id):
+    data = q.data or ""
+    cb = CallbackParser.parse(data)
+    if cb.length() < 7:
+        return
+
+    target_chat_id = cb.get_int(2)
+    lottery_id = cb.get_int(3)
+    prize_index = cb.get_int(4)
+    winner_user_id = cb.get_int(5)
+    prize_name = cb.get(6)
+    if target_chat_id is None or lottery_id is None or prize_index is None or winner_user_id is None or not prize_name:
+        return
+
+    if not await is_user_admin(context, target_chat_id, user.id):
         await _lottery_handler.message_helper.safe_edit(update, "需要管理员权限。")
         return
 
-    data = q.data or ""
-    cb = CallbackParser.parse(data)
-    if cb.length() < 6:
-        return
-
-    lottery_id = cb.get_int(2)
-    prize_index = cb.get_int(3)
-    winner_user_id = cb.get_int(4)
-    prize_name = cb.get(5)
-
-    # 保存中奖人信息到状态
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
-        # 获取或创建手动开奖状态
+        lottery = await get_lottery(session, lottery_id)
+        if not lottery or lottery.chat_id != target_chat_id:
+            await _lottery_handler.message_helper.safe_edit(update, "抽奖不存在。")
+            await session.commit()
+            return
+
         state = await get_user_state(session, chat.id, user.id)
         if not state or state.state_type != "manual_draw":
             state = await set_user_state(session, chat.id, user.id, "manual_draw", {})
 
-        # 更新中奖人信息
-        winners = state.state_data.get("winners", {})
-        winners[prize_index] = {
+        winners = dict(state.state_data.get("winners", {}))
+        stmt = select(TgUser).where(TgUser.id == winner_user_id)
+        result = await session.execute(stmt)
+        winner_user = result.scalar_one_or_none()
+        winner_name = winner_user.first_name or winner_user.last_name or winner_user.username or f"用户{winner_user_id}" if winner_user else "未知用户"
+
+        winners[str(prize_index)] = {
             "user_id": winner_user_id,
             "prize_name": prize_name,
+            "name": winner_name,
         }
         state.state_data["winners"] = winners
         state.state_data["lottery_id"] = lottery_id
+        state.state_data["target_chat_id"] = target_chat_id
+        prizes = lottery.prizes
         await session.commit()
-
-        # 获取抽奖信息
-        lottery = await get_lottery(session, lottery_id)
-        prizes = lottery.prizes if lottery else []
-
-    # 获取中奖人名称
-    stmt = select(TgUser).where(TgUser.id == winner_user_id)
-    result = await session.execute(stmt)
-    winner_user = result.scalar_one_or_none()
-    winner_name = winner_user.first_name or winner_user.last_name or winner_user.username or f"用户{winner_user_id}" if winner_user else "未知用户"
 
     await _lottery_handler.message_helper.safe_edit(
         update,
@@ -1195,7 +1192,7 @@ async def manual_draw_select_winner_callback(update: Update, context: ContextTyp
         f"奖项: {prize_name}\n"
         f"中奖人: {winner_name}\n\n"
         f"请继续选择其他奖项或完成开奖。",
-        reply_markup=manual_draw_summary_keyboard_with_winners(lottery_id, prizes, winners),
+        reply_markup=manual_draw_summary_keyboard_with_winners(target_chat_id, lottery_id, prizes, winners),
     )
 
 
@@ -1210,13 +1207,16 @@ async def manual_draw_complete_callback(update: Update, context: ContextTypes.DE
     chat = update.effective_chat
     user = update.effective_user
 
-    if not await is_user_admin(context, chat.id, user.id):
-        await _lottery_handler.message_helper.safe_edit(update, "需要管理员权限。")
-        return
-
     data = q.data or ""
     cb = CallbackParser.parse(data)
-    lottery_id = cb.get_int(2, default=0)
+    target_chat_id = cb.get_int(2)
+    lottery_id = cb.get_int(3, default=0)
+    if target_chat_id is None:
+        return
+
+    if not await is_user_admin(context, target_chat_id, user.id):
+        await _lottery_handler.message_helper.safe_edit(update, "需要管理员权限。")
+        return
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
@@ -1234,7 +1234,7 @@ async def manual_draw_complete_callback(update: Update, context: ContextTypes.DE
             return
 
         lottery = await get_lottery(session, lottery_id)
-        if not lottery:
+        if not lottery or lottery.chat_id != target_chat_id:
             await _lottery_handler.message_helper.safe_edit(update, "抽奖不存在。")
             await session.commit()
             return
@@ -1318,23 +1318,26 @@ async def manual_draw_winner_page_callback(update: Update, context: ContextTypes
     chat = update.effective_chat
     user = update.effective_user
 
-    if not await is_user_admin(context, chat.id, user.id):
-        await _lottery_handler.message_helper.safe_edit(update, "需要管理员权限。")
-        return
-
     data = q.data or ""
     cb = CallbackParser.parse(data)
-    if cb.length() < 5:
+    if cb.length() < 6:
         return
 
-    lottery_id = cb.get_int(2)
-    prize_index = cb.get_int(3)
-    page = cb.get_int(4)
+    target_chat_id = cb.get_int(2)
+    lottery_id = cb.get_int(3)
+    prize_index = cb.get_int(4)
+    page = cb.get_int(5)
+    if target_chat_id is None or lottery_id is None or prize_index is None or page is None:
+        return
+
+    if not await is_user_admin(context, target_chat_id, user.id):
+        await _lottery_handler.message_helper.safe_edit(update, "需要管理员权限。")
+        return
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
         lottery = await get_lottery(session, lottery_id)
-        if not lottery:
+        if not lottery or lottery.chat_id != target_chat_id:
             await _lottery_handler.message_helper.safe_edit(update, "抽奖不存在。")
             await session.commit()
             return
@@ -1367,7 +1370,7 @@ async def manual_draw_winner_page_callback(update: Update, context: ContextTypes
     await _lottery_handler.message_helper.safe_edit(
         update,
         text=text,
-        reply_markup=manual_draw_prize_keyboard(lottery_id, prize_index, prize_name, participants, page),
+        reply_markup=manual_draw_prize_keyboard(target_chat_id, lottery_id, prize_index, prize_name, participants, page),
     )
 
 
@@ -1382,13 +1385,16 @@ async def manual_draw_menu_callback(update: Update, context: ContextTypes.DEFAUL
     chat = update.effective_chat
     user = update.effective_user
 
-    if not await is_user_admin(context, chat.id, user.id):
-        await _lottery_handler.message_helper.safe_edit(update, "需要管理员权限。")
-        return
-
     data = q.data or ""
     cb = CallbackParser.parse(data)
-    lottery_id = cb.get_int(2, default=0)
+    target_chat_id = cb.get_int(2)
+    lottery_id = cb.get_int(3, default=0)
+    if target_chat_id is None:
+        return
+
+    if not await is_user_admin(context, target_chat_id, user.id):
+        await _lottery_handler.message_helper.safe_edit(update, "需要管理员权限。")
+        return
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
@@ -1396,7 +1402,7 @@ async def manual_draw_menu_callback(update: Update, context: ContextTypes.DEFAUL
         winners = state.state_data.get("winners", {}) if state else {}
 
         lottery = await get_lottery(session, lottery_id)
-        if not lottery:
+        if not lottery or lottery.chat_id != target_chat_id:
             await _lottery_handler.message_helper.safe_edit(update, "抽奖不存在。")
             await session.commit()
             return
@@ -1411,7 +1417,7 @@ async def manual_draw_menu_callback(update: Update, context: ContextTypes.DEFAUL
             text=f"📋 手动选择中奖人\n\n"
             f"抽奖: {lottery.title}\n"
             f"已选择: {len(winners)}/{len(prizes)} 个奖项",
-            reply_markup=manual_draw_summary_keyboard_with_winners(lottery_id, prizes, winners),
+            reply_markup=manual_draw_summary_keyboard_with_winners(target_chat_id, lottery_id, prizes, winners),
         )
     else:
         await _lottery_handler.message_helper.safe_edit(
@@ -1419,7 +1425,7 @@ async def manual_draw_menu_callback(update: Update, context: ContextTypes.DEFAUL
             text=f"📋 手动选择中奖人\n\n"
             f"抽奖: {lottery.title}\n"
             f"请为每个奖项选择中奖人：",
-            reply_markup=manual_draw_summary_keyboard(lottery_id, prizes),
+            reply_markup=manual_draw_summary_keyboard(target_chat_id, lottery_id, prizes),
         )
 
 

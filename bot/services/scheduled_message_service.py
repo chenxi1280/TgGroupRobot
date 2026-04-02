@@ -274,6 +274,18 @@ class ScheduledMessageService(ServiceBase):
         return task
 
     @staticmethod
+    async def get_task_in_chat_or_404(
+        session: AsyncSession,
+        chat_id: int,
+        task_id: str | uuid.UUID,
+    ) -> ScheduledMessageTask:
+        """按群作用域获取任务，不允许跨群访问。"""
+        task = await ScheduledMessageService.get_task_by_id_or_404(session, task_id)
+        if task.chat_id != chat_id:
+            raise NotFoundError(f"群组 {chat_id} 下不存在任务 {task_id}")
+        return task
+
+    @staticmethod
     async def list_tasks(
         session,
         chat_id: int,

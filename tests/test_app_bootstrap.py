@@ -1,0 +1,59 @@
+from __future__ import annotations
+
+from types import SimpleNamespace
+
+import bot.__main__ as app_main
+
+
+class _FakeBuilder:
+    def __init__(self) -> None:
+        self.concurrent_updates_value = None
+        self.token_value = None
+        self.request_value = None
+        self.get_updates_request_value = None
+        self.app = SimpleNamespace(bot_data={}, add_error_handler=lambda handler: None)
+
+    def token(self, token: str):
+        self.token_value = token
+        return self
+
+    def concurrent_updates(self, value: bool):
+        self.concurrent_updates_value = value
+        return self
+
+    def request(self, request):
+        self.request_value = request
+        return self
+
+    def get_updates_request(self, request):
+        self.get_updates_request_value = request
+        return self
+
+    def build(self):
+        return self.app
+
+
+def test_build_application_uses_serial_updates(monkeypatch):
+    fake_builder = _FakeBuilder()
+    settings = SimpleNamespace(
+        log_level="INFO",
+        database_url="postgresql+asyncpg://example",
+        proxy_url=None,
+        bot_token="token",
+    )
+    fake_db = object()
+
+    monkeypatch.setattr(app_main, "get_settings", lambda: settings)
+    monkeypatch.setattr(app_main, "configure_logging", lambda level: None)
+    monkeypatch.setattr(app_main, "create_database", lambda url: fake_db)
+    monkeypatch.setattr(app_main, "_register_commands", lambda app: None)
+    monkeypatch.setattr(app_main, "_register_routers", lambda app: None)
+    monkeypatch.setattr(app_main, "_register_common_handlers", lambda app: None)
+    monkeypatch.setattr(app_main.Application, "builder", staticmethod(lambda: fake_builder))
+
+    app = app_main.build_application()
+
+    assert app is fake_builder.app
+    assert fake_builder.concurrent_updates_value is False
+    assert app.bot_data["settings"] is settings
+    assert app.bot_data["db"] is fake_db

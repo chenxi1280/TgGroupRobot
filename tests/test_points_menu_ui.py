@@ -107,14 +107,14 @@ async def test_toggle_all_enabled_updates_three_existing_switches(monkeypatch):
         effective_chat=SimpleNamespace(type="private"),
     )
 
-    async def fake_safe_edit(update, text, reply_markup):
+    async def fake_safe_edit(q, text, reply_markup):
         captured["text"] = text
         captured["keyboard"] = reply_markup.inline_keyboard
 
     async def fake_get_chat_settings(session, chat_id: int):
         return session.settings
 
-    monkeypatch.setattr(points_config_handler._points_config_handler.message_helper, "safe_edit", fake_safe_edit)
+    monkeypatch.setattr(points_config_handler, "_safe_edit_message", fake_safe_edit)
     monkeypatch.setattr(points_config_handler, "get_chat_settings", fake_get_chat_settings)
 
     await points_config_handler._points_config_handler._handle_toggle(update, context, -1001, "all_enabled")
@@ -123,3 +123,74 @@ async def test_toggle_all_enabled_updates_three_existing_switches(monkeypatch):
     assert settings.message_points_enabled is True
     assert settings.invite_points_enabled is True
     assert "配置已更新" in captured["text"]
+
+
+@pytest.mark.asyncio
+async def test_points_config_home_answers_callback_only_once(monkeypatch):
+    settings = _build_settings()
+    session = _SessionContext(settings)
+    answers: list[tuple[str, bool]] = []
+    edits: list[tuple[str, dict]] = []
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(session)}))
+
+    async def fake_answer(text: str = "", show_alert: bool = False):
+        answers.append((text, show_alert))
+
+    async def fake_edit_message_text(text, **kwargs):
+        edits.append((text, kwargs))
+
+    async def fake_safe_edit(q, text, **kwargs):
+        await q.edit_message_text(text, **kwargs)
+
+    async def fake_get_chat_settings(session, chat_id: int):
+        return session.settings
+
+    q = SimpleNamespace(answer=fake_answer, edit_message_text=fake_edit_message_text, data="pts:home:-1001")
+    update = SimpleNamespace(
+        callback_query=q,
+        effective_chat=SimpleNamespace(type="private"),
+        effective_user=SimpleNamespace(id=1),
+    )
+
+    monkeypatch.setattr(points_config_handler, "_safe_edit_message", fake_safe_edit)
+    monkeypatch.setattr(points_config_handler, "get_chat_settings", fake_get_chat_settings)
+
+    await points_config_handler._points_config_handler.process(update, context, -1001)
+
+    assert len(answers) == 1
+    assert edits
+    assert edits[0][0].startswith("💰 主积分（基础版）")
+
+
+@pytest.mark.asyncio
+async def test_points_config_cancel_returns_to_config_page(monkeypatch):
+    settings = _build_settings()
+    session = _SessionContext(settings)
+    callback_query = SimpleNamespace()
+    edits: list[tuple[str, object]] = []
+
+    async def fake_edit_message_text(text, reply_markup=None):
+        edits.append((text, reply_markup))
+
+    callback_query.edit_message_text = fake_edit_message_text
+    context = SimpleNamespace(
+        user_data={
+            "points_edit_field": "sign_points",
+            "points_edit_chat_id": -1001,
+        },
+        application=SimpleNamespace(bot_data={"db": _FakeDb(session)}),
+    )
+    update = SimpleNamespace(callback_query=callback_query)
+
+    async def fake_get_chat_settings(session, chat_id: int):
+        assert chat_id == -1001
+        return session.settings
+
+    monkeypatch.setattr(points_config_handler, "get_chat_settings", fake_get_chat_settings)
+
+    result = await points_config_handler.points_config_cancel_callback(update, context)
+
+    assert result == points_config_handler.ConversationHandler.END
+    assert context.user_data == {}
+    assert edits
+    assert edits[0][0] == "💰 积分配置"

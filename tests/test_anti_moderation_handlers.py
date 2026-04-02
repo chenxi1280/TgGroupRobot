@@ -5,8 +5,10 @@ from types import SimpleNamespace
 import pytest
 from telegram.ext import ApplicationHandlerStop
 
+import bot.handlers.banned_word_handler as banned_word_handler
 import bot.handlers.anti_flood_handler as anti_flood_handler
 import bot.handlers.anti_spam_handler as anti_spam_handler
+from bot.services.moderation import banned_word_service
 from bot.services.moderation.anti_spam_service import SpamViolation
 
 
@@ -197,3 +199,112 @@ async def test_anti_flood_handler_records_final_action(monkeypatch):
     assert recorded[0]["action"] == "delete"
     assert executed[0]["args"][3] == "delete"
     assert session.commits == 2
+
+
+@pytest.mark.asyncio
+async def test_banned_word_toggle_and_delete_are_chat_scoped(monkeypatch):
+    session = _Session()
+    update = _build_update(chat_id=-100123)
+    context = _build_context(session)
+
+    class _Q:
+        data = "banned_word_delete_12:-100123"
+
+        def __init__(self) -> None:
+            self.answers: list[tuple[str, bool]] = []
+            self.edits: list[str] = []
+
+        async def answer(self, text: str = "", show_alert: bool = False) -> None:
+            self.answers.append((text, show_alert))
+
+        async def edit_message_text(self, text: str, reply_markup=None, parse_mode=None) -> None:
+            self.edits.append(text)
+
+    q = _Q()
+    update.callback_query = q
+
+    deleted_calls: list[dict[str, object]] = []
+    toggled_calls: list[dict[str, object]] = []
+
+    async def fake_delete_banned_word(session, word_id: int, *, chat_id: int | None = None):
+        deleted_calls.append({"word_id": word_id, "chat_id": chat_id})
+        return True
+
+    async def fake_toggle_banned_word(session, word_id: int, *, chat_id: int | None = None):
+        toggled_calls.append({"word_id": word_id, "chat_id": chat_id})
+        return True
+
+    async def fake_get_chat_banned_words(session, chat_id: int, active_only: bool = False):
+        assert chat_id == -100123
+        return []
+
+    async def fake_get_trigger_stats(session, chat_id: int):
+        assert chat_id == -100123
+        return 0
+
+    async def fake_is_user_admin(*args, **kwargs):
+        return True
+
+    monkeypatch.setattr(banned_word_handler, "delete_banned_word", fake_delete_banned_word)
+    monkeypatch.setattr(banned_word_handler, "toggle_banned_word", fake_toggle_banned_word)
+    monkeypatch.setattr(banned_word_handler, "get_chat_banned_words", fake_get_chat_banned_words)
+    monkeypatch.setattr(banned_word_handler, "get_trigger_stats", fake_get_trigger_stats)
+    monkeypatch.setattr(banned_word_handler, "is_user_admin", fake_is_user_admin)
+    async def fake_require_current_chat(*args, **kwargs):
+        return -100123
+
+    monkeypatch.setattr(banned_word_handler.PrivateChatContext, "require_current_chat", fake_require_current_chat)
+
+    async def fake_get_banned_word_in_chat(session, chat_id: int, word_id: int):
+        assert chat_id == -100123
+        assert word_id == 12
+        return SimpleNamespace(id=12, chat_id=chat_id, is_active=True, word="bad", match_type="contains", action="delete", notify=True)
+
+    monkeypatch.setattr(banned_word_service, "get_banned_word_in_chat", fake_get_banned_word_in_chat)
+
+    await banned_word_handler.banned_word_delete_callback(update, context)
+    assert deleted_calls == [{"word_id": 12, "chat_id": -100123}]
+    assert q.answers == [("违禁词已删除", False)]
+    assert q.edits
+
+    toggle = banned_word_handler.BannedWordToggleHandler()
+
+    async def fake_toggle_scoped(session, word_id: int, *, chat_id: int | None = None):
+        toggled_calls.append({"word_id": word_id, "chat_id": chat_id})
+        return True
+
+    monkeypatch.setattr(banned_word_handler, "toggle_banned_word", fake_toggle_scoped)
+    await toggle._toggle_word(context, 12, -100123)
+
+    assert toggled_calls == [{"word_id": 12, "chat_id": -100123}]
+
+
+@pytest.mark.asyncio
+async def test_banned_word_service_toggle_delete_use_chat_scope(monkeypatch):
+    scoped_calls: list[tuple[str, int, int]] = []
+
+    async def fake_get_banned_word_in_chat(session, chat_id: int, word_id: int):
+        scoped_calls.append(("get", chat_id, word_id))
+        return SimpleNamespace(id=word_id, chat_id=chat_id, is_active=True)
+
+    async def fake_delete(session, entity):
+        scoped_calls.append(("delete", entity.chat_id, entity.id))
+
+    async def fake_update(session, entity, updates):
+        scoped_calls.append(("update", entity.chat_id, entity.id))
+
+    monkeypatch.setattr(banned_word_service, "get_banned_word_in_chat", fake_get_banned_word_in_chat)
+    monkeypatch.setattr(banned_word_service.ServiceBase, "_delete_entity", fake_delete)
+    monkeypatch.setattr(banned_word_service.ServiceBase, "_update_entity", fake_update)
+
+    toggle_result = await banned_word_service.toggle_banned_word(None, 7, chat_id=-100123)
+    delete_result = await banned_word_service.delete_banned_word(None, 8, chat_id=-100123)
+
+    assert toggle_result is True
+    assert delete_result is True
+    assert scoped_calls == [
+        ("get", -100123, 7),
+        ("update", -100123, 7),
+        ("get", -100123, 8),
+        ("delete", -100123, 8),
+    ]

@@ -18,7 +18,7 @@ from bot.services.integration.account_inherit_service import (
 from bot.services.integration.chat_group_service import set_user_current_chat
 from bot.services.state.state_service import clear_user_state, set_user_state
 from bot.utils.callback_parser import CallbackParser
-from bot.utils.telegram_errors import answer_callback_query_safely
+from bot.utils.telegram_errors import answer_callback_query_safely, mark_callback_query_answered
 
 
 def _user_home_keyboard(chat_id: int) -> InlineKeyboardMarkup:
@@ -29,6 +29,13 @@ def _user_home_keyboard(chat_id: int) -> InlineKeyboardMarkup:
         ],
         [InlineKeyboardButton("🔙 返回", callback_data=f"inh:user:{chat_id}")],
     ])
+
+
+def _extract_inherit_chat_id(cb: CallbackParser) -> int | None:
+    action = cb.get(1)
+    if action == "token":
+        return cb.get_int_optional(3)
+    return cb.get_int_optional(2)
 
 
 async def _render_text(update: Update, text: str, reply_markup: InlineKeyboardMarkup) -> None:
@@ -79,9 +86,10 @@ async def account_inherit_callback(update: Update, context: ContextTypes.DEFAULT
     if update.callback_query is None or update.effective_user is None:
         return
     await update.callback_query.answer()
+    mark_callback_query_answered(update)
     cb = CallbackParser.parse(update.callback_query.data or "")
     action = cb.get(1)
-    chat_id = cb.get_int_optional(2)
+    chat_id = _extract_inherit_chat_id(cb)
     if chat_id is None:
         await answer_callback_query_safely(update, "❌ 群组参数无效", show_alert=True)
         return
@@ -115,7 +123,7 @@ async def account_inherit_callback(update: Update, context: ContextTypes.DEFAULT
             return
 
         if action == "token" and cb.get(2) == "gen":
-            target_chat_id = cb.get_int_optional(3)
+            target_chat_id = chat_id
             if target_chat_id is None:
                 await answer_callback_query_safely(update, "❌ 群组参数无效", show_alert=True)
                 return
@@ -140,7 +148,7 @@ async def account_inherit_callback(update: Update, context: ContextTypes.DEFAULT
             return
 
         if action == "token" and cb.get(2) == "use":
-            target_chat_id = cb.get_int_optional(3)
+            target_chat_id = chat_id
             if target_chat_id is None:
                 await answer_callback_query_safely(update, "❌ 群组参数无效", show_alert=True)
                 return

@@ -25,6 +25,7 @@ async def create_auto_reply_rule(
     cover_media_type: str | None = None,
     cover_media_file_id: str | None = None,
     buttons: list | None = None,
+    stop_after_match: bool = True,
 ) -> CreateResult:
     """
     创建自动回复规则
@@ -86,6 +87,7 @@ async def create_auto_reply_rule(
         sort_order=sort_order,
         delete_source=delete_source,
         delete_reply_delay_seconds=delete_reply_delay_seconds,
+        stop_after_match=stop_after_match,
     )
     session.add(rule)
     await session.flush()
@@ -95,9 +97,15 @@ async def create_auto_reply_rule(
 async def update_auto_reply_rule(
     session: AsyncSession,
     rule_id: int,
+    *,
+    chat_id: int | None = None,
     **updates,
 ) -> AutoReplyRule | None:
-    rule = await get_auto_reply_rule(session, rule_id)
+    rule = await (
+        get_auto_reply_rule_in_chat(session, chat_id, rule_id)
+        if chat_id is not None
+        else get_auto_reply_rule(session, rule_id)
+    )
     if rule is None:
         return None
 
@@ -134,6 +142,20 @@ async def get_auto_reply_rule(session: AsyncSession, rule_id: int) -> AutoReplyR
         AutoReplyRule: 规则对象，如果不存在则返回 None
     """
     return await ServiceBase._get_by_id(session, AutoReplyRule, rule_id)
+
+
+async def get_auto_reply_rule_in_chat(
+    session: AsyncSession,
+    chat_id: int,
+    rule_id: int,
+) -> AutoReplyRule | None:
+    """按群组作用域获取自动回复规则，避免跨群访问。"""
+    stmt = select(AutoReplyRule).where(
+        AutoReplyRule.id == rule_id,
+        AutoReplyRule.chat_id == chat_id,
+    )
+    result = await session.execute(stmt)
+    return result.scalar_one_or_none()
 
 
 async def get_chat_auto_reply_rules(
@@ -173,6 +195,8 @@ async def get_next_sort_order(session: AsyncSession, chat_id: int) -> int:
 async def toggle_auto_reply_rule(
     session: AsyncSession,
     rule_id: int,
+    *,
+    chat_id: int | None = None,
 ) -> bool:
     """
     切换自动回复规则激活状态
@@ -184,7 +208,11 @@ async def toggle_auto_reply_rule(
     Returns:
         是否切换成功
     """
-    rule = await get_auto_reply_rule(session, rule_id)
+    rule = await (
+        get_auto_reply_rule_in_chat(session, chat_id, rule_id)
+        if chat_id is not None
+        else get_auto_reply_rule(session, rule_id)
+    )
     if not rule:
         return False
     await ServiceBase._update_entity(
@@ -198,6 +226,8 @@ async def toggle_auto_reply_rule(
 async def delete_auto_reply_rule(
     session: AsyncSession,
     rule_id: int,
+    *,
+    chat_id: int | None = None,
 ) -> bool:
     """
     删除自动回复规则
@@ -209,7 +239,11 @@ async def delete_auto_reply_rule(
     Returns:
         是否删除成功
     """
-    rule = await get_auto_reply_rule(session, rule_id)
+    rule = await (
+        get_auto_reply_rule_in_chat(session, chat_id, rule_id)
+        if chat_id is not None
+        else get_auto_reply_rule(session, rule_id)
+    )
     if not rule:
         return False
     await ServiceBase._delete_entity(session, rule)
@@ -265,6 +299,8 @@ async def match_auto_reply(
     """
     rules = await get_chat_auto_reply_rules(session, chat_id, active_only=True)
 
+    matched_rules: list[AutoReplyRule] = []
+
     for rule in rules:
         if _match_rule(rule, message_text):
             # 增加匹配计数
@@ -273,18 +309,25 @@ async def match_auto_reply(
                 rule,
                 {"match_count": rule.match_count + 1},
             )
-            return MatchResult(
-                success=True,
-                reason="matched",
-                rule=rule,
-                reply_content=rule.reply_content,
-            )
+            matched_rules.append(rule)
+            if getattr(rule, "stop_after_match", True):
+                break
+
+    if matched_rules:
+        return MatchResult(
+            success=True,
+            reason="matched",
+            rule=matched_rules[0],
+            reply_content=matched_rules[0].reply_content,
+            matched_rules=matched_rules,
+        )
 
     return MatchResult(
         success=False,
         reason="no_match",
         rule=None,
         reply_content=None,
+        matched_rules=[],
     )
 
 

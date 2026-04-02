@@ -176,6 +176,22 @@ async def get_solitaire(
     return result.scalar_one_or_none()
 
 
+async def get_solitaire_in_chat(
+    session: AsyncSession,
+    chat_id: int,
+    solitaire_id: int,
+) -> Solitaire | None:
+    """按群组作用域获取接龙，避免跨群访问。"""
+    stmt = select(Solitaire).options(
+        selectinload(Solitaire.entries_rel)
+    ).where(
+        Solitaire.id == solitaire_id,
+        Solitaire.chat_id == chat_id,
+    )
+    result = await session.execute(stmt)
+    return result.scalar_one_or_none()
+
+
 async def join_solitaire(
     session: AsyncSession,
     solitaire_id: int,
@@ -336,6 +352,8 @@ async def leave_solitaire(
 async def close_solitaire(
     session: AsyncSession,
     solitaire_id: int,
+    *,
+    chat_id: int | None = None,
 ) -> CloseResult:
     """
     结束接龙
@@ -347,7 +365,11 @@ async def close_solitaire(
     Returns:
         CloseResult: 结束结果
     """
-    solitaire = await get_solitaire(session, solitaire_id)
+    solitaire = await (
+        get_solitaire_in_chat(session, chat_id, solitaire_id)
+        if chat_id is not None
+        else get_solitaire(session, solitaire_id)
+    )
     if not solitaire:
         return CloseResult(success=False, reason="not_found")
 
@@ -365,6 +387,8 @@ async def close_solitaire(
 async def delete_solitaire(
     session: AsyncSession,
     solitaire_id: int,
+    *,
+    chat_id: int | None = None,
 ) -> bool:
     """
     删除接龙
@@ -376,7 +400,11 @@ async def delete_solitaire(
     Returns:
         是否删除成功
     """
-    solitaire = await get_solitaire(session, solitaire_id)
+    solitaire = await (
+        get_solitaire_in_chat(session, chat_id, solitaire_id)
+        if chat_id is not None
+        else get_solitaire(session, solitaire_id)
+    )
     if not solitaire:
         return False
     await ServiceBase._delete_entity(session, solitaire)

@@ -60,6 +60,7 @@ def lottery_mode_keyboard(chat_id: int, lottery_type: str) -> InlineKeyboardMark
 
 
 def manual_draw_prize_keyboard(
+    target_chat_id: int,
     lottery_id: int,
     prize_index: int,
     prize_name: str,
@@ -86,7 +87,7 @@ def manual_draw_prize_keyboard(
         user_info = participant.user_info if hasattr(participant, 'user_info') else None
         label = format_user_label(user_info, participant.user_id)
 
-        callback_data = f"lot:select_winner:{lottery_id}:{prize_index}:{participant.user_id}:{prize_name}"
+        callback_data = f"lot:select_winner:{target_chat_id}:{lottery_id}:{prize_index}:{participant.user_id}:{prize_name}"
         buttons.append([InlineKeyboardButton(label, callback_data=callback_data)])
 
     # 分页导航
@@ -94,22 +95,23 @@ def manual_draw_prize_keyboard(
     if page > 0:
         nav_buttons.append(InlineKeyboardButton(
             "⬅️ 上一页",
-            callback_data=f"lot:winner_page:{lottery_id}:{prize_index}:{page-1}"
+            callback_data=f"lot:winner_page:{target_chat_id}:{lottery_id}:{prize_index}:{page-1}"
         ))
     if end_idx < len(participants):
         nav_buttons.append(InlineKeyboardButton(
             "下一页 ➡️",
-            callback_data=f"lot:winner_page:{lottery_id}:{prize_index}:{page+1}"
+            callback_data=f"lot:winner_page:{target_chat_id}:{lottery_id}:{prize_index}:{page+1}"
         ))
 
     if nav_buttons:
         buttons.append(nav_buttons)
 
-    buttons.append([InlineKeyboardButton("🔙 返回", callback_data=f"lot:draw_menu:{lottery_id}")])
+    buttons.append([InlineKeyboardButton("🔙 返回", callback_data=f"lot:draw_menu:{target_chat_id}:{lottery_id}")])
     return InlineKeyboardMarkup(buttons)
 
 
 def manual_draw_summary_keyboard(
+    target_chat_id: int,
     lottery_id: int,
     prizes: list,
 ) -> InlineKeyboardMarkup:
@@ -127,16 +129,17 @@ def manual_draw_summary_keyboard(
             buttons.append([
                 InlineKeyboardButton(
                     f"🎁 {prize['name']} (未选择)",
-                    callback_data=f"lot:select_prize:{lottery_id}:{prize_index}:{prize['name']}"
+                    callback_data=f"lot:select_prize:{target_chat_id}:{lottery_id}:{prize_index}:{prize['name']}"
                 )
             ])
 
-    buttons.append([InlineKeyboardButton("✅ 完成开奖", callback_data=f"lot:complete_manual_draw:{lottery_id}")])
-    buttons.append([InlineKeyboardButton("🔙 返回", callback_data="adm:menu:main")])
+    buttons.append([InlineKeyboardButton("✅ 完成开奖", callback_data=f"lot:complete_manual_draw:{target_chat_id}:{lottery_id}")])
+    buttons.append([InlineKeyboardButton("🔙 返回", callback_data=f"lot:detail:{target_chat_id}:{lottery_id}")])
     return InlineKeyboardMarkup(buttons)
 
 
 def manual_draw_summary_keyboard_with_winners(
+    target_chat_id: int,
     lottery_id: int,
     prizes: list,
     winners: dict,
@@ -154,23 +157,25 @@ def manual_draw_summary_keyboard_with_winners(
         for j in range(quantity):
             prize_index = i * 10 + j
             winner_info = winners.get(prize_index)
+            if winner_info is None:
+                winner_info = winners.get(str(prize_index))
             if winner_info:
                 buttons.append([
                     InlineKeyboardButton(
                         f"✅ {prize['name']} - {winner_info['name']}",
-                        callback_data=f"lot:select_prize:{lottery_id}:{prize_index}:{prize['name']}"
+                        callback_data=f"lot:select_prize:{target_chat_id}:{lottery_id}:{prize_index}:{prize['name']}"
                     )
                 ])
             else:
                 buttons.append([
                     InlineKeyboardButton(
                         f"🎁 {prize['name']} (未选择)",
-                        callback_data=f"lot:select_prize:{lottery_id}:{prize_index}:{prize['name']}"
+                        callback_data=f"lot:select_prize:{target_chat_id}:{lottery_id}:{prize_index}:{prize['name']}"
                     )
                 ])
 
-    buttons.append([InlineKeyboardButton("✅ 完成开奖", callback_data=f"lot:complete_manual_draw:{lottery_id}")])
-    buttons.append([InlineKeyboardButton("🔙 返回", callback_data="adm:menu:main")])
+    buttons.append([InlineKeyboardButton("✅ 完成开奖", callback_data=f"lot:complete_manual_draw:{target_chat_id}:{lottery_id}")])
+    buttons.append([InlineKeyboardButton("🔙 返回", callback_data=f"lot:detail:{target_chat_id}:{lottery_id}")])
     return InlineKeyboardMarkup(buttons)
 
 

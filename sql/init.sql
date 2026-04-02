@@ -1304,6 +1304,7 @@ CREATE TABLE IF NOT EXISTS bot.auto_reply_rules (
     is_active BOOLEAN NOT NULL DEFAULT TRUE,                     -- 是否激活
     match_count INTEGER NOT NULL DEFAULT 0,                      -- 匹配次数统计
     case_sensitive BOOLEAN NOT NULL DEFAULT FALSE,               -- 是否区分大小写
+    stop_after_match BOOLEAN NOT NULL DEFAULT TRUE,              -- 命中后是否停止继续匹配
     created_at TIMESTAMPTZ NOT NULL,                             -- 创建时间（带时区）
     updated_at TIMESTAMPTZ NOT NULL,                             -- 更新时间（带时区）
     CONSTRAINT fk_auto_reply_rules_chat_id FOREIGN KEY (chat_id)
@@ -1328,6 +1329,7 @@ COMMENT ON COLUMN bot.auto_reply_rules.delete_reply_delay_seconds IS '回复延�
 COMMENT ON COLUMN bot.auto_reply_rules.is_active IS '是否激活（true=启用，false=禁用）';
 COMMENT ON COLUMN bot.auto_reply_rules.match_count IS '规则被触发的次数统计';
 COMMENT ON COLUMN bot.auto_reply_rules.case_sensitive IS '是否区分大小写';
+COMMENT ON COLUMN bot.auto_reply_rules.stop_after_match IS '命中后是否停止继续匹配（true=命中后停止）';
 COMMENT ON COLUMN bot.auto_reply_rules.created_at IS '规则创建时间';
 COMMENT ON COLUMN bot.auto_reply_rules.updated_at IS '记录最后更新时间';
 
@@ -1338,6 +1340,7 @@ CREATE INDEX IF NOT EXISTS ix_auto_reply_rules_chat_sort ON bot.auto_reply_rules
 ALTER TABLE bot.auto_reply_rules ADD COLUMN IF NOT EXISTS cover_media_type VARCHAR(16);
 ALTER TABLE bot.auto_reply_rules ADD COLUMN IF NOT EXISTS cover_media_file_id VARCHAR(256);
 ALTER TABLE bot.auto_reply_rules ADD COLUMN IF NOT EXISTS buttons JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE bot.auto_reply_rules ADD COLUMN IF NOT EXISTS stop_after_match BOOLEAN NOT NULL DEFAULT TRUE;
 
 -- ============================================
 -- 19. 违禁词表 (banned_words)

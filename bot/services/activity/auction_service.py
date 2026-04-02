@@ -4,7 +4,7 @@ import datetime as dt
 import re
 from dataclasses import dataclass
 
-from sqlalchemy import and_, desc, or_, select
+from sqlalchemy import and_, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from telegram import InlineKeyboardMarkup
 from telegram.ext import ContextTypes
@@ -320,6 +320,34 @@ async def list_recent_auctions(session: AsyncSession, chat_id: int, limit: int =
     )
     result = await session.execute(stmt)
     return list(result.scalars().all())
+
+
+async def list_auctions(
+    session: AsyncSession,
+    chat_id: int,
+    *,
+    page: int = 0,
+    page_size: int = 10,
+) -> tuple[list[AuctionItem], int]:
+    normalized_page = max(page, 0)
+    normalized_page_size = max(page_size, 1)
+    count_stmt = select(func.count()).select_from(AuctionItem).where(AuctionItem.chat_id == chat_id)
+    total_count = int((await session.execute(count_stmt)).scalar_one() or 0)
+    stmt = (
+        select(AuctionItem)
+        .where(AuctionItem.chat_id == chat_id)
+        .order_by(desc(AuctionItem.id))
+        .offset(normalized_page * normalized_page_size)
+        .limit(normalized_page_size)
+    )
+    result = await session.execute(stmt)
+    return list(result.scalars().all()), total_count
+
+
+async def get_auction(session: AsyncSession, chat_id: int, auction_id: int) -> AuctionItem | None:
+    stmt = select(AuctionItem).where(AuctionItem.chat_id == chat_id, AuctionItem.id == auction_id)
+    result = await session.execute(stmt)
+    return result.scalar_one_or_none()
 
 
 async def refresh_auction_message(

@@ -38,6 +38,9 @@ def auto_reply_menu_keyboard(chat_id: int | None = None) -> InlineKeyboardMarkup
 def auto_reply_list_keyboard(
     rules: list,
     chat_id: int | None = None,
+    page: int = 0,
+    page_size: int = 8,
+    total_count: int | None = None,
 ) -> InlineKeyboardMarkup:
     """自动回复规则列表键盘
 
@@ -46,8 +49,14 @@ def auto_reply_list_keyboard(
         chat_id: 群组 ID，用于在私聊中操作群组时指定目标群组
     """
     buttons = []
+    total_items = total_count if total_count is not None else len(rules)
+    total_pages = max(1, (total_items + page_size - 1) // page_size)
+    current_page = min(max(page, 0), total_pages - 1)
+    start_idx = current_page * page_size
+    end_idx = start_idx + page_size
+    page_rules = rules[start_idx:end_idx]
 
-    for rule in rules:
+    for rule in page_rules:
         status_icon = StatusIcons.active(rule.is_active)
         label = f"{status_icon} #{rule.sort_order} [{rule.id}]"
         detail_callback = (
@@ -90,6 +99,25 @@ def auto_reply_list_keyboard(
             InlineKeyboardButton("🗑️", callback_data=delete_callback),
         ])
 
+    if total_pages > 1:
+        nav_row: list[InlineKeyboardButton] = []
+        if current_page > 0:
+            nav_row.append(
+                InlineKeyboardButton(
+                    "⬅️ 上一页",
+                    callback_data=f"auto_reply:list:{chat_id}:{current_page - 1}" if chat_id is not None else f"auto_reply:list::{current_page - 1}",
+                )
+            )
+        nav_row.append(InlineKeyboardButton(f"📄 {current_page + 1}/{total_pages}", callback_data="_noop"))
+        if current_page < total_pages - 1:
+            nav_row.append(
+                InlineKeyboardButton(
+                    "下一页 ➡️",
+                    callback_data=f"auto_reply:list:{chat_id}:{current_page + 1}" if chat_id is not None else f"auto_reply:list::{current_page + 1}",
+                )
+            )
+        buttons.append(nav_row)
+
     # 返回按钮
     back_callback = (
         f"adm:menu:autoreply:{chat_id}"
@@ -129,6 +157,7 @@ def auto_reply_detail_keyboard(rule, chat_id: int) -> InlineKeyboardMarkup:
             InlineKeyboardButton("🧹 删来源", callback_data=f"auto_reply:togglecfg:{chat_id}:{rule.id}:source"),
             InlineKeyboardButton("⏱️ 延迟删除", callback_data=f"auto_reply:cycle:{chat_id}:{rule.id}:delay"),
         ],
+        [InlineKeyboardButton("🧱 停止匹配", callback_data=f"auto_reply:togglecfg:{chat_id}:{rule.id}:stop")],
         [
             InlineKeyboardButton("⬆️ 上移", callback_data=f"auto_reply:move:{chat_id}:{rule.id}:up"),
             InlineKeyboardButton("⬇️ 下移", callback_data=f"auto_reply:move:{chat_id}:{rule.id}:down"),

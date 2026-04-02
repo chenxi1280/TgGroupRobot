@@ -28,7 +28,7 @@ from bot.services.base import ValidationError
 from bot.services.core.user_service import ensure_user
 from bot.services.shared.publish_service import PublishService
 from bot.utils.callback_parser import CallbackParser
-from bot.utils.telegram_errors import answer_callback_query_safely
+from bot.utils.telegram_errors import answer_callback_query_safely, mark_callback_query_answered
 
 
 async def _delete_source_if_needed(context: ContextTypes.DEFAULT_TYPE, chat_id: int, message_id: int, delete_mode: str) -> None:
@@ -387,6 +387,7 @@ async def game_runtime_callback(update: Update, context: ContextTypes.DEFAULT_TY
         await answer_callback_query_safely(update, "参数错误", show_alert=True)
         return
     await query.answer()
+    mark_callback_query_answered(update)
     db: Database = context.application.bot_data["db"]
     user = update.effective_user
 

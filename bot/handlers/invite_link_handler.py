@@ -27,6 +27,7 @@ from bot.services.integration.invite_service import (
     export_invite_tracking_csv,
     get_chat_invite_links,
     get_invite_link,
+    get_invite_link_in_chat,
     get_link_stats,
     revoke_invite_link,
     update_invite_link_info,
@@ -34,6 +35,7 @@ from bot.services.integration.invite_service import (
 from bot.services.state.state_service import clear_user_state, get_user_state, set_user_state
 from bot.utils.callback_parser import CallbackParser
 from bot.utils.chat_context import PrivateChatContext
+from bot.utils.telegram_errors import answer_callback_query_safely, mark_callback_query_answered
 
 # 创建流程状态
 WAIT_NAME = 1
@@ -338,7 +340,6 @@ async def invite_link_toggle_callback(update: Update, context: ContextTypes.DEFA
     if update.callback_query is None or update.effective_user is None:
         return
     q = update.callback_query
-    await q.answer()
 
     target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(update, context, chat_index=3)
     if target_chat_id is None:
@@ -348,7 +349,7 @@ async def invite_link_toggle_callback(update: Update, context: ContextTypes.DEFA
     field = cb.get(2)
     value = cb.get_int_optional(4)
     if value not in {0, 1}:
-        await q.answer("无效开关值", show_alert=True)
+        await answer_callback_query_safely(update, "无效开关值", show_alert=True)
         return
 
     field_map = {
@@ -357,7 +358,7 @@ async def invite_link_toggle_callback(update: Update, context: ContextTypes.DEFA
     }
     setting_field = field_map.get(field)
     if setting_field is None:
-        await q.answer("无效配置项", show_alert=True)
+        await answer_callback_query_safely(update, "无效配置项", show_alert=True)
         return
 
     db: Database = context.application.bot_data["db"]
@@ -366,13 +367,14 @@ async def invite_link_toggle_callback(update: Update, context: ContextTypes.DEFA
         setattr(settings, setting_field, bool(value))
         await session.commit()
 
+    await q.answer()
+    mark_callback_query_answered(update)
     await _invite_link_handler.show_menu(update, context, target_chat_id)
 
 async def invite_link_mode_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.callback_query is None:
         return
     q = update.callback_query
-    await q.answer()
 
     target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(update, context, chat_index=2)
     if target_chat_id is None:
@@ -380,13 +382,15 @@ async def invite_link_mode_callback(update: Update, context: ContextTypes.DEFAUL
 
     mode = CallbackParser.parse(q.data or "").get(3)
     if mode not in {"relay", "direct"}:
-        await q.answer("无效模式", show_alert=True)
+        await answer_callback_query_safely(update, "无效模式", show_alert=True)
         return
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
         settings = await get_chat_settings(session, target_chat_id)
         settings.invite_link_mode = mode
         await session.commit()
+    await q.answer()
+    mark_callback_query_answered(update)
     await _invite_link_handler.show_menu(update, context, target_chat_id)
 
 
@@ -484,17 +488,17 @@ async def invite_link_reset_callback(update: Update, context: ContextTypes.DEFAU
     if update.callback_query is None:
         return
     q = update.callback_query
-    await q.answer()
     target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(update, context, chat_index=3)
     if target_chat_id is None:
         return
     reset_type = CallbackParser.parse(q.data or "").get(2)
     db: Database = context.application.bot_data["db"]
+    toast = None
     async with db.session_factory() as session:
         if reset_type == "count":
             cleared = await clear_invite_counts(session, target_chat_id)
             await session.commit()
-            await q.answer(f"已清零 {cleared} 条邀请统计", show_alert=True)
+            toast = f"已清零 {cleared} 条邀请统计"
         elif reset_type == "links":
             links = await clear_chat_invite_links(session, target_chat_id)
             await session.commit()
@@ -503,7 +507,14 @@ async def invite_link_reset_callback(update: Update, context: ContextTypes.DEFAU
                     await context.bot.revoke_chat_invite_link(chat_id=target_chat_id, invite_link=link.invite_link)
                 except Exception:
                     continue
-            await q.answer(f"已清空 {len(links)} 条链接记录", show_alert=True)
+            toast = f"已清空 {len(links)} 条链接记录"
+        else:
+            await session.commit()
+    if toast is None:
+        await answer_callback_query_safely(update, "无效重置类型", show_alert=True)
+        return
+    await q.answer(toast, show_alert=True)
+    mark_callback_query_answered(update)
     await _invite_link_handler.show_menu(update, context, target_chat_id)
 
 
@@ -533,7 +544,6 @@ async def invite_link_detail_callback(update: Update, context: ContextTypes.DEFA
     if update.callback_query is None or update.effective_user is None:
         return
     q = update.callback_query
-    await q.answer()
 
     data = q.data or ""
     cb = CallbackParser.parse(data)
@@ -543,7 +553,7 @@ async def invite_link_detail_callback(update: Update, context: ContextTypes.DEFA
     link_id = cb.get_int(2)
     if link_id == 0:
         log.warning("invalid_link_id", data=q.data)
-        await q.answer("无效的链接ID", show_alert=True)
+        await answer_callback_query_safely(update, "无效的链接ID", show_alert=True)
         return
 
     target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(
@@ -556,9 +566,11 @@ async def invite_link_detail_callback(update: Update, context: ContextTypes.DEFA
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
-        link = await get_invite_link(session, link_id)
+        link = await get_invite_link_in_chat(session, target_chat_id, link_id)
         if not link:
             await session.commit()
+            await q.answer()
+            mark_callback_query_answered(update)
             await q.edit_message_text("链接不存在", reply_markup=invite_link_menu_keyboard(target_chat_id))
             return
 
@@ -582,6 +594,8 @@ async def invite_link_detail_callback(update: Update, context: ContextTypes.DEFA
 
         await session.commit()
 
+    await q.answer()
+    mark_callback_query_answered(update)
     await q.edit_message_text(
         text,
         reply_markup=invite_link_detail_keyboard(link_id, target_chat_id),
@@ -798,7 +812,6 @@ async def invite_link_refresh_callback(update: Update, context: ContextTypes.DEF
     if update.callback_query is None or update.effective_user is None:
         return
     q = update.callback_query
-    await q.answer()
 
     data = q.data or ""
     cb = CallbackParser.parse(data)
@@ -808,7 +821,7 @@ async def invite_link_refresh_callback(update: Update, context: ContextTypes.DEF
     link_id = cb.get_int(2)
     if link_id == 0:
         log.warning("invalid_link_id", data=q.data)
-        await q.answer("无效的链接ID", show_alert=True)
+        await answer_callback_query_safely(update, "无效的链接ID", show_alert=True)
         return
 
     target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(
@@ -821,15 +834,24 @@ async def invite_link_refresh_callback(update: Update, context: ContextTypes.DEF
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
-        success = await update_invite_link_info(session, context.bot, link_id)
+        success = await update_invite_link_info(
+            session,
+            context.bot,
+            link_id,
+            chat_id=target_chat_id,
+        )
         await session.commit()
 
         if not success:
+            await q.answer()
+            mark_callback_query_answered(update)
             await q.edit_message_text("链接不存在", reply_markup=invite_link_menu_keyboard(target_chat_id))
             return
 
-        link = await get_invite_link(session, link_id)
+        link = await get_invite_link_in_chat(session, target_chat_id, link_id)
         if not link:
+            await q.answer()
+            mark_callback_query_answered(update)
             await q.edit_message_text("链接不存在", reply_markup=invite_link_menu_keyboard(target_chat_id))
             return
 
@@ -851,6 +873,8 @@ async def invite_link_refresh_callback(update: Update, context: ContextTypes.DEF
             text += f"过期时间: {link.expire_date.strftime('%Y-%m-%d %H:%M:%S UTC')}\n"
         text += f"需要审批: {'是' if link.creates_join_request else '否'}"
 
+    await q.answer()
+    mark_callback_query_answered(update)
     await q.edit_message_text(
         text,
         reply_markup=invite_link_detail_keyboard(link_id, target_chat_id),
@@ -863,7 +887,6 @@ async def invite_link_revoke_callback(update: Update, context: ContextTypes.DEFA
     if update.callback_query is None or update.effective_user is None:
         return
     q = update.callback_query
-    await q.answer()
 
     data = q.data or ""
     cb = CallbackParser.parse(data)
@@ -873,7 +896,7 @@ async def invite_link_revoke_callback(update: Update, context: ContextTypes.DEFA
     link_id = cb.get_int(2)
     if link_id == 0:
         log.warning("invalid_link_id", data=q.data)
-        await q.answer("无效的链接ID", show_alert=True)
+        await answer_callback_query_safely(update, "无效的链接ID", show_alert=True)
         return
 
     target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(
@@ -886,9 +909,16 @@ async def invite_link_revoke_callback(update: Update, context: ContextTypes.DEFA
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
-        result = await revoke_invite_link(session, context.bot, link_id)
+        result = await revoke_invite_link(
+            session,
+            context.bot,
+            link_id,
+            chat_id=target_chat_id,
+        )
         await session.commit()
 
+        await q.answer()
+        mark_callback_query_answered(update)
         if result.success:
             await q.edit_message_text("✅ 链接已撤销", reply_markup=invite_link_menu_keyboard(target_chat_id))
         else:
@@ -905,7 +935,6 @@ async def invite_link_delete_callback(update: Update, context: ContextTypes.DEFA
     if update.callback_query is None or update.effective_user is None:
         return
     q = update.callback_query
-    await q.answer()
 
     data = q.data or ""
     cb = CallbackParser.parse(data)
@@ -915,7 +944,7 @@ async def invite_link_delete_callback(update: Update, context: ContextTypes.DEFA
     link_id = cb.get_int(2)
     if link_id == 0:
         log.warning("invalid_link_id", data=q.data)
-        await q.answer("无效的链接ID", show_alert=True)
+        await answer_callback_query_safely(update, "无效的链接ID", show_alert=True)
         return
 
     target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(
@@ -928,9 +957,11 @@ async def invite_link_delete_callback(update: Update, context: ContextTypes.DEFA
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
-        success = await delete_invite_link(session, link_id)
+        success = await delete_invite_link(session, link_id, chat_id=target_chat_id)
         await session.commit()
 
+        await q.answer()
+        mark_callback_query_answered(update)
         if success:
             await q.edit_message_text("✅ 链接记录已删除", reply_markup=invite_link_menu_keyboard(target_chat_id))
         else:
@@ -1010,7 +1041,6 @@ async def user_invite_create_callback(update: Update, context: ContextTypes.DEFA
         return
 
     q = update.callback_query
-    await q.answer()
 
     chat = update.effective_chat
     user = update.effective_user
@@ -1024,7 +1054,7 @@ async def user_invite_create_callback(update: Update, context: ContextTypes.DEFA
     chat_id = cb.get_int(2)
     if chat_id == 0:
         log.warning("invalid_chat_id", data=q.data)
-        await q.answer("无效的群组ID", show_alert=True)
+        await answer_callback_query_safely(update, "无效的群组ID", show_alert=True)
         return
 
     from bot.services.integration.invite_service import create_invite_link as user_create_link
@@ -1042,6 +1072,8 @@ async def user_invite_create_callback(update: Update, context: ContextTypes.DEFA
         await session.commit()
 
     if success and link:
+        await q.answer()
+        mark_callback_query_answered(update)
         text = f"✅ 邀请链接创建成功！\n\n"
         text += f"`{link.invite_link}`\n\n"
         text += f"点击链接即可邀请好友加入群组"
@@ -1052,6 +1084,8 @@ async def user_invite_create_callback(update: Update, context: ContextTypes.DEFA
         # 发送链接消息（单独发送，方便转发）
         await context.bot.send_message(chat_id=user.id, text=text, parse_mode="Markdown")
     else:
+        await q.answer()
+        mark_callback_query_answered(update)
         await q.edit_message_text(f"❌ {error or '创建失败'}")
         # 重新显示菜单
         await _show_user_invite_menu(update, context, chat_id, user.id)
@@ -1063,7 +1097,6 @@ async def user_invite_list_callback(update: Update, context: ContextTypes.DEFAUL
         return
 
     q = update.callback_query
-    await q.answer()
 
     user = update.effective_user
 
@@ -1076,7 +1109,7 @@ async def user_invite_list_callback(update: Update, context: ContextTypes.DEFAUL
     chat_id = cb.get_int(2)
     if chat_id == 0:
         log.warning("invalid_chat_id", data=q.data)
-        await q.answer("无效的群组ID", show_alert=True)
+        await answer_callback_query_safely(update, "无效的群组ID", show_alert=True)
         return
 
     from bot.services.integration.invite_service import get_user_links
@@ -1088,6 +1121,8 @@ async def user_invite_list_callback(update: Update, context: ContextTypes.DEFAUL
         await session.commit()
 
     if not links:
+        await q.answer()
+        mark_callback_query_answered(update)
         text = "🔗 我的邀请链接\n\n暂无链接，点击「生成链接」创建"
         keyboard = [[InlineKeyboardButton("🔙 返回", callback_data=f"inv:user:menu:{chat_id}")]]
         await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
@@ -1103,6 +1138,8 @@ async def user_invite_list_callback(update: Update, context: ContextTypes.DEFAUL
         text += "\n\n"
 
     keyboard = [[InlineKeyboardButton("🔙 返回", callback_data=f"inv:user:menu:{chat_id}")]]
+    await q.answer()
+    mark_callback_query_answered(update)
     await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
@@ -1112,7 +1149,6 @@ async def user_invite_rank_callback(update: Update, context: ContextTypes.DEFAUL
         return
 
     q = update.callback_query
-    await q.answer()
 
     user = update.effective_user
 
@@ -1125,7 +1161,7 @@ async def user_invite_rank_callback(update: Update, context: ContextTypes.DEFAUL
     chat_id = cb.get_int(2)
     if chat_id == 0:
         log.warning("invalid_chat_id", data=q.data)
-        await q.answer("无效的群组ID", show_alert=True)
+        await answer_callback_query_safely(update, "无效的群组ID", show_alert=True)
         return
 
     from bot.services.integration.invite_service import get_invite_leaderboard, get_user_rank
@@ -1138,6 +1174,8 @@ async def user_invite_rank_callback(update: Update, context: ContextTypes.DEFAUL
         await session.commit()
 
     if not leaderboard:
+        await q.answer()
+        mark_callback_query_answered(update)
         text = "🏆 邀请排行榜\n\n暂无邀请数据"
         keyboard = [[InlineKeyboardButton("🔙 返回", callback_data=f"inv:user:menu:{chat_id}")]]
         await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
@@ -1152,4 +1190,6 @@ async def user_invite_rank_callback(update: Update, context: ContextTypes.DEFAUL
         text += f"\n你的排名: 第 {user_rank} 名"
 
     keyboard = [[InlineKeyboardButton("🔙 返回", callback_data=f"inv:user:menu:{chat_id}")]]
+    await q.answer()
+    mark_callback_query_answered(update)
     await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))

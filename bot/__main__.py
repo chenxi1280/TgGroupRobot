@@ -9,8 +9,10 @@ import atexit
 import os
 import sys
 import tempfile
+import warnings
 
 import structlog
+from telegram.warnings import PTBUserWarning
 from telegram.ext import Application, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 from telegram.request import HTTPXRequest
 
@@ -55,10 +57,23 @@ from bot.utils.telegram_errors import answer_callback_query_safely, build_public
 log = structlog.get_logger(__name__)
 
 
+def _configure_ptb_runtime() -> None:
+    """配置 PTB 运行时行为与已知可接受的告警过滤。"""
+    # 这几个会话流程是“按钮进入 + 文本输入”的混合模式。
+    # 对这类配置，PTB 会提示 per_message=False 时 CallbackQueryHandler 不会按消息粒度追踪。
+    # 当前设计本来就按 chat/user 维度管理会话，不依赖按消息粒度追踪，因此仅精确过滤该提示。
+    warnings.filterwarnings(
+        "ignore",
+        message=r"If 'per_message=False', 'CallbackQueryHandler' will not be tracked for every message\..*",
+        category=PTBUserWarning,
+    )
+
+
 def build_application() -> Application:
     """构建并配置 Telegram Bot 应用"""
     settings = get_settings()
     configure_logging(settings.log_level)
+    _configure_ptb_runtime()
 
     log.info("bot_application_building")
 
@@ -74,7 +89,8 @@ def build_application() -> Application:
     builder = (
         Application.builder()
         .token(settings.bot_token)
-        .concurrent_updates(True)
+        # ConversationHandler 依赖串行处理更新；并发会导致状态追踪错位。
+        .concurrent_updates(False)
         .request(request)
         .get_updates_request(get_updates_request)
     )

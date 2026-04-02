@@ -5,7 +5,14 @@ from types import SimpleNamespace
 import pytest
 
 from bot.handlers import lottery_handler
-from bot.keyboards.activity.lottery import lottery_menu_keyboard, lottery_mode_keyboard, lottery_type_keyboard
+from bot.keyboards.activity.lottery import (
+    lottery_menu_keyboard,
+    lottery_mode_keyboard,
+    lottery_type_keyboard,
+    manual_draw_prize_keyboard,
+    manual_draw_summary_keyboard,
+    manual_draw_summary_keyboard_with_winners,
+)
 from bot.services.activity.lottery_service import parse_lottery_config_text
 
 
@@ -59,6 +66,38 @@ def test_lottery_mode_keyboard_exposes_threshold_and_ranking_modes():
     assert callbacks["👥 邀请抽奖 | 排名入围随机"] == "lot:create:-1001:invite:ranking_random"
 
 
+def test_manual_draw_keyboards_keep_target_chat_scope():
+    participants = [SimpleNamespace(user_id=11, user_info=None)]
+    prize_markup = manual_draw_prize_keyboard(-1001, 55, 0, "大奖吗", participants)
+    prize_callbacks = {
+        button.text: button.callback_data
+        for row in prize_markup.inline_keyboard
+        for button in row
+    }
+    assert prize_callbacks["用户11"] == "lot:select_winner:-1001:55:0:11:大奖吗"
+    assert prize_callbacks["🔙 返回"] == "lot:draw_menu:-1001:55"
+
+    summary_markup = manual_draw_summary_keyboard(-1001, 55, [{"name": "大奖吗", "quantity": 1}])
+    summary_callbacks = {
+        button.text: button.callback_data
+        for row in summary_markup.inline_keyboard
+        for button in row
+    }
+    assert summary_callbacks["✅ 完成开奖"] == "lot:complete_manual_draw:-1001:55"
+    assert summary_callbacks["🔙 返回"] == "lot:detail:-1001:55"
+
+
+def test_manual_draw_summary_keyboard_marks_string_state_keys():
+    prize_name = "大奖吗"
+    markup = manual_draw_summary_keyboard_with_winners(
+        -1001,
+        55,
+        [{"name": prize_name, "quantity": 1}],
+        {"0": {"name": "Alice", "user_id": 99, "prize_name": prize_name}},
+    )
+    assert markup.inline_keyboard[0][0].text == f"✅ {prize_name} - Alice"
+
+
 @pytest.mark.asyncio
 async def test_lottery_create_start_routes_points_type_to_config_flow(monkeypatch):
     rendered: dict[str, object] = {}
@@ -91,6 +130,75 @@ async def test_lottery_create_start_routes_points_type_to_config_flow(monkeypatc
     await lottery_handler.lottery_create_start(update, context)
 
     assert called == {"target_chat_id": -1001, "lottery_type": "points", "selection_mode": "threshold_random"}
+
+
+@pytest.mark.asyncio
+async def test_manual_draw_select_winner_uses_target_chat_scope_and_open_session(monkeypatch):
+    admin_calls: list[int] = []
+    rendered: dict[str, object] = {}
+    state = SimpleNamespace(state_type="manual_draw", state_data={})
+
+    async def fake_is_user_admin(context, chat_id: int, user_id: int):
+        admin_calls.append(chat_id)
+        return True
+
+    async def fake_get_user_state(session, chat_id: int, user_id: int):
+        return state
+
+    async def fake_get_lottery(session, lottery_id: int):
+        return SimpleNamespace(chat_id=-1001, prizes=[{"name": "大奖吗", "quantity": 1}])
+
+    async def fake_safe_edit(update, text: str, reply_markup=None, **kwargs):
+        rendered["text"] = text
+        rendered["reply_markup"] = reply_markup
+
+    class _Result:
+        def scalar_one_or_none(self):
+            return SimpleNamespace(first_name="Alice", last_name=None, username=None)
+
+    class _Session:
+        def __init__(self):
+            self.closed = False
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            self.closed = True
+
+        async def commit(self):
+            return None
+
+        async def execute(self, stmt):
+            assert not self.closed, "session used after context exit"
+            return _Result()
+
+    session = _Session()
+    db = SimpleNamespace(session_factory=lambda: session)
+
+    monkeypatch.setattr(lottery_handler, "is_user_admin", fake_is_user_admin)
+    monkeypatch.setattr(lottery_handler, "get_user_state", fake_get_user_state)
+    monkeypatch.setattr(lottery_handler, "get_lottery", fake_get_lottery)
+    monkeypatch.setattr(lottery_handler._lottery_handler.message_helper, "safe_edit", fake_safe_edit)
+
+    class _Q:
+        data = "lot:select_winner:-1001:55:0:99:大奖吗"
+
+        async def answer(self, *args, **kwargs):
+            return None
+
+    update = SimpleNamespace(
+        callback_query=_Q(),
+        effective_chat=SimpleNamespace(id=777, type="private"),
+        effective_user=SimpleNamespace(id=42),
+    )
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": db}))
+
+    await lottery_handler.manual_draw_select_winner_callback(update, context)
+
+    assert admin_calls == [-1001]
+    assert state.state_data["winners"]["0"]["user_id"] == 99
+    assert rendered["reply_markup"].inline_keyboard[1][0].callback_data == "lot:complete_manual_draw:-1001:55"
 
 
 def test_parse_invite_lottery_config_requires_invite_threshold():

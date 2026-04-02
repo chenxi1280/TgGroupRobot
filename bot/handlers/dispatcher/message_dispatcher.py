@@ -111,7 +111,10 @@ class MessageDispatcher:
     async def _get_user_state(self, session: Any, db: Database, user_id: int, chat_id: int) -> Any:
         """获取用户状态
 
-        优先从目标群组查询状态，其次从私聊查询。
+        优先从当前私聊查询状态，其次从目标群组查询。
+
+        私聊本地 FSM（例如定时消息编辑）应优先于群级配置状态，
+        否则旧的群级状态会抢占当前私聊输入，导致串台。
 
         Args:
             session: 数据库会话
@@ -122,14 +125,14 @@ class MessageDispatcher:
         Returns:
             用户状态对象，如果没有则返回 None
         """
-        # 获取用户当前选中的群组
+        # 先查当前私聊状态（支持定时消息等使用私聊 ID 保存状态的功能）
+        private_state = await get_user_state(session, chat_id=chat_id, user_id=user_id)
+        if private_state is not None:
+            return private_state
+
+        # 再查用户当前选中的群组状态（支持群级配置流程）
         target_chat_id = await ChatResolver.get_current_chat(db, user_id)
-
-        # 优先用目标群组ID查询配置状态
         if target_chat_id:
-            state = await get_user_state(session, chat_id=target_chat_id, user_id=user_id)
-            if state is not None:
-                return state
+            return await get_user_state(session, chat_id=target_chat_id, user_id=user_id)
 
-        # 用私聊ID查询（支持定时消息等使用私聊ID保存状态的功能）
-        return await get_user_state(session, chat_id=chat_id, user_id=user_id)
+        return None

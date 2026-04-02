@@ -206,13 +206,33 @@ async def get_invite_link(session: AsyncSession, link_id: int) -> InviteLink | N
     return result.scalar_one_or_none()
 
 
+async def get_invite_link_in_chat(
+    session: AsyncSession,
+    chat_id: int,
+    link_id: int,
+) -> InviteLink | None:
+    """按群组作用域获取邀请链接，避免跨群访问。"""
+    stmt = select(InviteLink).where(
+        InviteLink.id == link_id,
+        InviteLink.chat_id == chat_id,
+    )
+    result = await session.execute(stmt)
+    return result.scalar_one_or_none()
+
+
 async def revoke_invite_link(
     session: AsyncSession,
     bot: Bot,
     link_id: int,
+    *,
+    chat_id: int | None = None,
 ) -> RevokeResult:
     """撤销邀请链接"""
-    invite_link = await get_invite_link(session, link_id)
+    invite_link = await (
+        get_invite_link_in_chat(session, chat_id, link_id)
+        if chat_id is not None
+        else get_invite_link(session, link_id)
+    )
     if not invite_link:
         return RevokeResult(success=False, reason="not_found")
 
@@ -231,9 +251,15 @@ async def update_invite_link_info(
     session: AsyncSession,
     bot: Bot,
     link_id: int,
+    *,
+    chat_id: int | None = None,
 ) -> bool:
     """更新邀请链接信息（从 Telegram 获取最新状态）"""
-    invite_link = await get_invite_link(session, link_id)
+    invite_link = await (
+        get_invite_link_in_chat(session, chat_id, link_id)
+        if chat_id is not None
+        else get_invite_link(session, link_id)
+    )
     if not invite_link:
         return False
 
@@ -256,9 +282,18 @@ async def update_invite_link_info(
         return True
 
 
-async def delete_invite_link(session: AsyncSession, link_id: int) -> bool:
+async def delete_invite_link(
+    session: AsyncSession,
+    link_id: int,
+    *,
+    chat_id: int | None = None,
+) -> bool:
     """删除邀请链接记录"""
-    invite_link = await get_invite_link(session, link_id)
+    invite_link = await (
+        get_invite_link_in_chat(session, chat_id, link_id)
+        if chat_id is not None
+        else get_invite_link(session, link_id)
+    )
     if not invite_link:
         return False
     await session.delete(invite_link)

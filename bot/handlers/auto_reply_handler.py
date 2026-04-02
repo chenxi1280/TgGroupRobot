@@ -18,6 +18,7 @@ from bot.services.moderation.auto_reply_service import (
     create_auto_reply_rule,
     delete_auto_reply_rule,
     get_auto_reply_rule,
+    get_auto_reply_rule_in_chat,
     get_chat_auto_reply_rules,
     get_match_count,
     match_auto_reply,
@@ -106,6 +107,7 @@ def _format_auto_reply_rule_detail(rule) -> str:
         f"状态: {status}",
         f"匹配方式: {match_type_label}",
         f"区分大小写: {'是' if rule.case_sensitive else '否'}",
+        f"命中后停止继续匹配: {'是' if getattr(rule, 'stop_after_match', True) else '否'}",
         f"删除触发源: {delete_source}",
         f"回复延迟删除: {delete_delay} 秒" if delete_delay else "回复延迟删除: 不删除",
         f"命中次数: {rule.match_count}",
@@ -215,7 +217,7 @@ async def _show_auto_reply_rule_detail(
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
-        rule = await get_auto_reply_rule(session, rule_id)
+        rule = await get_auto_reply_rule_in_chat(session, chat_id, rule_id)
         await session.commit()
 
     if rule is None or rule.chat_id != chat_id:
@@ -229,6 +231,82 @@ async def _show_auto_reply_rule_detail(
             text,
             reply_markup=auto_reply_detail_keyboard(rule, chat_id),
         )
+
+
+def _extract_auto_reply_list_page(callback_data: str | None) -> int:
+    if not callback_data or not callback_data.startswith("auto_reply:list"):
+        return 0
+    parts = callback_data.split(":")
+    if len(parts) < 4:
+        return 0
+    try:
+        return max(int(parts[3]), 0)
+    except ValueError:
+        return 0
+
+
+async def _render_auto_reply_list(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    target_chat_id: int,
+    page: int = 0,
+) -> None:
+    if update.callback_query is None:
+        return
+
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        rules = await get_chat_auto_reply_rules(session, target_chat_id)
+        total_matches = await get_match_count(session, target_chat_id)
+        await session.commit()
+
+    page_size = 8
+    total_count = len(rules)
+    total_pages = max(1, (total_count + page_size - 1) // page_size)
+    current_page = min(max(page, 0), total_pages - 1)
+    start_idx = current_page * page_size
+    page_rules = rules[start_idx:start_idx + page_size]
+
+    text = "📋 自动回复规则列表\n\n"
+    if rules:
+        active_count = sum(1 for r in rules if r.is_active)
+        text += (
+            f"总计: {len(rules)} 条  |  激活: {active_count} 条  |  总匹配: {total_matches} 次\n"
+            f"页码: 第 {current_page + 1} 页/共 {total_pages} 页\n\n"
+        )
+
+        for r in page_rules:
+            status = "🟢 激活" if r.is_active else "🔴 暂停"
+            match_type_label = _get_match_type_label(r.match_type)
+            keywords_display = ", ".join(r.keywords[:3]) + ("..." if len(r.keywords) > 3 else "")
+            delete_source = "删源" if getattr(r, "delete_source", False) else "留源"
+            delete_delay = getattr(r, "delete_reply_delay_seconds", 0)
+            delay_label = f"{delete_delay}s删回复" if delete_delay else "不删回复"
+            cover_label = "有封面" if getattr(r, "cover_media_file_id", None) else "无封面"
+            button_count = sum(len(row) for row in (getattr(r, "buttons", None) or []) if isinstance(row, list))
+            stop_label = "命中即停" if getattr(r, "stop_after_match", True) else "继续匹配"
+            text += f"{status} #{r.sort_order} [{r.id}] {keywords_display}\n"
+            text += (
+                f"   匹配: {match_type_label} | {stop_label}\n"
+                f"   行为: {delete_source} | {delay_label}\n"
+                f"   展示: {cover_label} | 按钮 {button_count} 个\n"
+                f"   回复: {r.reply_content[:30]}{'...' if len(r.reply_content) > 30 else ''}\n\n"
+            )
+    else:
+        text += "0 条数据，第 1 页/共 1 页\n\n暂无自动回复规则"
+
+    from bot.keyboards.content.auto_reply import auto_reply_list_keyboard
+    await update.callback_query.edit_message_text(
+        text,
+        reply_markup=auto_reply_list_keyboard(
+            rules,
+            target_chat_id,
+            page=current_page,
+            page_size=page_size,
+            total_count=total_count,
+        ),
+    )
 
 
 # ============================================
@@ -415,39 +493,12 @@ async def auto_reply_list_callback(update: Update, context: ContextTypes.DEFAULT
     if target_chat_id is None:
         return
 
-    # 获取自动回复规则列表
-    db: Database = context.application.bot_data["db"]
-    async with db.session_factory() as session:
-        rules = await get_chat_auto_reply_rules(session, target_chat_id)
-        total_matches = await get_match_count(session, target_chat_id)
-        await session.commit()
-
-    # 构建列表文本
-    text = f"📋 自动回复规则列表\n\n"
-    if rules:
-        active_count = sum(1 for r in rules if r.is_active)
-        text += f"总计: {len(rules)} 条  |  激活: {active_count} 条  |  总匹配: {total_matches} 次\n\n"
-
-        for r in rules:
-            status = "🟢 激活" if r.is_active else "🔴 暂停"
-            match_type_label = _get_match_type_label(r.match_type)
-            keywords_display = ", ".join(r.keywords[:3]) + ("..." if len(r.keywords) > 3 else "")
-            delete_source = "删源" if getattr(r, "delete_source", False) else "留源"
-            delete_delay = getattr(r, "delete_reply_delay_seconds", 0)
-            delay_label = f"{delete_delay}s删回复" if delete_delay else "不删回复"
-            cover_label = "有封面" if getattr(r, "cover_media_file_id", None) else "无封面"
-            button_count = sum(len(row) for row in (getattr(r, "buttons", None) or []) if isinstance(row, list))
-            text += f"{status} #{r.sort_order} [{r.id}] {keywords_display}\n"
-            text += (
-                f"   匹配: {match_type_label} | {delete_source} | {delay_label}\n"
-                f"   展示: {cover_label} | 按钮 {button_count} 个\n"
-                f"   回复: {r.reply_content[:30]}{'...' if len(r.reply_content) > 30 else ''}\n\n"
-            )
-    else:
-        text += "暂无自动回复规则"
-
-    from bot.keyboards.content.auto_reply import auto_reply_list_keyboard
-    await q.edit_message_text(text, reply_markup=auto_reply_list_keyboard(rules, target_chat_id))
+    await _render_auto_reply_list(
+        update,
+        context,
+        target_chat_id=target_chat_id,
+        page=_extract_auto_reply_list_page(q.data),
+    )
 
 
 async def auto_reply_create_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -507,6 +558,7 @@ async def auto_reply_create_start(update: Update, context: ContextTypes.DEFAULT_
     text += "关键词1,关键词2,关键词3\n"
     text += "匹配类型: contains\n"
     text += "区分大小写: false\n"
+    text += "停止继续匹配: true\n"
     text += "删除来源: false\n"
     text += "延迟删除: 0\n"
     text += "回复内容:\n"
@@ -524,6 +576,7 @@ async def auto_reply_create_start(update: Update, context: ContextTypes.DEFAULT_
     text += "你好,hi,hello\n"
     text += "匹配类型: contains\n"
     text += "区分大小写: false\n"
+    text += "停止继续匹配: true\n"
     text += "删除来源: false\n"
     text += "延迟删除: 0\n"
     text += "回复内容:\n"
@@ -583,11 +636,12 @@ async def auto_reply_preview_callback(update: Update, context: ContextTypes.DEFA
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
-        rule = await get_auto_reply_rule(session, rule_id)
+        rule = await get_auto_reply_rule_in_chat(session, target_chat_id, rule_id)
         await session.commit()
 
     if rule is None or rule.chat_id != target_chat_id:
         await q.edit_message_text("规则不存在")
+        await q.answer()
         return
 
     if getattr(rule, "cover_media_file_id", None):
@@ -620,7 +674,6 @@ async def auto_reply_edit_callback(update: Update, context: ContextTypes.DEFAULT
     if not _ensure_callback_update(update):
         return
     q = update.callback_query
-    await q.answer()
 
     target_chat_id = await _resolve_auto_reply_target_chat_id(update, context)
     if target_chat_id is None:
@@ -629,11 +682,13 @@ async def auto_reply_edit_callback(update: Update, context: ContextTypes.DEFAULT
     parts = (q.data or "").split(":")
     if len(parts) < 5:
         await q.edit_message_text("规则不存在")
+        await q.answer()
         return
     try:
         rule_id = int(parts[3])
     except ValueError:
         await q.edit_message_text("规则不存在")
+        await q.answer()
         return
 
     field = parts[4]
@@ -657,6 +712,11 @@ async def auto_reply_edit_callback(update: Update, context: ContextTypes.DEFAULT
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
+        rule = await get_auto_reply_rule_in_chat(session, target_chat_id, rule_id)
+        if rule is None:
+            await session.commit()
+            await q.answer("规则不存在", show_alert=True)
+            return
         await set_user_state(
             session,
             chat_id=update.effective_chat.id,
@@ -670,13 +730,13 @@ async def auto_reply_edit_callback(update: Update, context: ContextTypes.DEFAULT
         prompt_map[field],
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"auto_reply:detail:{target_chat_id}:{rule_id}")]]),
     )
+    await q.answer()
 
 
 async def auto_reply_rule_config_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not _ensure_callback_update(update):
         return
     q = update.callback_query
-    await q.answer()
 
     target_chat_id = await _resolve_auto_reply_target_chat_id(update, context)
     if target_chat_id is None:
@@ -696,7 +756,7 @@ async def auto_reply_rule_config_callback(update: Update, context: ContextTypes.
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
-        rule = await get_auto_reply_rule(session, rule_id)
+        rule = await get_auto_reply_rule_in_chat(session, target_chat_id, rule_id)
         if rule is None or rule.chat_id != target_chat_id:
             await session.commit()
             await q.answer("规则不存在", show_alert=True)
@@ -704,9 +764,11 @@ async def auto_reply_rule_config_callback(update: Update, context: ContextTypes.
 
         if action == "togglecfg":
             if field == "case":
-                await update_auto_reply_rule(session, rule_id, case_sensitive=not bool(rule.case_sensitive))
+                await update_auto_reply_rule(session, rule_id, chat_id=target_chat_id, case_sensitive=not bool(rule.case_sensitive))
             elif field == "source":
-                await update_auto_reply_rule(session, rule_id, delete_source=not bool(rule.delete_source))
+                await update_auto_reply_rule(session, rule_id, chat_id=target_chat_id, delete_source=not bool(rule.delete_source))
+            elif field == "stop":
+                await update_auto_reply_rule(session, rule_id, chat_id=target_chat_id, stop_after_match=not bool(getattr(rule, "stop_after_match", True)))
             else:
                 await session.commit()
                 await q.answer("无效配置项", show_alert=True)
@@ -722,12 +784,12 @@ async def auto_reply_rule_config_callback(update: Update, context: ContextTypes.
                 ]
                 current = getattr(rule, "match_type", AutoReplyMatchType.contains.value)
                 next_index = (ordered.index(current) + 1) % len(ordered) if current in ordered else 0
-                await update_auto_reply_rule(session, rule_id, match_type=ordered[next_index])
+                await update_auto_reply_rule(session, rule_id, chat_id=target_chat_id, match_type=ordered[next_index])
             elif field == "delay":
                 values = [0, 30, 60, 300, 600]
                 current_delay = int(getattr(rule, "delete_reply_delay_seconds", 0) or 0)
                 next_index = (values.index(current_delay) + 1) % len(values) if current_delay in values else 0
-                await update_auto_reply_rule(session, rule_id, delete_reply_delay_seconds=values[next_index])
+                await update_auto_reply_rule(session, rule_id, chat_id=target_chat_id, delete_reply_delay_seconds=values[next_index])
             else:
                 await session.commit()
                 await q.answer("无效配置项", show_alert=True)
@@ -735,13 +797,13 @@ async def auto_reply_rule_config_callback(update: Update, context: ContextTypes.
         await session.commit()
 
     await _show_auto_reply_rule_detail(update, context, chat_id=target_chat_id, rule_id=rule_id)
+    await q.answer()
 
 
 async def auto_reply_move_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not _ensure_callback_update(update):
         return
     q = update.callback_query
-    await q.answer()
 
     target_chat_id = await _resolve_auto_reply_target_chat_id(update, context)
     if target_chat_id is None:
@@ -773,14 +835,13 @@ async def auto_reply_move_callback(update: Update, context: ContextTypes.DEFAULT
         return
 
     await q.answer("顺序已更新")
-    await auto_reply_list_callback(update, context)
+    await _render_auto_reply_list(update, context, target_chat_id=target_chat_id, page=0)
 
 
 async def auto_reply_delete_confirm_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not _ensure_callback_update(update):
         return
     q = update.callback_query
-    await q.answer()
 
     target_chat_id = await _resolve_auto_reply_target_chat_id(update, context)
     if target_chat_id is None:
@@ -789,22 +850,25 @@ async def auto_reply_delete_confirm_callback(update: Update, context: ContextTyp
     parts = (q.data or "").split(":")
     if len(parts) < 5:
         await q.edit_message_text("删除失败")
+        await q.answer()
         return
     try:
         rule_id = int(parts[3])
     except ValueError:
         await q.edit_message_text("删除失败")
+        await q.answer()
         return
 
     from bot.keyboards.content.auto_reply import auto_reply_delete_confirm_keyboard
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
-        rule = await get_auto_reply_rule(session, rule_id)
+        rule = await get_auto_reply_rule_in_chat(session, target_chat_id, rule_id)
         await session.commit()
 
     if rule is None or rule.chat_id != target_chat_id:
         await q.edit_message_text("规则不存在")
+        await q.answer()
         return
 
     text = "\n".join([
@@ -819,13 +883,13 @@ async def auto_reply_delete_confirm_callback(update: Update, context: ContextTyp
         text,
         reply_markup=auto_reply_delete_confirm_keyboard(rule.id, target_chat_id),
     )
+    await q.answer()
 
 
 async def auto_reply_delete_do_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not _ensure_callback_update(update):
         return
     q = update.callback_query
-    await q.answer()
 
     target_chat_id = await _resolve_auto_reply_target_chat_id(update, context)
     if target_chat_id is None:
@@ -834,16 +898,18 @@ async def auto_reply_delete_do_callback(update: Update, context: ContextTypes.DE
     parts = (q.data or "").split(":")
     if len(parts) < 5:
         await q.edit_message_text("删除失败")
+        await q.answer()
         return
     try:
         rule_id = int(parts[3])
     except ValueError:
         await q.edit_message_text("删除失败")
+        await q.answer()
         return
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
-        success = await delete_auto_reply_rule(session, rule_id)
+        success = await delete_auto_reply_rule(session, rule_id, chat_id=target_chat_id)
         await session.commit()
 
     if not success:
@@ -851,7 +917,7 @@ async def auto_reply_delete_do_callback(update: Update, context: ContextTypes.DE
         return
 
     await q.answer("规则已删除")
-    await auto_reply_list_callback(update, context)
+    await _render_auto_reply_list(update, context, target_chat_id=target_chat_id, page=0)
 
 
 # Handler 类定义（使用 BaseHandler）
@@ -883,16 +949,15 @@ class AutoReplyToggleHandler(BaseHandler):
             return
 
         # 切换规则状态
-        success = await self._toggle_rule(context, rule_id)
+        success = await self._toggle_rule(context, target_chat_id, rule_id)
 
         if success:
-            await self.message_helper.safe_answer(update, "状态已切换")
             # 刷新菜单
             await _auto_reply_menu_handler.handle_callback(update, context, require_admin=False)
         else:
             await self.message_helper.safe_answer(update, "规则不存在", show_alert=True)
 
-    async def _toggle_rule(self, context: ContextTypes.DEFAULT_TYPE, rule_id: int) -> bool:
+    async def _toggle_rule(self, context: ContextTypes.DEFAULT_TYPE, target_chat_id: int, rule_id: int) -> bool:
         """切换规则状态
 
         Args:
@@ -904,7 +969,7 @@ class AutoReplyToggleHandler(BaseHandler):
         """
         db = context.application.bot_data["db"]
         async with db.session_factory() as session:
-            success = await toggle_auto_reply_rule(session, rule_id)
+            success = await toggle_auto_reply_rule(session, rule_id, chat_id=target_chat_id)
             await session.commit()
         return success
 
@@ -919,7 +984,6 @@ async def auto_reply_toggle_callback(update: Update, context: ContextTypes.DEFAU
     if not _ensure_callback_update(update):
         return
     q = update.callback_query
-    await q.answer()
 
     data = q.data or ""
     if data.startswith("auto_reply:toggle:"):
@@ -938,7 +1002,7 @@ async def auto_reply_toggle_callback(update: Update, context: ContextTypes.DEFAU
 
         db = context.application.bot_data["db"]
         async with db.session_factory() as session:
-            success = await toggle_auto_reply_rule(session, rule_id)
+            success = await toggle_auto_reply_rule(session, rule_id, chat_id=target_chat_id)
             await session.commit()
 
         if not success:
@@ -966,7 +1030,6 @@ class AutoReplyDeleteHandler(BaseHandler):
         from bot.utils.callback_parser import CallbackParser
 
         q = update.callback_query
-        await q.answer()
 
         # 只在群组中处理
         if self.chat_resolver.is_private_chat(update):
@@ -981,16 +1044,15 @@ class AutoReplyDeleteHandler(BaseHandler):
             return
 
         # 删除规则
-        success = await self._delete_rule(context, rule_id)
+        success = await self._delete_rule(context, target_chat_id, rule_id)
 
         if success:
-            await self.message_helper.safe_answer(update, "规则已删除")
             # 刷新菜单（不需要权限检查，因为已经检查过了）
             await _auto_reply_menu_handler.handle_callback(update, context, require_admin=False)
         else:
             await self.message_helper.safe_answer(update, "删除失败", show_alert=True)
 
-    async def _delete_rule(self, context: ContextTypes.DEFAULT_TYPE, rule_id: int) -> bool:
+    async def _delete_rule(self, context: ContextTypes.DEFAULT_TYPE, target_chat_id: int, rule_id: int) -> bool:
         """删除规则
 
         Args:
@@ -1002,7 +1064,7 @@ class AutoReplyDeleteHandler(BaseHandler):
         """
         db = context.application.bot_data["db"]
         async with db.session_factory() as session:
-            success = await delete_auto_reply_rule(session, rule_id)
+            success = await delete_auto_reply_rule(session, rule_id, chat_id=target_chat_id)
             await session.commit()
         return success
 
@@ -1115,17 +1177,26 @@ async def _parse_auto_reply_config(update: Update, session, state: object, text:
         # 解析匹配类型
         match_type = AutoReplyMatchType.contains.value  # 默认
         case_sensitive = False  # 默认
+        stop_after_match = True
         delete_source = False
         delete_reply_delay_seconds = 0
 
         # 解析匹配类型和附加配置
-        for i in range(1, min(6, len(lines))):
+        for i in range(1, len(lines)):
             line = lines[i].strip()
+            if line.startswith("回复内容:"):
+                break
             if line.startswith("匹配类型:"):
                 match_type = line.split(":", 1)[1].strip()
             elif line.startswith("区分大小写:"):
                 case_sensitive_str = line.split(":", 1)[1].strip().lower()
                 case_sensitive = case_sensitive_str in ["true", "1", "yes"]
+            elif line.startswith("停止继续匹配:"):
+                stop_after_match_str = line.split(":", 1)[1].strip().lower()
+                stop_after_match = stop_after_match_str in ["true", "1", "yes"]
+            elif line.startswith("继续匹配:"):
+                continue_match_str = line.split(":", 1)[1].strip().lower()
+                stop_after_match = continue_match_str not in ["true", "1", "yes"]
             elif line.startswith("删除来源:"):
                 delete_source_str = line.split(":", 1)[1].strip().lower()
                 delete_source = delete_source_str in ["true", "1", "yes"]
@@ -1165,6 +1236,7 @@ async def _parse_auto_reply_config(update: Update, session, state: object, text:
             reply_content=reply_content,
             match_type=match_type,
             case_sensitive=case_sensitive,
+            stop_after_match=stop_after_match,
             delete_source=delete_source,
             delete_reply_delay_seconds=delete_reply_delay_seconds,
         )
@@ -1189,6 +1261,7 @@ async def _parse_auto_reply_config(update: Update, session, state: object, text:
         reply_text += f"🔢 顺序: #{result.entity.sort_order}\n"
         reply_text += f"📋 匹配类型: {_get_match_type_label(match_type)}\n"
         reply_text += f"🔤 区分大小写: {'是' if case_sensitive else '否'}\n"
+        reply_text += f"🧱 命中后停止继续匹配: {'是' if stop_after_match else '否'}\n"
         reply_text += f"🧹 删除来源: {'是' if delete_source else '否'}\n"
         reply_text += (
             f"⏱️ 延迟删除: {delete_reply_delay_seconds} 秒\n"
@@ -1220,6 +1293,7 @@ async def _handle_auto_reply_edit_input(update: Update, context: ContextTypes.DE
     state_data = state.state_data or {}
     target_chat_id = state_data.get("target_chat_id")
     rule_id = state_data.get("rule_id")
+    updated_rule = None
     if not target_chat_id or not rule_id:
         await update.effective_message.reply_text("❌ 自动回复状态异常，请重新进入规则详情页。")
         await clear_user_state(session, chat_id=update.effective_chat.id, user_id=update.effective_user.id)
@@ -1228,27 +1302,32 @@ async def _handle_auto_reply_edit_input(update: Update, context: ContextTypes.DE
 
     if state_type == ConversationStateType.auto_reply_edit_keywords.value:
         keywords = [item.strip() for item in text.split(",") if item.strip()]
-        await update_auto_reply_rule(session, rule_id, keywords=keywords)
+        updated_rule = await update_auto_reply_rule(session, rule_id, chat_id=target_chat_id, keywords=keywords)
     elif state_type == ConversationStateType.auto_reply_edit_content.value:
-        await update_auto_reply_rule(session, rule_id, reply_content=text.strip())
+        updated_rule = await update_auto_reply_rule(session, rule_id, chat_id=target_chat_id, reply_content=text.strip())
     elif state_type == ConversationStateType.auto_reply_edit_cover.value:
         message = update.effective_message
         if text.strip() == "清空":
-            await update_auto_reply_rule(session, rule_id, cover_media_type=None, cover_media_file_id=None)
+            updated_rule = await update_auto_reply_rule(session, rule_id, chat_id=target_chat_id, cover_media_type=None, cover_media_file_id=None)
         elif message.photo:
-            await update_auto_reply_rule(session, rule_id, cover_media_type="photo", cover_media_file_id=message.photo[-1].file_id)
+            updated_rule = await update_auto_reply_rule(session, rule_id, chat_id=target_chat_id, cover_media_type="photo", cover_media_file_id=message.photo[-1].file_id)
         elif message.video:
-            await update_auto_reply_rule(session, rule_id, cover_media_type="video", cover_media_file_id=message.video.file_id)
+            updated_rule = await update_auto_reply_rule(session, rule_id, chat_id=target_chat_id, cover_media_type="video", cover_media_file_id=message.video.file_id)
         else:
             await update.effective_message.reply_text("❌ 请发送图片、视频，或发送“清空”。")
             await session.commit()
             return
     elif state_type == ConversationStateType.auto_reply_edit_buttons.value:
         if text.strip() == "清空":
-            await update_auto_reply_rule(session, rule_id, buttons=[])
+            updated_rule = await update_auto_reply_rule(session, rule_id, chat_id=target_chat_id, buttons=[])
         else:
             buttons = _parse_auto_reply_buttons_input(text)
-            await update_auto_reply_rule(session, rule_id, buttons=buttons)
+            updated_rule = await update_auto_reply_rule(session, rule_id, chat_id=target_chat_id, buttons=buttons)
+
+    if updated_rule is None:
+        await update.effective_message.reply_text("❌ 自动回复规则不存在或不属于当前群组。")
+        await session.commit()
+        return
 
     await clear_user_state(session, chat_id=update.effective_chat.id, user_id=update.effective_user.id)
     await session.commit()
@@ -1276,28 +1355,34 @@ async def auto_reply_message_handler(update: Update, context: ContextTypes.DEFAU
 
     if result.success and result.reply_content and result.rule is not None:
         try:
-            sent = await _send_auto_reply_payload(
-                context,
-                chat_id=chat.id,
-                text=result.reply_content,
-                rule=result.rule,
-                reply_to_message_id=update.effective_message.message_id,
-            )
-            if getattr(result.rule, "delete_source", False):
+            matched_rules = result.matched_rules or ([result.rule] if result.rule is not None else [])
+            sent_messages = []
+            for matched_rule in matched_rules:
+                sent_messages.append(
+                    await _send_auto_reply_payload(
+                        context,
+                        chat_id=chat.id,
+                        text=matched_rule.reply_content,
+                        rule=matched_rule,
+                        reply_to_message_id=update.effective_message.message_id,
+                    )
+                )
+            if any(getattr(rule, "delete_source", False) for rule in matched_rules):
                 try:
                     await update.effective_message.delete()
                 except Exception as exc:
                     log.debug("auto_reply_delete_source_failed", error=str(exc))
-            delete_after = getattr(result.rule, "delete_reply_delay_seconds", 0) or 0
-            if delete_after > 0:
-                async def _delete_later():
-                    await asyncio.sleep(delete_after)
-                    try:
-                        await sent.delete()
-                    except Exception:
-                        return
+            for matched_rule, sent_message in zip(matched_rules, sent_messages, strict=False):
+                delete_after = getattr(matched_rule, "delete_reply_delay_seconds", 0) or 0
+                if delete_after > 0:
+                    async def _delete_later(message, delay_seconds: int):
+                        await asyncio.sleep(delay_seconds)
+                        try:
+                            await message.delete()
+                        except Exception:
+                            return
 
-                asyncio.create_task(_delete_later())
+                    asyncio.create_task(_delete_later(sent_message, delete_after))
         except Exception as e:
             log.debug("auto_reply_send_failed", error=str(e))  # 静默失败，避免循环
 

@@ -245,7 +245,9 @@ class ScheduledMessageHandler(BaseHandler):
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
             try:
-                task = await ScheduledMessageService.get_task_by_id_or_404(session, task_id)
+                task = await ScheduledMessageService.get_task_in_chat_or_404(
+                    session, target_chat_id, task_id
+                )
             except Exception as e:
                 await session.rollback()
                 await self.message_helper.safe_edit(
@@ -420,6 +422,9 @@ class ScheduledMessageHandler(BaseHandler):
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
             try:
+                await ScheduledMessageService.get_task_in_chat_or_404(
+                    session, target_chat_id, task_id
+                )
                 # 处理不同类型的字段
                 if field == "enabled":
                     value_bool = value == "1"
@@ -553,7 +558,9 @@ class ScheduledMessageHandler(BaseHandler):
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
             try:
-                task = await ScheduledMessageService.get_task_by_id_or_404(session, task_id)
+                task = await ScheduledMessageService.get_task_in_chat_or_404(
+                    session, target_chat_id, task_id
+                )
             except Exception as e:
                 await session.rollback()
                 await self.message_helper.safe_edit(
@@ -662,6 +669,9 @@ class ScheduledMessageHandler(BaseHandler):
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
             try:
+                await ScheduledMessageService.get_task_in_chat_or_404(
+                    session, target_chat_id, task_id
+                )
                 await ScheduledMessageService.delete_task(session, task_id)
             except Exception as e:
                 await session.rollback()

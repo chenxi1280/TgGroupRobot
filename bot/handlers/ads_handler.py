@@ -36,7 +36,7 @@ from bot.services.state.conversation_state_service import ConversationStateServi
 from bot.services.core.chat_service import ensure_chat, get_chat_settings
 from bot.models.core import AdCampaign
 from bot.utils.callback_parser import CallbackParser
-from bot.utils.telegram_errors import answer_callback_query_safely, build_public_error_text
+from bot.utils.telegram_errors import answer_callback_query_safely, build_public_error_text, mark_callback_query_answered
 
 log = structlog.get_logger(__name__)
 
@@ -372,6 +372,7 @@ async def ads_detail_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
     q = update.callback_query
     await q.answer()
+    mark_callback_query_answered(update)
 
     target_chat_id = await _resolve_ads_target_chat_id(update, context)
     if target_chat_id is None:
@@ -828,6 +829,7 @@ async def ads_send_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return
     q = update.callback_query
     await q.answer()
+    mark_callback_query_answered(update)
 
     target_chat_id = await _resolve_ads_target_chat_id(update, context)
     if target_chat_id is None:
@@ -884,6 +886,7 @@ async def ads_toggle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
     q = update.callback_query
     await q.answer()
+    mark_callback_query_answered(update)
 
     target_chat_id = await _resolve_ads_target_chat_id(update, context)
     if target_chat_id is None:
@@ -919,6 +922,7 @@ async def ads_delete_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
     q = update.callback_query
     await q.answer()
+    mark_callback_query_answered(update)
 
     target_chat_id = await _resolve_ads_target_chat_id(update, context)
     if target_chat_id is None:

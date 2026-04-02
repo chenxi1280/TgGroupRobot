@@ -43,8 +43,10 @@ from bot.services.core.permission_service import PermissionPolicyService, is_use
 from bot.services.core.user_service import ensure_user
 from bot.services.activity.points_extended_service import PointsExtendedService
 from bot.services.activity.auction_service import (
+    get_auction,
     format_auction_settings_text,
     get_or_create_setting as get_auction_setting,
+    list_auctions,
     list_recent_auctions,
     update_setting as update_auction_setting,
 )
@@ -188,6 +190,8 @@ def _resolve_private_scoped_target_chat_id(cb: CallbackParser) -> int | None:
             return cb.get_int_optional(2)
         if action == "audit":
             return cb.get_int_optional(2)
+        if action == "keywords":
+            return cb.get_int_optional(3)
         if action == "source":
             return cb.get_int_optional(3)
         if action in {"toggle", "mode"}:
@@ -211,6 +215,8 @@ def _resolve_private_scoped_target_chat_id(cb: CallbackParser) -> int | None:
         if action == "home":
             return cb.get_int_optional(2)
         if action == "toggle":
+            return cb.get_int_optional(3)
+        if action == "attendance":
             return cb.get_int_optional(3)
         if action in {"delete_mode", "delegate"}:
             return cb.get_int_optional(2)
@@ -241,7 +247,7 @@ def _resolve_private_scoped_target_chat_id(cb: CallbackParser) -> int | None:
 
     if prefix == "auc":
         action = cb.get(1)
-        if action in {"home", "toggle", "perm", "points_mode"}:
+        if action in {"home", "toggle", "perm", "points_mode", "list", "detail"}:
             return cb.get_int_optional(2)
         return None
 
@@ -255,7 +261,7 @@ def _resolve_private_scoped_target_chat_id(cb: CallbackParser) -> int | None:
 
     if prefix == "gm":
         action = cb.get(1)
-        if action in {"home", "toggle", "rake", "auto", "delete_mode"}:
+        if action in {"home", "toggle", "rake", "auto", "delete_mode", "rounds", "help", "detail"}:
             return cb.get_int_optional(2)
         return None
 
@@ -373,7 +379,7 @@ class AdminHandler(BaseHandler):
         elif action == "mall":
             await self._handle_points_mall(update, context, target_chat_id, callback_data)
         elif action == "todo":
-            await self._show_unimplemented_feature(update, target_chat_id, callback_data)
+            await self._show_unimplemented_feature(update, context, target_chat_id, callback_data)
 
     async def _handle_menu(
         self,
@@ -497,16 +503,28 @@ class AdminHandler(BaseHandler):
     async def _show_unimplemented_feature(
         self,
         update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
         callback_data: CallbackParser,
     ) -> None:
         feature_key = callback_data.get(3)
+        redirect_map = {
+            "auction": self._show_auction_menu,
+            "game": self._show_game_menu,
+            "guess": self._show_guess_home,
+            "inherit": self._show_account_inherit_menu,
+            "bottom_button": self._show_bottom_button_menu,
+        }
+        redirect = redirect_map.get(feature_key)
+        if redirect is not None:
+            await redirect(update, context, chat_id)
+            return
         feature_meta = {
-            "auction": ("💰 拍卖", "当前只有重构设计，独立拍卖模块尚未接入。"),
-            "game": ("🎮 游戏", "当前只有重构设计，独立游戏模块尚未接入。"),
-            "guess": ("⚽ 竞猜", "当前只有重构设计，独立竞猜模块尚未接入。"),
-            "inherit": ("💥 炸号继承", "当前只有重构设计，继承流程与账本迁移尚未接入。"),
-            "bottom_button": ("⌨️ 底部按钮", "当前只有重构设计，底部快捷按钮生成能力尚未接入。"),
+            "auction": ("💰 拍卖", "旧入口已废弃，请返回主菜单重新进入新版工作台。"),
+            "game": ("🎮 游戏", "旧入口已废弃，请返回主菜单重新进入新版工作台。"),
+            "guess": ("⚽ 竞猜", "旧入口已废弃，请返回主菜单重新进入新版工作台。"),
+            "inherit": ("💥 炸号继承", "旧入口已废弃，请返回主菜单重新进入新版工作台。"),
+            "bottom_button": ("⌨️ 底部按钮", "旧入口已废弃，请返回主菜单重新进入新版工作台。"),
         }
         feature_name, feature_desc = feature_meta.get(
             feature_key,
@@ -4249,9 +4267,96 @@ class AdminHandler(BaseHandler):
                 InlineKeyboardButton("🚫 不关联" + (" ✅" if setting.points_mode == "none" else ""), callback_data=f"auc:points_mode:{chat_id}:none"),
                 InlineKeyboardButton("🌑 主积分" + (" ✅" if setting.points_mode == "group_points" else ""), callback_data=f"auc:points_mode:{chat_id}:group_points"),
             ],
+            [InlineKeyboardButton("📋 活动列表", callback_data=f"auc:list:{chat_id}:0")],
             [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
         ])
         await self.message_helper.safe_edit(update, text="\n".join(lines), reply_markup=keyboard)
+
+    async def _show_auction_list(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+        page: int = 0,
+    ) -> None:
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            items, total_count = await list_auctions(session, chat_id, page=page, page_size=10)
+            await session.commit()
+        total_pages = max(1, (total_count + 9) // 10)
+        current_page = min(max(page, 0), total_pages - 1)
+        lines = [
+            "💰 拍卖 | 活动列表",
+            "",
+            f"{total_count} 条数据，第 {current_page + 1} 页/共 {total_pages} 页",
+            "",
+        ]
+        if items:
+            for item in items:
+                lines.extend(
+                    [
+                        f"#{item.id} {item.title or '未命名拍卖'}",
+                        f"状态：{item.status}｜当前价：{item.current_price}",
+                        "",
+                    ]
+                )
+        else:
+            lines.append("暂无拍卖记录")
+
+        keyboard_rows: list[list[InlineKeyboardButton]] = []
+        for item in items:
+            keyboard_rows.append([
+                InlineKeyboardButton(
+                    f"📄 #{item.id} {item.title or '未命名拍卖'}"[:48],
+                    callback_data=f"auc:detail:{chat_id}:{item.id}",
+                )
+            ])
+        nav_row: list[InlineKeyboardButton] = []
+        if current_page > 0:
+            nav_row.append(InlineKeyboardButton("⬅️ 上一页", callback_data=f"auc:list:{chat_id}:{current_page - 1}"))
+        if current_page < total_pages - 1:
+            nav_row.append(InlineKeyboardButton("下一页 ➡️", callback_data=f"auc:list:{chat_id}:{current_page + 1}"))
+        if nav_row:
+            keyboard_rows.append(nav_row)
+        keyboard_rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"auc:home:{chat_id}")])
+        await self.message_helper.safe_edit(update, text="\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard_rows))
+
+    async def _show_auction_detail(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+        auction_id: int,
+    ) -> None:
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            item = await get_auction(session, chat_id, auction_id)
+            await session.commit()
+        if item is None:
+            await self.message_helper.safe_edit(
+                update,
+                text="❌ 拍卖不存在",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回列表", callback_data=f"auc:list:{chat_id}:0")]]),
+            )
+            return
+        text = "\n".join(
+            [
+                f"💰 拍卖详情 #{item.id}",
+                "",
+                f"标题：{item.title or '未命名拍卖'}",
+                f"状态：{item.status}",
+                f"起拍价：{item.start_price}",
+                f"当前价：{item.current_price}",
+                f"创建时间：{item.created_at.astimezone().strftime('%Y-%m-%d %H:%M:%S')}",
+                f"截止时间：{item.end_at.astimezone().strftime('%Y-%m-%d %H:%M:%S') if item.end_at else '未设置'}",
+                f"中标用户：{item.winner_user_id or '未结算'}",
+            ]
+        )
+        await self.message_helper.safe_edit(
+            update,
+            text=text,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回列表", callback_data=f"auc:list:{chat_id}:0")]]),
+        )
 
     async def _handle_auction(
         self,
@@ -4264,6 +4369,12 @@ class AdminHandler(BaseHandler):
         db: Database = context.application.bot_data["db"]
         if action == "home":
             await self._show_auction_menu(update, context, chat_id)
+            return
+        if action == "list":
+            await self._show_auction_list(update, context, chat_id, callback_data.get_int_optional(3) or 0)
+            return
+        if action == "detail":
+            await self._show_auction_detail(update, context, chat_id, callback_data.get_int(3))
             return
 
         async with db.session_factory() as session:

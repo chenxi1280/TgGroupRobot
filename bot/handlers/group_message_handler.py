@@ -358,27 +358,33 @@ async def _process_auto_reply(
 
     if result.success and result.reply_content and result.rule is not None:
         try:
-            sent = await _send_auto_reply_payload(
-                context,
-                chat_id=chat.id,
-                text=result.reply_content,
-                rule=result.rule,
-                reply_to_message_id=message.message_id,
-            )
-            if getattr(result.rule, "delete_source", False):
+            matched_rules = result.matched_rules or ([result.rule] if result.rule is not None else [])
+            sent_messages = []
+            for matched_rule in matched_rules:
+                sent_messages.append(
+                    await _send_auto_reply_payload(
+                        context,
+                        chat_id=chat.id,
+                        text=matched_rule.reply_content,
+                        rule=matched_rule,
+                        reply_to_message_id=message.message_id,
+                    )
+                )
+            if any(getattr(rule, "delete_source", False) for rule in matched_rules):
                 try:
                     await message.delete()
                 except Exception as exc:
                     log.warning("auto_reply_delete_source_failed", chat_id=chat.id, error=str(exc))
-            delete_after = getattr(result.rule, "delete_reply_delay_seconds", 0) or 0
-            if delete_after > 0:
-                asyncio.create_task(_delete_message_later(sent, delete_after))
+            for matched_rule, sent_message in zip(matched_rules, sent_messages, strict=False):
+                delete_after = getattr(matched_rule, "delete_reply_delay_seconds", 0) or 0
+                if delete_after > 0:
+                    asyncio.create_task(_delete_message_later(sent_message, delete_after))
             log.info(
                 "unified_handler_auto_reply_sent",
                 chat_id=chat.id,
                 reply_content_preview=result.reply_content[:50],
-                delete_source=bool(getattr(result.rule, "delete_source", False)),
-                delete_reply_delay_seconds=delete_after,
+                delete_source=any(bool(getattr(rule, "delete_source", False)) for rule in matched_rules),
+                delete_reply_delay_seconds=max((getattr(rule, "delete_reply_delay_seconds", 0) or 0) for rule in matched_rules) if matched_rules else 0,
             )
         except Exception as e:
             log.warning("auto_reply_send_failed", chat_id=chat.id, error=str(e))

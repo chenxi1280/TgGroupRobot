@@ -207,7 +207,7 @@ def _full_tables() -> dict[str, dict]:
                 "id", "chat_id", "created_by_user_id", "keywords", "reply_content",
                 "cover_media_type", "cover_media_file_id", "buttons", "match_type",
                 "sort_order", "delete_source", "delete_reply_delay_seconds",
-                "is_active", "match_count", "case_sensitive", "created_at", "updated_at",
+                "is_active", "match_count", "case_sensitive", "stop_after_match", "created_at", "updated_at",
             },
         },
         "banned_words": {"columns": {"id", "chat_id", "created_by_user_id", "word", "match_type", "action", "mute_duration", "notify", "notify_message", "is_active", "trigger_count", "case_sensitive", "created_at", "updated_at"}},

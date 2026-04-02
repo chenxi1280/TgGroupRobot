@@ -23,6 +23,7 @@ from bot.services.activity.solitaire_service import (
     format_solitaire_stats_message,
     get_chat_solitaires,
     get_solitaire,
+    get_solitaire_in_chat,
     get_solitaire_stats,
     join_solitaire,
     leave_solitaire,
@@ -129,7 +130,7 @@ class SolitaireHandler(BaseHandler):
         """显示接龙详情"""
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
-            solitaire = await get_solitaire(session, solitaire_id)
+            solitaire = await get_solitaire_in_chat(session, target_chat_id, solitaire_id)
             if not solitaire:
                 await session.commit()
                 keyboard = solitaire_menu_keyboard(target_chat_id)
@@ -916,7 +917,7 @@ async def solitaire_refresh_callback(update: Update, context: ContextTypes.DEFAU
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
-        solitaire = await get_solitaire(session, solitaire_id)
+        solitaire = await get_solitaire_in_chat(session, target_chat_id, solitaire_id)
         if not solitaire:
             await session.commit()
             await q.edit_message_text("接龙不存在", reply_markup=solitaire_menu_keyboard(target_chat_id if chat.type == "private" else None))
@@ -926,7 +927,7 @@ async def solitaire_refresh_callback(update: Update, context: ContextTypes.DEFAU
         if solitaire.deadline and solitaire.status == SolitaireStatus.active.value:
             now = dt.datetime.now(dt.timezone.utc)
             if now > solitaire.deadline:
-                close_result = await close_solitaire(session, solitaire_id)
+                close_result = await close_solitaire(session, solitaire_id, chat_id=target_chat_id)
                 if close_result.success:
                     solitaire = close_result.entity
                     # 在群组中发送过期通知
@@ -980,7 +981,7 @@ async def solitaire_close_callback(update: Update, context: ContextTypes.DEFAULT
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
-        result = await close_solitaire(session, solitaire_id)
+        result = await close_solitaire(session, solitaire_id, chat_id=target_chat_id)
 
         if result.success:
             entries_count = len(result.entity.entries_rel)
@@ -1058,7 +1059,7 @@ async def solitaire_delete_callback(update: Update, context: ContextTypes.DEFAUL
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
-        success = await delete_solitaire(session, solitaire_id)
+        success = await delete_solitaire(session, solitaire_id, chat_id=target_chat_id)
         await session.commit()
 
         keyboard = solitaire_menu_keyboard(target_chat_id if chat.type == "private" else None)

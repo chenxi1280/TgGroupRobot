@@ -48,7 +48,7 @@ class PointsConfigHandler(BaseHandler):
 
         # 只在私聊中处理
         if not self.chat_resolver.is_private_chat(update):
-            await self.message_helper.safe_edit(update, "请在私聊中使用此功能")
+            await _safe_edit_message(q, "请在私聊中使用此功能")
             return
 
         # 解析 callback data
@@ -98,7 +98,7 @@ class PointsConfigHandler(BaseHandler):
             f"排行别名：{settings.points_rank_alias}\n\n"
             "说明：当前先提供基础版积分中心，文档中的转让、日志导出、清空积分等入口已收口为待实现。"
         )
-        await self.message_helper.safe_edit(update, text=text, reply_markup=points_config_keyboard(settings, chat_id))
+        await _safe_edit_message(update.callback_query, text, reply_markup=points_config_keyboard(settings, chat_id))
 
     async def _show_rule_page(
         self,
@@ -137,7 +137,7 @@ class PointsConfigHandler(BaseHandler):
             )
         if changed:
             text += "\n配置已更新。"
-        await self.message_helper.safe_edit(update, text=text, reply_markup=points_rule_keyboard(rule_type, settings, chat_id))
+        await _safe_edit_message(update.callback_query, text, reply_markup=points_rule_keyboard(rule_type, settings, chat_id))
 
     async def _handle_toggle(
         self,
@@ -213,11 +213,7 @@ class PointsConfigHandler(BaseHandler):
         prompt = prompts.get(field, "请输入新值：")
 
         keyboard = back_button(chat_id)
-        await self.message_helper.safe_edit(
-            update,
-            text=prompt,
-            reply_markup=keyboard
-        )
+        await _safe_edit_message(update.callback_query, prompt, reply_markup=keyboard)
 
         # 返回 WAIT_VALUE 状态，让 ConversationHandler 继续监听
         # 注意：这里我们需要返回状态值，但由于使用了 BaseHandler 模式
@@ -257,7 +253,7 @@ class PointsConfigHandler(BaseHandler):
             "当前只有重构设计，基础版积分中心尚未接入这一能力。\n"
             "本轮已保留入口位置，避免首页继续和文档细节错位。"
         )
-        await self.message_helper.safe_edit(update, text=text, reply_markup=back_button(chat_id))
+        await _safe_edit_message(update.callback_query, text, reply_markup=back_button(chat_id))
 
     async def _handle_cancel(
         self,
@@ -390,14 +386,13 @@ async def points_config_message_handler(update: Update, context: ContextTypes.DE
 
 async def points_config_cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """取消配置"""
+    chat_id = context.user_data.get("points_edit_chat_id")
+
     # 清除编辑状态
     context.user_data.pop("points_edit_field", None)
     context.user_data.pop("points_edit_chat_id", None)
 
     if update.callback_query:
-        field = context.user_data.get("points_edit_field")
-        chat_id = context.user_data.get("points_edit_chat_id")
-
         if chat_id:
             from bot.keyboards.admin.points import points_config_keyboard
 
