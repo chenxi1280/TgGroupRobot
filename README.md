@@ -147,6 +147,11 @@ WEBHOOK_URL=
 docker compose -f docker-compose.server.yml up --build
 ```
 
+线上 GitHub Actions 发版、服务器目录和数据库初始化流程，见：
+
+- `docs/GITHUB_ACTIONS_SSH_DEPLOY.md`
+- `docs/PRODUCTION_RUNTIME.md`
+
 ### 本地开发
 
 1. **创建虚拟环境**

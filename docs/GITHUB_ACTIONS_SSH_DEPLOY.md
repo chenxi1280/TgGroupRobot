@@ -76,3 +76,7 @@ INFRA_NETWORK_NAME=infra_default
 ```bash
 bash /data/tggrouprobot/current/deploy/rollback.sh <release-id>
 ```
+
+当前线上目录、数据库初始化流程和验收清单，见：
+
+- `docs/PRODUCTION_RUNTIME.md`
