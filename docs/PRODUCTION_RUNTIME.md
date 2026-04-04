@@ -83,10 +83,10 @@ INFRA_NETWORK_NAME=infra_default
 
 当前线上实际：
 
-- `TgGroupRobot` 仍在使用旧业务账号连接串
-- 共享业务子账号逻辑已经具备，但当前生产配置尚未完全切换
-
-这部分在本轮只做记录，不再额外迁移数据库账号。
+- `TgGroupRobot` 已切换为共享业务账号 `app_user`
+- `infra-compose` 的管理员入口已切换为 `postgres`
+- PostgreSQL 与 Redis 数据目录已经迁移到 `/data/infra/postgres` 和 `/data/infra/redis`
+- `/data/tgmsg/postgres` 与 `/data/tgmsg/redis` 仍保留为回退副本
 
 ## 6. 发布后验收清单
 
