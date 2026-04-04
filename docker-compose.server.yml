@@ -8,8 +8,19 @@ services:
     image: tggrouprobot-bot:latest
     container_name: tggrouprobot-bot
     restart: unless-stopped
-    env_file:
-      - .env
+    environment:
+      BOT_TOKEN: ${BOT_TOKEN:?BOT_TOKEN is required}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      APP_ENV: ${APP_ENV:-prod}
+      WEBHOOK_URL: ${WEBHOOK_URL:-}
+      GROUP_GUIDE_MESSAGE_DELETE_SECONDS: ${GROUP_GUIDE_MESSAGE_DELETE_SECONDS:-30}
+      PROXY_URL: ${PROXY_URL:-}
+      BOT_ADMIN_IDS: ${BOT_ADMIN_IDS:-}
+      RENEW_CONTACT_USERNAME: ${RENEW_CONTACT_USERNAME:-}
+      RENEW_CONTACT_LABEL: ${RENEW_CONTACT_LABEL:-一键联系}
+      RENEWAL_CONTACT_URL: ${RENEWAL_CONTACT_URL:-}
+      RENEWAL_CONTACT_LABEL: ${RENEWAL_CONTACT_LABEL:-一键联系}
     networks:
       - infra_default
 
