@@ -4,9 +4,6 @@ name: Deploy Production
   workflow_dispatch:
   push:
     branches:
-      - main
-      - master
-      - release
       - release-tg
 
 concurrency:
