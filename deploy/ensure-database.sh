@@ -50,15 +50,14 @@ docker exec \
   -e INFRA_POSTGRES_MAINTENANCE_DB="$INFRA_POSTGRES_MAINTENANCE_DB" \
   "$INFRA_POSTGRES_CONTAINER_NAME" \
   sh -lc '
-    PGPASSWORD="$APP_DB_PASSWORD" \
-      psql -h 127.0.0.1 -U "$APP_DB_USER" -d "$INFRA_POSTGRES_MAINTENANCE_DB" \
-      -v ON_ERROR_STOP=1 \
-      --set app_db_name="$APP_DB_NAME" <<'"'"'SQL'"'"'
-SELECT format('"'"'CREATE DATABASE %I'"'"', :'app_db_name')
-WHERE NOT EXISTS (
-  SELECT 1 FROM pg_database WHERE datname = :'app_db_name'
-)\gexec
-SQL
+    exists="$(
+      PGPASSWORD="$APP_DB_PASSWORD" \
+        psql -h 127.0.0.1 -U "$APP_DB_USER" -d "$INFRA_POSTGRES_MAINTENANCE_DB" \
+        -tAc "SELECT 1 FROM pg_database WHERE datname = '\''$APP_DB_NAME'\''"
+    )"
+    if [[ "$exists" != "1" ]]; then
+      PGPASSWORD="$APP_DB_PASSWORD" createdb -h 127.0.0.1 -U "$APP_DB_USER" "$APP_DB_NAME"
+    fi
   '
 
 echo "✅ Database ready: ${app_db_name}"
