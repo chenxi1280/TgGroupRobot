@@ -61,9 +61,9 @@ Dockerfile / docker-compose.yml
 
 ## 5) Docker 部署示例
 
-- `docker-compose.yml` 提供 `db` + `bot` 两个服务
-- 容器启动命令：先 `alembic upgrade head` 再 `python -m bot`
-
+- `docker-compose.yml` / `docker-compose.server.yml` 负责启动 `bot`
+- 容器启动命令为 `python -m bot`
+- 数据库结构初始化通过 `sql/init.sql` 或独立运维脚本完成，不绑定在容器启动命令里
 
 
 

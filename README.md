@@ -126,7 +126,7 @@ cp .env.docker.example .env
 BOT_TOKEN=your_bot_token_here
 
 # 数据库连接（必填，连接独立 infra）
-DATABASE_URL=postgresql+psycopg://tgmsg:replace_with_pg_password@postgres:5432/tggrouprobot
+DATABASE_URL=postgresql+psycopg://app_user:replace_with_shared_app_password@postgres:5432/tggrouprobot
 
 # 外部 Docker 网络
 INFRA_NETWORK_NAME=infra_default
@@ -1203,6 +1203,10 @@ pytest tests/test_specific.py::test_function
 3. **设置环境变量**：正确配置 `.env` 文件
 4. **启动机器人**：`docker compose -f docker-compose.server.yml up -d`
 5. **添加到群组**：将机器人添加到目标群组并授予管理员权限
+
+说明：
+- 容器默认启动命令为 `python -m bot`
+- 发布脚本会先确保 `tggrouprobot` 数据库存在，再执行项目内的 `sql/init.sql`
 
 ## 许可证
 

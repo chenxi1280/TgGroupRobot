@@ -43,7 +43,7 @@ cp /data/tggrouprobot/.env /data/tggrouprobot/shared/.env
 
 ```env
 BOT_TOKEN=...
-DATABASE_URL=postgresql+psycopg://tgmsg:<password>@postgres:5432/tggrouprobot
+DATABASE_URL=postgresql+psycopg://app_user:<shared_password>@postgres:5432/tggrouprobot
 INFRA_NETWORK_NAME=infra_default
 ```
 
@@ -67,8 +67,9 @@ INFRA_NETWORK_NAME=infra_default
 3. 上传到服务器 `/data/tggrouprobot/incoming`
 4. 解压到 `/data/tggrouprobot/releases/<release_id>`
 5. 调用 `deploy/server-install-release.sh`
-6. 执行 `docker compose -f docker-compose.server.yml up -d --build --remove-orphans`
-7. 更新 `/data/tggrouprobot/current`
+6. 先确保 `tggrouprobot` 数据库存在，再执行项目内 `sql/init.sql`
+7. 执行 `docker compose -f docker-compose.server.yml up -d --build --remove-orphans`
+8. 更新 `/data/tggrouprobot/current`
 
 ## 回滚
 

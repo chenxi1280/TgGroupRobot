@@ -10,8 +10,7 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY . /app
 
-CMD ["bash", "-lc", "alembic upgrade head && python -m bot"]
-
+CMD ["python", "-m", "bot"]
 
 
 

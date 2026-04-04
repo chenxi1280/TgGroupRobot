@@ -12,6 +12,12 @@ echo "==> Release directory: $APP_DIR"
 echo "==> Compose file: $COMPOSE_FILE"
 echo "==> Env file: $ENV_FILE"
 
+echo "==> Ensuring application database exists"
+bash "$SCRIPT_DIR/ensure-database.sh"
+
+echo "==> Applying project schema"
+bash "$SCRIPT_DIR/apply-schema.sh"
+
 compose up -d --build --remove-orphans bot
 
 echo "==> Container status"
