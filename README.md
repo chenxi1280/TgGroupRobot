@@ -116,7 +116,7 @@ TgGroupRobot 是一个功能完整的 **To C** Telegram 群组管理机器人，
 1. **准备环境变量**
 
 ```bash
-cp config/env.example .env
+cp .env.docker.example .env
 ```
 
 2. **编辑 `.env` 文件**
@@ -125,8 +125,11 @@ cp config/env.example .env
 # Telegram Bot Token（必填）
 BOT_TOKEN=your_bot_token_here
 
-# 数据库连接（必填）
-DATABASE_URL=postgresql+psycopg://user:password@host:5432/dbname
+# 数据库连接（必填，连接独立 infra）
+DATABASE_URL=postgresql+psycopg://tgmsg:replace_with_pg_password@postgres:5432/tggrouprobot
+
+# 外部 Docker 网络
+INFRA_NETWORK_NAME=infra_default
 
 # 日志级别（可选，默认 INFO）
 LOG_LEVEL=INFO
@@ -141,7 +144,7 @@ WEBHOOK_URL=
 3. **启动服务**
 
 ```bash
-docker compose up --build
+docker compose -f docker-compose.server.yml up --build
 ```
 
 ### 本地开发
@@ -1198,7 +1201,7 @@ pytest tests/test_specific.py::test_function
 1. **获取 Bot Token**：通过 [@BotFather](https://t.me/botfather) 创建机器人并获取 Token
 2. **配置数据库**：准备 PostgreSQL 数据库实例，执行 `sql/init.sql` 初始化表结构
 3. **设置环境变量**：正确配置 `.env` 文件
-4. **启动机器人**：`docker compose up -d`
+4. **启动机器人**：`docker compose -f docker-compose.server.yml up -d`
 5. **添加到群组**：将机器人添加到目标群组并授予管理员权限
 
 ## 许可证

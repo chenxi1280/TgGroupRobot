@@ -83,8 +83,9 @@ def build_application() -> Application:
     # 显式关闭 trust_env，避免 IDE/系统环境变量中的代理设置导致 Telegram 初始化失败。
     # 如需代理，仅使用 .env 中的 PROXY_URL。
     request_kwargs = {"httpx_kwargs": {"trust_env": False}}
-    request = HTTPXRequest(proxy=settings.proxy_url, **request_kwargs)
-    get_updates_request = HTTPXRequest(proxy=settings.proxy_url, **request_kwargs)
+    proxy_url = settings.proxy_url or None
+    request = HTTPXRequest(proxy=proxy_url, **request_kwargs)
+    get_updates_request = HTTPXRequest(proxy=proxy_url, **request_kwargs)
 
     builder = (
         Application.builder()
@@ -242,12 +243,24 @@ async def _validate_schema_or_exit(app: Application) -> None:
 _PID_FILE = os.path.join(tempfile.gettempdir(), "tggrouprobot.pid")
 
 
+def _should_skip_single_instance_lock() -> bool:
+    """容器内由容器编排保证单实例，不再依赖本地 PID 文件。"""
+    if os.getenv("BOT_DISABLE_SINGLE_INSTANCE", "").strip() == "1":
+        return True
+    return os.path.exists("/.dockerenv")
+
+
 def _check_single_instance() -> None:
     """确保只有一个 bot 实例在运行"""
+    if _should_skip_single_instance_lock():
+        return
+
     if os.path.exists(_PID_FILE):
         try:
             with open(_PID_FILE, "r") as f:
                 pid = int(f.read().strip())
+            if pid == os.getpid():
+                return
             os.kill(pid, 0)
             print(f"错误: bot 已经在运行 (PID: {pid})")
             print(f"如需重启，请先停止现有实例: kill {pid}")

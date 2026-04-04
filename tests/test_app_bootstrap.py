@@ -57,3 +57,25 @@ def test_build_application_uses_serial_updates(monkeypatch):
     assert fake_builder.concurrent_updates_value is False
     assert app.bot_data["settings"] is settings
     assert app.bot_data["db"] is fake_db
+
+
+def test_check_single_instance_skips_lock_inside_container(monkeypatch, tmp_path):
+    pid_file = tmp_path / "tggrouprobot.pid"
+    pid_file.write_text("999999")
+
+    monkeypatch.setattr(app_main, "_PID_FILE", str(pid_file))
+    monkeypatch.setattr(app_main, "_should_skip_single_instance_lock", lambda: True)
+
+    app_main._check_single_instance()
+
+    assert pid_file.read_text() == "999999"
+
+
+def test_check_single_instance_allows_current_pid(monkeypatch, tmp_path):
+    pid_file = tmp_path / "tggrouprobot.pid"
+    pid_file.write_text(str(app_main.os.getpid()))
+
+    monkeypatch.setattr(app_main, "_PID_FILE", str(pid_file))
+    monkeypatch.setattr(app_main, "_should_skip_single_instance_lock", lambda: False)
+
+    app_main._check_single_instance()

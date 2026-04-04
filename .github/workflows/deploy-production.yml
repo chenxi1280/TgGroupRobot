@@ -1,0 +1,76 @@
+name: Deploy Production
+
+'on':
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+      - release
+      - release-tg
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate deploy secrets
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
+          DEPLOY_HOST: ${{ secrets.PRODUCTION_HOST }}
+          DEPLOY_USER: ${{ secrets.PRODUCTION_USER }}
+        run: |
+          set -euo pipefail
+          test -n "${SSH_PRIVATE_KEY}"
+          test -n "${DEPLOY_HOST}"
+          test -n "${DEPLOY_USER}"
+
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
+          DEPLOY_HOST: ${{ secrets.PRODUCTION_HOST }}
+          DEPLOY_USER: ${{ secrets.PRODUCTION_USER }}
+          DEPLOY_PORT: ${{ secrets.PRODUCTION_PORT }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "${SSH_PRIVATE_KEY}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+
+          PORT="${DEPLOY_PORT:-22}"
+          cat > ~/.ssh/config <<EOF
+          Host production-server
+            HostName ${DEPLOY_HOST}
+            User ${DEPLOY_USER}
+            Port ${PORT}
+            IdentityFile ~/.ssh/id_ed25519
+            IdentitiesOnly yes
+            StrictHostKeyChecking accept-new
+            ServerAliveInterval 15
+            ServerAliveCountMax 4
+          EOF
+          chmod 600 ~/.ssh/config
+
+      - name: Deploy via SSH release script
+        env:
+          PRODUCTION_BASE_DIR: ${{ vars.PRODUCTION_BASE_DIR }}
+          RELEASE_BRANCHES: ${{ vars.RELEASE_BRANCHES }}
+        run: |
+          set -euo pipefail
+          BASE_DIR="${PRODUCTION_BASE_DIR:-/data/tggrouprobot}"
+          BRANCHES="${RELEASE_BRANCHES:-main master}"
+          bash deploy/release.sh \
+            --host production-server \
+            --base-dir "${BASE_DIR}" \
+            --branch-list "${BRANCHES}"

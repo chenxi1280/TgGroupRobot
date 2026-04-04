@@ -5,6 +5,7 @@ import io
 import json
 import re
 import structlog
+from typing import TypeVar
 from telegram import ChatPermissions, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 from telegram.error import BadRequest, TelegramError
@@ -135,7 +136,10 @@ JOIN_BURST_TIP_MODE_LABELS = {
 }
 
 
-def _cycle_config_value[T](current: T, options: list[T]) -> T:
+T = TypeVar("T")
+
+
+def _cycle_config_value(current: T, options: list[T]) -> T:
     if current not in options:
         return options[0]
     idx = options.index(current)
