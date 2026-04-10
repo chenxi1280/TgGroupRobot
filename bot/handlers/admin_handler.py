@@ -3470,7 +3470,19 @@ class AdminHandler(BaseHandler):
                     await answer_callback_query_safely(update, "报告不存在", show_alert=True)
                     await self._show_car_review_reports_menu(update, context, chat_id, status=status)
                     return
-                if setting.approver_user_id and update.effective_user.id != setting.approver_user_id:
+                if current.report_status != "pending":
+                    await session.commit()
+                    await answer_callback_query_safely(update, "该报告当前状态不可再次审核", show_alert=True)
+                    await self._show_car_review_report_detail(update, context, chat_id, report_id, status=status)
+                    return
+                approver_enforced = False
+                if setting.approver_user_id:
+                    try:
+                        approver_enforced = await is_user_admin(context, chat_id, setting.approver_user_id)
+                    except Exception as exc:
+                        log.warning("car_review_approver_check_failed", chat_id=chat_id, report_id=report_id, approver_user_id=setting.approver_user_id, error=str(exc))
+                        approver_enforced = False
+                if approver_enforced and update.effective_user.id != setting.approver_user_id:
                     await session.commit()
                     await answer_callback_query_safely(update, "仅指定审核人可以处理该报告", show_alert=True)
                     await self._show_car_review_report_detail(update, context, chat_id, report_id, status=status)
@@ -3523,7 +3535,9 @@ class AdminHandler(BaseHandler):
                                 )
                             message = "报告已通过审核并发布"
                         if (
-                            report.author_user_id
+                            published_message_id is not None
+                            and report.report_status == "published"
+                            and report.author_user_id
                             and setting.reward_points > 0
                             and not await CarReviewService.has_audit_action(
                                 session,
@@ -3548,6 +3562,8 @@ class AdminHandler(BaseHandler):
                                 operator_user_id=update.effective_user.id,
                                 payload={"points": setting.reward_points},
                             )
+                        elif published_message_id is None:
+                            message = "报告已通过审核，当前未执行自动发布"
                 elif sub == "reject":
                     report = await CarReviewService.reject_report(
                         session,
