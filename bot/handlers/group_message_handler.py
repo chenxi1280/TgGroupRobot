@@ -72,11 +72,15 @@ async def _reply_garage_feedback(
 
 def _extract_car_review_media_file_ids(message) -> list[str]:
     media_ids: list[str] = []
-    photos = getattr(message, "photo", None) or []
-    if photos:
-        file_id = getattr(photos[-1], "file_id", None)
-        if file_id:
-            media_ids.append(file_id)
+    for target in (message, getattr(message, "reply_to_message", None)):
+        if target is None:
+            continue
+        photos = getattr(target, "photo", None) or []
+        if photos:
+            file_id = getattr(photos[-1], "file_id", None)
+            if file_id:
+                media_ids.append(file_id)
+                break
     return media_ids
 
 
