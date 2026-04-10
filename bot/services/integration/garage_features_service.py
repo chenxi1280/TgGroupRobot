@@ -670,6 +670,25 @@ class CarReviewService:
         return item
 
     @staticmethod
+    async def has_audit_action(
+        session: AsyncSession,
+        *,
+        chat_id: int,
+        report_id: int,
+        action: str,
+    ) -> bool:
+        result = await session.execute(
+            select(CarReviewAuditLog.id)
+            .where(
+                CarReviewAuditLog.chat_id == chat_id,
+                CarReviewAuditLog.report_id == report_id,
+                CarReviewAuditLog.action == action,
+            )
+            .limit(1)
+        )
+        return result.scalar_one_or_none() is not None
+
+    @staticmethod
     async def approve_report(
         session: AsyncSession,
         *,

@@ -345,24 +345,12 @@ async def test_process_garage_features_handles_nearby_command(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_process_garage_features_auto_approves_car_review_and_rewards(monkeypatch):
+async def test_process_garage_features_submits_car_review_pending_admin_review(monkeypatch):
     session = _FakeSession(get_map={(TgUser, 77): SimpleNamespace(id=77, username="teacher77", first_name="T"), (TgUser, 42): SimpleNamespace(id=42, username="author42", first_name="A")})
     db = _FakeDb(session)
     replies = []
-    rewards = []
 
     report = SimpleNamespace(report_id=5)
-    approved = SimpleNamespace(
-        report_id=5,
-        teacher_user_id=77,
-        author_user_id=42,
-        review_text="很棒",
-        process_text="很棒",
-        scores={"total_score": 0},
-        created_at=dt.datetime.now(dt.UTC),
-        published_message_id=None,
-        report_status="approved",
-    )
 
     async def fake_get_teacher_setting(*args, **kwargs):
         return SimpleNamespace(
@@ -386,17 +374,11 @@ async def test_process_garage_features_auto_approves_car_review_and_rewards(monk
     async def fake_create_report(*args, **kwargs):
         return report
 
-    async def fake_approve_report(*args, **kwargs):
-        return approved
-
     async def fake_send(context, *, chat_id, text, parse_mode=None, **kwargs):
         return SimpleNamespace(message_id=888)
 
     async def fake_reply(context, *, chat_id, text, reply_to_message_id=None, **kwargs):
         replies.append(text)
-
-    async def fake_change_points(session_obj, chat_id, user_id, delta, txn_type, reason=None):
-        rewards.append((chat_id, user_id, delta, txn_type, reason))
 
     async def fake_is_teacher(*args, **kwargs):
         return False
@@ -410,13 +392,11 @@ async def test_process_garage_features_auto_approves_car_review_and_rewards(monk
     monkeypatch.setattr(TeacherSearchService, "get_setting", fake_get_teacher_setting)
     monkeypatch.setattr(CarReviewService, "get_setting", fake_get_car_review_setting)
     monkeypatch.setattr(CarReviewService, "create_report", fake_create_report)
-    monkeypatch.setattr(CarReviewService, "approve_report", fake_approve_report)
     monkeypatch.setattr(TeacherSearchService, "mark_attendance", fake_mark_attendance)
     monkeypatch.setattr(GarageAuthService, "is_certified_teacher", fake_is_teacher)
     monkeypatch.setattr(GarageAuthService, "is_whitelisted", fake_is_whitelisted)
     monkeypatch.setattr(group_message_handler.PublishService, "send", fake_send)
     monkeypatch.setattr(group_message_handler.PublishService, "reply", fake_reply)
-    monkeypatch.setattr(group_message_handler, "change_points", fake_change_points)
 
     handled = await _process_garage_features(
         SimpleNamespace(application=SimpleNamespace(bot_data={})),
@@ -434,7 +414,109 @@ async def test_process_garage_features_auto_approves_car_review_and_rewards(monk
     )
 
     assert handled is True
-    assert approved.published_message_id == 888
-    assert approved.report_status == "published"
-    assert rewards == [(-1001, 42, 100, "reward", "车评审核通过奖励")]
-    assert any("车评已提交并发布" in text for text in replies)
+    assert any("等待管理员审核" in text for text in replies)
+
+
+@pytest.mark.asyncio
+async def test_process_garage_features_respects_nearby_search_switch(monkeypatch):
+    session = _FakeSession()
+    db = _FakeDb(session)
+    replies = []
+
+    async def fake_get_teacher_setting(*args, **kwargs):
+        return SimpleNamespace(
+            nearby_search_enabled=False,
+            attendance_enabled=False,
+            force_location_enabled=False,
+            footer_button_label=None,
+            delete_mode="none",
+        )
+
+    async def fake_get_car_review_setting(*args, **kwargs):
+        return SimpleNamespace(enabled=False, rank_command="出击排行", submit_command="提交报告")
+
+    async def fake_reply(context, *, chat_id, text, reply_to_message_id=None, **kwargs):
+        replies.append(text)
+
+    async def fake_is_teacher(*args, **kwargs):
+        return False
+
+    async def fake_is_whitelisted(*args, **kwargs):
+        return False
+
+    async def fake_mark_attendance(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(TeacherSearchService, "get_setting", fake_get_teacher_setting)
+    monkeypatch.setattr(CarReviewService, "get_setting", fake_get_car_review_setting)
+    monkeypatch.setattr(TeacherSearchService, "mark_attendance", fake_mark_attendance)
+    monkeypatch.setattr(GarageAuthService, "is_certified_teacher", fake_is_teacher)
+    monkeypatch.setattr(GarageAuthService, "is_whitelisted", fake_is_whitelisted)
+    monkeypatch.setattr(group_message_handler.PublishService, "reply", fake_reply)
+
+    handled = await _process_garage_features(
+        SimpleNamespace(application=SimpleNamespace(bot_data={})),
+        db,
+        SimpleNamespace(id=-1001, title="测试群"),
+        SimpleNamespace(id=42),
+        SimpleNamespace(message_id=9, location=None, reply_to_message=None),
+        "附近",
+        SimpleNamespace(garage_limit_enabled=False),
+        False,
+    )
+
+    assert handled is True
+    assert replies == ["附近搜索已关闭。"]
+
+
+@pytest.mark.asyncio
+async def test_process_garage_features_respects_tag_search_switch(monkeypatch):
+    session = _FakeSession()
+    db = _FakeDb(session)
+    replies = []
+
+    async def fake_get_teacher_setting(*args, **kwargs):
+        return SimpleNamespace(
+            tag_search_enabled=False,
+            nearby_search_enabled=False,
+            attendance_enabled=False,
+            force_location_enabled=False,
+            footer_button_label=None,
+            delete_mode="none",
+        )
+
+    async def fake_get_car_review_setting(*args, **kwargs):
+        return SimpleNamespace(enabled=False, rank_command="出击排行", submit_command="提交报告")
+
+    async def fake_reply(context, *, chat_id, text, reply_to_message_id=None, **kwargs):
+        replies.append(text)
+
+    async def fake_is_teacher(*args, **kwargs):
+        return False
+
+    async def fake_is_whitelisted(*args, **kwargs):
+        return False
+
+    async def fake_mark_attendance(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(TeacherSearchService, "get_setting", fake_get_teacher_setting)
+    monkeypatch.setattr(CarReviewService, "get_setting", fake_get_car_review_setting)
+    monkeypatch.setattr(TeacherSearchService, "mark_attendance", fake_mark_attendance)
+    monkeypatch.setattr(GarageAuthService, "is_certified_teacher", fake_is_teacher)
+    monkeypatch.setattr(GarageAuthService, "is_whitelisted", fake_is_whitelisted)
+    monkeypatch.setattr(group_message_handler.PublishService, "reply", fake_reply)
+
+    handled = await _process_garage_features(
+        SimpleNamespace(application=SimpleNamespace(bot_data={})),
+        db,
+        SimpleNamespace(id=-1001, title="测试群"),
+        SimpleNamespace(id=42),
+        SimpleNamespace(message_id=9, location=None, reply_to_message=None),
+        "老师搜索 标签",
+        SimpleNamespace(garage_limit_enabled=False),
+        False,
+    )
+
+    assert handled is True
+    assert replies == ["标签搜索已关闭。"]

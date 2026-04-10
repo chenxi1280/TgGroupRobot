@@ -1612,12 +1612,12 @@ class AdminHandler(BaseHandler):
         mode_on_join = "进群欢迎" if item.welcome_mode == WelcomeMode.after_verify.value else "✅ 进群欢迎"
         keyboard = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("⚙️ 状态：", callback_data=f"adm:wel:{chat_id}:toggle:{welcome_id}"),
+                InlineKeyboardButton("状态：", callback_data=f"adm:wel:{chat_id}:toggle:{welcome_id}"),
                 InlineKeyboardButton(status_on, callback_data=f"adm:wel:{chat_id}:toggle:{welcome_id}"),
                 InlineKeyboardButton(status_off, callback_data=f"adm:wel:{chat_id}:toggle:{welcome_id}"),
             ],
             [
-                InlineKeyboardButton("⚙️ 模式：", callback_data=f"adm:wel:{chat_id}:mode:{welcome_id}"),
+                InlineKeyboardButton("模式：", callback_data=f"adm:wel:{chat_id}:mode:{welcome_id}"),
                 InlineKeyboardButton(mode_after_verify, callback_data=f"adm:wel:{chat_id}:mode:{welcome_id}"),
                 InlineKeyboardButton(mode_on_join, callback_data=f"adm:wel:{chat_id}:mode:{welcome_id}"),
             ],
@@ -2061,30 +2061,30 @@ class AdminHandler(BaseHandler):
         )
         keyboard = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("⚙️ 标签搜索：", callback_data=f"tsearch:home:{chat_id}"),
+                InlineKeyboardButton("标签搜索：", callback_data=f"tsearch:home:{chat_id}"),
                 InlineKeyboardButton(tag_on, callback_data=f"tsearch:toggle:tag:{chat_id}:1"),
                 InlineKeyboardButton(tag_off, callback_data=f"tsearch:toggle:tag:{chat_id}:0"),
             ],
             [
-                InlineKeyboardButton("⚙️ 开课打卡：", callback_data=f"tsearch:attendance:menu:{chat_id}"),
+                InlineKeyboardButton("开课打卡：", callback_data=f"tsearch:attendance:menu:{chat_id}"),
                 InlineKeyboardButton(attendance_on, callback_data=f"tsearch:toggle:attendance:{chat_id}:1"),
                 InlineKeyboardButton(attendance_off, callback_data=f"tsearch:toggle:attendance:{chat_id}:0"),
             ],
             [
-                InlineKeyboardButton("⚙️ 附近搜索：", callback_data=f"tsearch:home:{chat_id}"),
+                InlineKeyboardButton("附近搜索：", callback_data=f"tsearch:home:{chat_id}"),
                 InlineKeyboardButton(nearby_on, callback_data=f"tsearch:toggle:nearby:{chat_id}:1"),
                 InlineKeyboardButton(nearby_off, callback_data=f"tsearch:toggle:nearby:{chat_id}:0"),
             ],
             [
-                InlineKeyboardButton("🔘 底部按钮：", callback_data=f"tsearch:home:{chat_id}"),
-                InlineKeyboardButton(f"🔖 {footer_label}", callback_data=f"tsearch:home:{chat_id}"),
+                InlineKeyboardButton("底部按钮：", callback_data=f"tsearch:home:{chat_id}"),
+                InlineKeyboardButton(footer_label, callback_data=f"tsearch:home:{chat_id}"),
             ],
             [
-                InlineKeyboardButton("🧹 删除消息：", callback_data=f"tsearch:home:{chat_id}"),
-                InlineKeyboardButton("✅ 删除" if setting.delete_mode != "none" else "❌ 不删除", callback_data=f"tsearch:delete_mode:{chat_id}:{'delete' if setting.delete_mode == 'none' else 'none'}"),
+                InlineKeyboardButton("删除消息：", callback_data=f"tsearch:home:{chat_id}"),
+                InlineKeyboardButton("删除" if setting.delete_mode != "none" else "不删除", callback_data=f"tsearch:delete_mode:{chat_id}:{'delete' if setting.delete_mode == 'none' else 'none'}"),
             ],
             [InlineKeyboardButton("📍 代录老师位置", callback_data=f"tsearch:delegate:start:{chat_id}")],
-            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
+            [InlineKeyboardButton("返回", callback_data=f"adm:menu:main:{chat_id}")],
         ])
         await self.message_helper.safe_edit(update, text, reply_markup=keyboard)
 
@@ -2115,7 +2115,7 @@ class AdminHandler(BaseHandler):
         )
         keyboard = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("⚙️ 强制录入：", callback_data=f"tsearch:attendance:menu:{chat_id}"),
+                InlineKeyboardButton("强制录入：", callback_data=f"tsearch:attendance:menu:{chat_id}"),
                 InlineKeyboardButton(force_on, callback_data=f"tsearch:toggle:force_loc:{chat_id}:1"),
                 InlineKeyboardButton(force_off, callback_data=f"tsearch:toggle:force_loc:{chat_id}:0"),
             ],
@@ -2123,7 +2123,7 @@ class AdminHandler(BaseHandler):
                 InlineKeyboardButton("📚 开课老师", callback_data=f"tsearch:open_course:list:{chat_id}:0"),
                 InlineKeyboardButton(open_count, callback_data=f"tsearch:open_course:list:{chat_id}:0"),
             ],
-            [InlineKeyboardButton("🔙 返回", callback_data=f"tsearch:home:{chat_id}")],
+            [InlineKeyboardButton("返回", callback_data=f"tsearch:home:{chat_id}")],
         ])
         await self.message_helper.safe_edit(update, text, reply_markup=keyboard)
 
@@ -3362,6 +3362,10 @@ class AdminHandler(BaseHandler):
         callback_data: CallbackParser,
     ) -> None:
         from bot.models.enums import ConversationStateType
+        from bot.models.enums import PointsTxnType
+        from bot.models.core import TgUser
+        from bot.services.activity.points_service import change_points
+        from bot.handlers.group_message_handler import _publish_car_review_report
         from bot.services.integration.garage_features_service import CarReviewService
 
         action = callback_data.get(1)
@@ -3459,6 +3463,18 @@ class AdminHandler(BaseHandler):
                 await self._show_car_review_report_detail(update, context, chat_id, report_id, status=status)
                 return
             async with db.session_factory() as session:
+                setting = await CarReviewService.get_setting(session, chat_id)
+                current = await CarReviewService.get_report(session, chat_id, report_id)
+                if current is None:
+                    await session.commit()
+                    await answer_callback_query_safely(update, "报告不存在", show_alert=True)
+                    await self._show_car_review_reports_menu(update, context, chat_id, status=status)
+                    return
+                if setting.approver_user_id and update.effective_user.id != setting.approver_user_id:
+                    await session.commit()
+                    await answer_callback_query_safely(update, "仅指定审核人可以处理该报告", show_alert=True)
+                    await self._show_car_review_report_detail(update, context, chat_id, report_id, status=status)
+                    return
                 if sub == "approve":
                     report = await CarReviewService.approve_report(
                         session,
@@ -3467,6 +3483,71 @@ class AdminHandler(BaseHandler):
                         approver_user_id=update.effective_user.id,
                     )
                     message = "报告已通过审核" if report is not None else "报告不存在"
+                    if report is not None:
+                        teacher_row = await session.get(TgUser, report.teacher_user_id) if report.teacher_user_id else None
+                        author_row = await session.get(TgUser, report.author_user_id) if report.author_user_id else None
+                        published_message_id: int | None = None
+                        try:
+                            published_message_id = await _publish_car_review_report(
+                                context,
+                                chat_id=chat_id,
+                                report=report,
+                                setting=setting,
+                                teacher_user=teacher_row,
+                                author_user=author_row,
+                            )
+                        except Exception as exc:
+                            log.warning(
+                                "car_review_publish_failed",
+                                chat_id=chat_id,
+                                report_id=report.report_id,
+                                error=str(exc),
+                            )
+                        if published_message_id is not None:
+                            report.published_message_id = published_message_id
+                            report.report_status = "published"
+                            report.updated_at = dt.datetime.now(dt.UTC)
+                            if not await CarReviewService.has_audit_action(
+                                session,
+                                chat_id=chat_id,
+                                report_id=report.report_id,
+                                action="published",
+                            ):
+                                await CarReviewService.append_audit(
+                                    session,
+                                    chat_id=chat_id,
+                                    report_id=report.report_id,
+                                    action="published",
+                                    operator_user_id=update.effective_user.id,
+                                    payload={"message_id": published_message_id},
+                                )
+                            message = "报告已通过审核并发布"
+                        if (
+                            report.author_user_id
+                            and setting.reward_points > 0
+                            and not await CarReviewService.has_audit_action(
+                                session,
+                                chat_id=chat_id,
+                                report_id=report.report_id,
+                                action="rewarded",
+                            )
+                        ):
+                            await change_points(
+                                session,
+                                chat_id,
+                                report.author_user_id,
+                                setting.reward_points,
+                                PointsTxnType.reward.value,
+                                reason="车评审核通过奖励",
+                            )
+                            await CarReviewService.append_audit(
+                                session,
+                                chat_id=chat_id,
+                                report_id=report.report_id,
+                                action="rewarded",
+                                operator_user_id=update.effective_user.id,
+                                payload={"points": setting.reward_points},
+                            )
                 elif sub == "reject":
                     report = await CarReviewService.reject_report(
                         session,

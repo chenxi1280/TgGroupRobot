@@ -33,6 +33,57 @@ from bot.services.shared.publish_service import PublishService
 log = structlog.get_logger(__name__)
 
 
+async def _maybe_delete_trigger_message(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    chat_id: int,
+    message_id: int | None,
+    delete_mode: str,
+) -> None:
+    if delete_mode != "delete" or message_id is None:
+        return
+    try:
+        await PublishService.delete(context, chat_id=chat_id, message_id=message_id)
+    except Exception:
+        return
+
+
+async def _reply_garage_feedback(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    chat_id: int,
+    message_id: int,
+    text: str,
+    delete_mode: str = "none",
+) -> None:
+    await PublishService.reply(
+        context,
+        chat_id=chat_id,
+        text=text,
+        reply_to_message_id=message_id,
+    )
+    await _maybe_delete_trigger_message(
+        context,
+        chat_id=chat_id,
+        message_id=message_id,
+        delete_mode=delete_mode,
+    )
+
+
+def _extract_car_review_media_file_ids(message) -> list[str]:
+    media_ids: list[str] = []
+    for target in (message, getattr(message, "reply_to_message", None)):
+        if target is None:
+            continue
+        photos = getattr(target, "photo", None) or []
+        if photos:
+            file_id = getattr(photos[-1], "file_id", None)
+            if file_id:
+                media_ids.append(file_id)
+                break
+    return media_ids
+
+
 async def unified_group_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     """
     统一的群组消息处理入口
@@ -701,7 +752,17 @@ async def _publish_car_review_report(
     )
     published_message_id: int | None = None
     if getattr(setting, "publish_to_main_group", False):
-        result = await PublishService.send(context, chat_id=chat_id, text=text, parse_mode="HTML")
+        media_file_ids = list(getattr(report, "media_file_ids", None) or [])
+        if media_file_ids:
+            result = await PublishService.send_photo(
+                context,
+                chat_id=chat_id,
+                photo=media_file_ids[0],
+                caption=text,
+                parse_mode="HTML",
+            )
+        else:
+            result = await PublishService.send(context, chat_id=chat_id, text=text, parse_mode="HTML")
         published_message_id = result.message_id
     return published_message_id
 
@@ -787,6 +848,8 @@ async def _process_garage_features(
             )
             return True
 
+        delete_mode = getattr(teacher_setting, "delete_mode", "none")
+
         if teacher_setting.attendance_enabled and is_teacher and text and not text.startswith("/"):
             await TeacherSearchService.mark_attendance(
                 session,
@@ -799,11 +862,12 @@ async def _process_garage_features(
             rows = await TeacherSearchService.list_open_course_teachers(session, chat.id)
             await session.commit()
             if not rows:
-                await PublishService.reply(
+                await _reply_garage_feedback(
                     context,
                     chat_id=chat.id,
+                    message_id=message.message_id,
                     text="今天还没有开课老师。",
-                    reply_to_message_id=message.message_id,
+                    delete_mode=delete_mode,
                 )
                 return True
             lines = ["今日开课老师："]
@@ -811,24 +875,36 @@ async def _process_garage_features(
                 name = f"@{tg_user.username}" if tg_user and tg_user.username else (tg_user.first_name if tg_user and tg_user.first_name else f"用户{profile.user_id}")
                 extra = " / ".join(part for part in [profile.region_text, profile.price_text] if part)
                 lines.append(f"{idx}. {name}" + (f"  {extra}" if extra else ""))
-            await PublishService.reply(
+            await _reply_garage_feedback(
                 context,
                 chat_id=chat.id,
+                message_id=message.message_id,
                 text="\n".join(lines),
-                reply_to_message_id=message.message_id,
+                delete_mode=delete_mode,
             )
             return True
 
         if text == "附近":
+            if not teacher_setting.nearby_search_enabled:
+                await session.commit()
+                await _reply_garage_feedback(
+                    context,
+                    chat_id=chat.id,
+                    message_id=message.message_id,
+                    text="附近搜索已关闭。",
+                    delete_mode=delete_mode,
+                )
+                return True
             if teacher_setting.force_location_enabled:
                 location = await TeacherSearchService.get_member_location(session, chat.id, user.id)
                 if location is None:
                     await session.commit()
-                    await PublishService.reply(
+                    await _reply_garage_feedback(
                         context,
                         chat_id=chat.id,
+                        message_id=message.message_id,
                         text="请先发送位置后再使用附近搜索。",
-                        reply_to_message_id=message.message_id,
+                        delete_mode=delete_mode,
                     )
                     return True
             else:
@@ -836,11 +912,12 @@ async def _process_garage_features(
 
             if location is None:
                 await session.commit()
-                await PublishService.reply(
+                await _reply_garage_feedback(
                     context,
                     chat_id=chat.id,
+                    message_id=message.message_id,
                     text="还没有记录到你的位置，请先发送位置。",
-                    reply_to_message_id=message.message_id,
+                    delete_mode=delete_mode,
                 )
                 return True
 
@@ -854,11 +931,12 @@ async def _process_garage_features(
             )
             await session.commit()
             if not nearby:
-                await PublishService.reply(
+                await _reply_garage_feedback(
                     context,
                     chat_id=chat.id,
+                    message_id=message.message_id,
                     text="附近暂无开课老师。",
-                    reply_to_message_id=message.message_id,
+                    delete_mode=delete_mode,
                 )
                 return True
             lines = ["附近老师："]
@@ -866,15 +944,26 @@ async def _process_garage_features(
                 profile = item["profile"]
                 extra = " / ".join(part for part in [profile.region_text, profile.price_text] if part)
                 lines.append(f"{idx}. {item['display_name']} · {item['distance_text']}" + (f" · {extra}" if extra else ""))
-            await PublishService.reply(
+            await _reply_garage_feedback(
                 context,
                 chat_id=chat.id,
+                message_id=message.message_id,
                 text="\n".join(lines),
-                reply_to_message_id=message.message_id,
+                delete_mode=delete_mode,
             )
             return True
 
         if text.startswith("老师搜索 "):
+            if not teacher_setting.tag_search_enabled:
+                await session.commit()
+                await _reply_garage_feedback(
+                    context,
+                    chat_id=chat.id,
+                    message_id=message.message_id,
+                    text="标签搜索已关闭。",
+                    delete_mode=delete_mode,
+                )
+                return True
             keyword = text.split(" ", 1)[1].strip()
             rows = await TeacherSearchService.search_teachers_by_keyword(
                 session,
@@ -885,11 +974,12 @@ async def _process_garage_features(
             )
             await session.commit()
             if not rows:
-                await PublishService.reply(
+                await _reply_garage_feedback(
                     context,
                     chat_id=chat.id,
+                    message_id=message.message_id,
                     text="没有找到匹配的老师。",
-                    reply_to_message_id=message.message_id,
+                    delete_mode=delete_mode,
                 )
                 return True
             lines = [f"老师搜索：{keyword}"]
@@ -898,22 +988,24 @@ async def _process_garage_features(
                 labels = " ".join(profile.labels or [])
                 extra = " / ".join(part for part in [labels, profile.region_text, profile.price_text] if part)
                 lines.append(f"{idx}. {name}" + (f" · {extra}" if extra else ""))
-            await PublishService.reply(
+            await _reply_garage_feedback(
                 context,
                 chat_id=chat.id,
+                message_id=message.message_id,
                 text="\n".join(lines),
-                reply_to_message_id=message.message_id,
+                delete_mode=delete_mode,
             )
             return True
 
         footer_label = (teacher_setting.footer_button_label or "").strip()
         if footer_label and text == footer_label:
             await session.commit()
-            await PublishService.reply(
+            await _reply_garage_feedback(
                 context,
                 chat_id=chat.id,
+                message_id=message.message_id,
                 text="请继续发送关键词，或发送“附近”“开课老师”查询。",
-                reply_to_message_id=message.message_id,
+                delete_mode=delete_mode,
             )
             return True
 
@@ -952,13 +1044,14 @@ async def _process_garage_features(
                 )
                 return True
             review_text = text[len(submit_command):].strip() or "待补充"
+            media_file_ids = _extract_car_review_media_file_ids(message)
             report = await CarReviewService.create_report(
                 session,
                 chat_id=chat.id,
                 teacher_user_id=replied_user.id,
                 author_user_id=user.id,
                 review_text=review_text,
-                media_file_ids=[],
+                media_file_ids=media_file_ids,
                 scores={"total_score": 0},
             )
             if car_review_setting.approver_user_id:
@@ -979,41 +1072,12 @@ async def _process_garage_features(
                 )
                 return True
 
-            approved = await CarReviewService.approve_report(
-                session,
-                chat_id=chat.id,
-                report_id=report.report_id,
-                approver_user_id=user.id,
-            )
-            teacher_row = await session.get(TgUser, replied_user.id)
-            author_row = await session.get(TgUser, user.id)
-            if approved is not None:
-                published_message_id = await _publish_car_review_report(
-                    context,
-                    chat_id=chat.id,
-                    report=approved,
-                    setting=car_review_setting,
-                    teacher_user=teacher_row,
-                    author_user=author_row,
-                )
-                if published_message_id is not None:
-                    approved.published_message_id = published_message_id
-                    approved.report_status = "published"
-                if car_review_setting.reward_points > 0:
-                    await change_points(
-                        session,
-                        chat.id,
-                        user.id,
-                        car_review_setting.reward_points,
-                        PointsTxnType.reward.value,
-                        reason="车评审核通过奖励",
-                    )
             await session.commit()
-            await PublishService.reply(
+            await _reply_garage_feedback(
                 context,
                 chat_id=chat.id,
-                text=f"车评已提交并发布。报告ID：{report.report_id}",
-                reply_to_message_id=message.message_id,
+                message_id=message.message_id,
+                text=f"车评已提交，等待管理员审核。报告ID：{report.report_id}",
             )
             return True
 
