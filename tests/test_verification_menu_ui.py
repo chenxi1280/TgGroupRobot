@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from bot.handlers import admin_handler
+from backend.features.admin import admin_handler
 
 
 class _FakeSession:

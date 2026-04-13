@@ -19,16 +19,18 @@ TgGroupRobot 是一个功能完整的 **To C** Telegram 群组管理机器人，
 - **邀请积分**：邀请新成员获得积分
 - **积分查询**：查看个人积分余额和交易记录
 - **积分排行**：群内积分排名展示
+- **积分中心**：支持展示规则、发言排行、个人发言量、转让积分、管理员加减分、日志导出和清空积分
 
 ### 新人验证系统
 - **多种验证模式**：按钮验证、数学题验证、验证码验证
 - **权限限制**：验证期间限制发言权限
 - **超时处理**：自动处理超时的验证请求
+- **新成员限制**：支持按入群时长限制媒体/链接/纯文本并提示
 
 ### 内容审核系统
 - **关键词过滤**：敏感词检测和自动处理
 - **链接屏蔽**：自动检测并处理链接
-- **灵活处理方式**：删除、警告、禁言可选
+- **灵活处理方式**：删除、禁言、封禁可选
 - **审核记录**：完整的违规行为记录
 
 ### 反刷屏保护
@@ -40,11 +42,22 @@ TgGroupRobot 是一个功能完整的 **To C** Telegram 群组管理机器人，
 - **自动删除**：自动删除进群、退群、置顶等系统消息
 - **自动回复**：关键词触发自动回复
 - **定时消息**：定时发送群公告或消息
+- **轮播广告**：支持单次推送、定时开始、间隔轮播和图片广告配置
 
 ### 邀请链接管理
 - **用户生成链接**：普通用户可生成邀请链接
 - **邀请统计**：统计邀请人数和排行
 - **链接控制**：过期时间和加入人数限制
+- **邀请归因**：基于可靠成员变更元数据进行邀请奖励归因，无法确认来源时不会误发奖励
+
+### 群组运维
+- **健康检查**：汇总验证、强制订阅、反垃圾、防刷屏、定时消息和机器人权限状态
+- **强制订阅**：支持频道绑定、提示文案、按钮和封面配置
+- **关群设置**：支持话术开关、定时开关和通知删除策略
+- **夜间模式**：支持时段限制、管理员豁免、白名单与提示文案
+- **群组命令配置**：支持常用指令启停与别名设置
+- **导入设置 / 克隆**：支持跨群复制配置（按模块覆盖）
+- **车评系统**：支持审核、发布目标配置、自定义评分项和报告管理
 
 ### 抽奖系统
 - **创建抽奖**：管理员创建抽奖活动
@@ -70,10 +83,20 @@ TgGroupRobot 是一个功能完整的 **To C** Telegram 群组管理机器人，
 | tenacity | 9.0.0 | 重试机制 |
 
 ### 架构设计
-- **三层架构**：Handler（处理层）→ Service（业务层）→ Model（数据层）
-- **模块化设计**：按功能模块划分，易于扩展
+- **四层结构**：`backend/app`（应用装配）→ `backend/platform`（平台能力）→ `backend/features`（功能域）→ `backend/shared`（跨域通用能力）
+- **Vertical Slice**：业务按 feature 组织，路由、回调、消息、服务、展示层跟随功能域收口
+- **注册表驱动运行时**：启动装配、router registry、message pipeline、session state 统一收口，避免跨模块硬编码分发
 - **异步支持**：全面支持异步操作
 - **国际化**：支持中英文多语言
+
+### 目录概览
+```text
+backend/
+├── app/        # 启动、装配、router registry、update pipeline
+├── platform/   # config、db、scheduler、telegram adapter、state
+├── features/   # admin、moderation、activity、automation 等功能域
+└── shared/     # callback parser、公共 formatter、通用 service/helper
+```
 
 ### 数据库设计
 - **PostgreSQL** 作为主数据库
@@ -149,8 +172,9 @@ docker compose -f docker-compose.server.yml up --build
 
 线上 GitHub Actions 发版、服务器目录和数据库初始化流程，见：
 
-- `docs/GITHUB_ACTIONS_SSH_DEPLOY.md`
-- `docs/PRODUCTION_RUNTIME.md`
+- `docs/deployment/GITHUB_ACTIONS_SSH_DEPLOY.md`
+- `docs/deployment/PRODUCTION_RUNTIME.md`
+- `docs/setup/06_feature_truth_table.md`
 
 ### 本地开发
 
@@ -178,12 +202,13 @@ cp .env.example .env
 
 ```bash
 psql -h host -U user -d dbname -f sql/init.sql
+python -m backend.platform.db.init_db
 ```
 
 5. **运行应用**
 
 ```bash
-python -m bot
+python main.py
 ```
 
 ## 指令参考
@@ -208,51 +233,43 @@ python -m bot
 | `/solitaire` | 创建接龙 | 群组 |
 
 > 管理员指令需要用户在群组中具有管理员权限
+>
+> 管理员主要配置入口同时支持私聊内联面板，包括主积分、邀请链接、轮播广告、定时消息、强制订阅和群组健康检查。
 
 ## 目录结构
 
 ```
 TgGroupRobot/
-├── bot/                      # 主应用目录
-│   ├── __init__.py
-│   ├── __main__.py           # 主入口文件
-│   ├── config.py             # 配置管理
-│   ├── logging_config.py     # 日志配置
-│   ├── db/                   # 数据库相关
-│   │   ├── session.py        # 会话管理
-│   │   └── base.py           # 基础配置
-│   ├── models/               # 数据模型
-│   │   ├── core.py           # 核心数据模型
-│   │   └── enums.py          # 枚举定义
-│   ├── handlers/             # 消息处理器
-│   │   ├── admin.py          # 管理员命令
-│   │   ├── ads.py            # 广告处理
-│   │   ├── anti_flood.py     # 反刷屏
-│   │   ├── auto_delete.py    # 自动删除
-│   │   ├── auto_reply.py     # 自动回复
-│   │   ├── banned_word.py    # 敏感词过滤
-│   │   ├── invite_link.py    # 邀请链接
-│   │   ├── lottery.py        # 抽奖功能
-│   │   ├── moderation.py     # 内容审核
-│   │   ├── points.py         # 积分系统
-│   │   ├── scheduled.py      # 定时消息
-│   │   ├── sign.py           # 签到功能
-│   │   ├── solitaire.py      # 接龙功能
-│   │   └── start.py          # 启动命令
-│   ├── services/             # 业务逻辑服务层
-│   │   ├── points_service.py
-│   │   ├── invite_service.py
-│   │   └── ...
-│   ├── keyboards/            # 内联键盘定义
-│   │   ├── admin.py
-│   │   ├── points.py
-│   │   └── ...
-│   └── i18n/                 # 国际化
-│       └── strings.py        # 语言字符串
-├── config/                   # 配置文件目录
+├── main.py                   # 根入口
+├── backend/
+│   ├── bot/                  # Telegram Bot 运行时与业务域
+│   │   ├── app.py
+│   │   ├── bootstrap.py
+│   │   ├── admin/
+│   │   ├── activity/
+│   │   ├── automation/
+│   │   ├── garage/
+│   │   ├── group_ops/
+│   │   ├── invite/
+│   │   ├── moderation/
+│   │   ├── nearby/
+│   │   ├── shared/
+│   │   ├── state/
+│   │   ├── subscription/
+│   │   ├── ui/
+│   │   └── verification/
+│   ├── config/core/          # 配置与日志
+│   ├── database/
+│   │   ├── init_db.py        # 数据库初始化入口
+│   │   ├── runtime/          # session / schema gate / startup migrations
+│   │   └── schema/models/    # ORM 模型
+│   ├── scheduler/            # 调度器与任务
+│   └── utils/                # 通用工具
+├── scripts/                  # 迁移/运维/开发脚本
 ├── docs/                     # 文档目录
 ├── sql/                      # SQL 文件
-│   └── init.sql              # 数据库初始化脚本
+│   ├── init.sql              # 基础初始化脚本
+│   └── migrations/           # 增量 SQL 迁移
 ├── tests/                    # 测试文件
 ├── .env                      # 环境变量
 ├── requirements.txt          # 依赖包
@@ -275,19 +292,19 @@ TgGroupRobot/
 ┌─────────────────────────────────────────────────────────┐
 │                    Handler 层（处理层）                    │
 │  接收 Telegram 事件，处理用户交互，调用服务层             │
-│  位置：bot/handlers/*.py                                 │
+│  位置：backend/bot/<domain>/*.py                         │
 └────────────────────┬────────────────────────────────────┘
                      │ 调用
 ┌────────────────────▼────────────────────────────────────┐
 │                   Service 层（业务层）                    │
 │  实现业务逻辑，数据处理，操作数据库模型                   │
-│  位置：bot/services/*.py                                │
+│  位置：backend/bot/<domain>/services/*.py               │
 └────────────────────┬────────────────────────────────────┘
                      │ 操作
 ┌────────────────────▼────────────────────────────────────┐
 │                    Model 层（数据层）                     │
 │  数据库模型定义，数据持久化，ORM 映射                     │
-│  位置：bot/models/core.py                               │
+│  位置：backend/database/schema/models/*.py              │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -301,7 +318,7 @@ TgGroupRobot/
 
 #### 1.2 应用启动与路由注册
 
-**入口文件：** `bot/__main__.py`
+**入口文件：** `main.py` / `backend/bot/app.py`
 
 应用启动流程如下：
 
@@ -328,7 +345,7 @@ graph TD
     R --> S[开始接收事件]
 ```
 
-**关键代码位置：** `bot/__main__.py:137-348`
+**关键代码位置：** `backend/bot/bootstrap.py`、`backend/bot/app.py`
 
 ```python
 # 指令注册（159-167行）
@@ -382,7 +399,7 @@ sequenceDiagram
 
 ### 2. 文件功能详解
 
-#### 2.1 入口文件（bot/__main__.py）
+#### 2.1 入口文件（main.py / backend/bot/app.py）
 
 **核心功能：**
 - **build_application()**（137-348行）：构建应用实例并注册所有路由
@@ -590,7 +607,7 @@ def admin_main_menu(chat_id: int | None = None) -> InlineKeyboardMarkup:
 
 #### 3.1 CommandHandler 工作原理
 
-**注册位置：** `bot/__main__.py:159-167`
+**注册位置：** `backend/bot/bootstrap.py`
 
 ```python
 # CommandHandler(指令名称, 处理函数)
@@ -690,7 +707,7 @@ sequenceDiagram
 
 #### 4.2 CallbackQueryHandler 处理流程
 
-**注册位置：** `bot/__main__.py:169-223`
+**注册位置：** `backend/bot/bootstrap.py`
 
 ```python
 # 使用正则表达式匹配回调数据
@@ -889,13 +906,14 @@ graph TD
     H --> I[保存到数据库]
     I --> J[返回链接详情]
 
-    K[新用户通过链接加入] --> L[new_members_handler]
-    L --> M[检查是否通过邀请链接]
-    M --> N{是否有效链接?}
-    N -->|是| O[track_invite记录邀请]
-    O --> P[增加邀请人计数]
-    P --> Q[给予邀请积分奖励]
-    N -->|否| R[跳过]
+    K[ChatMemberUpdate到达] --> L[invite_link_join_hint_handler]
+    L --> M[缓存invite_link元数据]
+    M --> N[new_members_handler]
+    N --> O{是否拿到可靠invite_link?}
+    O -->|是| P[track_invite记录邀请]
+    P --> Q[增加邀请人计数]
+    Q --> R[给予邀请积分奖励]
+    O -->|否| S[仅记录加入事件，不猜测邀请人]
 ```
 
 #### 5.4 新人验证系统流程
@@ -1210,7 +1228,7 @@ pytest tests/test_specific.py::test_function
 5. **添加到群组**：将机器人添加到目标群组并授予管理员权限
 
 说明：
-- 容器默认启动命令为 `python -m bot`
+- 容器默认启动命令为 `python main.py`
 - 发布脚本会先确保 `tggrouprobot` 数据库存在，再执行项目内的 `sql/init.sql`
 
 ## 许可证

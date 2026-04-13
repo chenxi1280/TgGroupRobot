@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from bot.handlers.scheduled_message_handler import ScheduledMessageHandler
-from bot.keyboards.integration.scheduled_message import sm_list_keyboard
+from backend.features.automation.scheduled_message_handler import ScheduledMessageHandler, _parse_buttons_text
+from backend.features.automation.ui.scheduled_message import sm_list_keyboard
 
 
 def test_scheduled_message_list_keyboard_matches_document_layout() -> None:
@@ -50,3 +50,20 @@ def test_format_task_list_renders_task_summary_lines() -> None:
     assert "状态: 启用" in text
     assert "终止: 无限制" in text
     assert "下次:" in text
+
+
+def test_parse_buttons_text_supports_line_format_and_same_row_separator() -> None:
+    buttons = _parse_buttons_text(
+        "官网|example.com ; 帮助|https://help.example.com\n"
+        "频道|@demo_channel"
+    )
+
+    assert buttons == [
+        [
+            {"text": "官网", "url": "https://example.com"},
+            {"text": "帮助", "url": "https://help.example.com"},
+        ],
+        [
+            {"text": "频道", "url": "https://t.me/demo_channel"},
+        ],
+    ]

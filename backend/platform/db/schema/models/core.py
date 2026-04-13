@@ -1,0 +1,48 @@
+from backend.platform.db.schema.models.activity import (  # noqa: F401
+    Lottery,
+    LotteryParticipant,
+    LotteryWinner,
+    Solitaire,
+    SolitaireEntry,
+)
+from backend.platform.db.schema.models.automation import (  # noqa: F401
+    AdCampaign,
+    InviteLink,
+    InviteTracking,
+    ScheduledMessage,
+)
+from backend.platform.db.schema.models.chat import (  # noqa: F401
+    ChatMember,
+    ChatSettings,
+    ConversationState,
+    NearbyProfile,
+    TgChat,
+    TgUser,
+)
+from backend.platform.db.schema.models.moderation import (  # noqa: F401
+    AutoReplyRule,
+    BannedWord,
+    ModerationViolation,
+    VerificationChallenge,
+)
+from backend.platform.db.schema.models.points import (  # noqa: F401
+    CustomPointAccount,
+    CustomPointLedger,
+    CustomPointType,
+    PointsAccount,
+    PointsLevel,
+    PointsLevelSetting,
+    PointsMallOrder,
+    PointsMallOrderLog,
+    PointsMallProduct,
+    PointsMallSetting,
+    PointsTransaction,
+    SignInLog,
+    UserDailyStats,
+)
+from backend.platform.db.schema.models.subscription import (  # noqa: F401
+    ChatSubscription,
+    RenewalAuditLog,
+    RenewalCardKey,
+    SubscriptionPlan,
+)

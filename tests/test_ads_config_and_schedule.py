@@ -5,13 +5,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from bot.handlers.ads_handler import (
+from backend.features.automation.ads_handler import (
+    AdsHandler,
     _format_ad_detail_text,
     _parse_ad_id_from_callback,
     _parse_ads_config,
 )
-from bot.keyboards.content.ads import ads_menu_keyboard
-from bot.services.automation.ad_service import get_ad_next_send_time, is_ad_exhausted, is_rotation_ad, should_send_ad
+from backend.features.automation.ui.ads import ads_menu_keyboard
+from backend.features.automation.services.ad_service import get_ad_next_send_time, is_ad_exhausted, is_rotation_ad, should_send_ad
 
 
 def test_parse_ads_config_with_schedule_and_image_id() -> None:
@@ -149,3 +150,20 @@ def test_ads_menu_keyboard_uses_rotation_labels() -> None:
     assert keyboard.inline_keyboard[0][0].text == "➕ 创建轮播广告"
     assert keyboard.inline_keyboard[1][0].text == "📋 轮播列表"
     assert keyboard.inline_keyboard[1][1].text == "📊 轮播看板"
+
+
+@pytest.mark.asyncio
+async def test_ads_show_menu_uses_formal_copy() -> None:
+    handler = AdsHandler()
+    rendered: list[tuple[str, object]] = []
+
+    async def fake_safe_edit(update, text: str, reply_markup=None):
+        rendered.append((text, reply_markup))
+
+    handler.message_helper.safe_edit = fake_safe_edit
+
+    await handler.show_menu(SimpleNamespace(), SimpleNamespace(), -100123)
+
+    assert rendered
+    assert rendered[0][0].startswith("🎠 轮播广告\n\n")
+    assert "基础版" not in rendered[0][0]

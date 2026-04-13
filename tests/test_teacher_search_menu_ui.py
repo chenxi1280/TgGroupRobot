@@ -4,8 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from bot.handlers import admin_handler
-from bot.services.integration.garage_features_service import TeacherSearchService
+from backend.features.admin import admin_handler
+from backend.features.garage.services.garage_features_service import TeacherSearchService
 
 
 class _SessionContext:

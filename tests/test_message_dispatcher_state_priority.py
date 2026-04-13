@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from bot.handlers.dispatcher.message_dispatcher import MessageDispatcher
+from backend.app.update_pipeline import MessageDispatcher
 
 
 @pytest.mark.asyncio
@@ -26,11 +26,11 @@ async def test_get_user_state_prefers_private_state_over_target_chat(monkeypatch
         return None
 
     monkeypatch.setattr(
-        "bot.handlers.dispatcher.message_dispatcher.ChatResolver.get_current_chat",
+        "backend.app.update_pipeline.ChatResolver.get_current_chat",
         fake_get_current_chat,
     )
     monkeypatch.setattr(
-        "bot.handlers.dispatcher.message_dispatcher.get_user_state",
+        "backend.app.update_pipeline.get_user_state",
         fake_get_user_state,
     )
 
@@ -57,11 +57,11 @@ async def test_get_user_state_falls_back_to_target_chat_state(monkeypatch):
         return None
 
     monkeypatch.setattr(
-        "bot.handlers.dispatcher.message_dispatcher.ChatResolver.get_current_chat",
+        "backend.app.update_pipeline.ChatResolver.get_current_chat",
         fake_get_current_chat,
     )
     monkeypatch.setattr(
-        "bot.handlers.dispatcher.message_dispatcher.get_user_state",
+        "backend.app.update_pipeline.get_user_state",
         fake_get_user_state,
     )
 

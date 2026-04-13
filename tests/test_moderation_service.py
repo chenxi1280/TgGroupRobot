@@ -4,8 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
-import bot.services.moderation.moderation_service as moderation_service
-from bot.services.moderation.moderation_service import (
+import backend.features.moderation.services.moderation_service as moderation_service
+from backend.features.moderation.services.moderation_service import (
     ModerationActionResolution,
     build_moderation_action_label,
     build_moderation_notice,

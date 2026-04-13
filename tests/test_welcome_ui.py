@@ -4,8 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from bot.handlers import admin_handler
-from bot.services.welcome_service import WelcomeService
+from backend.features.admin import admin_handler
+from backend.features.verification.welcome_service import WelcomeService
 
 
 class _FakeSession:

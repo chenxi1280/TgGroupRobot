@@ -4,8 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from bot.services.base import NotFoundError
-from bot.services.scheduled_message_service import ScheduledMessageService
+from backend.shared.services.base import NotFoundError
+from backend.features.automation.services.scheduled_message_service import ScheduledMessageService
 
 
 @pytest.mark.asyncio

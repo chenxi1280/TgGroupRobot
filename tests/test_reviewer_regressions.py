@@ -4,10 +4,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from bot.handlers.dispatcher.group_message_handler import GroupMessageHandler
-from bot.handlers.group_message_handler import _process_group_lock_controls
-from bot.keyboards.admin.auto_delete import auto_delete_config_keyboard
-from bot.services.welcome_service import WelcomeService
+from backend.platform.telegram.group_pipeline import GroupMessageHandler
+from backend.features.group_ops.group_message_handler import _process_group_lock_controls
+from backend.features.admin.ui.auto_delete import auto_delete_config_keyboard
+from backend.features.verification.welcome_service import WelcomeService
 
 
 @pytest.mark.asyncio

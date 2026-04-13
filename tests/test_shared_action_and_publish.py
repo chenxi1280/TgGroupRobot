@@ -4,8 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from bot.services.shared.action_executor import ActionExecutor
-from bot.services.shared.publish_service import PublishService
+from backend.shared.services.action_executor import ActionExecutor
+from backend.shared.services.publish_service import PublishService
 
 
 class FakeBot:

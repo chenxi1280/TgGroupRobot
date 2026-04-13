@@ -82,6 +82,26 @@ CREATE TABLE IF NOT EXISTS bot.chat_settings (
     join_burst_mute_enabled BOOLEAN NOT NULL DEFAULT TRUE,         -- 批量进群是否禁言
     join_burst_kick_enabled BOOLEAN NOT NULL DEFAULT FALSE,        -- 批量进群是否踢出
     join_burst_tip_mode VARCHAR(16) NOT NULL DEFAULT 'tip_and_delete', -- 批量进群提示策略
+    new_member_limit_enabled BOOLEAN NOT NULL DEFAULT FALSE,       -- 新成员限制总开关
+    new_member_limit_window_seconds INTEGER NOT NULL DEFAULT 3600, -- 新成员限制窗口（秒）
+    new_member_limit_block_media BOOLEAN NOT NULL DEFAULT TRUE,    -- 新成员限制媒体消息
+    new_member_limit_block_links BOOLEAN NOT NULL DEFAULT TRUE,    -- 新成员限制链接消息
+    new_member_limit_text_only BOOLEAN NOT NULL DEFAULT FALSE,     -- 新成员仅允许纯文本
+    new_member_limit_delete_message BOOLEAN NOT NULL DEFAULT TRUE, -- 新成员触发时删除消息
+    new_member_limit_warn_enabled BOOLEAN NOT NULL DEFAULT TRUE,   -- 新成员限制提示开关
+    new_member_limit_warn_text TEXT NOT NULL DEFAULT '新成员需等待 {duration} 才可发送媒体/链接。', -- 新成员提示文案
+    new_member_limit_warn_delete_after_seconds INTEGER NOT NULL DEFAULT 60, -- 提示消息删除秒数
+    night_mode_enabled BOOLEAN NOT NULL DEFAULT FALSE,            -- 夜间模式总开关
+    night_mode_start_time VARCHAR(5),                             -- 夜间模式开始时间（HH:MM）
+    night_mode_end_time VARCHAR(5),                               -- 夜间模式结束时间（HH:MM）
+    night_mode_exempt_admin BOOLEAN NOT NULL DEFAULT TRUE,        -- 夜间模式是否豁免管理员
+    night_mode_whitelist_user_ids JSONB NOT NULL DEFAULT '[]'::jsonb, -- 夜间模式白名单用户ID
+    night_mode_delete_message BOOLEAN NOT NULL DEFAULT TRUE,      -- 夜间模式删除消息
+    night_mode_warn_enabled BOOLEAN NOT NULL DEFAULT TRUE,        -- 夜间模式提示开关
+    night_mode_warn_text TEXT NOT NULL DEFAULT '🌙 夜间模式生效中，请稍后再试。', -- 夜间模式提示文案
+    night_mode_warn_delete_after_seconds INTEGER NOT NULL DEFAULT 60, -- 夜间模式提示删除秒数
+    command_config_enabled BOOLEAN NOT NULL DEFAULT FALSE,        -- 命令配置总开关
+    command_config JSONB NOT NULL DEFAULT '{}'::jsonb,            -- 命令配置明细
     moderation_enabled BOOLEAN NOT NULL,                           -- 是否启用内容审核
     moderation_block_links BOOLEAN NOT NULL,                       -- 是否阻止链接
     moderation_action VARCHAR(32) NOT NULL,                        -- 审核违规时的处理动作（delete/warn/ban）
@@ -192,6 +212,26 @@ COMMENT ON COLUMN bot.chat_settings.join_burst_threshold_count IS '禁止批量�
 COMMENT ON COLUMN bot.chat_settings.join_burst_mute_enabled IS '批量进群触发后是否禁言';
 COMMENT ON COLUMN bot.chat_settings.join_burst_kick_enabled IS '批量进群触发后是否踢出';
 COMMENT ON COLUMN bot.chat_settings.join_burst_tip_mode IS '批量进群提示策略';
+COMMENT ON COLUMN bot.chat_settings.new_member_limit_enabled IS '新成员限制总开关';
+COMMENT ON COLUMN bot.chat_settings.new_member_limit_window_seconds IS '新成员限制时间窗口（秒）';
+COMMENT ON COLUMN bot.chat_settings.new_member_limit_block_media IS '新成员限制媒体消息';
+COMMENT ON COLUMN bot.chat_settings.new_member_limit_block_links IS '新成员限制链接消息';
+COMMENT ON COLUMN bot.chat_settings.new_member_limit_text_only IS '新成员仅允许纯文本';
+COMMENT ON COLUMN bot.chat_settings.new_member_limit_delete_message IS '新成员触发时是否删除消息';
+COMMENT ON COLUMN bot.chat_settings.new_member_limit_warn_enabled IS '新成员限制提示开关';
+COMMENT ON COLUMN bot.chat_settings.new_member_limit_warn_text IS '新成员限制提示文案';
+COMMENT ON COLUMN bot.chat_settings.new_member_limit_warn_delete_after_seconds IS '新成员限制提示删除秒数';
+COMMENT ON COLUMN bot.chat_settings.night_mode_enabled IS '夜间模式总开关';
+COMMENT ON COLUMN bot.chat_settings.night_mode_start_time IS '夜间模式开始时间（HH:MM）';
+COMMENT ON COLUMN bot.chat_settings.night_mode_end_time IS '夜间模式结束时间（HH:MM）';
+COMMENT ON COLUMN bot.chat_settings.night_mode_exempt_admin IS '夜间模式是否豁免管理员';
+COMMENT ON COLUMN bot.chat_settings.night_mode_whitelist_user_ids IS '夜间模式白名单用户ID';
+COMMENT ON COLUMN bot.chat_settings.night_mode_delete_message IS '夜间模式删除消息';
+COMMENT ON COLUMN bot.chat_settings.night_mode_warn_enabled IS '夜间模式提示开关';
+COMMENT ON COLUMN bot.chat_settings.night_mode_warn_text IS '夜间模式提示文案';
+COMMENT ON COLUMN bot.chat_settings.night_mode_warn_delete_after_seconds IS '夜间模式提示删除秒数';
+COMMENT ON COLUMN bot.chat_settings.command_config_enabled IS '命令配置总开关';
+COMMENT ON COLUMN bot.chat_settings.command_config IS '命令配置明细';
 COMMENT ON COLUMN bot.chat_settings.moderation_enabled IS '是否启用内容审核功能';
 COMMENT ON COLUMN bot.chat_settings.moderation_block_links IS '是否阻止所有链接消息';
 COMMENT ON COLUMN bot.chat_settings.moderation_action IS '审核违规时的处理动作：delete（删除）、warn（警告）、ban（封禁）';
@@ -301,6 +341,26 @@ ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS join_burst_threshold_coun
 ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS join_burst_mute_enabled BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS join_burst_kick_enabled BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS join_burst_tip_mode VARCHAR(16) NOT NULL DEFAULT 'tip_and_delete';
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS new_member_limit_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS new_member_limit_window_seconds INTEGER NOT NULL DEFAULT 3600;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS new_member_limit_block_media BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS new_member_limit_block_links BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS new_member_limit_text_only BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS new_member_limit_delete_message BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS new_member_limit_warn_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS new_member_limit_warn_text TEXT NOT NULL DEFAULT '新成员需等待 {duration} 才可发送媒体/链接。';
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS new_member_limit_warn_delete_after_seconds INTEGER NOT NULL DEFAULT 60;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS night_mode_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS night_mode_start_time VARCHAR(5);
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS night_mode_end_time VARCHAR(5);
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS night_mode_exempt_admin BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS night_mode_whitelist_user_ids JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS night_mode_delete_message BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS night_mode_warn_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS night_mode_warn_text TEXT NOT NULL DEFAULT '🌙 夜间模式生效中，请稍后再试。';
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS night_mode_warn_delete_after_seconds INTEGER NOT NULL DEFAULT 60;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS command_config_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS command_config JSONB NOT NULL DEFAULT '{}'::jsonb;
 ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS control_permission_policy VARCHAR(32) NOT NULL DEFAULT 'can_promote_members';
 ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS group_lock_phrase_enabled BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS group_lock_open_phrase TEXT;
@@ -1797,10 +1857,16 @@ CREATE TABLE IF NOT EXISTS bot.garage_forward_settings (
     enabled BOOLEAN NOT NULL DEFAULT FALSE,
     sync_mode VARCHAR(16) NOT NULL DEFAULT 'all',
     keyword_rules JSONB NOT NULL DEFAULT '[]'::jsonb,
+    button_template_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    button_template JSONB NOT NULL DEFAULT '[]'::jsonb,
     updated_at TIMESTAMPTZ NOT NULL,
     CONSTRAINT fk_garage_forward_settings_chat_id FOREIGN KEY (chat_id)
         REFERENCES bot.tg_chats(id) ON DELETE CASCADE
 );
+
+-- 兼容历史库：补转发按钮模板相关字段
+ALTER TABLE bot.garage_forward_settings ADD COLUMN IF NOT EXISTS button_template_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE bot.garage_forward_settings ADD COLUMN IF NOT EXISTS button_template JSONB NOT NULL DEFAULT '[]'::jsonb;
 
 CREATE TABLE IF NOT EXISTS bot.garage_forward_sources (
     id SERIAL PRIMARY KEY,

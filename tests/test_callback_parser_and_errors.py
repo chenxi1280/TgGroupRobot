@@ -4,8 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from bot.utils.callback_parser import CallbackParser
-from bot.utils.telegram_errors import (
+from backend.shared.callback_parser import CallbackParser
+from backend.platform.telegram.errors import (
     answer_callback_query_safely,
     build_public_error_text,
     mark_callback_query_answered,

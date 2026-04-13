@@ -4,8 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from bot.handlers.dispatcher.message_dispatcher import MessageDispatcher
-from bot.tasks.group_lock_task import GroupLockTask, _is_closed_now
+from backend.app.update_pipeline import MessageDispatcher
+from backend.platform.scheduler.tasks.group_lock_task import GroupLockTask, _is_closed_now
 
 
 def _group_update(*, text=None, caption=None, chat_type='supergroup'):

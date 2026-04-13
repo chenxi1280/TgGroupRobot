@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from bot.handlers.account_inherit_handler import _extract_inherit_chat_id
-from bot.utils.callback_parser import CallbackParser
-from bot.services.integration.account_inherit_service import _hash_token, new_inherit_token
+from backend.features.invite.account_inherit_handler import _extract_inherit_chat_id
+from backend.shared.callback_parser import CallbackParser
+from backend.features.invite.services.account_inherit_service import _hash_token, new_inherit_token
 
 
 def test_inherit_token_hash_is_deterministic_and_not_plaintext():

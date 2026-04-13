@@ -4,12 +4,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from bot.handlers import admin_handler
-from bot.handlers.admin_handler import handle_garage_forward_input
-from bot.handlers.garage_forward_handler import garage_forward_channel_post_handler
-from bot.services.integration.garage_forward_service import GarageForwardService
-from bot.services.state import state_service
-from bot.utils.callback_parser import CallbackParser
+from backend.features.admin import admin_handler
+from backend.features.admin.admin_handler import handle_garage_forward_input
+from backend.features.garage.garage_forward_handler import garage_forward_channel_post_handler
+from backend.features.garage.services.garage_forward_service import GarageForwardService
+from backend.platform.state import state_service
+from backend.shared.callback_parser import CallbackParser
 
 
 class _Session:
@@ -60,7 +60,7 @@ async def test_garage_forward_channel_post_copies_message_and_records(monkeypatc
     async def fake_append_audit(session, *, chat_id, source_channel_id, action, result, reason=None, source_message_id=None):
         audits.append((chat_id, action, result))
 
-    async def fake_copy_message(*, chat_id, from_chat_id, message_id):
+    async def fake_copy_message(*, chat_id, from_chat_id, message_id, reply_markup=None):
         copied_calls.append((chat_id, from_chat_id, message_id))
         return SimpleNamespace(message_id=999)
 

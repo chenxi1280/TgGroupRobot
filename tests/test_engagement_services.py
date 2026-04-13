@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from bot.services.activity.engagement_service import parse_egg_template, parse_reward_plan
-from bot.services.base import ValidationError
+from backend.features.activity.services.engagement_service import parse_egg_template, parse_reward_plan
+from backend.shared.services.base import ValidationError
 
 
 def test_parse_reward_plan_requires_seven_values():

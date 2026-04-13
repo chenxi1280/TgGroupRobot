@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from bot.handlers import admin_handler
+from backend.features.admin import admin_handler
 
 
 class _Session:
@@ -49,7 +49,7 @@ async def test_alliance_menu_shows_member_count_and_joint_ban_status(monkeypatch
         rendered.append((text, reply_markup))
 
     monkeypatch.setattr(admin_handler._admin_handler, "_set_current_chat", fake_set_current_chat)
-    from bot.services.integration.alliance_service import AllianceService
+    from backend.features.garage.services.alliance_service import AllianceService
 
     monkeypatch.setattr(AllianceService, "get_alliance_by_chat", fake_get_alliance_by_chat)
     monkeypatch.setattr(AllianceService, "get_setting", fake_get_setting)
@@ -105,7 +105,7 @@ async def test_car_review_menu_uses_dynamic_labels_and_real_subpages(monkeypatch
         rendered.append((text, reply_markup))
 
     monkeypatch.setattr(admin_handler._admin_handler, "_set_current_chat", fake_set_current_chat)
-    from bot.services.integration.garage_features_service import CarReviewService
+    from backend.features.garage.services.garage_features_service import CarReviewService
 
     monkeypatch.setattr(CarReviewService, "get_setting", fake_get_setting)
     monkeypatch.setattr(CarReviewService, "list_custom_fields", fake_list_fields)
@@ -131,7 +131,7 @@ async def test_car_review_fields_and_reports_pages_render_lists(monkeypatch):
     rendered: list[tuple[str, object]] = []
 
     async def fake_list_fields(session, chat_id: int):
-        return [SimpleNamespace(field_label="服务", field_key="service_score", enabled=True)]
+        return [SimpleNamespace(field_label="服务", field_key="service_score", enabled=True, sort_order=3)]
 
     async def fake_list_reports(session, chat_id: int, *, status: str = "all", limit: int = 10):
         return [SimpleNamespace(report_id=3, teacher_user_id=1001, author_user_id=2002, report_status="pending")]
@@ -142,7 +142,7 @@ async def test_car_review_fields_and_reports_pages_render_lists(monkeypatch):
     async def fake_safe_edit(update, text, reply_markup):
         rendered.append((text, reply_markup))
 
-    from bot.services.integration.garage_features_service import CarReviewService
+    from backend.features.garage.services.garage_features_service import CarReviewService
 
     monkeypatch.setattr(CarReviewService, "list_custom_fields", fake_list_fields)
     monkeypatch.setattr(CarReviewService, "list_reports", fake_list_reports)
@@ -155,7 +155,7 @@ async def test_car_review_fields_and_reports_pages_render_lists(monkeypatch):
     await admin_handler._admin_handler._show_car_review_fields_menu(update, context, -100123)
     await admin_handler._admin_handler._show_car_review_reports_menu(update, context, -100123)
 
-    assert "服务（键：service_score｜✅ 启用）" in rendered[0][0]
+    assert "服务（键：service_score｜排序：3｜✅ 启用）" in rendered[0][0]
     assert "报告#3｜老师 1001" in rendered[1][0]
     assert rendered[1][1].inline_keyboard[2][0].callback_data == "crv:report:-100123:detail:3:0"
 
@@ -180,7 +180,7 @@ async def test_car_review_report_detail_pending_shows_approve_and_reject(monkeyp
     async def fake_safe_edit(update, text, reply_markup):
         rendered.append((text, reply_markup))
 
-    from bot.services.integration.garage_features_service import CarReviewService
+    from backend.features.garage.services.garage_features_service import CarReviewService
 
     monkeypatch.setattr(CarReviewService, "get_report", fake_get_report)
     monkeypatch.setattr(CarReviewService, "list_audit_logs", fake_list_logs)
@@ -211,7 +211,7 @@ async def test_car_review_publish_menu_uses_iconized_basic_mode_row(monkeypatch)
     async def fake_safe_edit(update, text, reply_markup):
         rendered.append(reply_markup)
 
-    from bot.services.integration.garage_features_service import CarReviewService
+    from backend.features.garage.services.garage_features_service import CarReviewService
 
     monkeypatch.setattr(CarReviewService, "get_setting", fake_get_setting)
     monkeypatch.setattr(admin_handler._admin_handler.message_helper, "safe_edit", fake_safe_edit)
@@ -222,5 +222,5 @@ async def test_car_review_publish_menu_uses_iconized_basic_mode_row(monkeypatch)
     await admin_handler._admin_handler._show_car_review_publish_menu(update, context, -100123)
 
     keyboard = rendered[0]
-    assert keyboard.inline_keyboard[0][0].text == "🖼️ 首图发送：基础版固定开启"
+    assert keyboard.inline_keyboard[0][0].text == "🖼️ 首图发送：默认开启"
     assert keyboard.inline_keyboard[-1][0].text == "🔙 返回"

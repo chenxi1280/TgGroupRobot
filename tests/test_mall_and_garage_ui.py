@@ -4,10 +4,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from bot.handlers import admin_handler
-from bot.keyboards.admin.points_extended import points_mall_orders_keyboard
-from bot.services.integration.garage_forward_service import GarageForwardService
-from bot.services.integration.garage_features_service import GarageAuthService, TeacherSearchService
+from backend.features.admin import admin_handler
+from backend.features.admin.ui.points_extended import points_mall_orders_keyboard
+from backend.features.garage.services.garage_forward_service import GarageForwardService
+from backend.features.garage.services.garage_features_service import GarageAuthService, TeacherSearchService
 
 
 class _Session:
@@ -50,7 +50,7 @@ async def test_points_mall_command_page_uses_return_to_home(monkeypatch):
     update = SimpleNamespace(effective_user=SimpleNamespace(id=9))
     context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}))
 
-    await admin_handler._admin_handler._show_points_mall_command_placeholder(update, context, -100123)
+    await admin_handler._admin_handler._show_points_mall_command_page(update, context, -100123)
 
     assert rendered
     text, keyboard = rendered[0]
@@ -82,8 +82,8 @@ async def test_points_mall_empty_pages_show_single_page(monkeypatch):
     update = SimpleNamespace()
     context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}))
 
-    await admin_handler._admin_handler._show_points_mall_products_placeholder(update, context, -100123)
-    await admin_handler._admin_handler._show_points_mall_orders_placeholder(update, context, -100123)
+    await admin_handler._admin_handler._show_points_mall_products_page(update, context, -100123)
+    await admin_handler._admin_handler._show_points_mall_orders_page(update, context, -100123)
 
     assert rendered[0].endswith("0 条数据，第 1 页/共 1 页")
     assert rendered[1].endswith("0 条数据，第 1 页/共 1 页")

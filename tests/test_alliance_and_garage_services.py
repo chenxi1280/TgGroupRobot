@@ -5,9 +5,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from bot.services.base import ValidationError
-from bot.services.integration.alliance_service import AllianceService
-from bot.services.integration.garage_forward_service import GarageForwardService
+from backend.shared.services.base import ValidationError
+from backend.features.garage.services.alliance_service import AllianceService
+from backend.features.garage.services.garage_forward_service import GarageForwardService
 
 
 class _FakeResult:

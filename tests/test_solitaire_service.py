@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from bot.services.activity import solitaire_service
+from backend.features.activity.services import solitaire_service
 
 
 @pytest.mark.asyncio

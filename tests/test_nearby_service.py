@@ -5,8 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from bot.models.core import NearbyProfile, TgUser
-from bot.services.integration.nearby_profile_service import (
+from backend.platform.db.schema.models.core import NearbyProfile, TgUser
+from backend.features.nearby.services.nearby_profile_service import (
     build_user_display_name,
     format_distance,
     haversine_distance_km,

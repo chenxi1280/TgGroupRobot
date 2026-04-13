@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from bot.keyboards.common.verification import verification_keyboard
+from backend.shared.ui.common.verification import verification_keyboard
 
 
 def test_verification_keyboard_uses_compact_callback_format():

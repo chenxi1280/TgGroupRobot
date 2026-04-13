@@ -5,8 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from bot.handlers import invite_link_handler
-from bot.keyboards.integration.invite_link import invite_link_menu_keyboard
+from backend.features.invite import invite_link_handler
+from backend.features.invite.ui.invite_link import invite_link_menu_keyboard
 
 
 def test_invite_link_menu_keyboard_matches_basic_mode_layout():

@@ -4,8 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from bot.handlers import points_config_handler
-from bot.keyboards.admin.points import points_config_keyboard, points_rule_keyboard
+from backend.features.admin import points_config_handler
+from backend.features.admin.ui.points import points_config_keyboard, points_rule_keyboard
 
 
 class _SessionContext:
@@ -55,13 +55,14 @@ def test_points_home_keyboard_matches_doc_style_layout():
 
     assert rows == [
         ["⚙️ 状态：", "✅ 启动", "关闭"],
-        ["📘 展示规则：", "🕒 待实现"],
-        ["🏆 发言总排行", "🕒 待实现"],
-        ["👤 个人发言量", "🕒 待实现"],
+        ["📘 展示规则：", "查看"],
+        ["🏆 发言总排行", "查看"],
+        ["👤 个人发言量", "查看"],
         ["📅 签到规则", "💬 发言规则", "🔗 邀请规则"],
+        ["🧾 积分任务", "🧩 额外规则"],
         ["🔄 转让积分", "🏷️ 积分别名", "🥇 排行别名"],
         ["➕ 增加积分", "➖ 扣除积分"],
-        ["🎁 积分抽奖", "🧩 额外规则"],
+        ["🎁 积分抽奖"],
         ["📤 导出操作日志", "🧹 清空积分"],
         ["🔙 返回"],
     ]
@@ -159,7 +160,7 @@ async def test_points_config_home_answers_callback_only_once(monkeypatch):
 
     assert len(answers) == 1
     assert edits
-    assert edits[0][0].startswith("💰 主积分（基础版）")
+    assert edits[0][0].startswith("💰 主积分")
 
 
 @pytest.mark.asyncio
@@ -193,4 +194,71 @@ async def test_points_config_cancel_returns_to_config_page(monkeypatch):
     assert result == points_config_handler.ConversationHandler.END
     assert context.user_data == {}
     assert edits
-    assert edits[0][0] == "💰 积分配置"
+    assert edits[0][0] == "💰 主积分"
+
+
+@pytest.mark.asyncio
+async def test_points_view_display_rules_renders_real_page(monkeypatch):
+    settings = _build_settings()
+    session = _SessionContext(settings)
+    edits: list[tuple[str, object]] = []
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(session)}))
+
+    async def fake_edit_message_text(text, **kwargs):
+        edits.append((text, kwargs.get("reply_markup")))
+
+    async def fake_get_chat_settings(session, chat_id: int):
+        return session.settings
+
+    q = SimpleNamespace(answer=lambda *args, **kwargs: None, edit_message_text=fake_edit_message_text, data="pts:view:display_rules:-1001")
+    async def fake_answer(*args, **kwargs):
+        return None
+    q.answer = fake_answer
+
+    monkeypatch.setattr(points_config_handler, "get_chat_settings", fake_get_chat_settings)
+
+    update = SimpleNamespace(
+        callback_query=q,
+        effective_chat=SimpleNamespace(type="private"),
+        effective_user=SimpleNamespace(id=1),
+    )
+
+    await points_config_handler._points_config_handler.process(update, context, -1001)
+
+    assert edits
+    assert "💰 主积分 | 展示规则" in edits[0][0]
+    assert "查询指令：积分" in edits[0][0]
+
+
+@pytest.mark.asyncio
+async def test_points_transfer_prompt_uses_real_edit_flow(monkeypatch):
+    settings = _build_settings()
+    session = _SessionContext(settings)
+    edits: list[tuple[str, object]] = []
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(session)}), user_data={})
+
+    async def fake_edit_message_text(text, **kwargs):
+        edits.append((text, kwargs.get("reply_markup")))
+
+    async def fake_get_chat_settings(session, chat_id: int):
+        return session.settings
+
+    q = SimpleNamespace(answer=lambda *args, **kwargs: None, edit_message_text=fake_edit_message_text, data="pts:edit:transfer:-1001")
+    async def fake_answer(*args, **kwargs):
+        return None
+    q.answer = fake_answer
+
+    monkeypatch.setattr(points_config_handler, "get_chat_settings", fake_get_chat_settings)
+
+    update = SimpleNamespace(
+        callback_query=q,
+        effective_chat=SimpleNamespace(type="private"),
+        effective_user=SimpleNamespace(id=1),
+    )
+
+    result = await points_config_handler._points_config_handler.process(update, context, -1001)
+
+    assert result == points_config_handler.WAIT_VALUE
+    assert context.user_data == {"points_edit_field": "transfer", "points_edit_chat_id": -1001}
+    assert edits
+    assert "请输入转让信息" in edits[0][0]

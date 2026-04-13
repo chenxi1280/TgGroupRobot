@@ -4,13 +4,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from bot.handlers import admin_handler
-from bot.handlers.admin_handler import handle_points_extended_input
-from bot.handlers import points_handler as points_handler_module
-from bot.handlers.points_handler import PointsHandler, _required_level_permission
-from bot.utils.callback_parser import CallbackParser
-from bot.services.activity.points_extended_service import PointsExtendedService
-from bot.services.base import ValidationError
+from backend.features.admin import admin_handler
+from backend.features.admin.admin_handler import handle_points_extended_input
+from backend.features.points import points_handler as points_handler_module
+from backend.features.points.points_handler import PointsHandler, _required_level_permission
+from backend.shared.callback_parser import CallbackParser
+from backend.features.points.services.points_extended_service import PointsExtendedService
+from backend.shared.services.base import ValidationError
 
 
 class _FakeSession:
@@ -253,7 +253,7 @@ async def test_handle_points_extended_input_updates_mall_cover(monkeypatch):
     monkeypatch.setattr(admin_handler, "clear_user_state", fake_clear_user_state)
     monkeypatch.setattr(admin_handler.PointsExtendedService, "get_or_create_mall_setting", fake_get_or_create_mall_setting)
     monkeypatch.setattr(admin_handler.PointsExtendedService, "update_mall_setting", fake_update_mall_setting)
-    monkeypatch.setattr(admin_handler._admin_handler, "_show_points_mall_cover_placeholder", fake_show_cover)
+    monkeypatch.setattr(admin_handler._admin_handler, "_show_points_mall_cover_page", fake_show_cover)
 
     async def _reply_text(text):
         raise AssertionError(f"unexpected reply: {text}")
@@ -651,7 +651,7 @@ async def test_handle_points_mall_orders_routes_with_product_scope(monkeypatch):
     async def fake_show_orders(update, context, chat_id: int, product_id: int | None = None, status: str = "all"):
         calls.append((chat_id, product_id, status))
 
-    monkeypatch.setattr(admin_handler._admin_handler, "_show_points_mall_orders_placeholder", fake_show_orders)
+    monkeypatch.setattr(admin_handler._admin_handler, "_show_points_mall_orders_page", fake_show_orders)
 
     update = SimpleNamespace(callback_query=SimpleNamespace())
     context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(_FakeSession())}))
@@ -669,7 +669,7 @@ async def test_handle_points_mall_orders_status_short_code(monkeypatch):
     async def fake_show_orders(update, context, chat_id: int, product_id: int | None = None, status: str = "all"):
         calls.append((chat_id, product_id, status))
 
-    monkeypatch.setattr(admin_handler._admin_handler, "_show_points_mall_orders_placeholder", fake_show_orders)
+    monkeypatch.setattr(admin_handler._admin_handler, "_show_points_mall_orders_page", fake_show_orders)
 
     update = SimpleNamespace(callback_query=SimpleNamespace())
     context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(_FakeSession())}))

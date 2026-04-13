@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from bot.handlers.anti_flood_config_handler import _parse_bool as parse_flood_bool
-from bot.handlers.anti_flood_config_handler import _parse_int as parse_flood_int
-from bot.handlers.anti_spam_config_handler import _parse_bool as parse_spam_bool
-from bot.handlers.anti_spam_config_handler import _parse_int as parse_spam_int
+from backend.features.moderation.anti_flood_config_handler import _parse_bool as parse_flood_bool
+from backend.features.moderation.anti_flood_config_handler import _parse_int as parse_flood_int
+from backend.features.moderation.anti_spam_config_handler import _parse_bool as parse_spam_bool
+from backend.features.moderation.anti_spam_config_handler import _parse_int as parse_spam_int
 
 
 def test_parse_bool_supports_cn_and_en_values() -> None:

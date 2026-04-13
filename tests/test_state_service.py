@@ -4,9 +4,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from bot.models.core import ConversationState
-from bot.services.core.module_settings_service import ModuleSettingsService
-from bot.services.state.conversation_state_service import ConversationStateService
+from backend.platform.db.schema.models.core import ConversationState
+from backend.shared.services.module_settings_service import ModuleSettingsService
+from backend.platform.state.conversation_state_service import ConversationStateService
 
 
 class DummySession:
@@ -46,10 +46,10 @@ async def test_module_settings_service_ensure_creates_chat_user_and_settings(mon
         calls.append(("ensure_user", kwargs["user_id"]))
         return SimpleNamespace(id=kwargs["user_id"])
 
-    monkeypatch.setattr("bot.services.core.module_settings_service.ServiceBase._get_by_id", fake_get_by_id)
-    monkeypatch.setattr("bot.services.core.module_settings_service.ServiceBase._update_entity", fake_update)
-    monkeypatch.setattr("bot.services.core.module_settings_service.ServiceBase._get_by_filters", fake_get_by_filters)
-    monkeypatch.setattr("bot.services.core.module_settings_service.ensure_user", fake_ensure_user)
+    monkeypatch.setattr("backend.shared.services.module_settings_service.ServiceBase._get_by_id", fake_get_by_id)
+    monkeypatch.setattr("backend.shared.services.module_settings_service.ServiceBase._update_entity", fake_update)
+    monkeypatch.setattr("backend.shared.services.module_settings_service.ServiceBase._get_by_filters", fake_get_by_filters)
+    monkeypatch.setattr("backend.shared.services.module_settings_service.ensure_user", fake_ensure_user)
 
     settings = await ModuleSettingsService.ensure(
         session,
@@ -78,8 +78,8 @@ async def test_module_settings_service_ensure_chat_zero_is_compat_only(monkeypat
     async def fake_get_by_filters(*args, **kwargs):
         raise AssertionError("chat_id=0 should not hit storage")
 
-    monkeypatch.setattr("bot.services.core.module_settings_service.ServiceBase._get_by_id", fake_get_by_id)
-    monkeypatch.setattr("bot.services.core.module_settings_service.ServiceBase._get_by_filters", fake_get_by_filters)
+    monkeypatch.setattr("backend.shared.services.module_settings_service.ServiceBase._get_by_id", fake_get_by_id)
+    monkeypatch.setattr("backend.shared.services.module_settings_service.ServiceBase._get_by_filters", fake_get_by_filters)
 
     settings = await ModuleSettingsService.ensure(session, chat_id=0)
 
@@ -113,11 +113,11 @@ async def test_conversation_state_service_start_update_get_clear(monkeypatch):
         lookup["state"] = None
         return True
 
-    monkeypatch.setattr("bot.services.state.conversation_state_service.ensure_user", fake_ensure_user)
-    monkeypatch.setattr("bot.services.state.conversation_state_service.ModuleSettingsService.ensure", fake_module_ensure)
-    monkeypatch.setattr("bot.services.state.conversation_state_service.ServiceBase._get_by_filters", fake_get)
-    monkeypatch.setattr("bot.services.state.conversation_state_service.ServiceBase._update_entity", fake_update)
-    monkeypatch.setattr("bot.services.state.conversation_state_service.ServiceBase._delete_entity", fake_delete)
+    monkeypatch.setattr("backend.platform.state.conversation_state_service.ensure_user", fake_ensure_user)
+    monkeypatch.setattr("backend.platform.state.conversation_state_service.ModuleSettingsService.ensure", fake_module_ensure)
+    monkeypatch.setattr("backend.platform.state.conversation_state_service.ServiceBase._get_by_filters", fake_get)
+    monkeypatch.setattr("backend.platform.state.conversation_state_service.ServiceBase._update_entity", fake_update)
+    monkeypatch.setattr("backend.platform.state.conversation_state_service.ServiceBase._delete_entity", fake_delete)
 
     created = await ConversationStateService.start(session, -1001, 42, "state_a", {"a": 1})
     lookup["state"] = created
@@ -163,9 +163,9 @@ async def test_legacy_state_wrappers_delegate(monkeypatch):
     async def fake_clear(*args, **kwargs):
         return None
 
-    monkeypatch.setattr("bot.services.state.conversation_state_service.ConversationStateService.start", fake_start)
-    monkeypatch.setattr("bot.services.state.conversation_state_service.ConversationStateService.get", fake_get)
-    monkeypatch.setattr("bot.services.state.conversation_state_service.ConversationStateService.clear", fake_clear)
+    monkeypatch.setattr("backend.platform.state.conversation_state_service.ConversationStateService.start", fake_start)
+    monkeypatch.setattr("backend.platform.state.conversation_state_service.ConversationStateService.get", fake_get)
+    monkeypatch.setattr("backend.platform.state.conversation_state_service.ConversationStateService.clear", fake_clear)
 
     assert await ConversationStateService.start(session, -1001, 42, "x") is state
     assert await ConversationStateService.get(session, -1001, 42) is state

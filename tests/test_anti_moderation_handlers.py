@@ -5,11 +5,11 @@ from types import SimpleNamespace
 import pytest
 from telegram.ext import ApplicationHandlerStop
 
-import bot.handlers.banned_word_handler as banned_word_handler
-import bot.handlers.anti_flood_handler as anti_flood_handler
-import bot.handlers.anti_spam_handler as anti_spam_handler
-from bot.services.moderation import banned_word_service
-from bot.services.moderation.anti_spam_service import SpamViolation
+import backend.features.moderation.banned_word_handler as banned_word_handler
+import backend.features.moderation.anti_flood_handler as anti_flood_handler
+import backend.features.moderation.anti_spam_handler as anti_spam_handler
+from backend.features.moderation.services import banned_word_service
+from backend.features.moderation.services.anti_spam_service import SpamViolation
 
 
 class _Session:

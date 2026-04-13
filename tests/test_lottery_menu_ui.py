@@ -4,8 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from bot.handlers import lottery_handler
-from bot.keyboards.activity.lottery import (
+from backend.features.activity import lottery_handler
+from backend.features.activity.ui.lottery import (
     lottery_menu_keyboard,
     lottery_mode_keyboard,
     lottery_type_keyboard,
@@ -13,7 +13,7 @@ from bot.keyboards.activity.lottery import (
     manual_draw_summary_keyboard,
     manual_draw_summary_keyboard_with_winners,
 )
-from bot.services.activity.lottery_service import parse_lottery_config_text
+from backend.features.activity.services.lottery_service import parse_lottery_config_text
 
 
 def test_lottery_menu_keyboard_exposes_all_real_flows():

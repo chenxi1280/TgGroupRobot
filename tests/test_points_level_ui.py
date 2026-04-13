@@ -4,8 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from bot.handlers import admin_handler
-from bot.keyboards.admin.points_extended import points_level_list_keyboard
+from backend.features.admin import admin_handler
+from backend.features.admin.ui.points_extended import points_level_list_keyboard
 
 
 class _FakeSession:

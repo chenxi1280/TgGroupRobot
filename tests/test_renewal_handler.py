@@ -4,9 +4,9 @@ from types import SimpleNamespace
 
 import pytest
 
-import bot.handlers.renewal_handler as renewal_handler
-from bot.keyboards.integration.renewal import renewal_entry_keyboard
-from bot.services.integration.renewal_service import calculate_new_expire_at, hash_card_code
+import backend.features.subscription.renewal_handler as renewal_handler
+from backend.features.subscription.ui.renewal import renewal_entry_keyboard
+from backend.features.subscription.services.renewal_service import calculate_new_expire_at, hash_card_code
 
 
 def test_renewal_keyboard_uses_url_when_contact_username_present() -> None:

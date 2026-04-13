@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from bot.services.core.permission_service import (
+from backend.shared.services.permission_service import (
     PermissionPolicyService,
     get_bot_admin_ids,
     is_bot_admin_user,
@@ -39,7 +39,7 @@ async def test_permission_policy_allows_bot_admin_without_group_check(monkeypatc
     async def fake_is_user_admin(*args, **kwargs):
         raise AssertionError("group admin check should not be called for bot admin")
 
-    monkeypatch.setattr("bot.services.core.permission_service.is_user_admin", fake_is_user_admin)
+    monkeypatch.setattr("backend.shared.services.permission_service.is_user_admin", fake_is_user_admin)
 
     assert await PermissionPolicyService.can_manage(ctx, -1001, 1001) is True
 
@@ -51,7 +51,7 @@ async def test_permission_policy_allows_group_admin_for_common_capability(monkey
     async def fake_is_user_admin(*args, **kwargs):
         return True
 
-    monkeypatch.setattr("bot.services.core.permission_service.is_user_admin", fake_is_user_admin)
+    monkeypatch.setattr("backend.shared.services.permission_service.is_user_admin", fake_is_user_admin)
 
     assert await PermissionPolicyService.can_manage(ctx, -1001, 2002, capability="settings") is True
 
@@ -63,7 +63,7 @@ async def test_permission_policy_denies_non_admin_for_common_capability(monkeypa
     async def fake_is_user_admin(*args, **kwargs):
         return False
 
-    monkeypatch.setattr("bot.services.core.permission_service.is_user_admin", fake_is_user_admin)
+    monkeypatch.setattr("backend.shared.services.permission_service.is_user_admin", fake_is_user_admin)
 
     assert await PermissionPolicyService.can_manage(ctx, -1001, 2002, capability="settings") is False
 
@@ -75,7 +75,7 @@ async def test_permission_policy_requires_bot_admin_for_system_capability(monkey
     async def fake_is_user_admin(*args, **kwargs):
         return True
 
-    monkeypatch.setattr("bot.services.core.permission_service.is_user_admin", fake_is_user_admin)
+    monkeypatch.setattr("backend.shared.services.permission_service.is_user_admin", fake_is_user_admin)
 
     assert await PermissionPolicyService.can_manage(ctx, -1001, 2002, capability="bot_admin") is False
 
@@ -87,7 +87,7 @@ async def test_permission_policy_reports_unknown_capability_without_check(monkey
     async def fake_is_user_admin(*args, **kwargs):
         raise AssertionError("group admin check should not be called for unknown capability")
 
-    monkeypatch.setattr("bot.services.core.permission_service.is_user_admin", fake_is_user_admin)
+    monkeypatch.setattr("backend.shared.services.permission_service.is_user_admin", fake_is_user_admin)
 
     decision = await PermissionPolicyService.evaluate(ctx, -1001, 2002, capability="unknown_capability")
 
@@ -100,7 +100,7 @@ async def test_permission_policy_requires_context_for_group_capability(monkeypat
     async def fake_is_user_admin(*args, **kwargs):
         raise AssertionError("group admin check should not be called without context")
 
-    monkeypatch.setattr("bot.services.core.permission_service.is_user_admin", fake_is_user_admin)
+    monkeypatch.setattr("backend.shared.services.permission_service.is_user_admin", fake_is_user_admin)
 
     decision = await PermissionPolicyService.evaluate(None, -1001, 2002, capability="settings")
 
@@ -109,7 +109,7 @@ async def test_permission_policy_requires_context_for_group_capability(monkeypat
 
 
 def test_get_bot_admin_ids_falls_back_to_global_settings(monkeypatch):
-    from bot.services.core import permission_service
+    from backend.shared.services import permission_service
 
     monkeypatch.setattr(permission_service, "get_settings", lambda: SimpleNamespace(bot_admin_ids="7001,7002"))
     ctx = SimpleNamespace(application=SimpleNamespace(bot_data={}))

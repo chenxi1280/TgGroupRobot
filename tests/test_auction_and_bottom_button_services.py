@@ -4,10 +4,10 @@ import datetime as dt
 
 import pytest
 
-from bot.models.expansion import AuctionItem, BottomButtonLayout
-from bot.services.activity.auction_service import format_auction_announcement, parse_auction_end_at, parse_bid_amount
-from bot.services.base import ValidationError
-from bot.services.integration.bottom_button_service import build_runtime_markup, sanitize_button_text
+from backend.platform.db.schema.models.expansion import AuctionItem, BottomButtonLayout
+from backend.features.activity.services.auction_service import format_auction_announcement, parse_auction_end_at, parse_bid_amount
+from backend.shared.services.base import ValidationError
+from backend.features.group_ops.services.bottom_button_service import build_runtime_markup, sanitize_button_text
 
 
 def test_parse_auction_end_at_supports_minutes():

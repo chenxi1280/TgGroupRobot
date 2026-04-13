@@ -5,11 +5,11 @@ from types import SimpleNamespace
 
 import pytest
 
-import bot.handlers.group_message_handler as group_message_handler
-from bot.handlers.group_message_handler import _process_garage_features
-from bot.models.core import TgUser
-from bot.models.garage_features import CarReviewAuditLog, CarReviewReport, TeacherProfile
-from bot.services.integration.garage_features_service import CarReviewService, GarageAuthService, TeacherSearchService
+import backend.features.group_ops.group_message_handler as group_message_handler
+from backend.features.group_ops.group_message_handler import _process_garage_features
+from backend.platform.db.schema.models.core import TgUser
+from backend.platform.db.schema.models.garage_features import CarReviewAuditLog, CarReviewReport, TeacherProfile
+from backend.features.garage.services.garage_features_service import CarReviewService, GarageAuthService, TeacherSearchService
 
 
 class _ExecuteResult:

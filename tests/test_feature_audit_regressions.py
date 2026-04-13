@@ -1,13 +1,19 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+import datetime as dt
 
 import pytest
 
-from bot.handlers import admin_handler, ads_handler, group_message_handler, points_config_handler, verification_handler
-from bot.handlers.scheduled_message_handler import ScheduledMessageHandler
-from bot.models.enums import ConversationStateType
-from bot.utils.callback_parser import CallbackParser
+from backend.features.admin import admin_handler
+from backend.features.automation import ads_handler
+from backend.features.group_ops import group_message_handler
+from backend.features.group_ops.group_hooks import controls as group_controls
+from backend.features.admin import points_config_handler
+from backend.features.verification import verification_handler
+from backend.features.automation.scheduled_message_handler import ScheduledMessageHandler
+from backend.platform.db.schema.models.enums import ConversationStateType
+from backend.shared.callback_parser import CallbackParser
 
 
 class _Session:
@@ -68,7 +74,7 @@ async def test_car_review_duplicate_audit_is_blocked(monkeypatch):
     async def fake_show_detail(update, context, chat_id: int, report_id: int, status: str = "all"):
         rendered.append((report_id, status))
 
-    from bot.services.integration.garage_features_service import CarReviewService
+    from backend.features.garage.services.garage_features_service import CarReviewService
 
     monkeypatch.setattr(CarReviewService, "get_setting", fake_get_setting)
     monkeypatch.setattr(CarReviewService, "get_report", fake_get_report)
@@ -125,7 +131,7 @@ async def test_car_review_non_admin_approver_does_not_block_real_admin(monkeypat
     async def fake_publish(*args, **kwargs):
         return None
 
-    from bot.services.integration.garage_features_service import CarReviewService
+    from backend.features.garage.services.garage_features_service import CarReviewService
 
     monkeypatch.setattr(CarReviewService, "get_setting", fake_get_setting)
     monkeypatch.setattr(CarReviewService, "get_report", fake_get_report)
@@ -147,13 +153,32 @@ async def test_car_review_non_admin_approver_does_not_block_real_admin(monkeypat
 
 
 @pytest.mark.asyncio
-async def test_points_todo_entries_only_render_placeholder(monkeypatch):
+async def test_points_legacy_todo_entries_redirect_to_real_flow(monkeypatch):
     rendered: list[str] = []
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}), user_data={})
 
     async def fake_safe_edit(q, text: str, **kwargs):
         rendered.append(text)
 
+    async def fake_get_chat_settings(session, chat_id: int):
+        return SimpleNamespace(
+            sign_enabled=True,
+            sign_points=5,
+            sign_consecutive_days=7,
+            sign_consecutive_bonus=10,
+            message_points_enabled=False,
+            message_points=2,
+            message_points_daily_limit=None,
+            message_min_length=6,
+            invite_points_enabled=False,
+            invite_points=3,
+            invite_points_daily_limit=20,
+            points_alias="积分",
+            points_rank_alias="积分排行",
+        )
+
     monkeypatch.setattr(points_config_handler, "_safe_edit_message", fake_safe_edit)
+    monkeypatch.setattr(points_config_handler, "get_chat_settings", fake_get_chat_settings)
 
     q = SimpleNamespace(
         data="pts:todo:clear_points:-1001",
@@ -169,11 +194,11 @@ async def test_points_todo_entries_only_render_placeholder(monkeypatch):
         effective_chat=SimpleNamespace(type="private"),
     )
 
-    await points_config_handler._points_config_handler.process(update, SimpleNamespace(), -1001)
+    result = await points_config_handler._points_config_handler.process(update, context, -1001)
 
-    assert rendered == [
-        "💰 主积分 | 清空积分\n\n当前只有重构设计，基础版积分中心尚未接入这一能力。\n本轮已保留入口位置，避免首页继续和文档细节错位。"
-    ]
+    assert result == points_config_handler.WAIT_VALUE
+    assert context.user_data == {"points_edit_field": "clear_points", "points_edit_chat_id": -1001}
+    assert rendered and "请输入 CONFIRM" in rendered[0]
 
 
 @pytest.mark.asyncio
@@ -221,6 +246,7 @@ async def test_ads_create_start_keeps_target_chat_id_in_private_state(monkeypatc
             language_code="zh-CN",
         ),
     )
+
     context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}))
 
     await ads_handler.ads_create_start_callback(update, context)
@@ -232,6 +258,85 @@ async def test_ads_create_start_keeps_target_chat_id_in_private_state(monkeypatc
         "state_data": {"target_chat_id": -1005566},
     }
     assert edited and "创建轮播广告" in edited[0][0]
+
+
+@pytest.mark.asyncio
+async def test_points_tasks_view_renders(monkeypatch):
+    rendered: list[str] = []
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}), user_data={})
+
+    async def fake_safe_edit(q, text: str, **kwargs):
+        rendered.append(text)
+
+    async def fake_get_chat_settings(session, chat_id: int):
+        return SimpleNamespace(
+            sign_enabled=True,
+            sign_points=5,
+            message_points_enabled=True,
+            message_points=2,
+            message_points_daily_limit=10,
+            message_min_length=6,
+            invite_points_enabled=False,
+            invite_points=1,
+            invite_points_daily_limit=None,
+            points_alias="积分",
+            points_rank_alias="积分排行",
+        )
+
+    monkeypatch.setattr(points_config_handler, "_safe_edit_message", fake_safe_edit)
+    monkeypatch.setattr(points_config_handler, "get_chat_settings", fake_get_chat_settings)
+
+    q = SimpleNamespace(
+        data="pts:view:tasks:-1001",
+        answer=lambda *args, **kwargs: None,
+    )
+
+    async def fake_answer(*args, **kwargs):
+        return None
+
+    q.answer = fake_answer
+    update = SimpleNamespace(
+        callback_query=q,
+        effective_chat=SimpleNamespace(type="private"),
+        effective_user=SimpleNamespace(id=7),
+    )
+
+    await points_config_handler._points_config_handler.process(update, context, -1001)
+
+    assert rendered and "积分任务" in rendered[0]
+
+
+@pytest.mark.asyncio
+async def test_quick_publish_text_updates_draft(monkeypatch):
+    from backend.platform.telegram.private_config_handler import PrivateConfigHandler
+
+    calls: list[int] = []
+
+    async def fake_clear_state(session, chat_id: int, user_id: int):
+        calls.append(chat_id)
+
+    async def fake_show_menu(update, context, chat_id: int):
+        calls.append(chat_id)
+
+    monkeypatch.setattr("backend.platform.state.state_service.clear_user_state", fake_clear_state)
+    monkeypatch.setattr(admin_handler._admin_handler, "_show_quick_publish_menu", fake_show_menu)
+
+    handler = PrivateConfigHandler()
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}), user_data={})
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=7),
+        effective_message=SimpleNamespace(reply_text=lambda *args, **kwargs: None),
+    )
+    state = SimpleNamespace(
+        chat_id=7,
+        state_data={"target_chat_id": -1001, "field": "text"},
+    )
+
+    await handler._handle_quick_publish_input(update, context, _Session(), state, "hello world")
+
+    draft = context.user_data["quick_publish_draft"][str(-1001)]
+    assert draft["text"] == "hello world"
+    assert calls == [7, 7, -1001]
 
 
 @pytest.mark.asyncio
@@ -273,12 +378,12 @@ async def test_scheduled_edit_field_keeps_target_chat_id_in_private_state(monkey
         raising=False,
     )
     monkeypatch.setattr(
-        __import__("bot.handlers.scheduled_message_handler", fromlist=["ConversationStateService"]).ConversationStateService,
+        __import__("backend.features.automation.scheduled_message_handler", fromlist=["ConversationStateService"]).ConversationStateService,
         "start",
         fake_start,
     )
     monkeypatch.setattr(
-        __import__("bot.services.scheduled_message_service", fromlist=["ScheduledMessageService"]).ScheduledMessageService,
+        __import__("backend.features.automation.services.scheduled_message_service", fromlist=["ScheduledMessageService"]).ScheduledMessageService,
         "get_task_in_chat_or_404",
         fake_get_task,
     )
@@ -299,6 +404,222 @@ async def test_scheduled_edit_field_keeps_target_chat_id_in_private_state(monkey
         "state_data": {"task_id": "task-1", "target_chat_id": -1005566},
     }
     assert rendered and rendered[0][0].startswith("✏️ 编辑文本")
+
+
+@pytest.mark.asyncio
+async def test_scheduled_button_fsm_accepts_line_format(monkeypatch):
+    handler = ScheduledMessageHandler()
+    session = _Session()
+    cleared: list[tuple[int, int]] = []
+    updated: dict[str, object] = {}
+    details: list[tuple[int, str, str | None]] = []
+
+    async def fake_get(session_obj, chat_id: int, user_id: int):
+        return SimpleNamespace(
+            state_type=str(ConversationStateType.sm_edit_buttons),
+            state_data={"task_id": "task-1", "target_chat_id": -1005566},
+        )
+
+    async def fake_clear(session_obj, chat_id: int, user_id: int):
+        cleared.append((chat_id, user_id))
+
+    async def fake_update_buttons(session_obj, task_id: str, buttons: list):
+        updated["task_id"] = task_id
+        updated["buttons"] = buttons
+        return SimpleNamespace(task_id=task_id, buttons=buttons)
+
+    async def fake_show_detail(update, context, target_chat_id: int, task_id: str, toast: str | None = None):
+        details.append((target_chat_id, task_id, toast))
+
+    monkeypatch.setattr(
+        __import__("backend.features.automation.scheduled_message_handler", fromlist=["ConversationStateService"]).ConversationStateService,
+        "get",
+        fake_get,
+    )
+    monkeypatch.setattr(
+        __import__("backend.features.automation.scheduled_message_handler", fromlist=["ConversationStateService"]).ConversationStateService,
+        "clear",
+        fake_clear,
+    )
+    monkeypatch.setattr(
+        __import__("backend.features.automation.services.scheduled_message_service", fromlist=["ScheduledMessageService"]).ScheduledMessageService,
+        "update_task_buttons",
+        fake_update_buttons,
+    )
+    monkeypatch.setattr(handler, "show_detail", fake_show_detail)
+
+    update = SimpleNamespace(
+        effective_chat=SimpleNamespace(id=9001, type="private"),
+        effective_message=SimpleNamespace(reply_text=None),
+    )
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db(session)}))
+
+    await handler.handle_fsm_input(
+        update,
+        context,
+        -1005566,
+        42,
+        "官网|example.com ; 帮助|https://help.example.com",
+    )
+
+    assert updated == {
+        "task_id": "task-1",
+        "buttons": [[
+            {"text": "官网", "url": "https://example.com"},
+            {"text": "帮助", "url": "https://help.example.com"},
+        ]],
+    }
+    assert cleared == [(9001, 42)]
+    assert details == [(-1005566, "task-1", "✅ 按钮已保存")]
+    assert session.commits == 1
+
+
+@pytest.mark.asyncio
+async def test_points_level_unknown_op_uses_specific_message(monkeypatch):
+    answered: list[tuple[str, bool]] = []
+
+    async def fake_answer(update, text: str, show_alert: bool = False):
+        answered.append((text, show_alert))
+
+    monkeypatch.setattr(admin_handler, "answer_callback_query_safely", fake_answer)
+
+    await admin_handler._admin_handler._handle_points_level(
+        SimpleNamespace(),
+        SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()})),
+        -100123,
+        CallbackParser.parse("adm:lvl:-100123:unknown"),
+    )
+
+    assert answered == [("未识别的积分等级操作，请刷新页面后重试", True)]
+
+
+@pytest.mark.asyncio
+async def test_force_subscribe_unknown_input_uses_specific_message(monkeypatch):
+    answered: list[tuple[str, bool]] = []
+
+    async def fake_answer(update, text: str, show_alert: bool = False):
+        answered.append((text, show_alert))
+
+    monkeypatch.setattr(admin_handler, "answer_callback_query_safely", fake_answer)
+
+    await admin_handler._admin_handler._handle_force_subscribe(
+        SimpleNamespace(effective_user=SimpleNamespace(id=42)),
+        SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()})),
+        -100123,
+        CallbackParser.parse("adm:forcesub:-100123:input:unknown"),
+    )
+
+    assert answered == [("未识别的强制订阅配置项，请返回后重试", True)]
+
+
+@pytest.mark.asyncio
+async def test_new_member_limit_blocks_media_and_links(monkeypatch):
+    deleted: list[bool] = []
+    sent: list[tuple[int, str]] = []
+
+    class FakeBot:
+        async def send_message(self, chat_id, text, reply_to_message_id=None, parse_mode=None):
+            sent.append((chat_id, text))
+
+            async def delete():
+                return None
+
+            return SimpleNamespace(delete=delete)
+
+    async def fake_get_member_joined_at(db, chat_id: int, user_id: int):
+        return dt.datetime.now(dt.UTC) - dt.timedelta(minutes=10)
+
+    async def fake_delete():
+        deleted.append(True)
+
+    monkeypatch.setattr(group_controls, "_get_member_joined_at", fake_get_member_joined_at)
+
+    context = SimpleNamespace(bot=FakeBot(), application=SimpleNamespace(bot_data={"db": _Db()}))
+    chat = SimpleNamespace(id=-1001)
+    user = SimpleNamespace(id=7, full_name="测试用户")
+    message = SimpleNamespace(
+        text="访问 https://example.com",
+        caption=None,
+        entities=[SimpleNamespace(type="url")],
+        caption_entities=[],
+        photo=[SimpleNamespace(file_id="p1")],
+        message_id=11,
+    )
+    message.delete = fake_delete
+
+    settings = SimpleNamespace(
+        new_member_limit_enabled=True,
+        new_member_limit_window_seconds=3600,
+        new_member_limit_block_media=True,
+        new_member_limit_block_links=True,
+        new_member_limit_text_only=False,
+        new_member_limit_delete_message=True,
+        new_member_limit_warn_enabled=True,
+        new_member_limit_warn_text="新成员需等待 {duration} 才可发言。",
+        new_member_limit_warn_delete_after_seconds=0,
+    )
+
+    blocked = await group_message_handler._process_new_member_limit(
+        context,
+        _Db(),
+        chat,
+        user,
+        message,
+        settings,
+    )
+
+    assert blocked is True
+    assert deleted == [True]
+    assert sent and "新成员需等待" in sent[0][1]
+
+
+@pytest.mark.asyncio
+async def test_night_mode_blocks_messages(monkeypatch):
+    deleted: list[bool] = []
+    sent: list[tuple[int, str]] = []
+
+    class FakeBot:
+        async def send_message(self, chat_id, text, reply_to_message_id=None, parse_mode=None):
+            sent.append((chat_id, text))
+
+            async def delete():
+                return None
+
+            return SimpleNamespace(delete=delete)
+
+    async def fake_delete():
+        deleted.append(True)
+
+    monkeypatch.setattr(group_controls, "_is_night_time", lambda settings: True)
+
+    context = SimpleNamespace(bot=FakeBot(), application=SimpleNamespace(bot_data={"db": _Db()}))
+    chat = SimpleNamespace(id=-1001)
+    user = SimpleNamespace(id=7, full_name="测试用户")
+    message = SimpleNamespace(message_id=12)
+    message.delete = fake_delete
+
+    settings = SimpleNamespace(
+        night_mode_enabled=True,
+        night_mode_exempt_admin=True,
+        night_mode_whitelist_user_ids=[],
+        night_mode_delete_message=True,
+        night_mode_warn_enabled=True,
+        night_mode_warn_text="夜间模式中",
+        night_mode_warn_delete_after_seconds=0,
+    )
+
+    blocked = await group_message_handler._process_night_mode(
+        context,
+        chat,
+        user,
+        message,
+        settings,
+        is_admin=False,
+    )
+
+    assert blocked is True
+    assert deleted == [True]
+    assert sent and sent[0][1] == "夜间模式中"
 
 
 @pytest.mark.asyncio
@@ -384,3 +705,123 @@ async def test_new_member_without_invite_metadata_does_not_award_points(monkeypa
     await verification_handler.new_members_handler(update, context)
 
     assert awarded_calls == []
+
+
+@pytest.mark.asyncio
+async def test_invite_link_join_hint_handler_caches_reliable_metadata():
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={}))
+    update = SimpleNamespace(
+        chat_member=SimpleNamespace(
+            chat=SimpleNamespace(id=-100123),
+            invite_link=SimpleNamespace(invite_link="https://t.me/+demo"),
+            new_chat_member=SimpleNamespace(user=SimpleNamespace(id=99)),
+        )
+    )
+
+    await verification_handler.invite_link_join_hint_handler(update, context)
+
+    assert context.application.bot_data["invite_join_hints"] == {
+        (-100123, 99): {"invite_link": "https://t.me/+demo"}
+    }
+
+
+@pytest.mark.asyncio
+async def test_new_member_with_cached_invite_hint_awards_points(monkeypatch):
+    awarded_calls: list[dict] = []
+
+    async def fake_ensure_chat(*args, **kwargs):
+        return None
+
+    async def fake_get_chat_settings(session, chat_id: int):
+        return SimpleNamespace(
+            welcome_enabled=False,
+            welcome_message=None,
+            language="zh-CN",
+            verification_enabled=True,
+            verification_timeout_seconds=60,
+            verification_mode="button",
+            verification_restrict_can_send=False,
+            invite_link_notify=False,
+        )
+
+    async def fake_ensure_user(*args, **kwargs):
+        return None
+
+    async def fake_upsert(*args, **kwargs):
+        return None
+
+    async def fake_send_for_mode(*args, **kwargs):
+        return False
+
+    async def fake_burst_guard(*args, **kwargs):
+        return False
+
+    async def fake_join_spam_guard(*args, **kwargs):
+        return False
+
+    async def fake_track_and_award_invite(session, **kwargs):
+        awarded_calls.append(kwargs)
+        return True, True, None
+
+    async def fake_create_challenge(*args, **kwargs):
+        return SimpleNamespace(token="token-1", question="1+1=?", solved=False, timeout_handled=False)
+
+    monkeypatch.setattr(verification_handler, "ensure_chat", fake_ensure_chat)
+    monkeypatch.setattr(verification_handler, "get_chat_settings", fake_get_chat_settings)
+    monkeypatch.setattr(verification_handler, "ensure_user", fake_ensure_user)
+    monkeypatch.setattr(verification_handler, "_upsert_chat_member_join", fake_upsert)
+    monkeypatch.setattr(verification_handler.WelcomeService, "send_for_mode", fake_send_for_mode)
+    monkeypatch.setattr(verification_handler, "_handle_join_burst_guard", fake_burst_guard)
+    monkeypatch.setattr(verification_handler, "_handle_join_spam_guard", fake_join_spam_guard)
+    monkeypatch.setattr(verification_handler, "track_and_award_invite", fake_track_and_award_invite)
+    monkeypatch.setattr(verification_handler, "create_or_replace_challenge", fake_create_challenge)
+    monkeypatch.setattr(
+        verification_handler,
+        "t",
+        lambda *args, **kwargs: "验证提示",
+    )
+
+    class _LinkResult:
+        def scalar_one_or_none(self):
+            return SimpleNamespace(id=77, chat_id=-100123, created_by_user_id=555, member_count=0)
+
+    class _InviteSession(_Session):
+        async def execute(self, stmt):
+            return _LinkResult()
+
+    class _Bot:
+        async def restrict_chat_member(self, **kwargs):
+            return None
+
+        async def send_message(self, **kwargs):
+            return None
+
+    member = SimpleNamespace(
+        id=99,
+        username="newbie",
+        first_name="New",
+        last_name=None,
+        language_code="zh-CN",
+        mention_html=lambda: "<a>New</a>",
+    )
+    update = SimpleNamespace(
+        effective_chat=SimpleNamespace(id=-100123, type="supergroup", title="测试群"),
+        effective_message=SimpleNamespace(new_chat_members=[member]),
+    )
+    context = SimpleNamespace(
+        application=SimpleNamespace(bot_data={"db": _Db(_InviteSession()), "invite_join_hints": {(-100123, 99): {"invite_link": "https://t.me/+demo"}}}),
+        bot=_Bot(),
+        user_data={},
+    )
+
+    await verification_handler.new_members_handler(update, context)
+
+    assert awarded_calls == [
+        {
+            "chat_id": -100123,
+            "inviter_user_id": 555,
+            "invited_user_id": 99,
+            "invite_link_id": 77,
+        }
+    ]
+    assert context.application.bot_data["invite_join_hints"] == {}

@@ -3,12 +3,12 @@ from __future__ import annotations
 from types import SimpleNamespace
 import pytest
 
-from bot.handlers.verification_handler import (
+from backend.features.verification.verification_handler import (
     _extract_unmute_target_user_id,
     _extract_unmute_name_token,
     _resolve_username_to_user_id,
 )
-from bot.keyboards.common.verification import verification_timeout_help_keyboard
+from backend.shared.ui.common.verification import verification_timeout_help_keyboard
 
 
 def test_timeout_help_keyboard_callback_data():

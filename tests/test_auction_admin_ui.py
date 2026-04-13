@@ -4,8 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from bot.handlers import admin_handler
-from bot.utils.callback_parser import CallbackParser
+from backend.features.admin import admin_handler
+from backend.shared.callback_parser import CallbackParser
 
 
 class _FakeSession:

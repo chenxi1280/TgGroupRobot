@@ -5,8 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from bot.models.enums import VerificationMode
-from bot.services import verification_service
+from backend.platform.db.schema.models.enums import VerificationMode
+from backend.features.verification import verification_service
 
 
 @pytest.mark.asyncio

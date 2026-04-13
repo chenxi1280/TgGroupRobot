@@ -10,8 +10,7 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY . /app
 
-CMD ["python", "-m", "bot"]
-
+CMD ["python", "main.py"]
 
 
 

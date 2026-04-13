@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-import bot.__main__ as app_main
+import backend.app.bootstrap as app_main
 
 
 class _FakeBuilder:

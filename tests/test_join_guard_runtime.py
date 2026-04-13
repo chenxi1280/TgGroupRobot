@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from bot.handlers.verification_handler import _collect_join_spam_signals
-from bot.services.verification_service import (
+from backend.features.verification.verification_handler import _collect_join_spam_signals
+from backend.features.verification.verification_service import (
     SELF_REVIEW_EXPECTED_ANSWER,
     build_self_review_question,
     is_self_review_question,

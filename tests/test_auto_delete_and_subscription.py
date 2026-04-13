@@ -4,13 +4,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from bot.handlers.auto_delete_handler import auto_delete_handler
-import bot.handlers.auto_delete_handler as auto_delete_handler_module
-from bot.keyboards.admin.auto_delete import auto_delete_config_keyboard
-from bot.models.core import ChatSubscription, SubscriptionPlan
-from bot.models.enums import SubscriptionStatus
-from bot.services import subscription_service
-from bot.services.subscription_service import ensure_default_plans, get_or_create_chat_subscription
+from backend.features.group_ops.auto_delete_handler import auto_delete_handler
+import backend.features.group_ops.auto_delete_handler as auto_delete_handler_module
+from backend.features.admin.ui.auto_delete import auto_delete_config_keyboard
+from backend.platform.db.schema.models.core import ChatSubscription, SubscriptionPlan
+from backend.platform.db.schema.models.enums import SubscriptionStatus
+from backend.features.subscription.services import subscription_service
+from backend.features.subscription.services.subscription_service import ensure_default_plans, get_or_create_chat_subscription
 
 
 def test_auto_delete_keyboard_uses_expected_callbacks() -> None:

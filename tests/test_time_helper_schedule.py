@@ -3,7 +3,7 @@ from __future__ import annotations
 import datetime as dt
 from types import SimpleNamespace
 
-from bot.utils.time_helper import (
+from backend.shared.time_helper import (
     calculate_next_run_time,
     format_timestamp,
     is_time_in_window,

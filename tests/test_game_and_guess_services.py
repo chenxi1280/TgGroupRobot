@@ -4,9 +4,9 @@ import datetime as dt
 
 import pytest
 
-from bot.services.base import ValidationError
-from bot.services.activity.game_service import parse_ratio as parse_game_ratio, validate_hhmm, format_game_menu_text
-from bot.services.activity.guess_service import format_event_preview, parse_deadline, parse_options, parse_ratio as parse_guess_ratio
+from backend.shared.services.base import ValidationError
+from backend.features.activity.services.game_service import parse_ratio as parse_game_ratio, validate_hhmm, format_game_menu_text
+from backend.features.activity.services.guess_service import format_event_preview, parse_deadline, parse_options, parse_ratio as parse_guess_ratio
 
 
 def test_game_ratio_parsing():

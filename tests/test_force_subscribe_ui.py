@@ -4,9 +4,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from bot.handlers import admin_handler
-from bot.handlers.admin_handler import handle_force_subscribe_channel_input
-from bot.utils.callback_parser import CallbackParser
+from backend.features.admin import admin_handler
+from backend.features.admin.admin_handler import handle_force_subscribe_channel_input
+from backend.shared.callback_parser import CallbackParser
 
 
 class _Session:
@@ -192,7 +192,7 @@ async def test_force_subscribe_buttons_input_accepts_line_format(monkeypatch):
 
     monkeypatch.setattr(admin_handler.PermissionPolicyService, "require_manage", fake_require_manage)
     monkeypatch.setattr(admin_handler, "get_chat_settings", fake_get_chat_settings)
-    from bot.services.state import state_service
+    from backend.platform.state import state_service
     monkeypatch.setattr(state_service, "clear_user_state", fake_clear_user_state)
     monkeypatch.setattr(admin_handler._admin_handler, "_show_force_subscribe_menu", fake_show_force_subscribe_menu)
 

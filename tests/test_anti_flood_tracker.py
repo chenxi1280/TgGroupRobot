@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-from bot.services.moderation.anti_flood_service import AntiFloodTracker
+from backend.features.moderation.services.anti_flood_service import AntiFloodTracker
 
 
 @pytest.mark.asyncio

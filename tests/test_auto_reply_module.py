@@ -4,14 +4,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from bot.handlers import auto_reply_handler
-from bot.handlers.auto_reply_handler import (
+from backend.features.moderation import auto_reply_handler
+from backend.features.moderation.auto_reply_handler import (
     _extract_auto_reply_list_page,
     _format_auto_reply_rule_detail,
     _parse_auto_reply_buttons_input,
 )
-from bot.keyboards.content.auto_reply import auto_reply_detail_keyboard, auto_reply_list_keyboard, auto_reply_menu_keyboard
-from bot.services.moderation import auto_reply_service
+from backend.features.moderation.ui.auto_reply import auto_reply_detail_keyboard, auto_reply_list_keyboard, auto_reply_menu_keyboard
+from backend.features.moderation.services import auto_reply_service
 
 
 class _FakeSession:

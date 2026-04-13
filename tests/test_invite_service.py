@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from bot.services.integration import invite_service
+from backend.features.invite.services import invite_service
 
 
 @pytest.mark.asyncio

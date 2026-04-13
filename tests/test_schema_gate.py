@@ -4,12 +4,12 @@ from dataclasses import dataclass
 
 import pytest
 
-import bot.models.alliance  # noqa: F401
-import bot.models.core  # noqa: F401
-import bot.models.garage_features  # noqa: F401
-import bot.models.scheduled_message  # noqa: F401
-import bot.models.welcome  # noqa: F401
-from bot.db.schema_gate import SchemaValidationError, validate_database_schema
+import backend.platform.db.schema.models.alliance  # noqa: F401
+import backend.platform.db.schema.models.core  # noqa: F401
+import backend.platform.db.schema.models.garage_features  # noqa: F401
+import backend.platform.db.schema.models.scheduled_message  # noqa: F401
+import backend.platform.db.schema.models.welcome  # noqa: F401
+from backend.platform.db.runtime.schema_gate import SchemaValidationError, validate_database_schema
 
 
 @dataclass
@@ -79,6 +79,13 @@ def _full_tables() -> dict[str, dict]:
                 "join_self_review_wrong_action", "join_burst_enabled", "join_burst_window_seconds",
                 "join_burst_threshold_count", "join_burst_mute_enabled", "join_burst_kick_enabled",
                 "join_burst_tip_mode",
+                "new_member_limit_enabled", "new_member_limit_window_seconds", "new_member_limit_block_media",
+                "new_member_limit_block_links", "new_member_limit_text_only", "new_member_limit_delete_message",
+                "new_member_limit_warn_enabled", "new_member_limit_warn_text", "new_member_limit_warn_delete_after_seconds",
+                "night_mode_enabled", "night_mode_start_time", "night_mode_end_time", "night_mode_exempt_admin",
+                "night_mode_whitelist_user_ids", "night_mode_delete_message", "night_mode_warn_enabled",
+                "night_mode_warn_text", "night_mode_warn_delete_after_seconds",
+                "command_config_enabled", "command_config",
                 "moderation_enabled", "moderation_block_links", "moderation_action", "moderation_keywords",
                 "ads_enabled", "monetization_enabled", "welcome_enabled", "welcome_message",
                 "anti_flood_enabled", "anti_flood_messages", "anti_flood_seconds", "anti_flood_action",
@@ -261,7 +268,15 @@ def _full_tables() -> dict[str, dict]:
             },
         },
         "garage_forward_settings": {
-            "columns": {"chat_id", "enabled", "sync_mode", "keyword_rules", "updated_at"},
+            "columns": {
+                "chat_id",
+                "enabled",
+                "sync_mode",
+                "keyword_rules",
+                "button_template_enabled",
+                "button_template",
+                "updated_at",
+            },
         },
         "garage_forward_sources": {
             "columns": {"id", "chat_id", "source_channel_id", "source_name", "enabled", "created_at"},
@@ -463,7 +478,7 @@ def _full_tables() -> dict[str, dict]:
 @pytest.mark.asyncio
 async def test_schema_gate_passes_when_required_shape_exists(monkeypatch) -> None:
     inspector = FakeInspector(schemas=["bot"], tables=_full_tables())
-    monkeypatch.setattr("bot.db.schema_gate.inspect", lambda _: inspector)
+    monkeypatch.setattr("backend.platform.db.runtime.schema_gate.inspect", lambda _: inspector)
     engine = FakeEngine(inspector)
 
     await validate_database_schema(engine)  # type: ignore[arg-type]
@@ -474,7 +489,7 @@ async def test_schema_gate_fails_when_required_column_missing(monkeypatch) -> No
     tables = _full_tables()
     tables["scheduled_message_tasks"]["columns"].remove("short_id")
     inspector = FakeInspector(schemas=["bot"], tables=tables)
-    monkeypatch.setattr("bot.db.schema_gate.inspect", lambda _: inspector)
+    monkeypatch.setattr("backend.platform.db.runtime.schema_gate.inspect", lambda _: inspector)
     engine = FakeEngine(inspector)
 
     with pytest.raises(SchemaValidationError, match="short_id"):
@@ -486,7 +501,7 @@ async def test_schema_gate_fails_when_required_index_missing(monkeypatch) -> Non
     tables = _full_tables()
     tables["scheduled_message_tasks"]["indexes"] = []
     inspector = FakeInspector(schemas=["bot"], tables=tables)
-    monkeypatch.setattr("bot.db.schema_gate.inspect", lambda _: inspector)
+    monkeypatch.setattr("backend.platform.db.runtime.schema_gate.inspect", lambda _: inspector)
     engine = FakeEngine(inspector)
 
     with pytest.raises(SchemaValidationError, match="uq_smt_short_id"):
@@ -500,7 +515,7 @@ async def test_schema_gate_fails_when_custom_points_unique_missing(monkeypatch) 
         {"name": "uq_points_level_chat_no", "column_names": ["chat_id", "level_no"]},
     ]
     inspector = FakeInspector(schemas=["bot"], tables=tables)
-    monkeypatch.setattr("bot.db.schema_gate.inspect", lambda _: inspector)
+    monkeypatch.setattr("backend.platform.db.runtime.schema_gate.inspect", lambda _: inspector)
     engine = FakeEngine(inspector)
 
     with pytest.raises(SchemaValidationError, match="uq_points_level_chat_threshold"):
@@ -512,7 +527,7 @@ async def test_schema_gate_fails_when_garage_forward_source_unique_missing(monke
     tables = _full_tables()
     tables["garage_forward_sources"]["uniques"] = []
     inspector = FakeInspector(schemas=["bot"], tables=tables)
-    monkeypatch.setattr("bot.db.schema_gate.inspect", lambda _: inspector)
+    monkeypatch.setattr("backend.platform.db.runtime.schema_gate.inspect", lambda _: inspector)
     engine = FakeEngine(inspector)
 
     with pytest.raises(SchemaValidationError, match="uq_garage_forward_source_chat_channel"):

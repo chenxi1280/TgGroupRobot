@@ -4,8 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from bot.handlers import auto_delete_config_handler, auto_delete_handler
-from bot.keyboards.admin.auto_delete import auto_delete_config_keyboard
+from backend.features.group_ops import auto_delete_config_handler, auto_delete_handler
+from backend.features.admin.ui.auto_delete import auto_delete_config_keyboard
 
 
 class _Session:

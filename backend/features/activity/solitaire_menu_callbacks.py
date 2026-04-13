@@ -1,0 +1,83 @@
+from __future__ import annotations
+
+from telegram import Update
+from telegram.ext import ContextTypes
+
+from backend.features.activity.solitaire_shared import _solitaire_handler
+from backend.platform.db.runtime.session import Database
+from backend.shared.callback_parser import CallbackParser
+from backend.shared.chat_context import PrivateChatContext
+from backend.shared.handlers.base.chat_resolver import ChatResolver
+from backend.shared.services.permission_service import is_user_admin
+
+
+async def solitaire_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
+        return
+    q = update.callback_query
+    await q.answer()
+
+    chat = update.effective_chat
+    user = update.effective_user
+    if chat.type == "private":
+        db: Database = context.application.bot_data["db"]
+        target_chat_id = await ChatResolver.get_current_chat(db, user.id)
+        if target_chat_id is None:
+            await _solitaire_handler.message_helper.safe_edit(update, "请先选择一个群组")
+            return
+        if not await is_user_admin(context, target_chat_id, user.id):
+            await _solitaire_handler.message_helper.safe_edit(update, "你没有该群组的管理权限")
+            return
+        from backend.features.admin.admin_handler import _show_private_admin_menu
+
+        await _show_private_admin_menu(update, context, target_chat_id)
+        return
+
+    if not await is_user_admin(context, chat.id, user.id):
+        await _solitaire_handler.message_helper.safe_edit(update, "仅管理员可使用此功能")
+        return
+
+    await _solitaire_handler.show_menu(update, context, chat.id, chat.title)
+
+
+async def solitaire_list_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
+        return
+    q = update.callback_query
+    await q.answer()
+
+    cb = CallbackParser.parse(q.data or "")
+    page = cb.get_int(3, default=0) if update.effective_chat.type == "private" else (cb.get_int(2, default=0) if cb.get(2).isdigit() else 0)
+    target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(update, context, chat_index=2)
+    if target_chat_id is None:
+        return
+    await _solitaire_handler.show_list(update, context, target_chat_id, page)
+
+
+async def solitaire_stats_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
+        return
+    await update.callback_query.answer()
+    target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(update, context, chat_index=2)
+    if target_chat_id is None:
+        return
+    await _solitaire_handler.show_stats(update, context, target_chat_id)
+
+
+async def solitaire_detail_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
+        return
+    q = update.callback_query
+    await q.answer()
+
+    cb = CallbackParser.parse(q.data or "")
+    if cb.length() < 3:
+        return
+    solitaire_id = cb.get_int(2)
+    if solitaire_id == 0:
+        return
+
+    target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(update, context, chat_index=3)
+    if target_chat_id is None:
+        return
+    await _solitaire_handler.show_detail(update, context, solitaire_id, target_chat_id)
