@@ -53,15 +53,19 @@ from backend.features.moderation.auto_reply_input import (
     auto_reply_config_handler,
     auto_reply_message_handler,
 )
-from backend.features.moderation.auto_reply_management_actions import (
+from backend.features.moderation.auto_reply_delete_actions import (
     auto_reply_delete_confirm_action,
     auto_reply_delete_do_action,
+)
+from backend.features.moderation.auto_reply_detail_actions import (
     auto_reply_detail_action,
-    auto_reply_edit_action,
-    auto_reply_move_action,
     auto_reply_preview_action,
+)
+from backend.features.moderation.auto_reply_edit_actions import (
+    auto_reply_edit_action,
     auto_reply_rule_config_action,
 )
+from backend.features.moderation.auto_reply_order_actions import auto_reply_move_action
 from backend.features.moderation.auto_reply_cancel import auto_reply_cancel_callback
 
 async def auto_reply_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

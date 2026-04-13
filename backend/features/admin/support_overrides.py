@@ -1,6 +1,26 @@
 from __future__ import annotations
 
-from backend.features.admin.support_helpers import *
+from backend.features.activity.services.auction_service import (
+    get_or_create_setting as get_auction_setting,
+    list_auctions,
+    list_recent_auctions,
+)
+from backend.features.activity.services.engagement_service import (
+    get_egg_event,
+    get_egg_event_counts,
+    get_latest_running_egg_event,
+    get_or_create_chat_reward as get_engagement_chat_reward,
+    get_recent_chat_reward_stats,
+)
+from backend.features.activity.services.game_service import (
+    get_or_create_setting as get_game_setting,
+    get_rake_owner_label as get_game_rake_owner_label,
+)
+from backend.platform.state.state_service import clear_user_state, set_user_state
+from backend.platform.telegram.errors import answer_callback_query_safely
+from backend.shared.services.chat_service import get_chat_settings
+from backend.shared.services.permission_service import is_user_admin
+from backend.shared.services.user_service import ensure_user
 
 _ORIG_get_chat_settings = get_chat_settings
 _ORIG_answer_callback_query_safely = answer_callback_query_safely

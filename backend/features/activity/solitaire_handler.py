@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from backend.features.activity.solitaire_creation_callbacks import (
-    _parse_config_value,
-    solitaire_cancel_callback,
-    solitaire_create_config_message,
+from backend.features.activity.services.solitaire_service import parse_config_value as _parse_config_value
+from backend.features.activity.solitaire_creation_cancel import solitaire_cancel_callback
+from backend.features.activity.solitaire_creation_config import solitaire_create_config_message
+from backend.features.activity.solitaire_creation_start import solitaire_create_start_callback
+from backend.features.activity.solitaire_creation_wizard import (
     solitaire_create_deadline_message,
     solitaire_create_description_message,
     solitaire_create_max_message,
     solitaire_create_points_message,
-    solitaire_create_start_callback,
     solitaire_create_title_message,
 )
 from backend.features.activity.solitaire_management_callbacks import (

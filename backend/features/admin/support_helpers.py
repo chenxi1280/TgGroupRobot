@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from backend.features.admin.support_imports import *
+from typing import TypeVar
+
+from telegram.ext import ContextTypes
+
+from backend.shared.callback_parser import CallbackParser
+
+T = TypeVar("T")
 
 
 def _cycle_config_value(current: T, options: list[T]) -> T:
