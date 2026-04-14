@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import html
 from dataclasses import dataclass
 
@@ -14,6 +13,12 @@ from backend.platform.db.schema.models.enums import WelcomeDeleteMode, WelcomeMo
 from backend.platform.db.schema.models.welcome import WelcomeMessage
 from backend.shared.services.base import NotFoundError, ValidationError
 from backend.features.automation.services.scheduled_message_service import ScheduledMessageService
+from backend.features.verification.welcome_delivery import (
+    apply_welcome_delete_strategy,
+    delete_welcome_later,
+    send_rendered_payload,
+)
+from backend.features.verification.welcome_templates import render_welcome_template
 
 
 @dataclass(slots=True)
@@ -138,22 +143,12 @@ class WelcomeService:
 
     @staticmethod
     def _render_template(template: str, *, member: User | TgUser | None, group_name: str, user_id: int) -> str:
-        if isinstance(member, User):
-            member_value = member.mention_html()
-            nickname = html.escape(member.full_name)
-        else:
-            full_name = " ".join(
-                part for part in [getattr(member, "first_name", None), getattr(member, "last_name", None)] if part
-            ).strip()
-            nickname = html.escape(full_name or getattr(member, "username", "") or str(user_id))
-            member_value = html.escape(full_name or getattr(member, "username", "") or str(user_id))
-
-        return (
-            (template or WelcomeService.DEFAULT_TEXT)
-            .replace("{member}", member_value)
-            .replace("{group}", html.escape(group_name or "本群"))
-            .replace("{userid}", str(user_id))
-            .replace("{nickname}", nickname)
+        return render_welcome_template(
+            template,
+            default_text=WelcomeService.DEFAULT_TEXT,
+            member=member,
+            group_name=group_name,
+            user_id=user_id,
         )
 
     @staticmethod
@@ -274,31 +269,7 @@ class WelcomeService:
         *,
         payload: WelcomePayload,
     ):
-        try:
-            if payload.media_type == "photo" and payload.media_file_id:
-                return await context.bot.send_photo(
-                    chat_id=chat_id,
-                    photo=payload.media_file_id,
-                    caption=payload.text,
-                    reply_markup=payload.reply_markup,
-                    parse_mode=payload.parse_mode,
-                )
-            if payload.media_type == "video" and payload.media_file_id:
-                return await context.bot.send_video(
-                    chat_id=chat_id,
-                    video=payload.media_file_id,
-                    caption=payload.text,
-                    reply_markup=payload.reply_markup,
-                    parse_mode=payload.parse_mode,
-                )
-            return await context.bot.send_message(
-                chat_id=chat_id,
-                text=payload.text,
-                reply_markup=payload.reply_markup,
-                parse_mode=payload.parse_mode,
-            )
-        except Exception:
-            return None
+        return await send_rendered_payload(context, chat_id, payload=payload)
 
     @staticmethod
     async def _apply_delete_strategy(
@@ -308,26 +279,7 @@ class WelcomeService:
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
     ) -> None:
-        if welcome.delete_mode == WelcomeDeleteMode.delete_prev.value and welcome.last_sent_message_id:
-            try:
-                await context.bot.delete_message(chat_id=chat_id, message_id=welcome.last_sent_message_id)
-            except Exception:
-                pass
-            welcome.last_sent_message_id = message_id
-            await session.flush()
-            return
-
-        if welcome.delete_mode == WelcomeDeleteMode.keep.value:
-            welcome.last_sent_message_id = message_id
-            await session.flush()
-            return
-
-        if welcome.delete_mode == WelcomeDeleteMode.seconds.value:
-            welcome.last_sent_message_id = message_id
-            await session.flush()
-            delay = int(welcome.delete_delay_seconds or 0)
-            if delay > 0:
-                asyncio.create_task(WelcomeService._delete_later(context, chat_id, message_id, delay))
+        await apply_welcome_delete_strategy(session, welcome, message_id, context, chat_id)
 
     @staticmethod
     async def _delete_later(
@@ -336,8 +288,4 @@ class WelcomeService:
         message_id: int,
         delay: int,
     ) -> None:
-        try:
-            await asyncio.sleep(delay)
-            await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
-        except Exception:
-            return
+        await delete_welcome_later(context, chat_id, message_id, delay)

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from backend.features.admin.support import *
 from backend.features.admin.activity.controller import ActivityAdminControllerMixin
 from backend.features.admin.core.controller import CoreAdminControllerMixin
 from backend.features.admin.garage.controller import GarageAdminControllerMixin
@@ -9,6 +8,11 @@ from backend.features.admin.moderation.controller import ModerationAdminControll
 from backend.features.admin.points.controller import PointsAdminControllerMixin
 from backend.features.admin.subscription.controller import SubscriptionAdminControllerMixin
 from backend.features.admin.welcome.controller import WelcomeAdminControllerMixin
+from backend.platform.telegram.errors import mark_callback_query_answered
+from backend.shared.callback_parser import CallbackParser
+from backend.shared.handlers.base.base_handler import BaseHandler
+from telegram import Update
+from telegram.ext import ContextTypes
 
 
 PREFIX_HANDLERS = {
