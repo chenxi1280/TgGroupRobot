@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from backend.features.admin.support import *
+from backend.shared.time_ui import build_copy_options_keyboard, build_numeric_duration_prompt_text
 
 
 class GarageAuthActionsMixin:
@@ -111,6 +112,22 @@ class GarageAuthActionsMixin:
                 prompt = "🚗 车库认证 | 时间间隔\n\n👉 请输入限制时间间隔（秒）："
                 if sub == "max":
                     prompt = "🚗 车库认证 | 限制条数\n\n👉 请输入限制条数："
+                if sub == "interval":
+                    await self.message_helper.safe_edit(
+                        update,
+                        build_numeric_duration_prompt_text(
+                            title="🚗 车库认证 | 时间间隔",
+                            unit_label="秒",
+                            sample_value_text="3600",
+                            input_hint="👉 请输入限制时间间隔（秒）：",
+                        ),
+                        parse_mode="HTML",
+                        reply_markup=build_copy_options_keyboard(
+                            f"grg:home:{chat_id}",
+                            [("📋 复制 3600秒", "3600"), ("📋 复制 7200秒", "7200")],
+                        ),
+                    )
+                    return
                 await self.message_helper.safe_edit(
                     update,
                     prompt,

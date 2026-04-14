@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from backend.features.admin.support import *
+from backend.shared.button_layout_editor import ButtonEditorContext, show_layout_menu
 
 
 class WelcomeAdminControllerMixin:
@@ -98,7 +99,7 @@ class WelcomeAdminControllerMixin:
             ],
             [
                 InlineKeyboardButton("修改文本", callback_data=f"adm:wel:{chat_id}:input:{welcome_id}:text"),
-                InlineKeyboardButton("修改按钮", callback_data=f"adm:wel:{chat_id}:input:{welcome_id}:buttons"),
+                InlineKeyboardButton("修改按钮", callback_data=f"btned:open:welcome:{chat_id}:{welcome_id}"),
             ],
             [
                 InlineKeyboardButton("🏖️ 预览效果", callback_data=f"adm:wel:{chat_id}:preview:{welcome_id}"),
@@ -217,11 +218,20 @@ class WelcomeAdminControllerMixin:
         if op == "input":
             welcome_id = callback_data.require_int(4, label="welcome_id")
             field = callback_data.get(5)
+            if field == "buttons":
+                async with db.session_factory() as session:
+                    await show_layout_menu(
+                        update,
+                        context,
+                        ButtonEditorContext("welcome", chat_id, welcome_id),
+                        session=session,
+                    )
+                    await session.commit()
+                return
             state_map = {
                 "title": ConversationStateType.welcome_title_input.value,
                 "text": ConversationStateType.welcome_text_input.value,
                 "cover": ConversationStateType.welcome_cover_input.value,
-                "buttons": ConversationStateType.welcome_buttons_input.value,
             }
             state_type = state_map.get(field)
             if state_type is None:
@@ -245,4 +255,3 @@ class WelcomeAdminControllerMixin:
                 prompt,
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"adm:wel:{chat_id}:detail:{welcome_id}")]]),
             )
-

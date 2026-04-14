@@ -55,6 +55,7 @@ def admin_main_menu(chat_id: int | None = None) -> InlineKeyboardMarkup:
                 InlineKeyboardButton("☂️反垃圾", callback_data=f"adm:menu:antispam:{chat_id}"),
                 InlineKeyboardButton("🧨关群设置", callback_data=f"adm:menu:closegroup:{chat_id}"),
             ],
+            [InlineKeyboardButton("⚖️惩罚策略", callback_data=f"adm:menu:punish:{chat_id}")],
             [
                 InlineKeyboardButton("🕵️改名监控", callback_data=f"adm:menu:renamewatch:{chat_id}"),
                 InlineKeyboardButton("💥炸号继承", callback_data=f"adm:menu:inherit:{chat_id}"),
@@ -73,7 +74,6 @@ def admin_main_menu(chat_id: int | None = None) -> InlineKeyboardMarkup:
             ],
             [InlineKeyboardButton("⌨️命令配置", callback_data=f"adm:menu:gcmd:{chat_id}")],
             [
-                InlineKeyboardButton("🔐续费入口", callback_data=f"adm:menu:renewal:{chat_id}"),
                 InlineKeyboardButton("🩺健康检查", callback_data=f"adm:menu:health:{chat_id}"),
                 InlineKeyboardButton("🔄切换群", callback_data="adm:switch_group"),
             ],
@@ -104,6 +104,7 @@ def admin_main_menu(chat_id: int | None = None) -> InlineKeyboardMarkup:
                 InlineKeyboardButton("🚫反垃圾", callback_data="adm:menu:antispam"),
                 InlineKeyboardButton("🔇违禁词", callback_data="adm:menu:keywords"),
             ],
+            [InlineKeyboardButton("⚖️惩罚策略", callback_data="adm:menu:punish")],
             [
                 InlineKeyboardButton("💰积分", callback_data="adm:menu:points"),
                 InlineKeyboardButton("📊统计", callback_data="adm:menu:stats"),

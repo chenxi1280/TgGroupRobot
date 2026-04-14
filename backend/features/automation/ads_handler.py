@@ -16,11 +16,11 @@ from backend.features.automation.services.ad_rotation_service import (
     describe_delete_policy,
     describe_rule_mode,
     format_local_datetime,
+    format_interval_seconds_label,
     get_effective_item_count,
     get_or_create_rotation_rule,
     get_rotation_item,
     list_rotation_items,
-    parse_buttons_text,
     parse_datetime_text,
     parse_delay_seconds_text,
     parse_interval_hours_text,
@@ -29,10 +29,12 @@ from backend.features.automation.services.ad_rotation_service import (
     update_rotation_rule,
 )
 from backend.features.automation.ui.ads import (
+    ads_copy_time_keyboard,
     ads_item_detail_keyboard,
     ads_item_time_keyboard,
     ads_manage_keyboard,
     ads_menu_keyboard,
+    ads_rules_interval_keyboard,
     ads_rules_keyboard,
 )
 from backend.platform.db.runtime.session import Database
@@ -41,6 +43,8 @@ from backend.platform.state.conversation_state_service import ConversationStateS
 from backend.shared.callback_parser import CallbackParser
 from backend.shared.handlers.base.base_handler import BaseHandler
 from backend.shared.handlers.base.chat_resolver import ChatResolver
+from backend.shared.button_layout_editor import ButtonEditorContext, show_layout_menu
+from backend.shared.time_ui import build_datetime_prompt_text, next_top_of_hour
 from backend.shared.services.chat_service import ensure_chat, get_chat_settings
 from backend.shared.services.module_settings_service import ModuleSettingsService
 from backend.shared.services.permission_service import PermissionPolicyService
@@ -156,14 +160,13 @@ def _format_ad_detail_text(ad: AdCampaign) -> str:
 
 def _render_ads_home_text(rule, items: list[AdCampaign]) -> str:
     enabled_text = "✅ 启用" if rule.enabled else "❌ 关闭"
-    interval_hours = max(int(getattr(rule, "interval_seconds", 7200) or 7200) // 3600, 1)
     return (
         "本功能可以实现设置多个内容，按固定间隔时间一个一个发送到群里并置顶。\n\n"
         f"┗轮播状态: {enabled_text}\n"
         f"┗起始时间: {format_local_datetime(rule.start_at)}\n"
         f"┗上次轮播: {format_local_datetime(rule.last_sent_at)}\n"
         f"┗下次轮播: {format_local_datetime(rule.next_run_at)}\n"
-        f"┗轮播间隔: {interval_hours}小时\n"
+        f"┗轮播间隔: {format_interval_seconds_label(getattr(rule, 'interval_seconds', 7200))}\n"
         f"┗轮播方式: {describe_rule_mode(rule)}\n"
         f"┗删除规则: {describe_delete_policy(rule)}\n"
         f"┗取消上一条轮播置顶: {'✅ 启用' if rule.unpin_previous else '❌ 关闭'}\n"
@@ -295,10 +298,11 @@ class AdsHandler(BaseHandler):
             await self.message_helper.safe_edit(update, text="轮播消息不存在", reply_markup=ads_menu_keyboard(target_chat_id))
             return
         text = (
-            "🎠 时间范围\n\n"
-            f"开始时间：{format_local_datetime(item.start_time, empty='【等待设置】')}\n"
-            f"结束时间：{format_local_datetime(item.end_time, empty='【等待设置】')}\n\n"
-            "点击下面按钮进入输入状态；发送“清空”可移除对应时间。"
+            "🎠 轮播消息 | 编辑时间范围\n\n"
+            f"开始时间：{format_local_datetime(item.start_time, empty='立刻生效')}\n"
+            f"结束时间：{format_local_datetime(item.end_time, empty='一直生效')}\n\n"
+            "💡 可不设置开始/结束时间，即为立刻启动一直有效！\n"
+            "💡 如果没设置开始时间，重复间隔时间从第一次启动任务开始算起！"
         )
         await self.message_helper.safe_edit(
             update,
@@ -371,6 +375,15 @@ async def ads_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 async def ads_rules_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.callback_query is None:
         return
+    cb = CallbackParser.parse(update.callback_query.data or "")
+    if cb.get(2) == "hint":
+        hint_key = cb.get(4)
+        hint_text = {
+            "unpin_previous": "这是说明栏，请点击下方「开启」或「关闭」按钮来切换取消上一条置顶。",
+        }.get(hint_key, "这是说明栏，请点击旁边可操作的按钮。")
+        await answer_callback_query_safely(update, hint_text, show_alert=False)
+        return
+
     await update.callback_query.answer()
     target_chat_id = await _resolve_ads_target_chat_id(update, context)
     if target_chat_id is None:
@@ -397,6 +410,8 @@ async def ads_rules_set_callback(update: Update, context: ContextTypes.DEFAULT_T
             kwargs["enabled"] = value == "1"
         elif field == "mode":
             kwargs["mode"] = value
+        elif field == "interval_minutes":
+            kwargs["interval_seconds"] = int(value) * 60
         elif field == "delete_policy":
             kwargs["delete_policy"] = value
         elif field == "unpin_previous":
@@ -441,9 +456,20 @@ async def ads_rules_input_callback(update: Update, context: ContextTypes.DEFAULT
     chat_id = cb.require_int(3, label="chat_id")
     field = cb.get(4)
 
+    if field == "interval":
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            rule = await get_or_create_rotation_rule(session, chat_id)
+            await session.commit()
+        await q.edit_message_text(
+            "请选择轮播间隔",
+            reply_markup=ads_rules_interval_keyboard(chat_id, getattr(rule, "interval_seconds", None)),
+        )
+        return
+
     state_map = {
         "start": "ads_rule_edit_start",
-        "interval": "ads_rule_edit_interval",
+        "interval_custom": "ads_rule_edit_interval",
         "delay": "ads_rule_edit_delay",
     }
     state_type = state_map.get(field)
@@ -462,9 +488,22 @@ async def ads_rules_input_callback(update: Update, context: ContextTypes.DEFAULT
         )
         await session.commit()
 
+    if field == "start":
+        sample_time = next_top_of_hour()
+        sample_label = format_local_datetime(sample_time, empty="")
+        await q.edit_message_text(
+            build_datetime_prompt_text(
+                title="🎠 轮播规则 | 编辑开始时间",
+                sample_time_text=sample_label,
+                input_hint="👉🏻 现在输入定时开始时间:",
+            ),
+            parse_mode="HTML",
+            reply_markup=ads_copy_time_keyboard(f"ads:rules:{chat_id}", sample_label),
+        )
+        return
+
     prompt = {
-        "start": "👉 请输入轮播起始时间，格式 YYYY-MM-DD HH:MM；发送“清空”可移除。",
-        "interval": "👉 请输入轮播间隔小时数，例如 2。",
+        "interval_custom": "👉 请输入自定义间隔时间（分钟）：",
         "delay": "👉 请输入延迟删除秒数，例如 60。",
     }[field]
     await q.edit_message_text(
@@ -655,11 +694,22 @@ async def ads_item_input_callback(update: Update, context: ContextTypes.DEFAULT_
     if target_chat_id is None:
         return
 
+    if field == "buttons":
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            await show_layout_menu(
+                update,
+                context,
+                ButtonEditorContext("ads", target_chat_id, item_id),
+                session=session,
+            )
+            await session.commit()
+        return
+
     state_map = {
         "title": "ads_item_edit_title",
         "text": "ads_item_edit_text",
         "cover": "ads_item_edit_cover",
-        "buttons": "ads_item_edit_buttons",
         "start": "ads_item_edit_start",
         "end": "ads_item_edit_end",
         "order": "ads_item_edit_order",
@@ -684,13 +734,43 @@ async def ads_item_input_callback(update: Update, context: ContextTypes.DEFAULT_
         "title": "👉 请输入标题备注。",
         "text": "👉 请输入轮播文本内容。",
         "cover": "👉 请发送图片作为封面；发送“清空”可移除封面。",
-        "buttons": "👉 请输入按钮 JSON，或每行 按钮文案|URL；发送“清空”可移除按钮。",
-        "start": "👉 请输入开始时间，格式 YYYY-MM-DD HH:MM；发送“清空”可移除。",
-        "end": "👉 请输入结束时间，格式 YYYY-MM-DD HH:MM；发送“清空”可移除。",
         "order": "👉 请输入新的轮播顺序数字，例如 1。",
-    }[field]
+    }.get(field)
+    if field == "start":
+        sample_time = next_top_of_hour()
+        sample_label = format_local_datetime(sample_time, empty="")
+        await q.edit_message_text(
+            build_datetime_prompt_text(
+                title="🎠 轮播消息 | 编辑开始时间",
+                sample_time_text=sample_label,
+                input_hint="👉🏻 现在输入定时开始时间:",
+            ),
+            parse_mode="HTML",
+            reply_markup=ads_copy_time_keyboard(
+                f"ads:detail:{target_chat_id}:{item_id}",
+                sample_label,
+            ),
+        )
+        return
+    if field == "end":
+        sample_time = next_top_of_hour(days_offset=1)
+        sample_label = format_local_datetime(sample_time, empty="")
+        await q.edit_message_text(
+            build_datetime_prompt_text(
+                title="🎠 轮播消息 | 编辑结束时间",
+                sample_time_text=sample_label,
+                input_hint="👉🏻 现在输入定时结束时间:",
+            ),
+            parse_mode="HTML",
+            reply_markup=ads_copy_time_keyboard(
+                f"ads:detail:{target_chat_id}:{item_id}",
+                sample_label,
+            ),
+        )
+        return
+
     await q.edit_message_text(
-        prompt,
+        prompt or "请输入配置内容。",
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"ads:detail:{target_chat_id}:{item_id}")]]),
     )
 
@@ -862,9 +942,6 @@ async def ads_create_config_message(update: Update, context: ContextTypes.DEFAUL
                     await update_rotation_item(session, item_id, image_file_id=message.photo[-1].file_id)
                 else:
                     raise ValidationError("请发送图片，或发送“清空”移除封面")
-            elif state.state_type == "ads_item_edit_buttons":
-                buttons = [] if _is_clear_input(text_value) else parse_buttons_text(text_value)
-                await update_rotation_item(session, item_id, buttons=buttons)
             elif state.state_type == "ads_item_edit_start":
                 await update_rotation_item(
                     session,

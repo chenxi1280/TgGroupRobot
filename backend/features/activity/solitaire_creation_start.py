@@ -9,6 +9,8 @@ from backend.features.activity.solitaire_shared import WAIT_CONFIG
 from backend.platform.db.runtime.session import Database
 from backend.platform.state.state_service import set_user_state
 from backend.shared.chat_context import PrivateChatContext
+from backend.shared.time_helper import LOCAL_TIMEZONE
+from backend.shared.time_ui import next_top_of_hour
 
 
 async def solitaire_create_start_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -28,8 +30,8 @@ async def solitaire_create_start_callback(update: Update, context: ContextTypes.
         await set_user_state(session, chat.id, user.id, "solitaire_create", {"target_chat_id": target_chat_id})
         await session.commit()
 
-    now_local = dt.datetime.now(dt.timezone.utc).astimezone(dt.timezone(dt.timedelta(hours=8)))
-    deadline_example = now_local + dt.timedelta(hours=24)
+    deadline_example = next_top_of_hour(days_offset=1).astimezone(LOCAL_TIMEZONE)
+    deadline_text = deadline_example.strftime('%Y-%m-%d %H:%M')
     text = (
         "➕ 创建接龙 ( /cancel 取消)\n\n"
         "请按以下格式一次性发送配置：\n\n"
@@ -46,11 +48,14 @@ async def solitaire_create_start_callback(update: Update, context: ContextTypes.
         "一起吃火锅\n"
         "最大人数: 10\n"
         "参与积分: 50\n"
-        f"截止时间: {deadline_example.strftime('%Y-%m-%d %H:%M')}\n"
+        f"截止时间: {deadline_text}\n"
         "```"
     )
     keyboard = InlineKeyboardMarkup(
-        [[InlineKeyboardButton("❌ 取消配置", callback_data=f"solitaire:cancel:{target_chat_id}")]]
+        [
+            [InlineKeyboardButton(f"📋 复制 {deadline_text}", api_kwargs={"copy_text": {"text": deadline_text}})],
+            [InlineKeyboardButton("❌ 取消配置", callback_data=f"solitaire:cancel:{target_chat_id}")],
+        ]
     )
     await q.edit_message_text(text, parse_mode="Markdown", reply_markup=keyboard)
     return WAIT_CONFIG

@@ -133,13 +133,7 @@ async def get_user_managed_chats(
                     log.info("chat_membership_checked", user_id=user_id, chat_id=chat.id, is_admin=is_admin)
 
                     if is_admin:
-                        # 实时从 Telegram API 获取群组标题（确保最新）
-                        try:
-                            tg_chat = await bot.get_chat(chat.id)
-                            title = tg_chat.title or f"群组{chat.id}"
-                        except TelegramError:
-                            # 如果获取失败，使用数据库中的标题
-                            title = chat.title or f"群组{chat.id}"
+                        title = chat.title or f"群组{chat.id}"
                         result.append((chat.id, title, True))
                     else:
                         # 用户是群组成员但不是管理员（可选显示）

@@ -3,7 +3,11 @@ from __future__ import annotations
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-from backend.features.automation.services.ad_rotation_service import describe_delete_policy
+from backend.features.automation.services.ad_rotation_service import (
+    describe_delete_policy,
+    format_interval_seconds_label,
+)
+from backend.shared.time_ui import build_copy_time_keyboard, build_interval_keyboard
 from backend.shared.ui.base.helpers import create_back_button
 
 
@@ -30,7 +34,7 @@ def ads_rules_keyboard(chat_id: int, rule) -> InlineKeyboardMarkup:
     delete_prev_cycle = "✅ 删上轮" if rule.delete_policy == "delete_prev_cycle" else "删上轮"
     delete_delay = "✅ 延迟删" if rule.delete_policy == "delete_delay" else "延迟删"
 
-    interval_hours = max(int(getattr(rule, "interval_seconds", 7200) or 7200) // 3600, 1)
+    interval_label = format_interval_seconds_label(getattr(rule, "interval_seconds", 7200))
 
     return InlineKeyboardMarkup([
         [
@@ -45,9 +49,9 @@ def ads_rules_keyboard(chat_id: int, rule) -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton("起始时间", callback_data=f"ads:rules:input:{chat_id}:start"),
-            InlineKeyboardButton(f"轮播间隔（{interval_hours}小时）", callback_data=f"ads:rules:input:{chat_id}:interval"),
+            InlineKeyboardButton(f"轮播间隔（{interval_label}）", callback_data=f"ads:rules:input:{chat_id}:interval"),
         ],
-        [InlineKeyboardButton("·取消上一条置顶·", callback_data=f"ads:rules:{chat_id}")],
+        [InlineKeyboardButton("·取消上一条置顶·", callback_data=f"ads:rules:hint:{chat_id}:unpin_previous")],
         [
             InlineKeyboardButton(unpin_on, callback_data=f"ads:rules:set:{chat_id}:unpin_previous:1"),
             InlineKeyboardButton(unpin_off, callback_data=f"ads:rules:set:{chat_id}:unpin_previous:0"),
@@ -104,7 +108,7 @@ def ads_item_detail_keyboard(chat_id: int, item) -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton("设置文本", callback_data=f"ads:item:input:{chat_id}:{item.id}:text"),
-            InlineKeyboardButton("设置按钮", callback_data=f"ads:item:input:{chat_id}:{item.id}:buttons"),
+            InlineKeyboardButton("设置按钮", callback_data=f"btned:open:ads:{chat_id}:{item.id}"),
         ],
         [InlineKeyboardButton("时间范围", callback_data=f"ads:item:time:{chat_id}:{item.id}")],
         [
@@ -126,6 +130,27 @@ def ads_item_time_keyboard(chat_id: int, item_id: int) -> InlineKeyboardMarkup:
         ],
         [InlineKeyboardButton("🔙 返回", callback_data=f"ads:detail:{chat_id}:{item_id}")],
     ])
+
+
+def ads_rules_interval_keyboard(chat_id: int, current_interval_seconds: int | None) -> InlineKeyboardMarkup:
+    current_minutes = max(int(current_interval_seconds or 7200) // 60, 1)
+    options = [
+        [1, 3, 5, 10],
+        [15, 20, 30, 45],
+        [60, 120, 180, 240],
+        [360, 480, 720, 1440],
+    ]
+    return build_interval_keyboard(
+        current_minutes=current_minutes,
+        option_rows=options,
+        callback_factory=lambda value: f"ads:rules:set:{chat_id}:interval_minutes:{value}",
+        back_callback=f"ads:rules:{chat_id}",
+        custom_callback=f"ads:rules:input:{chat_id}:interval_custom",
+    )
+
+
+def ads_copy_time_keyboard(back_callback: str, sample_time: str) -> InlineKeyboardMarkup:
+    return build_copy_time_keyboard(back_callback, sample_time)
 
 
 def describe_manage_delete_policy(rule) -> str:

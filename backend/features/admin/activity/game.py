@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from backend.features.admin.support import *
+from backend.shared.time_ui import build_copy_time_keyboard, build_hhmm_prompt_text, next_top_of_hour_hhmm
 
 class GameAdminControllerMixin:
     async def _show_game_menu(
@@ -212,12 +213,32 @@ class GameAdminControllerMixin:
                 elif sub == "start_time":
                     await self._start_text_input_state(context, update.effective_user.id, update.effective_user.id, "game_wait_auto_start_time", {"target_chat_id": chat_id})
                     await session.commit()
-                    await self.message_helper.safe_edit(update, "🎮 游戏 | 自动启动时间\n\n游戏自动启动时间 格式:时:分 例如:23:05", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"gm:home:{chat_id}")]]))
+                    sample_text = next_top_of_hour_hhmm()
+                    await self.message_helper.safe_edit(
+                        update,
+                        build_hhmm_prompt_text(
+                            title="🎮 游戏 | 自动启动时间",
+                            sample_time_text=sample_text,
+                            input_hint="👉 请输入自动启动时间（格式 HH:MM）：",
+                        ),
+                        reply_markup=build_copy_time_keyboard(f"gm:home:{chat_id}", sample_text),
+                        parse_mode="HTML",
+                    )
                     return
                 elif sub == "stop_time":
                     await self._start_text_input_state(context, update.effective_user.id, update.effective_user.id, "game_wait_auto_stop_time", {"target_chat_id": chat_id})
                     await session.commit()
-                    await self.message_helper.safe_edit(update, "🎮 游戏 | 自动关停时间\n\n游戏自动关停时间 格式:时:分", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"gm:home:{chat_id}")]]))
+                    sample_text = next_top_of_hour_hhmm(hours_offset=8)
+                    await self.message_helper.safe_edit(
+                        update,
+                        build_hhmm_prompt_text(
+                            title="🎮 游戏 | 自动关停时间",
+                            sample_time_text=sample_text,
+                            input_hint="👉 请输入自动关停时间（格式 HH:MM）：",
+                        ),
+                        reply_markup=build_copy_time_keyboard(f"gm:home:{chat_id}", sample_text),
+                        parse_mode="HTML",
+                    )
                     return
                 await session.commit()
                 await self._show_game_menu(update, context, chat_id)

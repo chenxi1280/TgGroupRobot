@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 import structlog
-from telegram import Update
+from telegram import InlineKeyboardMarkup, Update
 from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
@@ -22,14 +22,15 @@ from backend.features.activity.services.auction_service import (
 from backend.shared.services.base import ValidationError
 from backend.shared.services.permission_service import is_user_admin
 from backend.platform.state.state_service import clear_user_state, get_user_state, set_user_state
+from backend.shared.time_ui import build_copy_options_keyboard, build_minutes_or_hhmm_prompt_text, next_top_of_hour_hhmm
 
 
 log = structlog.get_logger(__name__)
 
 
-async def _reply(update: Update, text: str) -> None:
+async def _reply(update: Update, text: str, *, parse_mode: str = "Markdown", reply_markup: InlineKeyboardMarkup | None = None) -> None:
     if update.effective_message is not None:
-        await update.effective_message.reply_text(text, parse_mode="Markdown")
+        await update.effective_message.reply_text(text, parse_mode=parse_mode, reply_markup=reply_markup)
 
 
 async def auction_group_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
@@ -79,7 +80,21 @@ async def auction_group_message_handler(update: Update, context: ContextTypes.DE
                     data,
                 )
                 await session.commit()
-                await _reply(update, "💰 请输入截止时间：分钟数或 HH:MM，例如 `30` 或 `23:05`。")
+                hhmm_sample = next_top_of_hour_hhmm(hours_offset=1)
+                await _reply(
+                    update,
+                    build_minutes_or_hhmm_prompt_text(
+                        title="💰 拍卖 | 截止时间",
+                        minutes_sample_text="30",
+                        hhmm_sample_text=hhmm_sample,
+                        input_hint="👉 请输入分钟数或 HH:MM：",
+                    ),
+                    parse_mode="HTML",
+                    reply_markup=build_copy_options_keyboard(
+                        back_callback=None,
+                        options=[("📋 复制 30分钟", "30"), (f"📋 复制 {hhmm_sample}", hhmm_sample)],
+                    ),
+                )
                 return True
 
             if state.state_type == ConversationStateType.auction_wait_end_at.value:

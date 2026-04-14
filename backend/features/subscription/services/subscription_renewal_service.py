@@ -22,7 +22,7 @@ class RenewalPageData:
 
     @property
     def current_version_text(self) -> str:
-        return self.current_plan.name or "未开通"
+        return self.current_plan.name or "开放版"
 
     @property
     def renewal_price_text(self) -> str:
@@ -50,14 +50,14 @@ def build_contact_url(bot_username: str | None) -> str:
     return ""
 
 
-def format_renewal_page(data: RenewalPageData, *, contact_hint: str = "请点击下方按钮联系支持或输入卡密。") -> str:
+def format_renewal_page(data: RenewalPageData, *, contact_hint: str = "当前版本所有功能默认开放。") -> str:
     return (
-        "🔐 续费入口\n\n"
+        "🔓 功能开放说明\n\n"
+        "当前版本已暂时关闭付费/续费逻辑。\n"
+        "所有群组功能默认开放，无需购买套餐或输入卡密。\n\n"
         f"当前版本：{data.current_version_text}\n"
         f"群组名称：{data.chat_title}\n"
-        f"续费价格：{data.renewal_price_text}\n"
-        f"到期时间：{data.expiry_text}\n\n"
-        f"{contact_hint}"
+        f"到期时间：{data.expiry_text}"
     )
 
 
@@ -70,8 +70,6 @@ async def load_renewal_page(session: AsyncSession, chat_id: int, *, fallback_tit
         current_plan = await _get_free_plan(session)
 
     renewal_plan = current_plan
-    if current_plan.code == "free":
-        renewal_plan = await _get_pro_monthly_plan(session)
 
     chat = await ServiceBase._get_by_id(session, TgChat, chat_id)
     chat_title = (chat.title if chat and chat.title else None) or fallback_title or f"群组{chat_id}"

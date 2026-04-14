@@ -18,7 +18,7 @@ from backend.shared.time_helper import LOCAL_TIMEZONE, parse_date_time_string
 
 DEFAULT_ROTATION_INTERVAL_SECONDS = 2 * 3600
 DEFAULT_DELETE_DELAY_SECONDS = 60
-MIN_ROTATION_INTERVAL_SECONDS = 600
+MIN_ROTATION_INTERVAL_SECONDS = 60
 RULE_MODES = {"send", "send_pin"}
 DELETE_POLICIES = {"none", "delete_prev", "delete_prev_cycle", "delete_delay"}
 UNSET = object()
@@ -43,15 +43,48 @@ def parse_datetime_text(value: str) -> dt.datetime | None:
     return dt.datetime.fromtimestamp(timestamp, dt.UTC)
 
 
-def parse_interval_hours_text(value: str) -> int:
-    raw = (value or "").strip().removesuffix("小时").strip()
-    if not raw.isdigit():
-        raise ValidationError("请输入整数小时，例如 2")
-    hours = int(raw)
-    seconds = hours * 3600
+def parse_interval_minutes_text(value: str) -> int:
+    raw = (value or "").strip()
+    raw = raw.removesuffix("分钟").removesuffix("分").strip()
+    if raw.endswith("小时"):
+        raw_hours = raw.removesuffix("小时").strip()
+        if not raw_hours.isdigit():
+            raise ValidationError("请输入整数分钟，例如 90")
+        minutes = int(raw_hours) * 60
+    elif raw.endswith("天"):
+        raw_days = raw.removesuffix("天").strip()
+        if not raw_days.isdigit():
+            raise ValidationError("请输入整数分钟，例如 90")
+        minutes = int(raw_days) * 1440
+    else:
+        if not raw.isdigit():
+            raise ValidationError("请输入整数分钟，例如 90")
+        minutes = int(raw)
+    seconds = minutes * 60
     if seconds < MIN_ROTATION_INTERVAL_SECONDS:
-        raise ValidationError("轮播间隔不能小于 1 小时")
+        raise ValidationError("轮播间隔不能小于 1 分钟")
     return seconds
+
+
+def format_interval_seconds_label(interval_seconds: int | None) -> str:
+    seconds = max(int(interval_seconds or DEFAULT_ROTATION_INTERVAL_SECONDS), MIN_ROTATION_INTERVAL_SECONDS)
+    minutes = seconds // 60
+    if minutes < 60:
+        return f"{minutes}分钟"
+    if minutes == 60:
+        return "1小时"
+    if minutes < 1440:
+        hours = minutes // 60
+        return f"{hours}小时"
+    if minutes == 1440:
+        return "1天"
+    days = minutes // 1440
+    return f"{days}天"
+
+
+def parse_interval_hours_text(value: str) -> int:
+    # 保留旧名称，兼容既有调用；当前统一按分钟输入解析。
+    return parse_interval_minutes_text(value)
 
 
 def parse_delay_seconds_text(value: str) -> int:
@@ -363,7 +396,7 @@ async def update_rotation_rule(
         rule.start_at = start_at
     if interval_seconds is not None:
         if interval_seconds < MIN_ROTATION_INTERVAL_SECONDS:
-            raise ValidationError("轮播间隔不能小于 10 分钟")
+            raise ValidationError("轮播间隔不能小于 1 分钟")
         rule.interval_seconds = interval_seconds
     if mode is not None:
         if mode not in RULE_MODES:

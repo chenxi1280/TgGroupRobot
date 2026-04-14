@@ -2,33 +2,20 @@ from __future__ import annotations
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
+from backend.shared.time_ui import build_interval_keyboard
 
-def sm_repeat_keyboard(chat_id: int, task_id: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("1 小时", callback_data=f"sm:set:{chat_id}:{task_id}:repeat:60"),
-            InlineKeyboardButton("2 小时", callback_data=f"sm:set:{chat_id}:{task_id}:repeat:120"),
-            InlineKeyboardButton("3 小时", callback_data=f"sm:set:{chat_id}:{task_id}:repeat:180"),
+
+def sm_repeat_keyboard(chat_id: int, task_id: str, current_repeat_min: int) -> InlineKeyboardMarkup:
+    return build_interval_keyboard(
+        current_minutes=current_repeat_min,
+        option_rows=[
+            [10, 15, 20, 30],
+            [60, 120, 180, 240],
+            [360, 480, 720, 1440],
         ],
-        [
-            InlineKeyboardButton("4 小时", callback_data=f"sm:set:{chat_id}:{task_id}:repeat:240"),
-            InlineKeyboardButton("6 小时", callback_data=f"sm:set:{chat_id}:{task_id}:repeat:360"),
-            InlineKeyboardButton("8 小时", callback_data=f"sm:set:{chat_id}:{task_id}:repeat:480"),
-        ],
-        [
-            InlineKeyboardButton("12 小时", callback_data=f"sm:set:{chat_id}:{task_id}:repeat:720"),
-            InlineKeyboardButton("24 小时", callback_data=f"sm:set:{chat_id}:{task_id}:repeat:1440"),
-        ],
-        [
-            InlineKeyboardButton("10 分钟", callback_data=f"sm:set:{chat_id}:{task_id}:repeat:10"),
-            InlineKeyboardButton("15 分钟", callback_data=f"sm:set:{chat_id}:{task_id}:repeat:15"),
-        ],
-        [
-            InlineKeyboardButton("20 分钟", callback_data=f"sm:set:{chat_id}:{task_id}:repeat:20"),
-            InlineKeyboardButton("30 分钟", callback_data=f"sm:set:{chat_id}:{task_id}:repeat:30"),
-        ],
-        [InlineKeyboardButton("🔙 返回", callback_data=f"sm:open:{chat_id}:{task_id}")],
-    ])
+        callback_factory=lambda value: f"sm:set:{chat_id}:{task_id}:repeat:{value}",
+        back_callback=f"sm:open:{chat_id}:{task_id}",
+    )
 
 
 def sm_day_period_start_keyboard(chat_id: int, task_id: str) -> InlineKeyboardMarkup:

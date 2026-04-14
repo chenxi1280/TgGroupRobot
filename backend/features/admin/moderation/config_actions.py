@@ -4,6 +4,39 @@ from backend.features.admin.support import *
 
 
 class ModerationConfigActionsMixin:
+    async def _handle_punishment_policy(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+        callback_data: CallbackParser,
+    ) -> None:
+        action = callback_data.get(3) or "home"
+        preset = callback_data.get(4)
+        db: Database = context.application.bot_data["db"]
+
+        if action == "home":
+            await self._show_punishment_policy_menu(update, context, chat_id)
+            return
+
+        if action != "preset" or preset not in {"delete", "mute", "ban"}:
+            await answer_callback_query_safely(update, "未识别的惩罚策略", show_alert=True)
+            return
+
+        async with db.session_factory() as session:
+            settings = await get_chat_settings(session, chat_id)
+            settings.anti_spam_action = preset
+            settings.anti_flood_action = preset
+            settings.moderation_action = preset
+            if preset == "mute":
+                settings.verification_timeout_action = "mute"
+            elif preset == "ban":
+                settings.verification_timeout_action = "kick"
+            await session.commit()
+
+        await self._show_punishment_policy_menu(update, context, chat_id)
+        return
+
     async def _handle_command_config(
         self,
         update: Update,

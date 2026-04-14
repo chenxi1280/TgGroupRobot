@@ -70,3 +70,4 @@ async def test_welcome_detail_keyboard_matches_doc_style(monkeypatch):
         ["🏖️ 预览效果", "⏱️ 延迟删除"],
         ["❌ 删除配置", "🔙 返回"],
     ]
+    assert rendered["keyboard"][3][1].callback_data == "btned:open:welcome:-1001:9"

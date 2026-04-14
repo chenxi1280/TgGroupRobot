@@ -1,6 +1,13 @@
 from __future__ import annotations
 
 from backend.features.admin.support import *
+from backend.shared.time_ui import (
+    build_copy_options_keyboard,
+    build_copy_time_keyboard,
+    build_hhmm_prompt_text,
+    build_numeric_duration_prompt_text,
+    next_top_of_hour_hhmm,
+)
 
 
 class ModerationMemberActionsMixin:
@@ -176,7 +183,23 @@ class ModerationMemberActionsMixin:
                 ConversationStateType.new_member_limit_text_input.value,
                 {"target_chat_id": chat_id, "field": arg},
             )
-            prompt = "👉 请输入限制时长（分钟）：" if arg == "window" else "👉 请输入提示文案："
+            if arg == "window":
+                await self.message_helper.safe_edit(
+                    update,
+                    build_numeric_duration_prompt_text(
+                        title="🆕 新成员限制 | 限制时长",
+                        unit_label="分钟",
+                        sample_value_text="60",
+                        input_hint="👉 请输入限制时长（分钟）：",
+                    ),
+                    parse_mode="HTML",
+                    reply_markup=build_copy_options_keyboard(
+                        f"adm:menu:newmem:{chat_id}",
+                        [("📋 复制 60分钟", "60"), ("📋 复制 120分钟", "120")],
+                    ),
+                )
+                return
+            prompt = "👉 请输入提示文案："
             await self.message_helper.safe_edit(
                 update,
                 prompt,
@@ -238,11 +261,24 @@ class ModerationMemberActionsMixin:
                 {"target_chat_id": chat_id, "field": arg},
             )
             prompt_map = {
-                "start": "👉 请输入开始时间（格式 HH:MM）：",
-                "end": "👉 请输入结束时间（格式 HH:MM）：",
                 "warn_text": "👉 请输入提示文案：",
                 "whitelist": "👉 请输入白名单用户ID（用空格/逗号分隔，或输入“清空”）：",
             }
+            if arg in {"start", "end"}:
+                sample_text = next_top_of_hour_hhmm(hours_offset=0 if arg == "start" else 8)
+                title = "🌙 夜间模式 | 编辑开始时间" if arg == "start" else "🌙 夜间模式 | 编辑结束时间"
+                hint = "👉 请输入开始时间（格式 HH:MM）： " if arg == "start" else "👉 请输入结束时间（格式 HH:MM）： "
+                await self.message_helper.safe_edit(
+                    update,
+                    build_hhmm_prompt_text(
+                        title=title,
+                        sample_time_text=sample_text,
+                        input_hint=hint.strip(),
+                    ),
+                    parse_mode="HTML",
+                    reply_markup=build_copy_time_keyboard(f"adm:menu:night:{chat_id}", sample_text),
+                )
+                return
             await self.message_helper.safe_edit(
                 update,
                 prompt_map[arg],

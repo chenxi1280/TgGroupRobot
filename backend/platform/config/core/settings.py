@@ -10,9 +10,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 def _find_env_file() -> Path | None:
     """查找 env 文件，优先级：项目根目录的 .env > 项目根目录的 env"""
-    # backend/config/core/settings.py -> 项目根目录需要向上三级
+    # backend/platform/config/core/settings.py -> 项目根目录
     config_dir = Path(__file__).parent
-    project_root = config_dir.parent.parent.parent
+    project_root = config_dir.parents[3]
     
     # 按优先级查找
     for filename in [".env", "env"]:
@@ -41,6 +41,13 @@ class Settings(BaseSettings):
 
     # 代理设置（用于连接 Telegram API）
     proxy_url: str | None = Field(default=None, alias="PROXY_URL")
+
+    # Telegram Bot API 请求池配置
+    telegram_connection_pool_size: int = Field(default=32, alias="TELEGRAM_CONNECTION_POOL_SIZE")
+    telegram_pool_timeout_seconds: float = Field(default=15.0, alias="TELEGRAM_POOL_TIMEOUT_SECONDS")
+    telegram_connect_timeout_seconds: float = Field(default=10.0, alias="TELEGRAM_CONNECT_TIMEOUT_SECONDS")
+    telegram_read_timeout_seconds: float = Field(default=20.0, alias="TELEGRAM_READ_TIMEOUT_SECONDS")
+    telegram_write_timeout_seconds: float = Field(default=20.0, alias="TELEGRAM_WRITE_TIMEOUT_SECONDS")
 
     # 预留：未来 webhook 模式
     webhook_url: str | None = Field(default=None, alias="WEBHOOK_URL")

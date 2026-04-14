@@ -1,50 +1,33 @@
 from __future__ import annotations
 
-import structlog
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from backend.platform.config.core.settings import get_settings
-from backend.platform.db.runtime.session import Database
 from backend.features.subscription.ui.renewal import renewal_entry_keyboard
-from backend.platform.db.schema.models.enums import ConversationStateType
 from backend.shared.services.module_settings_service import ModuleSettingsService
 from backend.shared.services.command_config_service import ensure_command_enabled
 from backend.features.group_ops.services.chat_group_service import get_user_current_chat
-from backend.features.subscription.services.renewal_service import (
-    format_renewal_entry_text,
-    get_renewal_snapshot,
-    mask_card_code,
-    redeem_renewal_card,
-)
 from backend.platform.state.conversation_state_service import ConversationStateService
 from backend.shared.callback_parser import CallbackParser
 from backend.platform.telegram.errors import (
     answer_callback_query_safely,
-    build_public_error_text,
     mark_callback_query_answered,
 )
+import structlog
 
 log = structlog.get_logger(__name__)
 
 
-def _resolve_contact_url(settings) -> str | None:
-    direct_url = (getattr(settings, "renewal_contact_url", None) or "").strip()
-    if direct_url:
-        return direct_url
-
-    username = (getattr(settings, "renew_contact_username", None) or "").strip().lstrip("@")
-    if username:
-        return f"https://t.me/{username}"
-    return None
-
-
-def _resolve_contact_label(settings) -> str:
-    label = (getattr(settings, "renewal_contact_label", None) or "").strip()
-    if label:
-        return label
-    label = (getattr(settings, "renew_contact_label", None) or "").strip()
-    return label or "一键联系"
+OPEN_ACCESS_TEXT = "\n".join(
+    [
+        "🔓 功能开放说明",
+        "",
+        "当前版本已暂时关闭付费/续费逻辑。",
+        "所有群组功能默认开放，无需购买套餐或输入卡密。",
+        "",
+        "请从主菜单继续配置功能。",
+    ]
+)
 
 
 async def _show_menu(
@@ -56,33 +39,12 @@ async def _show_menu(
     if update.effective_user is None:
         return
 
-    db: Database = context.application.bot_data["db"]
-    settings = context.application.bot_data.get("settings") or get_settings()
-
-    async with db.session_factory() as session:
-        await ModuleSettingsService.ensure(
-            session,
-            chat_id=chat_id,
-            chat_type="supergroup" if chat_id < 0 else "private",
-            user_id=update.effective_user.id,
-        )
-        snapshot = await get_renewal_snapshot(session, chat_id)
-
-    text = format_renewal_entry_text(
-        snapshot,
-        contact_username=getattr(settings, "renew_contact_username", None),
-    )
-    keyboard = renewal_entry_keyboard(
-        chat_id,
-        contact_username=getattr(settings, "renew_contact_username", None),
-        contact_url=_resolve_contact_url(settings),
-        contact_label=_resolve_contact_label(settings),
-    )
+    keyboard = renewal_entry_keyboard(chat_id)
 
     if update.callback_query is not None:
-        await update.callback_query.edit_message_text(text=text, reply_markup=keyboard)
+        await update.callback_query.edit_message_text(text=OPEN_ACCESS_TEXT, reply_markup=keyboard)
     elif update.effective_message is not None:
-        await update.effective_message.reply_text(text=text, reply_markup=keyboard)
+        await update.effective_message.reply_text(text=OPEN_ACCESS_TEXT, reply_markup=keyboard)
 
 
 async def show_renewal_menu(
@@ -101,7 +63,7 @@ async def start_renewal_card_input(
     if update.effective_user is None:
         return
 
-    db: Database = context.application.bot_data["db"]
+    db = context.application.bot_data.get("db")
     async with db.session_factory() as session:
         await ModuleSettingsService.ensure(
             session,
@@ -110,13 +72,6 @@ async def start_renewal_card_input(
             user_id=update.effective_user.id,
         )
         await ConversationStateService.clear(session, chat_id, update.effective_user.id)
-        await ConversationStateService.start(
-            session,
-            chat_id=chat_id,
-            user_id=update.effective_user.id,
-            state_type=ConversationStateType.renewal_card_input.value,
-            state_data={"target_chat_id": chat_id},
-        )
         await session.commit()
 
     await _show_menu(update, context, chat_id=chat_id)
@@ -146,7 +101,7 @@ async def renew_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     except Exception as exc:
         log.exception("renew_command_failed", chat_id=target_chat_id, error=str(exc))
         if update.effective_message is not None:
-            await update.effective_message.reply_text(f"❌ {build_public_error_text(exc)}")
+            await update.effective_message.reply_text("付费逻辑已关闭，所有功能默认开放。")
 
 
 async def renew_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -160,24 +115,14 @@ async def renew_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await answer_callback_query_safely(update, "无效群组", show_alert=True)
         return
 
-    settings = context.application.bot_data.get("settings") or get_settings()
-
     if action == "contact":
-        if _resolve_contact_url(settings):
-            await update.callback_query.answer()
-            mark_callback_query_answered(update)
-            return
-        await answer_callback_query_safely(update, "未配置联系入口", show_alert=True)
+        await answer_callback_query_safely(update, "付费逻辑已关闭，所有功能默认开放", show_alert=True)
         return
 
     if action == "input":
         await update.callback_query.answer()
         mark_callback_query_answered(update)
-        try:
-            await start_renewal_card_input(update, context, chat_id)
-        except Exception as exc:
-            log.exception("renew_input_failed", chat_id=chat_id, error=str(exc))
-            await answer_callback_query_safely(update, build_public_error_text(exc), show_alert=True)
+        await _show_menu(update, context, chat_id=chat_id)
         return
 
     if action == "back":
@@ -198,7 +143,7 @@ async def renew_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await _show_menu(update, context, chat_id=chat_id)
     except Exception as exc:
         log.exception("renew_menu_failed", chat_id=chat_id, error=str(exc))
-        await answer_callback_query_safely(update, build_public_error_text(exc), show_alert=True)
+        await answer_callback_query_safely(update, "付费逻辑已关闭，所有功能默认开放", show_alert=True)
 
 
 async def handle_renewal_card_input(
@@ -212,46 +157,10 @@ async def handle_renewal_card_input(
         return
 
     target_chat_id = state.state_data.get("target_chat_id", state.chat_id) if state.state_data else state.chat_id
-
-    card_code = (message_text or "").strip()
-    if not card_code:
-        if hasattr(session, "commit"):
-            await session.commit()
-        await update.effective_message.reply_text("❌ 卡密不能为空")
-        return
-
-    masked = mask_card_code(card_code)
-    log.info(
-        "renewal_card_received",
-        user_id=update.effective_user.id,
-        chat_id=target_chat_id,
-        masked_card=masked,
-    )
-    try:
-        result = await redeem_renewal_card(
-            session,
-            chat_id=target_chat_id,
-            operator_user_id=update.effective_user.id,
-            card_code=card_code,
-        )
-        if hasattr(session, "commit"):
-            await session.commit()
-    except Exception as exc:
-        if hasattr(session, "rollback"):
-            await session.rollback()
-        log.exception("renewal_card_redeem_failed", chat_id=target_chat_id, error=str(exc))
-        await update.effective_message.reply_text(f"❌ {build_public_error_text(exc)}")
-        await _show_menu(update, context, chat_id=target_chat_id)
-        return
-
-    prefix = "✅" if result.success else "❌"
-    await update.effective_message.reply_text(f"{prefix} {result.message}")
-    if not result.success:
-        await _show_menu(update, context, chat_id=target_chat_id)
-        return
     await ConversationStateService.clear(session, target_chat_id, update.effective_user.id)
     if hasattr(session, "commit"):
         await session.commit()
+    await update.effective_message.reply_text("付费逻辑已关闭，所有功能默认开放，无需输入卡密。")
     await _show_menu(update, context, chat_id=target_chat_id)
 
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from backend.features.admin.support import *
+from backend.shared.time_ui import build_copy_options_keyboard, build_minutes_or_hhmm_prompt_text, next_top_of_hour_hhmm
 
 class GuessAdminControllerMixin:
     async def _show_guess_home(
@@ -197,10 +198,26 @@ class GuessAdminControllerMixin:
                         "pool": "⚽ 竞猜 | 公共奖池\n\n👉 请输入公共奖池积分：",
                         "options": "⚽ 竞猜 | 竞猜选项\n\n每行一个选项，支持 `编号:文案`。",
                         "command": "⚽ 竞猜 | 群内指令\n\n👉 请输入群内指令，例如：竞猜",
-                        "deadline": "⚽ 竞猜 | 截止时间\n\n请输入分钟数或 HH:MM，例如 30 / 23:05",
                     }
                     await self._start_text_input_state(context, update.effective_user.id, update.effective_user.id, state_map[sub], {"target_chat_id": chat_id, **draft})
                     await session.commit()
+                    if sub == "deadline":
+                        hhmm_sample = next_top_of_hour_hhmm(hours_offset=1)
+                        await self.message_helper.safe_edit(
+                            update,
+                            build_minutes_or_hhmm_prompt_text(
+                                title="⚽ 竞猜 | 截止时间",
+                                minutes_sample_text="30",
+                                hhmm_sample_text=hhmm_sample,
+                                input_hint="👉 请输入分钟数或 HH:MM：",
+                            ),
+                            parse_mode="HTML",
+                            reply_markup=build_copy_options_keyboard(
+                                f"guess:create:{chat_id}:preview",
+                                [("📋 复制 30分钟", "30"), (f"📋 复制 {hhmm_sample}", hhmm_sample)],
+                            ),
+                        )
+                        return
                     await self.message_helper.safe_edit(update, prompt_map[sub], reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"guess:create:{chat_id}:preview")]]))
                     return
                 if sub == "repeat":

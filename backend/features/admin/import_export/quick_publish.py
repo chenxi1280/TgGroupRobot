@@ -12,7 +12,7 @@ class QuickPublishAdminMixin:
         callback_data: CallbackParser,
     ) -> None:
         from backend.platform.db.schema.models.enums import ConversationStateType
-        from backend.shared.services.permission_policy_service import PermissionPolicyService
+        from backend.shared.services.permission_service import PermissionPolicyService
         from backend.features.garage.services.garage_forward_service import GarageForwardService
 
         if update.effective_user is None:

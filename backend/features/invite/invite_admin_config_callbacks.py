@@ -9,6 +9,7 @@ from backend.features.invite.invite_shared import (
     format_invite_preview,
     reset_invite_data,
 )
+from backend.shared.button_layout_editor import show_layout_menu, ButtonEditorContext
 from backend.platform.db.runtime.session import Database
 from backend.platform.state.state_service import set_user_state
 from backend.platform.telegram.errors import answer_callback_query_safely, mark_callback_query_answered
@@ -68,16 +69,14 @@ async def invite_link_buttons_callback(update: Update, context: ContextTypes.DEF
         return
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
-        await set_user_state(session, update.effective_user.id, update.effective_user.id, "invite_link_buttons_input", {"target_chat_id": target_chat_id})
         await session.commit()
-    await _invite_link_handler.message_helper.safe_edit(
-        update,
-        "⌨️ 邀请链接 | 修改按钮\n\n"
-        "每行最多 3 个按钮，同行按钮用 `;` 分隔。\n"
-        "格式：按钮文案|https://example.com\n"
-        "示例：点击关注|https://t.me/demo; 联系管理|https://t.me/admin",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"inv:home:{target_chat_id}")]]),
-    )
+        await show_layout_menu(
+            update,
+            context,
+            ButtonEditorContext("invite", target_chat_id, 0),
+            session=session,
+        )
+        await session.commit()
 
 
 async def invite_link_preview_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

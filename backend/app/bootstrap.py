@@ -65,7 +65,14 @@ def build_application() -> Application:
     # 构建应用。
     # 显式关闭 trust_env，避免 IDE/系统环境变量中的代理设置导致 Telegram 初始化失败。
     # 如需代理，仅使用 .env 中的 PROXY_URL。
-    request_kwargs = {"httpx_kwargs": {"trust_env": False}}
+    request_kwargs = {
+        "httpx_kwargs": {"trust_env": False},
+        "connection_pool_size": settings.telegram_connection_pool_size,
+        "pool_timeout": settings.telegram_pool_timeout_seconds,
+        "connect_timeout": settings.telegram_connect_timeout_seconds,
+        "read_timeout": settings.telegram_read_timeout_seconds,
+        "write_timeout": settings.telegram_write_timeout_seconds,
+    }
     proxy_url = settings.proxy_url or None
     request = HTTPXRequest(proxy=proxy_url, **request_kwargs)
     get_updates_request = HTTPXRequest(proxy=proxy_url, **request_kwargs)

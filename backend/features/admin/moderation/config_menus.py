@@ -92,6 +92,51 @@ class ModerationConfigMenusMixin:
         ])
         await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
 
+    async def _show_punishment_policy_menu(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+    ) -> None:
+        db: Database = context.application.bot_data["db"]
+        await self._set_current_chat(db, update.effective_user.id, chat_id)
+
+        async with db.session_factory() as session:
+            settings = await get_chat_settings(session, chat_id)
+            await session.commit()
+
+        def _label(action: str) -> str:
+            return {
+                "delete": "删除",
+                "mute": "禁言",
+                "ban": "封禁",
+                "kick": "踢出",
+                "warn": "警告",
+            }.get(action or "", action or "未设置")
+
+        lines = [
+            "⚖️ 惩罚策略",
+            "",
+            "统一调整群内常见违规的处理方式。",
+            "",
+            f"反垃圾：{_label(getattr(settings, 'anti_spam_action', 'delete'))}",
+            f"防刷屏：{_label(getattr(settings, 'anti_flood_action', 'delete'))}",
+            f"关键词/链接：{_label(getattr(settings, 'moderation_action', 'delete'))}",
+            f"验证超时：{_label(getattr(settings, 'verification_timeout_action', 'kick'))}",
+            "",
+            "提示：验证超时仅支持禁言/踢出，删除模式不会改动验证配置。",
+        ]
+
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("🗑 删除", callback_data=f"adm:punish:{chat_id}:preset:delete"),
+                InlineKeyboardButton("🔇 禁言", callback_data=f"adm:punish:{chat_id}:preset:mute"),
+                InlineKeyboardButton("⛔ 封禁", callback_data=f"adm:punish:{chat_id}:preset:ban"),
+            ],
+            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
+        ])
+        await self.message_helper.safe_edit(update, text="\n".join(lines), reply_markup=keyboard)
+
     async def _show_auto_delete_menu(
         self,
         update: Update,

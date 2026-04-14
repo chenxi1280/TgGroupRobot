@@ -74,7 +74,6 @@ def build_private_config_handlers() -> dict[str, ConfigHandler]:
             "ads_item_edit_title",
             "ads_item_edit_text",
             "ads_item_edit_cover",
-            "ads_item_edit_buttons",
             "ads_item_edit_start",
             "ads_item_edit_end",
             "ads_item_edit_order",
@@ -92,7 +91,6 @@ def build_private_config_handlers() -> dict[str, ConfigHandler]:
             "invite_link_create",
             "invite_link_cover_input",
             "invite_link_text_input",
-            "invite_link_buttons_input",
         ],
         handle_invite_link_config,
     )
@@ -148,9 +146,13 @@ def build_private_config_handlers() -> dict[str, ConfigHandler]:
             "welcome_title_input",
             "welcome_text_input",
             "welcome_cover_input",
-            "welcome_buttons_input",
         ],
         full_args_handler("backend.features.admin.welcome", "handle_welcome_input"),
+    )
+    _register_states(
+        handlers,
+        ["button_editor_text_input", "button_editor_url_input"],
+        full_args_handler("backend.shared.button_layout_editor", "handle_button_layout_editor_input"),
     )
     _register_states(
         handlers,

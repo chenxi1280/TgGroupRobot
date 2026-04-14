@@ -329,6 +329,100 @@ async def test_quick_publish_text_updates_draft(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_quick_publish_home_requires_permission_service(monkeypatch):
+    from backend.shared.services import permission_service
+
+    calls: list[tuple[str, int]] = []
+
+    async def fake_require_manage(context, chat_id: int, user_id: int, capability: str = "manage"):
+        calls.append(("perm", chat_id))
+        return True, None
+
+    async def fake_show_menu(update, context, chat_id: int):
+        calls.append(("menu", chat_id))
+
+    monkeypatch.setattr(permission_service.PermissionPolicyService, "require_manage", fake_require_manage)
+    monkeypatch.setattr(admin_handler._admin_handler, "_show_quick_publish_menu", fake_show_menu)
+
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=7),
+        callback_query=SimpleNamespace(answer=lambda *args, **kwargs: None),
+    )
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}), user_data={})
+    callback_data = CallbackParser.parse("qpub:home:-1001")
+
+    await admin_handler._admin_handler._handle_quick_publish(update, context, -1001, callback_data)
+
+    assert ("perm", -1001) in calls
+    assert ("menu", -1001) in calls
+
+
+@pytest.mark.asyncio
+async def test_ads_menu_opens_when_paid_logic_disabled(monkeypatch):
+    opened: list[int] = []
+
+    async def fake_set_current_chat(db, user_id: int, chat_id: int):
+        return None
+
+    async def fake_show_menu(update, context, chat_id: int):
+        opened.append(chat_id)
+
+    monkeypatch.setattr(admin_handler._admin_handler, "_set_current_chat", fake_set_current_chat)
+    monkeypatch.setattr(ads_handler._ads_handler, "show_menu", fake_show_menu)
+
+    update = SimpleNamespace(effective_user=SimpleNamespace(id=7))
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}), user_data={})
+
+    await admin_handler._admin_handler._show_ads_menu(update, context, -1001)
+
+    assert opened == [-1001]
+
+
+@pytest.mark.asyncio
+async def test_punishment_policy_preset_updates_actions(monkeypatch):
+    class _FakeSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def commit(self):
+            return None
+
+    class _FakeDb:
+        def session_factory(self):
+            return _FakeSession()
+
+    settings = SimpleNamespace(
+        anti_spam_action="delete",
+        anti_flood_action="delete",
+        moderation_action="delete",
+        verification_timeout_action="kick",
+    )
+
+    async def fake_get_chat_settings(session, chat_id: int):
+        return settings
+
+    async def fake_show_menu(update, context, chat_id: int):
+        return None
+
+    monkeypatch.setattr("backend.features.admin.moderation.config_actions.get_chat_settings", fake_get_chat_settings)
+    monkeypatch.setattr(admin_handler._admin_handler, "_show_punishment_policy_menu", fake_show_menu)
+
+    update = SimpleNamespace(effective_user=SimpleNamespace(id=7))
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb()}))
+    callback_data = CallbackParser.parse("adm:punish:-1001:preset:mute")
+
+    await admin_handler._admin_handler._handle_punishment_policy(update, context, -1001, callback_data)
+
+    assert settings.anti_spam_action == "mute"
+    assert settings.anti_flood_action == "mute"
+    assert settings.moderation_action == "mute"
+    assert settings.verification_timeout_action == "mute"
+
+
+@pytest.mark.asyncio
 async def test_scheduled_edit_field_keeps_target_chat_id_in_private_state(monkeypatch):
     started: dict[str, object] = {}
     rendered: list[tuple[str, object]] = []

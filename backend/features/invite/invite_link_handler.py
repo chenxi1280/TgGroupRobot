@@ -52,6 +52,7 @@ from backend.platform.state.state_service import clear_user_state, get_user_stat
 from backend.shared.callback_parser import CallbackParser
 from backend.shared.handlers.base.chat_resolver import ChatResolver
 from backend.shared.services.permission_service import is_user_admin
+from backend.shared.time_ui import build_copy_options_keyboard, build_numeric_duration_prompt_text
 
 
 async def invite_link_create_start_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -133,7 +134,21 @@ async def invite_link_create_limit_message(update: Update, context: ContextTypes
         await set_user_state(session, chat.id, user.id, "invite_link_create", state_data)
         await session.commit()
     await update.effective_message.reply_text(
-        f"成员限制: {member_limit or '无限制'}\n\n请输入过期时间（可选）\n格式: 天数\n输入 /skip 跳过"
+        build_numeric_duration_prompt_text(
+            title="🔗 邀请链接 | 过期时间",
+            unit_label="天",
+            sample_value_text="7",
+            input_hint="👉 请输入过期天数，或输入 /skip 跳过：",
+            extra_tips=[
+                f"成员限制: {member_limit or '无限制'}",
+                "不设置则长期有效。",
+            ],
+        ),
+        parse_mode="HTML",
+        reply_markup=build_copy_options_keyboard(
+            back_callback=None,
+            options=[("📋 复制 1天", "1"), ("📋 复制 7天", "7"), ("📋 复制 30天", "30")],
+        ),
     )
     return WAIT_EXPIRE
 

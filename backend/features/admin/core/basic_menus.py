@@ -67,6 +67,74 @@ class CoreBasicMenusMixin:
         chat_title = await self._get_chat_title(db, chat_id)
         await _invite_link_handler.show_menu(update, context, chat_id, chat_title)
 
+    async def _show_stats_menu(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+    ) -> None:
+        """显示群组统计摘要"""
+        import datetime as dt
+        from sqlalchemy import func, select
+
+        from backend.features.invite.services.invite_stats import get_link_stats
+        from backend.platform.db.schema.models.chat import ChatMember
+        from backend.platform.db.schema.models.core import InviteTracking, ModerationViolation
+        from backend.platform.db.schema.models.points import PointsTransaction, UserDailyStats
+
+        db: Database = context.application.bot_data["db"]
+        await self._set_current_chat(db, update.effective_user.id, chat_id)
+        async with db.session_factory() as session:
+            member_count = (await session.execute(
+                select(func.count(ChatMember.id)).where(ChatMember.chat_id == chat_id)
+            )).scalar() or 0
+            invite_count = (await session.execute(
+                select(func.count(InviteTracking.id)).where(InviteTracking.chat_id == chat_id)
+            )).scalar() or 0
+            points_txn_count = (await session.execute(
+                select(func.count(PointsTransaction.id)).where(PointsTransaction.chat_id == chat_id)
+            )).scalar() or 0
+            violation_count = (await session.execute(
+                select(func.count(ModerationViolation.id)).where(ModerationViolation.chat_id == chat_id)
+            )).scalar() or 0
+            since_date = dt.datetime.now(dt.UTC).date() - dt.timedelta(days=6)
+            recent_stats = await session.execute(
+                select(
+                    func.coalesce(func.sum(UserDailyStats.message_points_earned), 0),
+                    func.coalesce(func.sum(UserDailyStats.invites_count), 0),
+                ).where(
+                    UserDailyStats.chat_id == chat_id,
+                    UserDailyStats.stat_date >= since_date,
+                )
+            )
+            recent_message_points, recent_invites = recent_stats.one()
+            link_stats = await get_link_stats(session, chat_id)
+            await session.commit()
+
+        chat_title = await self._get_chat_title(db, chat_id)
+        text = "\n".join(
+            [
+                f"📊 群组统计 | {chat_title}",
+                "",
+                f"成员数量: {member_count}",
+                f"邀请加入: {invite_count}",
+                f"积分流水: {points_txn_count}",
+                f"违规记录: {violation_count}",
+                "",
+                f"近7日发言积分: {recent_message_points}",
+                f"近7日邀请人数: {recent_invites}",
+                "",
+                "邀请链接概览：",
+                f"• 总链接数: {link_stats['total']}",
+                f"• 激活中: {link_stats['active']} | 已撤销: {link_stats['revoked']} | 已过期: {link_stats['expired']}",
+                f"• 统计成员: {link_stats['total_members']}",
+            ]
+        )
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
+        ])
+        await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
+
     async def _show_autoreply_menu(
         self,
         update: Update,

@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-import json
-
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from backend.shared.services.base import ValidationError
 from backend.shared.services.permission_service import PermissionPolicyService
 
 
@@ -56,16 +53,6 @@ async def handle_welcome_input(
         await WelcomeService.update_field(session, target_chat_id, welcome_id, title=message_text)
     elif state.state_type == "welcome_text_input":
         await WelcomeService.update_field(session, target_chat_id, welcome_id, text_content=message_text)
-    elif state.state_type == "welcome_buttons_input":
-        if message_text.strip() == "清空":
-            await WelcomeService.update_field(session, target_chat_id, welcome_id, buttons=[])
-        else:
-            try:
-                buttons = json.loads(message_text)
-                await WelcomeService.update_field(session, target_chat_id, welcome_id, buttons=buttons)
-            except (json.JSONDecodeError, ValidationError) as exc:
-                await update.effective_message.reply_text(f"按钮格式错误：{exc}")
-                return
     elif state.state_type == "welcome_cover_input":
         if message_text.strip() == "清空":
             await WelcomeService.update_field(

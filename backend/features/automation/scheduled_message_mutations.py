@@ -22,6 +22,8 @@ from backend.platform.db.schema.models.enums import ConversationStateType
 from backend.platform.state.conversation_state_service import ConversationStateService
 from backend.platform.telegram.errors import build_public_error_text
 from backend.shared.services.module_settings_service import ModuleSettingsService
+from backend.shared.time_ui import build_copy_time_keyboard, build_datetime_prompt_text, next_top_of_hour
+from backend.shared.time_helper import format_timestamp
 
 log = structlog.get_logger(__name__)
 
@@ -220,9 +222,10 @@ class ScheduledMessageMutationMixin:
                 )
                 keyboard = sm_edit_buttons_keyboard(target_chat_id, task_id)
             elif field == "repeat":
+                task = await ScheduledMessageService.get_task_in_chat_or_404(session, target_chat_id, task_id)
                 await session.commit()
-                keyboard = sm_repeat_keyboard(target_chat_id, task_id)
-                await self.message_helper.safe_edit(update, text="⏰ 选择重复间隔", reply_markup=keyboard)
+                keyboard = sm_repeat_keyboard(target_chat_id, task_id, task.repeat_interval_min)
+                await self.message_helper.safe_edit(update, text="请选择轮播间隔", reply_markup=keyboard)
                 return
             elif field == "day_period":
                 state_type = ConversationStateType.sm_edit_day_start
@@ -230,18 +233,26 @@ class ScheduledMessageMutationMixin:
                 keyboard = sm_day_period_start_keyboard(target_chat_id, task_id)
             elif field == "start_at":
                 state_type = ConversationStateType.sm_edit_start_at
-                text = (
-                    "📅 设置开始时间\n\n请输入日期时间（格式：YYYY-MM-DD HH:MM）\n"
-                    "例如：2024-01-01 08:00\n\n或输入 /clear 清空开始时间"
+                sample_dt = next_top_of_hour()
+                sample_text = format_timestamp(int(sample_dt.timestamp()))
+                text = build_datetime_prompt_text(
+                    title="⏰ 定时消息 | 编辑开始时间",
+                    sample_time_text=sample_text,
+                    input_hint="👉🏻 现在输入定时开始时间:",
+                    extra_tips=["发送 /clear 可清空开始时间"],
                 )
-                keyboard = sm_edit_text_keyboard(target_chat_id, task_id)
+                keyboard = build_copy_time_keyboard(f"sm:open:{target_chat_id}:{task_id}", sample_text)
             elif field == "end_at":
                 state_type = ConversationStateType.sm_edit_end_at
-                text = (
-                    "📅 设置终止时间\n\n请输入日期时间（格式：YYYY-MM-DD HH:MM）\n"
-                    "例如：2024-12-31 23:59\n\n或输入 /clear 清空终止时间"
+                sample_dt = next_top_of_hour(days_offset=1)
+                sample_text = format_timestamp(int(sample_dt.timestamp()))
+                text = build_datetime_prompt_text(
+                    title="⏰ 定时消息 | 编辑结束时间",
+                    sample_time_text=sample_text,
+                    input_hint="👉🏻 现在输入定时结束时间:",
+                    extra_tips=["发送 /clear 可清空结束时间"],
                 )
-                keyboard = sm_edit_text_keyboard(target_chat_id, task_id)
+                keyboard = build_copy_time_keyboard(f"sm:open:{target_chat_id}:{task_id}", sample_text)
             else:
                 await session.rollback()
                 await self.message_helper.safe_edit(update, text=f"❌ 未知字段: {field}")
@@ -257,7 +268,10 @@ class ScheduledMessageMutationMixin:
             )
             await session.commit()
 
-        await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
+        kwargs = {"text": text, "reply_markup": keyboard}
+        if field in {"start_at", "end_at"}:
+            kwargs["parse_mode"] = "HTML"
+        await self.message_helper.safe_edit(update, **kwargs)
 
     async def confirm_delete(
         self,

@@ -12,9 +12,9 @@ from backend.shared.services.chat_service import ensure_chat
 
 
 DEFAULT_PLANS: list[tuple[str, str, int, int, dict]] = [
-    ("free", "免费版", 0, 0, {"ads": False, "keywords": False}),
-    ("pro_monthly", "Pro（月付）", 990, 30, {"ads": True, "keywords": True}),
-    ("pro_yearly", "Pro（年付）", 9990, 365, {"ads": True, "keywords": True}),
+    ("free", "开放版", 0, 0, {"ads": True, "keywords": True}),
+    ("pro_monthly", "开放版（月度保留）", 0, 30, {"ads": True, "keywords": True}),
+    ("pro_yearly", "开放版（年度保留）", 0, 365, {"ads": True, "keywords": True}),
 ]
 
 
@@ -47,7 +47,7 @@ def _build_renewal_price_text(current_plan: SubscriptionPlan | None, plans: list
 
     paid_plans = [plan for plan in plans if plan.price_cents > 0 and plan.duration_days > 0]
     if not paid_plans:
-        return "未配置"
+        return "免费开放"
 
     paid_plans.sort(key=lambda plan: (plan.duration_days, plan.price_cents))
     base = paid_plans[0]
@@ -176,6 +176,5 @@ async def get_subscription_overview(
         expires_at_text=expires_at_text,
         status=subscription.status,
     )
-
 
 

@@ -10,14 +10,17 @@ from backend.features.automation.ads_handler import (
     _parse_ad_id_from_callback,
     _parse_ads_config,
     _render_ads_home_text,
+    ads_rules_callback,
 )
 from backend.features.automation.services.ad_rotation_service import (
     compute_next_run_at,
     describe_delete_policy,
     describe_rule_mode,
+    format_interval_seconds_label,
+    parse_interval_minutes_text,
     select_next_rotation_item,
 )
-from backend.features.automation.ui.ads import ads_menu_keyboard, ads_rules_keyboard
+from backend.features.automation.ui.ads import ads_copy_time_keyboard, ads_menu_keyboard, ads_rules_interval_keyboard, ads_rules_keyboard
 
 
 def test_parse_ads_config_with_schedule_and_image_id() -> None:
@@ -150,7 +153,52 @@ def test_ads_rules_keyboard_shows_selected_options() -> None:
 
     assert keyboard.inline_keyboard[0][1].text == "✅ 启动"
     assert keyboard.inline_keyboard[1][1].text == "✅ 发送"
+    assert keyboard.inline_keyboard[3][0].callback_data == "ads:rules:hint:-100123:unpin_previous"
     assert keyboard.inline_keyboard[6][2].text == "✅ 删上轮"
+
+
+@pytest.mark.asyncio
+async def test_ads_rules_hint_callback_tells_user_to_click_action_buttons() -> None:
+    answered: list[tuple[str | None, bool | None]] = []
+
+    async def fake_answer(text=None, show_alert=None):
+        answered.append((text, show_alert))
+
+    update = SimpleNamespace(
+        callback_query=SimpleNamespace(
+            id="ads-rules-hint-test",
+            data="ads:rules:hint:-100123:unpin_previous",
+            answer=fake_answer,
+        ),
+    )
+    context = SimpleNamespace()
+
+    await ads_rules_callback(update, context)
+
+    assert answered == [("这是说明栏，请点击下方「开启」或「关闭」按钮来切换取消上一条置顶。", False)]
+
+
+def test_ads_rules_interval_keyboard_shows_minute_presets_and_current_value() -> None:
+    keyboard = ads_rules_interval_keyboard(-100123, 7200)
+
+    assert keyboard.inline_keyboard[0][0].text == "1分钟"
+    assert keyboard.inline_keyboard[2][1].text == "✅ 2小时"
+    assert keyboard.inline_keyboard[4][0].text == "自定义时间"
+
+
+def test_parse_interval_minutes_text_supports_custom_minutes() -> None:
+    assert parse_interval_minutes_text("90") == 5400
+    assert parse_interval_minutes_text("2小时") == 7200
+    assert parse_interval_minutes_text("1天") == 86400
+    assert format_interval_seconds_label(1800) == "30分钟"
+
+
+def test_ads_copy_time_keyboard_uses_copy_text_payload() -> None:
+    keyboard = ads_copy_time_keyboard("ads:rules:-100123", "2026-04-14 12:00:00")
+
+    button = keyboard.inline_keyboard[0][0]
+    assert button.text == "📋 复制 2026-04-14 12:00:00"
+    assert button.to_dict()["copy_text"]["text"] == "2026-04-14 12:00:00"
 
 
 def test_ads_item_detail_keyboard_includes_chat_id_for_private_flow() -> None:
@@ -161,6 +209,7 @@ def test_ads_item_detail_keyboard_includes_chat_id_for_private_flow() -> None:
 
     assert keyboard.inline_keyboard[1][0].callback_data == "ads:item:input:-100123:99:title"
     assert keyboard.inline_keyboard[1][1].callback_data == "ads:item:input:-100123:99:cover"
+    assert keyboard.inline_keyboard[2][1].callback_data == "btned:open:ads:-100123:99"
 
 
 @pytest.mark.asyncio

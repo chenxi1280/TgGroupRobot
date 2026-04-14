@@ -12,6 +12,7 @@ from backend.features.invite.services.invite_service import (
     get_chat_invite_links,
     get_link_stats,
 )
+from backend.shared.button_layout_editor import ButtonLayoutEditorService
 from backend.features.invite.ui.invite_link import (
     invite_link_list_keyboard,
     invite_link_menu_keyboard,
@@ -107,19 +108,31 @@ class InviteLinkHandler(BaseHandler):
         context: ContextTypes.DEFAULT_TYPE,
         target_chat_id: int,
     ) -> None:
+        from backend.features.invite.services.invite_stats import get_invite_leaderboard
+
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
             stats = await get_link_stats(session, target_chat_id)
+            leaderboard = await get_invite_leaderboard(session, target_chat_id, limit=10)
             await session.commit()
 
-        text = (
-            "📊 邀请链接统计\n\n"
-            f"总链接数: {stats['total']}\n"
-            f"激活中: {stats['active']}\n"
-            f"已撤销: {stats['revoked']}\n"
-            f"已过期: {stats['expired']}\n"
-            f"总成员数: {stats['total_members']}"
-        )
+        lines = [
+            "📊 邀请链接统计",
+            "",
+            f"总链接数: {stats['total']}",
+            f"激活中: {stats['active']}",
+            f"已撤销: {stats['revoked']}",
+            f"已过期: {stats['expired']}",
+            f"总成员数: {stats['total_members']}",
+            "",
+            "🏆 邀请排行榜（前10名）",
+        ]
+        if leaderboard:
+            for idx, (user_id, count, username) in enumerate(leaderboard, 1):
+                lines.append(f"{idx}. {username or f'用户{user_id}'} - {count} 人")
+        else:
+            lines.append("暂无邀请数据")
+        text = "\n".join(lines)
         await self.message_helper.safe_edit(update, text=text, reply_markup=invite_link_menu_keyboard(target_chat_id))
 
 
@@ -136,7 +149,10 @@ def parse_invite_buttons(raw: str) -> list[list[dict]]:
             text, url = [item.strip() for item in part.split("|", 1)]
             if not text or not url:
                 raise ValueError("按钮文案和链接都不能为空。")
-            row.append({"text": text[:32], "url": url[:512]})
+            row.append({
+                "text": ButtonLayoutEditorService.sanitize_button_text(text),
+                "url": ButtonLayoutEditorService.normalize_button_url(url[:512]),
+            })
         if len(row) > 3:
             raise ValueError("每行最多 3 个按钮。")
         rows.append(row)
@@ -198,11 +214,6 @@ async def handle_invite_link_config_input(
             settings.invite_link_text_template = "🔗 邀请好友加入 {group}\n邀请人：{inviter}\n新成员：{invitee}"
         else:
             settings.invite_link_text_template = normalized_text[:4000]
-    elif state.state_type == "invite_link_buttons_input":
-        if normalized_text in {"清空", "删除", "/clear"}:
-            settings.invite_link_buttons = []
-        else:
-            settings.invite_link_buttons = parse_invite_buttons(normalized_text)
     else:
         await update.effective_message.reply_text("❌ 当前状态不支持邀请链接配置。")
         return

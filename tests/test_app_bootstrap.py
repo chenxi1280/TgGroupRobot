@@ -35,13 +35,23 @@ class _FakeBuilder:
 
 def test_build_application_uses_serial_updates(monkeypatch):
     fake_builder = _FakeBuilder()
+    captured_requests: list[tuple[object, dict]] = []
     settings = SimpleNamespace(
         log_level="INFO",
         database_url="postgresql+asyncpg://example",
         proxy_url=None,
         bot_token="token",
+        telegram_connection_pool_size=32,
+        telegram_pool_timeout_seconds=15.0,
+        telegram_connect_timeout_seconds=10.0,
+        telegram_read_timeout_seconds=20.0,
+        telegram_write_timeout_seconds=20.0,
     )
     fake_db = object()
+
+    class _FakeRequest:
+        def __init__(self, proxy=None, **kwargs):
+            captured_requests.append((proxy, kwargs))
 
     monkeypatch.setattr(app_main, "get_settings", lambda: settings)
     monkeypatch.setattr(app_main, "configure_logging", lambda level: None)
@@ -49,12 +59,17 @@ def test_build_application_uses_serial_updates(monkeypatch):
     monkeypatch.setattr(app_main, "_register_commands", lambda app: None)
     monkeypatch.setattr(app_main, "_register_routers", lambda app: None)
     monkeypatch.setattr(app_main, "_register_common_handlers", lambda app: None)
+    monkeypatch.setattr(app_main, "HTTPXRequest", _FakeRequest)
     monkeypatch.setattr(app_main.Application, "builder", staticmethod(lambda: fake_builder))
 
     app = app_main.build_application()
 
     assert app is fake_builder.app
     assert fake_builder.concurrent_updates_value is False
+    assert len(captured_requests) == 2
+    assert captured_requests[0][1]["connection_pool_size"] == 32
+    assert captured_requests[0][1]["pool_timeout"] == 15.0
+    assert captured_requests[0][1]["read_timeout"] == 20.0
     assert app.bot_data["settings"] is settings
     assert app.bot_data["db"] is fake_db
 

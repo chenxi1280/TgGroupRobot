@@ -22,10 +22,12 @@ class CoreMenuDispatchMixin:
             "invite": self._show_invite_menu,
             "autoreply": self._show_autoreply_menu,
             "keywords": self._show_keywords_menu,
+            "punish": self._show_punishment_policy_menu,
             "scheduled": self._show_scheduled_menu,
             "ads": self._show_ads_menu,
             "verification": self._show_verification_menu,
             "points": self._show_points_menu,
+            "stats": self._show_stats_menu,
             "autodel": self._show_auto_delete_menu,
             "flood": self._show_anti_flood_menu,
             "antispam": self._show_antispam_menu,
@@ -96,7 +98,7 @@ class CoreMenuDispatchMixin:
         }
         feature_name, feature_desc = feature_meta.get(
             feature_key,
-            ("🚧 功能开发中", "该功能当前只有设计稿，尚未实现可用链路。"),
+            ("⚠️ 入口已失效", "该入口已失效，请返回主菜单重新进入。"),
         )
         text = "\n".join(
             [
@@ -104,7 +106,7 @@ class CoreMenuDispatchMixin:
                 "",
                 feature_desc,
                 "",
-                "当前主菜单已取消错误跳转，避免把你带进不相干的模块。",
+                "如需该功能，请从主菜单重新进入。",
             ]
         )
         keyboard = InlineKeyboardMarkup([

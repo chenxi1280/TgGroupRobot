@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from backend.features.admin.support import *
+from backend.shared.time_ui import build_copy_time_keyboard, build_hhmm_prompt_text, next_top_of_hour_hhmm
 
 
 class ModerationControlActionsMixin:
@@ -105,11 +106,24 @@ class ModerationControlActionsMixin:
                 state_type,
                 {"target_chat_id": chat_id},
             )
+            if arg in {"open_time", "close_time"}:
+                sample_text = next_top_of_hour_hhmm(hours_offset=0 if arg == "open_time" else 8)
+                title = "🔓 定时开关群 | 编辑开群时间" if arg == "open_time" else "🔒 定时开关群 | 编辑关群时间"
+                hint = "👉 请输入开群时间（格式 HH:MM）： " if arg == "open_time" else "👉 请输入关群时间（格式 HH:MM）： "
+                await self.message_helper.safe_edit(
+                    update,
+                    build_hhmm_prompt_text(
+                        title=title,
+                        sample_time_text=sample_text,
+                        input_hint=hint.strip(),
+                    ),
+                    parse_mode="HTML",
+                    reply_markup=build_copy_time_keyboard(f"adm:menu:closegroup:{chat_id}", sample_text),
+                )
+                return
             prompt = {
                 "open_phrase": "👉 请输入新的开群词：",
                 "close_phrase": "👉 请输入新的关群词：",
-                "open_time": "👉 请输入开群时间（格式 HH:MM）：",
-                "close_time": "👉 请输入关群时间（格式 HH:MM）：",
             }[arg]
             await self.message_helper.safe_edit(
                 update,

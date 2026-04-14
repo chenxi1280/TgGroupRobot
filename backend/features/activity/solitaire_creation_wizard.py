@@ -15,6 +15,8 @@ from backend.features.activity.solitaire_shared import (
 from backend.features.activity.ui.solitaire import solitaire_menu_keyboard
 from backend.platform.db.runtime.session import Database
 from backend.platform.state.state_service import clear_user_state, get_user_state, set_user_state
+from backend.shared.time_helper import LOCAL_TIMEZONE
+from backend.shared.time_ui import build_copy_time_keyboard, build_datetime_prompt_text, next_top_of_hour
 
 
 async def solitaire_create_title_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int | None:
@@ -110,8 +112,19 @@ async def solitaire_create_points_message(update: Update, context: ContextTypes.
     async with db.session_factory() as session:
         await set_user_state(session, chat.id, user.id, "solitaire_create", state_data)
         await session.commit()
+    deadline_sample_text = next_top_of_hour(days_offset=1).astimezone(LOCAL_TIMEZONE).strftime("%Y-%m-%d %H:%M")
     await update.effective_message.reply_text(
-        f"积分限制: {points_required or '无限制'}\n\n请输入截止时间（可选）\n格式: YYYY-MM-DD HH:MM 或 /skip 跳过\n示例: 2024-12-31 23:59"
+        build_datetime_prompt_text(
+            title="🧩 接龙 | 截止时间",
+            sample_time_text=deadline_sample_text,
+            input_hint="👉 请输入截止时间，或输入 /skip 跳过：",
+            extra_tips=[
+                f"积分限制: {points_required or '无限制'}",
+                "不设置则一直有效，直到手动结束。",
+            ],
+        ),
+        parse_mode="HTML",
+        reply_markup=build_copy_time_keyboard(None, deadline_sample_text),
     )
     return WAIT_DEADLINE
 

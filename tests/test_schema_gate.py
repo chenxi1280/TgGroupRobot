@@ -194,7 +194,17 @@ def _full_tables() -> dict[str, dict]:
             "columns": {
                 "id", "chat_id", "created_by_user_id", "title", "content", "image_file_id", "image_url",
                 "has_image", "schedule_time", "frequency", "last_sent_at", "send_locked", "enabled",
-                "start_time", "interval_hours", "max_send_count", "send_count", "created_at", "updated_at",
+                "start_time", "interval_hours", "max_send_count", "send_count",
+                "buttons", "sort_order", "end_time", "last_sent_message_id", "last_sent_cycle_no",
+                "created_at", "updated_at",
+            },
+        },
+        "ad_rotation_rules": {
+            "columns": {
+                "chat_id", "enabled", "start_at", "interval_seconds", "mode", "delete_policy",
+                "delete_delay_seconds", "unpin_previous", "last_sent_at", "next_run_at",
+                "current_order_cursor", "last_sent_item_id", "last_sent_message_id",
+                "last_pinned_message_id", "created_at", "updated_at",
             },
         },
         "conversation_states": {"columns": {"id", "chat_id", "user_id", "state_type", "state_data", "created_at", "updated_at"}},

@@ -46,6 +46,7 @@ ADM_ACTION_HANDLERS = {
     "nml": "_handle_new_member_limit",
     "night": "_handle_night_mode",
     "gcmd": "_handle_command_config",
+    "punish": "_handle_punishment_policy",
     "import": "_handle_import_settings",
     "clone": "_handle_clone_settings",
     "wel": "_handle_welcome",
