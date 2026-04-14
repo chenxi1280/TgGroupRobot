@@ -1,78 +1,316 @@
 from __future__ import annotations
 
-import structlog
 import datetime as dt
 import re
-from telegram import Update
+
+import structlog
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
-from backend.features.automation.ads_creation_actions import (
-    ads_cancel_action,
-    ads_create_config_message_action,
-    ads_create_start_action,
+from backend.features.automation.ads_parsing import _parse_ads_config
+from backend.features.automation.services.ad_rotation_service import (
+    UNSET,
+    ValidationError,
+    cleanup_expired_rotation_items,
+    create_rotation_item,
+    describe_delete_policy,
+    describe_rule_mode,
+    format_local_datetime,
+    get_effective_item_count,
+    get_or_create_rotation_rule,
+    get_rotation_item,
+    list_rotation_items,
+    parse_buttons_text,
+    parse_datetime_text,
+    parse_delay_seconds_text,
+    parse_interval_hours_text,
+    preview_rotation_item,
+    update_rotation_item,
+    update_rotation_rule,
 )
-from backend.features.automation.ads_delivery_actions import (
-    ads_delete_action,
-    ads_detail_action,
-    ads_send_action,
-    ads_toggle_action,
+from backend.features.automation.ui.ads import (
+    ads_item_detail_keyboard,
+    ads_item_time_keyboard,
+    ads_manage_keyboard,
+    ads_menu_keyboard,
+    ads_rules_keyboard,
 )
 from backend.platform.db.runtime.session import Database
+from backend.platform.db.schema.models.automation import AdCampaign
+from backend.platform.state.conversation_state_service import ConversationStateService
+from backend.shared.callback_parser import CallbackParser
 from backend.shared.handlers.base.base_handler import BaseHandler
 from backend.shared.handlers.base.chat_resolver import ChatResolver
-from backend.features.automation.ui.ads import (
-    ads_create_keyboard,
-    ads_detail_keyboard,
-    ads_frequency_keyboard,
-    ads_list_keyboard,
-    ads_menu_keyboard,
-)
-from backend.features.automation.services.ad_service import (
-    create_ad_campaign,
-    delete_ad,
-    get_ad,
-    get_ad_next_send_time,
-    get_chat_ads,
-    is_ad_exhausted,
-    is_rotation_ad,
-    mark_ad_sent,
-    should_send_ad,
-    toggle_ad,
-)
+from backend.shared.services.chat_service import ensure_chat, get_chat_settings
 from backend.shared.services.module_settings_service import ModuleSettingsService
 from backend.shared.services.permission_service import PermissionPolicyService
-from backend.features.group_ops.services.chat_group_service import get_user_managed_chats
 from backend.shared.services.publish_service import PublishService
-from backend.platform.state.conversation_state_service import ConversationStateService
-from backend.shared.services.chat_service import ensure_chat, get_chat_settings
-from backend.platform.db.schema.models.core import AdCampaign
 from backend.platform.telegram.errors import (
     answer_callback_query_safely,
-    build_public_error_text,
     mark_callback_query_answered,
 )
-from backend.features.automation.ads_menu import AdsHandler, _ads_handler
-from backend.features.automation.ads_helpers import (
-    _resolve_ads_target_chat_id,
-    _resolve_ads_state_chat_id,
-    _format_ad_push_text,
-    _format_ad_detail_text,
-    _parse_ad_id_from_callback,
-)
-from backend.features.automation.ads_parsing import (
-    _parse_ads_config,
-    _match_prefixed_value,
-    _parse_start_time,
-    _parse_interval,
-    _parse_send_count,
-)
-from backend.shared.callback_parser import CallbackParser
+
+log = structlog.get_logger(__name__)
+
+
+def _is_clear_input(value: str) -> bool:
+    normalized = (value or "").strip().lower()
+    return normalized in {"清空", "/clear"} or normalized.startswith("/clear@")
+
+
+def _extract_int_parts(callback_data: str) -> list[int]:
+    values: list[int] = []
+    for part in (callback_data or "").split(":"):
+        try:
+            values.append(int(part))
+        except ValueError:
+            continue
+    return values
+
+
+async def _resolve_ads_target_chat_id(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    allow_current_chat_fallback: bool = True,
+    error_message: str = "请先选择一个群组",
+) -> int | None:
+    if update.effective_chat is None or update.effective_user is None:
+        return None
+
+    chat = update.effective_chat
+    user = update.effective_user
+    if chat.type != "private":
+        allowed = await PermissionPolicyService.can_manage(context, chat.id, user.id, capability="automation")
+        if not allowed:
+            await answer_callback_query_safely(update, "你没有该群组的管理权限", show_alert=True)
+            return None
+        return chat.id
+
+    callback_data = update.callback_query.data if update.callback_query and update.callback_query.data else ""
+    candidate_chat_ids = [value for value in _extract_int_parts(callback_data) if value < 0]
+
+    if allow_current_chat_fallback:
+        db: Database = context.application.bot_data["db"]
+        current_chat_id = await ChatResolver.get_current_chat(db, user.id)
+        if current_chat_id not in (None, 0) and current_chat_id not in candidate_chat_ids:
+            candidate_chat_ids.append(current_chat_id)
+
+    for target_chat_id in candidate_chat_ids:
+        allowed = await PermissionPolicyService.can_manage(context, target_chat_id, user.id, capability="automation")
+        if allowed:
+            return target_chat_id
+
+    if candidate_chat_ids:
+        await answer_callback_query_safely(update, "你没有该群组的管理权限", show_alert=True)
+    else:
+        await answer_callback_query_safely(update, error_message, show_alert=True)
+    return None
+
+
+def _resolve_ads_state_chat_id(update: Update, target_chat_id: int) -> int:
+    if update.effective_chat is None:
+        return target_chat_id
+    return update.effective_chat.id if update.effective_chat.type == "private" else target_chat_id
+
+
+def _parse_ad_id_from_callback(data: str) -> int:
+    cb = CallbackParser.parse(data)
+    for index in range(cb.length() - 1, -1, -1):
+        value = cb.get_int_optional(index)
+        if value is not None and value > 0:
+            return value
+    match = re.search(r"^ads:(?:detail|toggle|delete|send)_(\d+)$", data)
+    if match:
+        return int(match.group(1))
+    return 0
+
+
+def _format_ad_push_text(ad: AdCampaign) -> str:
+    return (ad.content or "").strip() or ad.title
+
+
+def _format_ad_detail_text(ad: AdCampaign) -> str:
+    title_line = f"📮 {ad.title}"
+    if ad.enabled:
+        title_line += "（✅ 启用）"
+    else:
+        title_line += "（❌ 关闭）"
+    button_text = "已设置按钮" if getattr(ad, "buttons", None) else "未设置按钮"
+    content_text = (ad.content or "").strip() or "【等待设置】"
+    start_text = format_local_datetime(getattr(ad, "start_time", None), empty="【等待设置】")
+    end_text = format_local_datetime(getattr(ad, "end_time", None), empty="【等待设置】")
+    if getattr(ad, "end_time", None) is None:
+        end_text = "【等待设置】"
+
+    return (
+        "🎠 轮播消息\n\n"
+        f"{title_line}\n\n"
+        f"🖼️ 封面设置：{'已设置封面' if ad.image_file_id else '未设置封面'}\n\n"
+        f"📄 文本内容：\n{content_text}\n\n"
+        f"⭕ 设置按钮：{button_text}\n\n"
+        f"⏰ 开始时间：{start_text}\n\n"
+        f"⏰ 结束时间：{end_text}"
+    )
+
+
+def _render_ads_home_text(rule, items: list[AdCampaign]) -> str:
+    enabled_text = "✅ 启用" if rule.enabled else "❌ 关闭"
+    interval_hours = max(int(getattr(rule, "interval_seconds", 7200) or 7200) // 3600, 1)
+    return (
+        "本功能可以实现设置多个内容，按固定间隔时间一个一个发送到群里并置顶。\n\n"
+        f"┗轮播状态: {enabled_text}\n"
+        f"┗起始时间: {format_local_datetime(rule.start_at)}\n"
+        f"┗上次轮播: {format_local_datetime(rule.last_sent_at)}\n"
+        f"┗下次轮播: {format_local_datetime(rule.next_run_at)}\n"
+        f"┗轮播间隔: {interval_hours}小时\n"
+        f"┗轮播方式: {describe_rule_mode(rule)}\n"
+        f"┗删除规则: {describe_delete_policy(rule)}\n"
+        f"┗取消上一条轮播置顶: {'✅ 启用' if rule.unpin_previous else '❌ 关闭'}\n"
+        f"┗当前生效的轮播条数: {get_effective_item_count(items)}"
+    )
+
+
+def _render_rules_text(rule) -> str:
+    delay_hint = ""
+    if rule.delete_policy == "delete_delay":
+        delay_hint = f"\n当前延迟删除: {int(rule.delete_delay_seconds or 60)} 秒"
+    return (
+        "🎠 轮播规则配置\n\n"
+        "删除规则：\n"
+        "┝举例：1>2>3>1（发送消息顺序）\n"
+        "┝删上条: 当前是发送1，删除3\n"
+        "┝删上轮: 当前是发送1，删除上一个1\n"
+        "┝延迟删: 每条消息延迟删除\n"
+        "┗不删: 所有消息不删除，可取消置顶"
+        f"{delay_hint}"
+    )
+
+
+def _render_manage_text(items: list[AdCampaign], page: int) -> str:
+    total = len(items)
+    total_pages = max((total - 1) // 1 + 1, 1)
+    if not items:
+        return (
+            "🎠 轮播消息\n\n"
+            "按照顺序和间隔时间发送启用的消息，可用于设置广告/赞助等内容。\n\n"
+            f"0 条数据，第 1 页/共 {total_pages} 页"
+        )
+
+    page = max(0, min(page, total_pages - 1))
+    item = items[page]
+    end_time = format_local_datetime(item.end_time, empty="永久") if item.end_time else "永久"
+    last_sent = format_local_datetime(item.last_sent_at, empty="未发送")
+    return (
+        "🎠 轮播消息\n\n"
+        "按照顺序和间隔时间发送启用的消息，可用于设置广告/赞助等内容。\n\n"
+        f"标题：{item.title}（{'✅ 启用' if item.enabled else '❌ 关闭'}）\n"
+        f"┝结束时间: {end_time}\n"
+        f"┝上次发送: {last_sent}\n"
+        f"┗顺序: {item.sort_order}\n\n"
+        f"{total} 条数据，第 {page + 1} 页/共 {total_pages} 页"
+    )
+
+
+class AdsHandler(BaseHandler):
+    def __init__(self) -> None:
+        super().__init__()
+        self._require_admin_permission = False
+
+    async def process(self, update: Update, context: ContextTypes.DEFAULT_TYPE, target_chat_id: int) -> None:
+        return None
+
+    async def show_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE, target_chat_id: int) -> None:
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            rule = await get_or_create_rotation_rule(session, target_chat_id)
+            items = await list_rotation_items(session, target_chat_id)
+            await session.commit()
+        await self.message_helper.safe_edit(
+            update,
+            text=_render_ads_home_text(rule, items),
+            reply_markup=ads_menu_keyboard(target_chat_id),
+        )
+
+    async def show_rules(self, update: Update, context: ContextTypes.DEFAULT_TYPE, target_chat_id: int) -> None:
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            rule = await get_or_create_rotation_rule(session, target_chat_id)
+            await session.commit()
+        await self.message_helper.safe_edit(
+            update,
+            text=_render_rules_text(rule),
+            reply_markup=ads_rules_keyboard(target_chat_id, rule),
+        )
+
+    async def show_list(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        target_chat_id: int,
+        page: int = 0,
+    ) -> None:
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            items = await list_rotation_items(session, target_chat_id)
+            await session.commit()
+
+        if not items:
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("➕ 添加一条", callback_data=f"ads:create:{target_chat_id}")],
+                [InlineKeyboardButton("🔙 返回", callback_data=f"ads:menu:{target_chat_id}")],
+            ])
+            await self.message_helper.safe_edit(update, text=_render_manage_text(items, 0), reply_markup=keyboard)
+            return
+
+        total_pages = max((len(items) - 1) // 1 + 1, 1)
+        current_page = max(0, min(page, total_pages - 1))
+        current_item = items[current_page]
+        await self.message_helper.safe_edit(
+            update,
+            text=_render_manage_text(items, current_page),
+            reply_markup=ads_manage_keyboard(target_chat_id, current_item, page=current_page, total_pages=total_pages),
+        )
+
+    async def show_detail(self, update: Update, context: ContextTypes.DEFAULT_TYPE, target_chat_id: int, item_id: int) -> None:
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            item = await get_rotation_item(session, item_id)
+            await session.commit()
+        if item is None or item.chat_id != target_chat_id:
+            await self.message_helper.safe_edit(update, text="轮播消息不存在", reply_markup=ads_menu_keyboard(target_chat_id))
+            return
+        await self.message_helper.safe_edit(
+            update,
+            text=_format_ad_detail_text(item),
+            reply_markup=ads_item_detail_keyboard(target_chat_id, item),
+        )
+
+    async def show_time_range(self, update: Update, context: ContextTypes.DEFAULT_TYPE, target_chat_id: int, item_id: int) -> None:
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            item = await get_rotation_item(session, item_id)
+            await session.commit()
+        if item is None or item.chat_id != target_chat_id:
+            await self.message_helper.safe_edit(update, text="轮播消息不存在", reply_markup=ads_menu_keyboard(target_chat_id))
+            return
+        text = (
+            "🎠 时间范围\n\n"
+            f"开始时间：{format_local_datetime(item.start_time, empty='【等待设置】')}\n"
+            f"结束时间：{format_local_datetime(item.end_time, empty='【等待设置】')}\n\n"
+            "点击下面按钮进入输入状态；发送“清空”可移除对应时间。"
+        )
+        await self.message_helper.safe_edit(
+            update,
+            text=text,
+            reply_markup=ads_item_time_keyboard(target_chat_id, item_id),
+        )
+
+
+_ads_handler = AdsHandler()
+
 
 async def ad_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """
-    管理员发布广告（MVP）：/ad 标题|内容
-    提供快速的命令行方式创建广告
-    """
     if update.effective_chat is None or update.effective_user is None or update.effective_message is None:
         return
     chat = update.effective_chat
@@ -107,60 +345,174 @@ async def ad_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             await session.commit()
             await update.effective_message.reply_text("本群未开启广告功能（/admin → 群设置 中开启）。")
             return
-        session.add(AdCampaign(chat_id=chat.id, created_by_user_id=update.effective_user.id, title=title, content=content))
+        item = await create_rotation_item(
+            session,
+            chat_id=chat.id,
+            created_by_user_id=update.effective_user.id,
+            title=title,
+            content=content,
+        )
         await session.commit()
 
-    await context.bot.send_message(chat_id=chat.id, text=f"【{title}】\n{content}")
+    await context.bot.send_message(chat_id=chat.id, text=_format_ad_push_text(item))
 
 
 async def ads_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """轮播广告菜单回调"""
     if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
         return
-    q = update.callback_query
-    await q.answer()
-
-    chat = update.effective_chat
-    user = update.effective_user
-
-    data = q.data or ""
-    if chat.type == "private" and data == "ads:menu":
-        target_chat_id = await _resolve_ads_target_chat_id(update, context)
-        if target_chat_id is None:
-            return
-        from backend.features.admin.admin_handler import _show_private_admin_menu
-        await _show_private_admin_menu(update, context, target_chat_id)
-        return
+    await update.callback_query.answer()
 
     target_chat_id = await _resolve_ads_target_chat_id(update, context)
     if target_chat_id is None:
         return
-
-    # 使用 Handler 处理
     await _ads_handler.show_menu(update, context, target_chat_id)
 
 
-async def ads_list_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """轮播广告列表回调"""
-    if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
+async def ads_rules_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.callback_query is None:
+        return
+    await update.callback_query.answer()
+    target_chat_id = await _resolve_ads_target_chat_id(update, context)
+    if target_chat_id is None:
+        return
+    await _ads_handler.show_rules(update, context, target_chat_id)
+
+
+async def ads_rules_set_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.callback_query is None:
         return
     q = update.callback_query
     await q.answer()
 
-    data = q.data or ""
-    cb = CallbackParser.parse(data)
-    page = cb.get_int(2, default=0)
+    cb = CallbackParser.parse(q.data or "")
+    chat_id = cb.require_int(3, label="chat_id")
+    field = cb.get(4)
+    value = cb.get(5)
+
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        rule = await get_or_create_rotation_rule(session, chat_id)
+        kwargs: dict[str, object] = {}
+        if field == "enabled":
+            kwargs["enabled"] = value == "1"
+        elif field == "mode":
+            kwargs["mode"] = value
+        elif field == "delete_policy":
+            kwargs["delete_policy"] = value
+        elif field == "unpin_previous":
+            kwargs["unpin_previous"] = value == "1"
+        else:
+            await session.commit()
+            await answer_callback_query_safely(update, "无效配置项", show_alert=True)
+            return
+
+        if field == "delete_policy" and value == "delete_delay":
+            if rule.delete_policy == "delete_delay":
+                await ConversationStateService.start(
+                    session,
+                    chat_id=update.effective_chat.id,
+                    user_id=update.effective_user.id,
+                    state_type="ads_rule_edit_delay",
+                    state_data={"target_chat_id": chat_id},
+                )
+                await session.commit()
+                await q.edit_message_text(
+                    "👉 请输入延迟删除秒数，例如 60。",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"ads:rules:{chat_id}")]]),
+                )
+                return
+            kwargs["delete_delay_seconds"] = DEFAULT_DELETE_DELAY_SECONDS
+
+        await update_rotation_rule(session, chat_id, **kwargs)
+        await session.commit()
+    await _ads_handler.show_rules(update, context, chat_id)
+
+
+DEFAULT_DELETE_DELAY_SECONDS = 60
+
+
+async def ads_rules_input_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.callback_query is None or update.effective_user is None:
+        return
+    q = update.callback_query
+    await q.answer()
+
+    cb = CallbackParser.parse(q.data or "")
+    chat_id = cb.require_int(3, label="chat_id")
+    field = cb.get(4)
+
+    state_map = {
+        "start": "ads_rule_edit_start",
+        "interval": "ads_rule_edit_interval",
+        "delay": "ads_rule_edit_delay",
+    }
+    state_type = state_map.get(field)
+    if state_type is None:
+        await answer_callback_query_safely(update, "无效配置项", show_alert=True)
+        return
+
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        await ConversationStateService.start(
+            session,
+            chat_id=update.effective_chat.id,
+            user_id=update.effective_user.id,
+            state_type=state_type,
+            state_data={"target_chat_id": chat_id},
+        )
+        await session.commit()
+
+    prompt = {
+        "start": "👉 请输入轮播起始时间，格式 YYYY-MM-DD HH:MM；发送“清空”可移除。",
+        "interval": "👉 请输入轮播间隔小时数，例如 2。",
+        "delay": "👉 请输入延迟删除秒数，例如 60。",
+    }[field]
+    await q.edit_message_text(
+        prompt,
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"ads:rules:{chat_id}")]]),
+    )
+
+
+async def ads_list_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.callback_query is None:
+        return
+    await update.callback_query.answer()
+
+    cb = CallbackParser.parse(update.callback_query.data or "")
+    page = 0
+    for index in range(cb.length() - 1, 0, -1):
+        value = cb.get_int_optional(index)
+        if value is not None and value >= 0:
+            page = value
+            break
 
     target_chat_id = await _resolve_ads_target_chat_id(update, context)
     if target_chat_id is None:
-        return  # 错误消息已发送
-
-    # 使用 Handler 处理
+        return
     await _ads_handler.show_list(update, context, target_chat_id, page)
 
 
 async def ads_stats_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """轮播广告看板回调"""
+    await ads_menu_callback(update, context)
+
+
+async def ads_detail_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.callback_query is None:
+        return
+    await update.callback_query.answer()
+
+    target_chat_id = await _resolve_ads_target_chat_id(update, context)
+    if target_chat_id is None:
+        return
+
+    item_id = _parse_ad_id_from_callback(update.callback_query.data or "")
+    if item_id <= 0:
+        await answer_callback_query_safely(update, "轮播消息 ID 无效", show_alert=True)
+        return
+    await _ads_handler.show_detail(update, context, target_chat_id, item_id)
+
+
+async def ads_create_start_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
         return
     q = update.callback_query
@@ -168,109 +520,400 @@ async def ads_stats_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     target_chat_id = await _resolve_ads_target_chat_id(update, context)
     if target_chat_id is None:
-        return  # 错误消息已发送
+        return
 
-    # 使用 Handler 处理
-    await _ads_handler.show_stats(update, context, target_chat_id)
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        await ModuleSettingsService.ensure(
+            session,
+            chat_id=target_chat_id,
+            chat_type="supergroup",
+            title=update.effective_chat.title,
+            user_id=update.effective_user.id,
+            username=update.effective_user.username,
+            first_name=update.effective_user.first_name,
+            last_name=update.effective_user.last_name,
+            language_code=update.effective_user.language_code,
+        )
+        item = await create_rotation_item(
+            session,
+            chat_id=target_chat_id,
+            created_by_user_id=update.effective_user.id,
+            title="新轮播消息",
+            content="",
+        )
+        await session.commit()
 
-
-async def ads_detail_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """广告详情回调"""
-    await ads_detail_action(
-        update,
-        context,
-        resolve_target_chat_id_func=_resolve_ads_target_chat_id,
-        parse_ad_id_func=_parse_ad_id_from_callback,
-        get_ad_func=get_ad,
-        format_ad_detail_text_func=_format_ad_detail_text,
-        ads_menu_keyboard_func=ads_menu_keyboard,
-        ads_detail_keyboard_func=ads_detail_keyboard,
-        answer_callback_query_safely_func=answer_callback_query_safely,
-        mark_callback_query_answered_func=mark_callback_query_answered,
-    )
-
-
-async def ads_create_start_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """开始创建轮播广告 - 显示配置格式说明"""
-    await ads_create_start_action(
-        update,
-        context,
-        resolve_target_chat_id_func=_resolve_ads_target_chat_id,
-        module_settings_service=ModuleSettingsService,
-        conversation_state_service=ConversationStateService,
-    )
-
-
-async def ads_create_config_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """处理广告创建配置（支持文本配置、图片上传、caption 一次性创建）"""
-    await ads_create_config_message_action(
-        update,
-        context,
-        parse_ads_config_func=_parse_ads_config,
-        create_ad_campaign_func=create_ad_campaign,
-        conversation_state_service=ConversationStateService,
-    )
-
-
-async def ads_cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """取消轮播广告配置，返回菜单"""
-    await ads_cancel_action(
-        update,
-        context,
-        resolve_target_chat_id_func=_resolve_ads_target_chat_id,
-        resolve_state_chat_id_func=_resolve_ads_state_chat_id,
-        conversation_state_service=ConversationStateService,
-        show_menu_func=_ads_handler.show_menu,
-        ads_menu_keyboard_func=ads_menu_keyboard,
-    )
-
-
-
-async def ads_send_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """立即发送广告"""
-    await ads_send_action(
-        update,
-        context,
-        resolve_target_chat_id_func=_resolve_ads_target_chat_id,
-        parse_ad_id_func=_parse_ad_id_from_callback,
-        get_ad_func=get_ad,
-        format_ad_push_text_func=_format_ad_push_text,
-        format_ad_detail_text_func=_format_ad_detail_text,
-        mark_ad_sent_func=mark_ad_sent,
-        ads_detail_keyboard_func=ads_detail_keyboard,
-        answer_callback_query_safely_func=answer_callback_query_safely,
-        mark_callback_query_answered_func=mark_callback_query_answered,
-        build_public_error_text_func=build_public_error_text,
-        publish_service=PublishService,
-    )
+    await _ads_handler.show_detail(update, context, target_chat_id, item.id)
 
 
 async def ads_toggle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """切换广告启用状态"""
-    await ads_toggle_action(
-        update,
-        context,
-        resolve_target_chat_id_func=_resolve_ads_target_chat_id,
-        parse_ad_id_func=_parse_ad_id_from_callback,
-        get_ad_func=get_ad,
-        toggle_ad_func=toggle_ad,
-        format_ad_detail_text_func=_format_ad_detail_text,
-        ads_detail_keyboard_func=ads_detail_keyboard,
-        answer_callback_query_safely_func=answer_callback_query_safely,
-        mark_callback_query_answered_func=mark_callback_query_answered,
-    )
+    if update.callback_query is None:
+        return
+    await update.callback_query.answer()
+
+    target_chat_id = await _resolve_ads_target_chat_id(update, context)
+    if target_chat_id is None:
+        return
+    item_id = _parse_ad_id_from_callback(update.callback_query.data or "")
+    if item_id <= 0:
+        await answer_callback_query_safely(update, "轮播消息 ID 无效", show_alert=True)
+        return
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        item = await get_rotation_item(session, item_id)
+        if item is None or item.chat_id != target_chat_id:
+            await session.commit()
+            await answer_callback_query_safely(update, "轮播消息不存在", show_alert=True)
+            return
+        item.enabled = not item.enabled
+        await session.commit()
+    await _ads_handler.show_list(update, context, target_chat_id)
+
+
+async def ads_item_set_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.callback_query is None:
+        return
+    q = update.callback_query
+    await q.answer()
+
+    cb = CallbackParser.parse(q.data or "")
+    if cb.has_int(4):
+        item_id = cb.require_int(4, label="item_id")
+        field = cb.get(5)
+        value = cb.get(6)
+    else:
+        item_id = cb.require_int(3, label="item_id")
+        field = cb.get(4)
+        value = cb.get(5)
+
+    target_chat_id = await _resolve_ads_target_chat_id(update, context)
+    if target_chat_id is None:
+        return
+
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        item = await get_rotation_item(session, item_id)
+        if item is None or item.chat_id != target_chat_id:
+            await session.commit()
+            await answer_callback_query_safely(update, "轮播消息不存在", show_alert=True)
+            return
+
+        if field == "enabled":
+            await update_rotation_item(session, item_id, enabled=value == "1")
+        else:
+            await session.commit()
+            await answer_callback_query_safely(update, "无效操作", show_alert=True)
+            return
+        await session.commit()
+    await _ads_handler.show_detail(update, context, target_chat_id, item_id)
 
 
 async def ads_delete_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """删除广告"""
-    await ads_delete_action(
-        update,
-        context,
-        resolve_target_chat_id_func=_resolve_ads_target_chat_id,
-        parse_ad_id_func=_parse_ad_id_from_callback,
-        get_ad_func=get_ad,
-        delete_ad_func=delete_ad,
-        ads_menu_keyboard_func=ads_menu_keyboard,
-        answer_callback_query_safely_func=answer_callback_query_safely,
-        mark_callback_query_answered_func=mark_callback_query_answered,
+    if update.callback_query is None:
+        return
+    await update.callback_query.answer()
+
+    target_chat_id = await _resolve_ads_target_chat_id(update, context)
+    if target_chat_id is None:
+        return
+    item_id = _parse_ad_id_from_callback(update.callback_query.data or "")
+    if item_id <= 0:
+        await answer_callback_query_safely(update, "轮播消息 ID 无效", show_alert=True)
+        return
+
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        item = await get_rotation_item(session, item_id)
+        if item is None or item.chat_id != target_chat_id:
+            await session.commit()
+            await answer_callback_query_safely(update, "轮播消息不存在", show_alert=True)
+            return
+        await session.delete(item)
+        await session.flush()
+        remaining = await list_rotation_items(session, target_chat_id)
+        for index, row in enumerate(remaining, start=1):
+            row.sort_order = index
+        await session.commit()
+    await _ads_handler.show_list(update, context, target_chat_id)
+
+
+async def ads_item_input_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.callback_query is None or update.effective_user is None or update.effective_chat is None:
+        return
+    q = update.callback_query
+    await q.answer()
+
+    cb = CallbackParser.parse(q.data or "")
+    if cb.has_int(4):
+        item_id = cb.require_int(4, label="item_id")
+        field = cb.get(5)
+    else:
+        item_id = cb.require_int(3, label="item_id")
+        field = cb.get(4)
+    target_chat_id = await _resolve_ads_target_chat_id(update, context)
+    if target_chat_id is None:
+        return
+
+    state_map = {
+        "title": "ads_item_edit_title",
+        "text": "ads_item_edit_text",
+        "cover": "ads_item_edit_cover",
+        "buttons": "ads_item_edit_buttons",
+        "start": "ads_item_edit_start",
+        "end": "ads_item_edit_end",
+        "order": "ads_item_edit_order",
+    }
+    state_type = state_map.get(field)
+    if state_type is None:
+        await answer_callback_query_safely(update, "无效配置项", show_alert=True)
+        return
+
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        await ConversationStateService.start(
+            session,
+            chat_id=update.effective_chat.id,
+            user_id=update.effective_user.id,
+            state_type=state_type,
+            state_data={"target_chat_id": target_chat_id, "item_id": item_id},
+        )
+        await session.commit()
+
+    prompt = {
+        "title": "👉 请输入标题备注。",
+        "text": "👉 请输入轮播文本内容。",
+        "cover": "👉 请发送图片作为封面；发送“清空”可移除封面。",
+        "buttons": "👉 请输入按钮 JSON，或每行 按钮文案|URL；发送“清空”可移除按钮。",
+        "start": "👉 请输入开始时间，格式 YYYY-MM-DD HH:MM；发送“清空”可移除。",
+        "end": "👉 请输入结束时间，格式 YYYY-MM-DD HH:MM；发送“清空”可移除。",
+        "order": "👉 请输入新的轮播顺序数字，例如 1。",
+    }[field]
+    await q.edit_message_text(
+        prompt,
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"ads:detail:{target_chat_id}:{item_id}")]]),
     )
+
+
+async def ads_item_time_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.callback_query is None:
+        return
+    await update.callback_query.answer()
+
+    cb = CallbackParser.parse(update.callback_query.data or "")
+    item_id = cb.require_int(4, label="item_id") if cb.has_int(4) else cb.require_int(3, label="item_id")
+    target_chat_id = await _resolve_ads_target_chat_id(update, context)
+    if target_chat_id is None:
+        return
+    await _ads_handler.show_time_range(update, context, target_chat_id, item_id)
+
+
+async def ads_cleanup_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.callback_query is None:
+        return
+    await update.callback_query.answer()
+
+    target_chat_id = await _resolve_ads_target_chat_id(update, context)
+    if target_chat_id is None:
+        return
+
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        deleted = await cleanup_expired_rotation_items(session, target_chat_id)
+        await session.commit()
+    await answer_callback_query_safely(update, f"已清理 {deleted} 条过期轮播", show_alert=False)
+    await _ads_handler.show_list(update, context, target_chat_id)
+
+
+async def ads_item_preview_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.callback_query is None or update.effective_user is None:
+        return
+    await update.callback_query.answer()
+
+    item_id = _parse_ad_id_from_callback(update.callback_query.data or "")
+    target_chat_id = await _resolve_ads_target_chat_id(update, context)
+    if target_chat_id is None:
+        return
+
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        item = await get_rotation_item(session, item_id)
+        await session.commit()
+    if item is None or item.chat_id != target_chat_id:
+        await answer_callback_query_safely(update, "轮播消息不存在", show_alert=True)
+        return
+
+    await preview_rotation_item(context, chat_id=update.effective_user.id, item=item)
+    await answer_callback_query_safely(update, "预览已发送到当前私聊", show_alert=False)
+
+
+async def ads_send_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await ads_item_preview_callback(update, context)
+
+
+async def ads_create_config_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.effective_message is None or update.effective_user is None or update.effective_chat is None:
+        return
+
+    message = update.effective_message
+    user = update.effective_user
+    chat = update.effective_chat
+    text_value = (message.text or message.caption or "").strip()
+
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        state = await ConversationStateService.get(session, chat.id, user.id)
+        if not state or not state.state_type.startswith("ads_"):
+            await session.commit()
+            return
+
+        data = dict(state.state_data or {})
+        target_chat_id = data.get("target_chat_id")
+        item_id = data.get("item_id")
+        allowed, error_text = await PermissionPolicyService.require_manage(
+            context,
+            target_chat_id,
+            user.id,
+            capability="automation",
+        )
+        if not allowed:
+            await session.commit()
+            if error_text:
+                await message.reply_text(error_text)
+            return
+        try:
+            if state.state_type == "ads_create_config":
+                config = _parse_ads_config(text_value)
+                item = await create_rotation_item(
+                    session,
+                    chat_id=target_chat_id,
+                    created_by_user_id=user.id,
+                    title=config["title"],
+                    content=config["content"],
+                )
+                await update_rotation_item(
+                    session,
+                    item.id,
+                    image_file_id=config.get("image_file_id"),
+                    start_time=config.get("start_time", UNSET),
+                )
+                if config.get("interval_hours"):
+                    await update_rotation_rule(
+                        session,
+                        target_chat_id,
+                        interval_seconds=int(config["interval_hours"]) * 3600,
+                    )
+                if config.get("start_time"):
+                    await update_rotation_rule(
+                        session,
+                        target_chat_id,
+                        start_at=config["start_time"],
+                    )
+                await ConversationStateService.clear(session, chat.id, user.id)
+                await session.commit()
+                await _ads_handler.show_detail(update, context, target_chat_id, item.id)
+                return
+
+            if state.state_type == "ads_rule_edit_start":
+                await update_rotation_rule(
+                    session,
+                    target_chat_id,
+                    start_at=None if _is_clear_input(text_value) else parse_datetime_text(text_value),
+                )
+                await ConversationStateService.clear(session, chat.id, user.id)
+                await session.commit()
+                await _ads_handler.show_rules(update, context, target_chat_id)
+                return
+
+            if state.state_type == "ads_rule_edit_interval":
+                await update_rotation_rule(
+                    session,
+                    target_chat_id,
+                    interval_seconds=parse_interval_hours_text(text_value),
+                )
+                await ConversationStateService.clear(session, chat.id, user.id)
+                await session.commit()
+                await _ads_handler.show_rules(update, context, target_chat_id)
+                return
+
+            if state.state_type == "ads_rule_edit_delay":
+                await update_rotation_rule(
+                    session,
+                    target_chat_id,
+                    delete_delay_seconds=parse_delay_seconds_text(text_value),
+                    delete_policy="delete_delay",
+                )
+                await ConversationStateService.clear(session, chat.id, user.id)
+                await session.commit()
+                await _ads_handler.show_rules(update, context, target_chat_id)
+                return
+
+            if item_id is None:
+                raise ValidationError("轮播消息不存在")
+
+            if state.state_type == "ads_item_edit_title":
+                await update_rotation_item(session, item_id, title=text_value)
+            elif state.state_type == "ads_item_edit_text":
+                await update_rotation_item(session, item_id, content=text_value)
+            elif state.state_type == "ads_item_edit_cover":
+                if _is_clear_input(text_value):
+                    await update_rotation_item(session, item_id, clear_image=True)
+                elif message.photo:
+                    await update_rotation_item(session, item_id, image_file_id=message.photo[-1].file_id)
+                else:
+                    raise ValidationError("请发送图片，或发送“清空”移除封面")
+            elif state.state_type == "ads_item_edit_buttons":
+                buttons = [] if _is_clear_input(text_value) else parse_buttons_text(text_value)
+                await update_rotation_item(session, item_id, buttons=buttons)
+            elif state.state_type == "ads_item_edit_start":
+                await update_rotation_item(
+                    session,
+                    item_id,
+                    start_time=None if _is_clear_input(text_value) else parse_datetime_text(text_value),
+                )
+            elif state.state_type == "ads_item_edit_end":
+                await update_rotation_item(
+                    session,
+                    item_id,
+                    end_time=None if _is_clear_input(text_value) else parse_datetime_text(text_value),
+                )
+            elif state.state_type == "ads_item_edit_order":
+                if not text_value.isdigit():
+                    raise ValidationError("请输入有效的顺序数字")
+                await update_rotation_item(session, item_id, sort_order=int(text_value))
+            else:
+                await session.commit()
+                return
+
+            await ConversationStateService.clear(session, chat.id, user.id)
+            await session.commit()
+        except ValidationError as exc:
+            await session.commit()
+            await message.reply_text(str(exc))
+            return
+        except Exception as exc:
+            log.exception("ads_private_input_failed", error=str(exc), state_type=state.state_type)
+            await session.commit()
+            await message.reply_text("处理失败，请稍后重试")
+            return
+
+    await _ads_handler.show_detail(update, context, target_chat_id, int(item_id))
+
+
+async def ads_cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
+        return
+    q = update.callback_query
+    await q.answer()
+
+    target_chat_id = await _resolve_ads_target_chat_id(update, context)
+    if target_chat_id is None:
+        return
+
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        state_chat_id = _resolve_ads_state_chat_id(update, target_chat_id)
+        await ConversationStateService.clear(session, state_chat_id, update.effective_user.id)
+        await session.commit()
+
+    await _ads_handler.show_menu(update, context, target_chat_id)

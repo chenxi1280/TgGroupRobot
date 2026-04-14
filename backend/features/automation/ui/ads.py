@@ -1,127 +1,132 @@
-"""轮播广告键盘
-
-提供轮播广告管理的键盘生成。
-"""
+"""轮播广告界面键盘。"""
 from __future__ import annotations
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
+from backend.features.automation.services.ad_rotation_service import describe_delete_policy
 from backend.shared.ui.base.helpers import create_back_button
-from backend.shared.ui.formatters import StatusIcons, format_schedule_info
-
-
-def _format_ads_list_label(ad) -> str:
-    status_icon = StatusIcons.enabled(ad.enabled)
-    image_info = " 🖼️" if ad.has_image else ""
-
-    if getattr(ad, "interval_hours", None):
-        progress = ""
-        if getattr(ad, "max_send_count", None):
-            progress = f" {ad.send_count}/{ad.max_send_count}"
-        return f"{status_icon} {ad.title} ⟳{ad.interval_hours}h{progress}{image_info}"
-
-    schedule_info = format_schedule_info(
-        getattr(ad, "schedule_time", None),
-        getattr(ad, "frequency", None) or "单次",
-        timezone_offset=8,
-    )
-    return f"{status_icon} {ad.title}{schedule_info}{image_info}"
 
 
 def ads_menu_keyboard(chat_id: int | None = None) -> InlineKeyboardMarkup:
-    """轮播广告主菜单
-
-    Args:
-        chat_id: 群组 ID，用于在私聊中操作群组时指定目标群组
-    """
-    create_callback = f"ads:create:{chat_id}" if chat_id else "ads:create"
-    back_button = create_back_button(chat_id, "back_to_menu")
-
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("➕ 创建轮播广告", callback_data=create_callback)],
         [
-            InlineKeyboardButton("📋 轮播列表", callback_data="ads:list"),
-            InlineKeyboardButton("📊 轮播看板", callback_data="ads:stats"),
+            InlineKeyboardButton("轮播规则设置", callback_data=f"ads:rules:{chat_id}" if chat_id else "ads:rules"),
+            InlineKeyboardButton("轮播广告管理", callback_data=f"ads:list:{chat_id}:0" if chat_id else "ads:list:0"),
         ],
-        [back_button],
+        [create_back_button(chat_id, "main")],
     ])
 
 
-def ads_list_keyboard(
-    ads: list,
-    chat_id: int | None = None,
-    page: int = 0,
-    page_size: int = 5,
-) -> InlineKeyboardMarkup:
-    """轮播广告列表键盘
+def ads_rules_keyboard(chat_id: int, rule) -> InlineKeyboardMarkup:
+    enabled_on = "✅ 启动" if rule.enabled else "启动"
+    enabled_off = "关闭" if rule.enabled else "✅ 关闭"
+    mode_send = "✅ 发送" if rule.mode == "send" else "发送"
+    mode_send_pin = "✅ 发送+置顶" if rule.mode == "send_pin" else "发送+置顶"
+    unpin_on = "✅ 开启" if rule.unpin_previous else "开启"
+    unpin_off = "关闭" if rule.unpin_previous else "✅ 关闭"
 
-    Args:
-        ads: 广告列表
-        chat_id: 群组 ID
-        page: 当前页码
-        page_size: 每页数量
-    """
-    buttons = []
-    start_idx = page * page_size
-    end_idx = start_idx + page_size
+    delete_none = "✅ 不删" if rule.delete_policy == "none" else "不删"
+    delete_prev = "✅ 删上条" if rule.delete_policy == "delete_prev" else "删上条"
+    delete_prev_cycle = "✅ 删上轮" if rule.delete_policy == "delete_prev_cycle" else "删上轮"
+    delete_delay = "✅ 延迟删" if rule.delete_policy == "delete_delay" else "延迟删"
 
-    for ad in ads[start_idx:end_idx]:
-        label = _format_ads_list_label(ad)
-        buttons.append([InlineKeyboardButton(label, callback_data=f"ads:detail:{ad.id}")])
+    interval_hours = max(int(getattr(rule, "interval_seconds", 7200) or 7200) // 3600, 1)
 
-    # 分页导航
-    nav_buttons = []
-    if page > 0:
-        nav_buttons.append(InlineKeyboardButton("⬅️ 上一页", callback_data=f"ads:list:{page-1}"))
-    if end_idx < len(ads):
-        nav_buttons.append(InlineKeyboardButton("下一页 ➡️", callback_data=f"ads:list:{page+1}"))
-
-    if nav_buttons:
-        buttons.append(nav_buttons)
-
-    back_callback = f"adm:back_to_menu:{chat_id}" if chat_id else "ads:menu"
-    buttons.append([InlineKeyboardButton("🔙 返回", callback_data=back_callback)])
-    return InlineKeyboardMarkup(buttons)
-
-
-def ads_detail_keyboard(ad_id: int, is_enabled: bool) -> InlineKeyboardMarkup:
-    """广告详情键盘"""
-    buttons = []
-
-    if is_enabled:
-        buttons.append([
-            InlineKeyboardButton("🔄 立即发送", callback_data=f"ads:send:{ad_id}"),
-            InlineKeyboardButton("⏸️ 暂停", callback_data=f"ads:toggle:{ad_id}"),
-        ])
-    else:
-        buttons.append([
-            InlineKeyboardButton("▶️️ 启用", callback_data=f"ads:toggle:{ad_id}"),
-        ])
-
-    buttons.append([
-        InlineKeyboardButton("🗑️ 删除", callback_data=f"ads:delete:{ad_id}"),
-    ])
-
-    buttons.append([InlineKeyboardButton("🔙 返回", callback_data="ads:list")])
-    return InlineKeyboardMarkup(buttons)
-
-
-def ads_create_keyboard() -> InlineKeyboardMarkup:
-    """创建广告确认键盘"""
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("✅ 确认创建", callback_data="ads:create_confirm")],
-        [InlineKeyboardButton("❌ 取消", callback_data="ads:menu")],
-    ])
-
-
-def ads_frequency_keyboard() -> InlineKeyboardMarkup:
-    """推送频次选择键盘"""
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("⏰ 立即发送（单次）", callback_data="ads:freq:once")],
         [
-            InlineKeyboardButton("📅 每天", callback_data="ads:freq:daily"),
-            InlineKeyboardButton("📆 每周", callback_data="ads:freq:weekly"),
+            InlineKeyboardButton("状态：", callback_data=f"ads:rules:{chat_id}"),
+            InlineKeyboardButton(enabled_on, callback_data=f"ads:rules:set:{chat_id}:enabled:1"),
+            InlineKeyboardButton(enabled_off, callback_data=f"ads:rules:set:{chat_id}:enabled:0"),
         ],
-        [InlineKeyboardButton("🗓️ 每月", callback_data="ads:freq:monthly")],
-        [InlineKeyboardButton("🔙 返回", callback_data="ads:menu")],
+        [
+            InlineKeyboardButton("轮播方式：", callback_data=f"ads:rules:{chat_id}"),
+            InlineKeyboardButton(mode_send, callback_data=f"ads:rules:set:{chat_id}:mode:send"),
+            InlineKeyboardButton(mode_send_pin, callback_data=f"ads:rules:set:{chat_id}:mode:send_pin"),
+        ],
+        [
+            InlineKeyboardButton("起始时间", callback_data=f"ads:rules:input:{chat_id}:start"),
+            InlineKeyboardButton(f"轮播间隔（{interval_hours}小时）", callback_data=f"ads:rules:input:{chat_id}:interval"),
+        ],
+        [InlineKeyboardButton("·取消上一条置顶·", callback_data=f"ads:rules:{chat_id}")],
+        [
+            InlineKeyboardButton(unpin_on, callback_data=f"ads:rules:set:{chat_id}:unpin_previous:1"),
+            InlineKeyboardButton(unpin_off, callback_data=f"ads:rules:set:{chat_id}:unpin_previous:0"),
+        ],
+        [InlineKeyboardButton("·删除轮播规则·", callback_data=f"ads:rules:{chat_id}")],
+        [
+            InlineKeyboardButton(delete_none, callback_data=f"ads:rules:set:{chat_id}:delete_policy:none"),
+            InlineKeyboardButton(delete_prev, callback_data=f"ads:rules:set:{chat_id}:delete_policy:delete_prev"),
+            InlineKeyboardButton(delete_prev_cycle, callback_data=f"ads:rules:set:{chat_id}:delete_policy:delete_prev_cycle"),
+            InlineKeyboardButton(delete_delay, callback_data=f"ads:rules:set:{chat_id}:delete_policy:delete_delay"),
+        ],
+        [InlineKeyboardButton("🔙 返回", callback_data=f"ads:menu:{chat_id}")],
     ])
+
+
+def ads_manage_keyboard(chat_id: int, item, *, page: int, total_pages: int) -> InlineKeyboardMarkup:
+    status_label = "✅ 启用" if item.enabled else "❌ 关闭"
+    rows: list[list[InlineKeyboardButton]] = [
+        [
+            InlineKeyboardButton(f"顺序: {item.sort_order}", callback_data=f"ads:item:input:{chat_id}:{item.id}:order"),
+            InlineKeyboardButton(status_label, callback_data=f"ads:item:toggle:{chat_id}:{item.id}"),
+            InlineKeyboardButton("修改", callback_data=f"ads:detail:{chat_id}:{item.id}"),
+            InlineKeyboardButton("删除", callback_data=f"ads:item:delete:{chat_id}:{item.id}"),
+        ],
+        [
+            InlineKeyboardButton("➕ 添加一条", callback_data=f"ads:create:{chat_id}"),
+            InlineKeyboardButton("➖ 过期清理", callback_data=f"ads:cleanup:{chat_id}"),
+        ],
+    ]
+    if total_pages > 1:
+        nav_row: list[InlineKeyboardButton] = []
+        if page > 0:
+            nav_row.append(InlineKeyboardButton("⬅️ 上一页", callback_data=f"ads:list:{chat_id}:{page-1}"))
+        if page < total_pages - 1:
+            nav_row.append(InlineKeyboardButton("下一页 ➡️", callback_data=f"ads:list:{chat_id}:{page+1}"))
+        if nav_row:
+            rows.append(nav_row)
+    rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"ads:menu:{chat_id}")])
+    return InlineKeyboardMarkup(rows)
+
+
+def ads_item_detail_keyboard(chat_id: int, item) -> InlineKeyboardMarkup:
+    enabled_on = "✅ 启用" if item.enabled else "启用"
+    enabled_off = "关闭" if item.enabled else "❌ 关闭"
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("状态：", callback_data=f"ads:detail:{chat_id}:{item.id}"),
+            InlineKeyboardButton(enabled_on, callback_data=f"ads:item:set:{chat_id}:{item.id}:enabled:1"),
+            InlineKeyboardButton(enabled_off, callback_data=f"ads:item:set:{chat_id}:{item.id}:enabled:0"),
+        ],
+        [
+            InlineKeyboardButton("标题备注", callback_data=f"ads:item:input:{chat_id}:{item.id}:title"),
+            InlineKeyboardButton("设置封面", callback_data=f"ads:item:input:{chat_id}:{item.id}:cover"),
+        ],
+        [
+            InlineKeyboardButton("设置文本", callback_data=f"ads:item:input:{chat_id}:{item.id}:text"),
+            InlineKeyboardButton("设置按钮", callback_data=f"ads:item:input:{chat_id}:{item.id}:buttons"),
+        ],
+        [InlineKeyboardButton("时间范围", callback_data=f"ads:item:time:{chat_id}:{item.id}")],
+        [
+            InlineKeyboardButton("🏖️ 预览效果", callback_data=f"ads:item:preview:{chat_id}:{item.id}"),
+            InlineKeyboardButton("🔁 轮播顺序", callback_data=f"ads:item:input:{chat_id}:{item.id}:order"),
+        ],
+        [
+            InlineKeyboardButton("❌ 删除配置", callback_data=f"ads:item:delete:{chat_id}:{item.id}"),
+            InlineKeyboardButton("🔙 返回", callback_data=f"ads:list:{chat_id}:0"),
+        ],
+    ])
+
+
+def ads_item_time_keyboard(chat_id: int, item_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("开始时间", callback_data=f"ads:item:input:{chat_id}:{item_id}:start"),
+            InlineKeyboardButton("结束时间", callback_data=f"ads:item:input:{chat_id}:{item_id}:end"),
+        ],
+        [InlineKeyboardButton("🔙 返回", callback_data=f"ads:detail:{chat_id}:{item_id}")],
+    ])
+
+
+def describe_manage_delete_policy(rule) -> str:
+    return describe_delete_policy(rule)

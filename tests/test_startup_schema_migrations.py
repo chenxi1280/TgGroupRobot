@@ -44,7 +44,7 @@ class FakeEngine:
 
 @pytest.mark.asyncio
 async def test_run_startup_schema_migrations_executes_known_compat_patches(monkeypatch) -> None:
-    inspector = FakeInspector(tables={"chat_settings", "garage_forward_settings", "scheduled_message_tasks"})
+    inspector = FakeInspector(tables={"chat_settings", "garage_forward_settings", "scheduled_message_tasks", "ad_campaigns"})
     engine = FakeEngine(inspector)
 
     monkeypatch.setattr("backend.platform.db.runtime.startup_migrations.inspect", lambda _: inspector)
@@ -58,6 +58,7 @@ async def test_run_startup_schema_migrations_executes_known_compat_patches(monke
     assert any("ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS command_config_enabled" in sql for sql in executed_sql)
     assert any("ALTER TABLE bot.garage_forward_settings ADD COLUMN IF NOT EXISTS button_template_enabled" in sql for sql in executed_sql)
     assert any("CREATE UNIQUE INDEX IF NOT EXISTS uq_smt_short_id ON bot.scheduled_message_tasks(short_id)" in sql for sql in executed_sql)
+    assert any("ALTER TABLE bot.ad_campaigns ADD COLUMN IF NOT EXISTS sort_order" in sql for sql in executed_sql)
 
 
 @pytest.mark.asyncio

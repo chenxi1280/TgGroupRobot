@@ -18,54 +18,9 @@ class AdsTask(ScheduledTask):
 
     async def execute(self, app) -> None:
         """执行广告发送逻辑"""
-        from backend.features.automation.services.ad_service import (
-            get_scheduled_ads,
-            should_send_ad,
-            mark_ad_sent,
-            lock_ad_for_sending,
-        )
+        from backend.features.automation.services.ad_rotation_service import dispatch_due_rotation_rules
         import structlog
 
         log = structlog.get_logger(__name__)
-        db = app.bot_data["db"]
-
-        async with db.session_factory() as session:
-            ads = await get_scheduled_ads(session)
-
-            for ad in ads:
-                if should_send_ad(ad):
-                    # 尝试锁定广告（防止重复发送）
-                    locked_ad = await lock_ad_for_sending(session, ad.id)
-                    if not locked_ad:
-                        log.info("ad_already_locked", ad_id=ad.id, title=ad.title)
-                        continue
-
-                    try:
-                        # 发送广告
-                        if locked_ad.has_image and locked_ad.image_file_id:
-                            await app.bot.send_photo(
-                                locked_ad.chat_id,
-                                locked_ad.image_file_id,
-                                caption=f"【{locked_ad.title}】\n\n{locked_ad.content}"
-                            )
-                        else:
-                            await app.bot.send_message(
-                                locked_ad.chat_id,
-                                f"【{locked_ad.title}】\n\n{locked_ad.content}"
-                            )
-
-                        # 标记已发送并释放锁
-                        await mark_ad_sent(session, locked_ad.id)
-                        await session.commit()
-
-                        log.info(
-                            "ad_sent",
-                            ad_id=locked_ad.id,
-                            title=locked_ad.title,
-                            chat_id=locked_ad.chat_id
-                        )
-                    except Exception as e:
-                        # 发送失败，释放锁
-                        locked_ad.send_locked = False
-                        await session.commit()
-                        log.error("ad_send_failed", ad_id=locked_ad.id, error=str(e))
+        dispatched = await dispatch_due_rotation_rules(app)
+        log.info("ad_rotation_tick_finished", dispatched=dispatched)

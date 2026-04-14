@@ -122,12 +122,8 @@ class CoreBasicMenusMixin:
         chat_id: int,
     ) -> None:
         """显示轮播广告菜单"""
-        from backend.features.automation.ui.ads import ads_menu_keyboard
+        from backend.features.automation.ads_handler import _ads_handler
 
         db: Database = context.application.bot_data["db"]
         await self._set_current_chat(db, update.effective_user.id, chat_id)
-
-        text = "🎠 轮播广告\n\n请选择操作："
-        keyboard = ads_menu_keyboard(chat_id)
-
-        await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
+        await _ads_handler.show_menu(update, context, chat_id)

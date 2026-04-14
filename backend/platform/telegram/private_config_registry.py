@@ -66,7 +66,19 @@ def build_private_config_handlers() -> dict[str, ConfigHandler]:
     )
     _register_states(
         handlers,
-        ["ads_create_config"],
+        [
+            "ads_create_config",
+            "ads_rule_edit_start",
+            "ads_rule_edit_interval",
+            "ads_rule_edit_delay",
+            "ads_item_edit_title",
+            "ads_item_edit_text",
+            "ads_item_edit_cover",
+            "ads_item_edit_buttons",
+            "ads_item_edit_start",
+            "ads_item_edit_end",
+            "ads_item_edit_order",
+        ],
         update_context_handler("backend.features.automation.ads_handler", "ads_create_config_message"),
     )
     _register_states(

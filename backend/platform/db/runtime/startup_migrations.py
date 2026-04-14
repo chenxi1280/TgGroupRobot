@@ -119,10 +119,33 @@ SCHEDULED_MESSAGE_COMPAT_SQL: tuple[str, ...] = (
     "ALTER TABLE bot.scheduled_message_tasks ALTER COLUMN short_id SET NOT NULL",
 )
 
+AD_CAMPAIGNS_COMPAT_SQL: tuple[str, ...] = (
+    "ALTER TABLE bot.ad_campaigns ADD COLUMN IF NOT EXISTS buttons JSONB NOT NULL DEFAULT '[]'::jsonb",
+    "ALTER TABLE bot.ad_campaigns ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 1",
+    "ALTER TABLE bot.ad_campaigns ADD COLUMN IF NOT EXISTS end_time TIMESTAMPTZ",
+    "ALTER TABLE bot.ad_campaigns ADD COLUMN IF NOT EXISTS last_sent_message_id INTEGER",
+    "ALTER TABLE bot.ad_campaigns ADD COLUMN IF NOT EXISTS last_sent_cycle_no INTEGER NOT NULL DEFAULT 0",
+    """
+    WITH ad_numbered AS (
+        SELECT
+            id,
+            ROW_NUMBER() OVER (PARTITION BY chat_id ORDER BY created_at, id) AS row_no
+        FROM bot.ad_campaigns
+        WHERE sort_order IS NULL OR sort_order <= 0
+    )
+    UPDATE bot.ad_campaigns AS ad
+    SET sort_order = ad_numbered.row_no
+    FROM ad_numbered
+    WHERE ad.id = ad_numbered.id
+    """.strip(),
+    "CREATE INDEX IF NOT EXISTS ix_ad_campaigns_sort_order ON bot.ad_campaigns(sort_order)",
+)
+
 COMPATIBILITY_MIGRATIONS: dict[str, tuple[str, ...]] = {
     "chat_settings": CHAT_SETTINGS_COMPAT_SQL,
     "garage_forward_settings": GARAGE_FORWARD_SETTINGS_COMPAT_SQL,
     "scheduled_message_tasks": SCHEDULED_MESSAGE_COMPAT_SQL,
+    "ad_campaigns": AD_CAMPAIGNS_COMPAT_SQL,
 }
 
 

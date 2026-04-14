@@ -202,9 +202,8 @@ async def test_points_legacy_todo_entries_redirect_to_real_flow(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_ads_create_start_keeps_target_chat_id_in_private_state(monkeypatch):
-    started: dict[str, object] = {}
-    edited: list[tuple[str, object]] = []
+async def test_ads_create_start_opens_new_item_detail(monkeypatch):
+    shown: dict[str, int] = {}
 
     async def fake_resolve_target_chat_id(update, context):
         return -1005566
@@ -212,28 +211,24 @@ async def test_ads_create_start_keeps_target_chat_id_in_private_state(monkeypatc
     async def fake_ensure(*args, **kwargs):
         return None
 
-    async def fake_start(session, chat_id: int, user_id: int, state_type: str, state_data: dict):
-        started.update(
-            {
-                "chat_id": chat_id,
-                "user_id": user_id,
-                "state_type": state_type,
-                "state_data": state_data,
-            }
-        )
+    async def fake_create_rotation_item(session, **kwargs):
+        return SimpleNamespace(id=321)
 
     monkeypatch.setattr(ads_handler, "_resolve_ads_target_chat_id", fake_resolve_target_chat_id)
     monkeypatch.setattr(ads_handler.ModuleSettingsService, "ensure", fake_ensure)
-    monkeypatch.setattr(ads_handler.ConversationStateService, "start", fake_start)
+    monkeypatch.setattr(ads_handler, "create_rotation_item", fake_create_rotation_item)
+
+    async def fake_show_detail(update, context, target_chat_id: int, item_id: int):
+        shown["chat_id"] = target_chat_id
+        shown["item_id"] = item_id
+
+    monkeypatch.setattr(ads_handler._ads_handler, "show_detail", fake_show_detail)
 
     class _Q:
         data = "ads:create"
 
         async def answer(self):
             return None
-
-        async def edit_message_text(self, text, **kwargs):
-            edited.append((text, kwargs.get("reply_markup")))
 
     update = SimpleNamespace(
         callback_query=_Q(),
@@ -251,13 +246,7 @@ async def test_ads_create_start_keeps_target_chat_id_in_private_state(monkeypatc
 
     await ads_handler.ads_create_start_callback(update, context)
 
-    assert started == {
-        "chat_id": 9001,
-        "user_id": 42,
-        "state_type": "ads_create_config",
-        "state_data": {"target_chat_id": -1005566},
-    }
-    assert edited and "创建轮播广告" in edited[0][0]
+    assert shown == {"chat_id": -1005566, "item_id": 321}
 
 
 @pytest.mark.asyncio

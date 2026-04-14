@@ -7,8 +7,16 @@ from backend.features.automation.ads_handler import (
     ads_create_start_callback,
     ads_delete_callback,
     ads_detail_callback,
+    ads_cleanup_callback,
+    ads_item_input_callback,
+    ads_item_preview_callback,
+    ads_item_set_callback,
+    ads_item_time_callback,
     ads_list_callback,
     ads_menu_callback,
+    ads_rules_callback,
+    ads_rules_input_callback,
+    ads_rules_set_callback,
     ads_send_callback,
     ads_stats_callback,
     ads_toggle_callback,
@@ -28,18 +36,25 @@ class AdsRouter(BaseRouter):
         log.info(f"Registering {self.name} router")
         
         # 回调处理器
-        app.add_handler(CallbackQueryHandler(ads_create_start_callback, pattern=r"^ads:create"))
+        app.add_handler(CallbackQueryHandler(ads_create_start_callback, pattern=r"^ads:create(?::|$)"))
         app.add_handler(CallbackQueryHandler(ads_cancel_callback, pattern=r"^ads:cancel:"))
-        # 兼容新旧回调格式：
-        # 新版: ads:toggle:{id} / ads:delete:{id} / ads:send:{id}
-        # 旧版: ads:toggle_{id} / ads:delete_{id} / ads:send_{id}
+        app.add_handler(CallbackQueryHandler(ads_rules_input_callback, pattern=r"^ads:rules:input:"))
+        app.add_handler(CallbackQueryHandler(ads_rules_set_callback, pattern=r"^ads:rules:set:"))
+        app.add_handler(CallbackQueryHandler(ads_rules_callback, pattern=r"^ads:rules(?::|$)"))
+        app.add_handler(CallbackQueryHandler(ads_item_input_callback, pattern=r"^ads:item:input:"))
+        app.add_handler(CallbackQueryHandler(ads_item_time_callback, pattern=r"^ads:item:time:"))
+        app.add_handler(CallbackQueryHandler(ads_item_set_callback, pattern=r"^ads:item:set:"))
+        app.add_handler(CallbackQueryHandler(ads_item_preview_callback, pattern=r"^ads:item:preview:"))
+        app.add_handler(CallbackQueryHandler(ads_cleanup_callback, pattern=r"^ads:cleanup(?::|$)"))
         app.add_handler(CallbackQueryHandler(ads_toggle_callback, pattern=r"^ads:toggle(?::|_)\d+$"))
         app.add_handler(CallbackQueryHandler(ads_delete_callback, pattern=r"^ads:delete(?::|_)\d+$"))
         app.add_handler(CallbackQueryHandler(ads_send_callback, pattern=r"^ads:send(?::|_)\d+$"))
+        app.add_handler(CallbackQueryHandler(ads_toggle_callback, pattern=r"^ads:item:toggle:"))
+        app.add_handler(CallbackQueryHandler(ads_delete_callback, pattern=r"^ads:item:delete:"))
         app.add_handler(CallbackQueryHandler(ads_menu_callback, pattern=r"^ads:menu"))
         app.add_handler(CallbackQueryHandler(ads_list_callback, pattern=r"^ads:list"))
         app.add_handler(CallbackQueryHandler(ads_stats_callback, pattern=r"^ads:stats"))
-        app.add_handler(CallbackQueryHandler(ads_detail_callback, pattern=r"^ads:detail:\d+$"))
+        app.add_handler(CallbackQueryHandler(ads_detail_callback, pattern=r"^ads:detail:(?:-?\d+:)?\d+$"))
         
         # 注意：配置消息已被 MessageDispatcher 的 PrivateConfigHandler 统一处理
         # 此 MessageHandler 已移除，避免重复处理

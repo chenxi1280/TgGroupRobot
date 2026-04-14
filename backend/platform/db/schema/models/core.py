@@ -7,6 +7,7 @@ from backend.platform.db.schema.models.activity import (  # noqa: F401
 )
 from backend.platform.db.schema.models.automation import (  # noqa: F401
     AdCampaign,
+    AdRotationRule,
     InviteLink,
     InviteTracking,
     ScheduledMessage,
