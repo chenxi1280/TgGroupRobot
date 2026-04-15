@@ -9,6 +9,7 @@ class VerificationConfigStartMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         target_chat_id: int,
+        callback_data: CallbackParser | None = None,
     ) -> None:
         from backend.platform.db.schema.models.enums import ConversationStateType
         from backend.platform.state.state_service import clear_user_state, set_user_state
@@ -16,7 +17,6 @@ class VerificationConfigStartMixin:
         if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
             return
         q = update.callback_query
-        await q.answer()
 
         chat = update.effective_chat
         user = update.effective_user

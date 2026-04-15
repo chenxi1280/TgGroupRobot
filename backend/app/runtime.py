@@ -26,6 +26,7 @@ from backend.platform.scheduler.tasks import (
     LotteryTask,
     ScheduledMessageTaskRunner,
     SolitaireTask,
+    TeacherSearchTask,
     VerificationTimeoutTask,
 )
 
@@ -48,6 +49,7 @@ async def run_bot_with_scheduler() -> None:
         EngagementTask(),
         GameTask(),
         GuessTask(),
+        TeacherSearchTask(),
     ])
 
     await _validate_schema_or_exit(app)

@@ -5,7 +5,7 @@ from telegram.ext import ConversationHandler, ContextTypes
 
 from backend.features.admin.points_config_shared import WAIT_VALUE, resolve_points_target_user, safe_edit_message, log
 from backend.features.admin.points_config_views import show_points_home
-from backend.features.admin.ui.points import points_config_keyboard
+from backend.features.admin.ui.points import format_points_home_text, points_config_keyboard
 from backend.features.points.services.points_service import change_points
 from backend.platform.db.runtime.session import Database
 from backend.platform.db.schema.models.core import PointsAccount, PointsTransaction, SignInLog, UserDailyStats
@@ -167,6 +167,6 @@ async def handle_points_config_cancel(
             await session.commit()
 
         keyboard = points_config_keyboard(settings, chat_id)
-        await safe_edit_func(update.callback_query, "💰 主积分", reply_markup=keyboard)
+        await safe_edit_func(update.callback_query, format_points_home_text(settings), reply_markup=keyboard)
 
     return ConversationHandler.END

@@ -82,7 +82,7 @@ TgGroupRobot 是一个功能完整的 **To C** Telegram 群组管理机器人，
 ### 技术栈
 | 技术 | 版本 | 用途 |
 |------|------|------|
-| Python | 3.11+ | 主要编程语言 |
+| Python | 3.12+ | 主要编程语言 |
 | python-telegram-bot | 21.6 | Telegram Bot API |
 | SQLAlchemy | 2.0.36 | ORM 框架 |
 | psycopg | 3.2.3 | PostgreSQL 驱动 |

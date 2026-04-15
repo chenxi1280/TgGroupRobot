@@ -71,7 +71,7 @@ class PointsExtendedLevelsMixin:
         level = PointsLevel(
             chat_id=chat_id,
             level_no=next_no,
-            level_name=f"待配置{next_no}",
+            level_name="待配置" if next_no == 1 else f"待配置{next_no}",
             point_threshold=next_threshold,
             enabled=True,
         )

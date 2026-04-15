@@ -57,8 +57,14 @@ class TeacherSearchSetting(Base):
 
     chat_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("bot.tg_chats.id", ondelete="CASCADE"), primary_key=True)
     tag_search_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    only_open_course_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     nearby_search_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     attendance_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    attendance_mode: Mapped[str] = mapped_column(String(16), default="message", nullable=False)
+    attendance_source_chat_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    attendance_open_keyword: Mapped[str] = mapped_column(String(32), default="开课", nullable=False)
+    attendance_full_keyword: Mapped[str] = mapped_column(String(32), default="满课", nullable=False)
+    attendance_rest_keyword: Mapped[str] = mapped_column(String(32), default="休息", nullable=False)
     force_location_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     delete_mode: Mapped[str] = mapped_column(String(16), default="none")
     footer_button_label: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -87,6 +93,7 @@ class TeacherProfile(Base):
     region_text: Mapped[str | None] = mapped_column(String(128), nullable=True)
     price_text: Mapped[str | None] = mapped_column(String(128), nullable=True)
     open_course_today: Mapped[bool] = mapped_column(Boolean, default=False)
+    open_course_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
     last_location_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC))
     updated_at: Mapped[dt.datetime] = mapped_column(
@@ -107,6 +114,7 @@ class TeacherDailyAttendance(Base):
     chat_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("bot.tg_chats.id", ondelete="CASCADE"), index=True)
     user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("bot.tg_users.id", ondelete="CASCADE"), index=True)
     biz_date: Mapped[dt.date] = mapped_column(Date, index=True, default=lambda: dt.datetime.now(dt.UTC).date())
+    status: Mapped[str] = mapped_column(String(16), default="open", nullable=False)
     source_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC))
 

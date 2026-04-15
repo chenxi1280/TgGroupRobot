@@ -5,7 +5,9 @@ from types import SimpleNamespace
 import pytest
 
 from backend.features.admin import admin_handler
+from backend.features.admin.welcome.controller import format_welcome_text_input_prompt
 from backend.features.verification.welcome_service import WelcomeService
+from backend.shared.callback_parser import CallbackParser
 
 
 class _FakeSession:
@@ -110,3 +112,45 @@ async def test_welcome_default_title_is_not_marked_configured(monkeypatch):
     rows = [[button.text for button in row] for row in rendered["keyboard"]]
     assert "📮 标题备注: 【等待设置】" in rendered["text"]
     assert rows[2][0] == "标题备注"
+
+
+@pytest.mark.asyncio
+async def test_welcome_text_input_prompt_shows_current_text_and_tokens(monkeypatch):
+    rendered: dict[str, object] = {}
+    started: dict[str, object] = {}
+
+    async def fake_get_message(session, chat_id: int, welcome_id: int):
+        return SimpleNamespace(text_content="{member}，欢迎加入{group}。")
+
+    async def fake_start_text_input_state(context, user_id, state_chat_id, state_type, payload):
+        started["user_id"] = user_id
+        started["state_chat_id"] = state_chat_id
+        started["state_type"] = state_type
+        started["payload"] = payload
+
+    async def fake_safe_edit(update, text, reply_markup):
+        rendered["text"] = text
+        rendered["keyboard"] = reply_markup.inline_keyboard
+
+    monkeypatch.setattr(WelcomeService, "get_message", fake_get_message)
+    monkeypatch.setattr(admin_handler._admin_handler, "_start_text_input_state", fake_start_text_input_state)
+    monkeypatch.setattr(admin_handler._admin_handler.message_helper, "safe_edit", fake_safe_edit)
+
+    update = SimpleNamespace(effective_user=SimpleNamespace(id=42))
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(_FakeSession())}))
+
+    await admin_handler._admin_handler._handle_welcome(
+        update,
+        context,
+        -1001,
+        CallbackParser.parse("adm:wel:-1001:input:9:text"),
+    )
+
+    assert started == {
+        "user_id": 42,
+        "state_chat_id": -1001,
+        "state_type": "welcome_text_input",
+        "payload": {"target_chat_id": -1001, "welcome_id": 9},
+    }
+    assert rendered["text"] == format_welcome_text_input_prompt("{member}，欢迎加入{group}。")
+    assert [[button.text for button in row] for row in rendered["keyboard"]] == [["🔙 返回"]]

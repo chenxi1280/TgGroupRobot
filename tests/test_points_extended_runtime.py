@@ -80,6 +80,40 @@ async def test_update_product_allows_clearing_optional_fields():
 
 
 @pytest.mark.asyncio
+async def test_update_custom_point_type_allows_clearing_rank_command():
+    session = _FakeSession()
+    item = SimpleNamespace(
+        id=7,
+        chat_id=-1001,
+        name="斗气",
+        rank_command="斗气排行",
+        updated_at=None,
+    )
+
+    await PointsExtendedService.update_custom_point_type(session, item, rank_command=None)
+
+    assert item.rank_command is None
+    assert session.flushes == 1
+
+
+@pytest.mark.asyncio
+async def test_update_custom_point_type_treats_blank_rank_command_as_clear():
+    session = _FakeSession()
+    item = SimpleNamespace(
+        id=7,
+        chat_id=-1001,
+        name="斗气",
+        rank_command="斗气排行",
+        updated_at=None,
+    )
+
+    await PointsExtendedService.update_custom_point_type(session, item, rank_command="   ")
+
+    assert item.rank_command is None
+    assert session.flushes == 1
+
+
+@pytest.mark.asyncio
 async def test_update_product_stock_total_preserves_consumed_inventory():
     session = _FakeSession()
     product = SimpleNamespace(
@@ -174,11 +208,343 @@ async def test_handle_points_extended_input_clears_invalid_custom_point_state(mo
 
 
 @pytest.mark.asyncio
+async def test_handle_points_extended_input_auto_sets_custom_rank_command(monkeypatch):
+    clear_calls: list[tuple[int, int]] = []
+    updates: list[dict] = []
+    shown: list[tuple[int, int]] = []
+
+    async def fake_require_manage(*args, **kwargs):
+        return True, None
+
+    async def fake_clear_user_state(session, *, chat_id: int, user_id: int):
+        clear_calls.append((chat_id, user_id))
+
+    async def fake_clear_private_input_state(session, user_id: int):
+        clear_calls.append((user_id, user_id))
+
+    async def fake_get_custom_point_type(session, chat_id: int, type_id: int):
+        return SimpleNamespace(id=type_id, name="待配置1", rank_command=None)
+
+    async def fake_update_custom_point_type(session, item, **kwargs):
+        updates.append(kwargs)
+        return item
+
+    async def fake_show_detail(update, context, chat_id: int, type_id: int):
+        shown.append((chat_id, type_id))
+
+    monkeypatch.setattr(admin_handler.PermissionPolicyService, "require_manage", fake_require_manage)
+    monkeypatch.setattr(admin_handler, "clear_user_state", fake_clear_user_state)
+    monkeypatch.setattr(admin_handler, "clear_private_input_state", fake_clear_private_input_state)
+    monkeypatch.setattr(admin_handler.PointsExtendedService, "get_custom_point_type", fake_get_custom_point_type)
+    monkeypatch.setattr(admin_handler.PointsExtendedService, "update_custom_point_type", fake_update_custom_point_type)
+    monkeypatch.setattr(admin_handler._admin_handler, "_show_custom_point_detail", fake_show_detail)
+
+    async def _reply_text(text):
+        raise AssertionError(f"unexpected reply: {text}")
+
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=42),
+        effective_message=SimpleNamespace(reply_text=_reply_text),
+    )
+    context = SimpleNamespace()
+    session = _FakeSession()
+    state = SimpleNamespace(
+        state_type="custom_points_name_input",
+        state_data={"target_chat_id": -1001, "type_id": 7},
+        chat_id=42,
+    )
+
+    await handle_points_extended_input(update, context, session, state, "斗气")
+
+    assert updates == [{"name": "斗气", "rank_command": "斗气排行"}]
+    assert clear_calls == [(-1001, 42), (42, 42)]
+    assert shown == [(-1001, 7)]
+
+
+@pytest.mark.asyncio
+async def test_handle_points_extended_input_prompts_amount_after_username(monkeypatch):
+    replies: list[str] = []
+    state_updates: list[dict] = []
+
+    async def fake_require_manage(*args, **kwargs):
+        return True, None
+
+    async def fake_get_custom_point_type(session, chat_id: int, type_id: int):
+        return SimpleNamespace(id=type_id, name="斗气")
+
+    async def fake_resolve_user_id(session, raw_value: str):
+        return 7788 if raw_value == "settingbother" else None
+
+    async def fake_get_custom_point_balance(session, **kwargs):
+        return 0
+
+    async def fake_set_user_state(session, **kwargs):
+        state_updates.append(kwargs)
+
+    monkeypatch.setattr(admin_handler.PermissionPolicyService, "require_manage", fake_require_manage)
+    monkeypatch.setattr(admin_handler.PointsExtendedService, "get_custom_point_type", fake_get_custom_point_type)
+    monkeypatch.setattr(admin_handler.PointsExtendedService, "resolve_user_id", fake_resolve_user_id)
+    monkeypatch.setattr(admin_handler.PointsExtendedService, "get_custom_point_balance", fake_get_custom_point_balance)
+    monkeypatch.setattr(admin_handler, "set_user_state", fake_set_user_state)
+
+    async def _reply_text(text):
+        replies.append(text)
+
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=42),
+        effective_message=SimpleNamespace(text="settingbother", caption=None, reply_text=_reply_text),
+    )
+    context = SimpleNamespace()
+    session = _FakeSession()
+    state = SimpleNamespace(
+        state_type="custom_points_adjust_input",
+        state_data={"target_chat_id": -1001, "type_id": 7, "mode": "add"},
+        chat_id=42,
+    )
+
+    await handle_points_extended_input(update, context, session, state, "settingbother")
+
+    assert replies == ["增加积分\n\nsettingbother => 0\n\n👉 输入数量："]
+    assert state_updates == [
+        {
+            "chat_id": 42,
+            "user_id": 42,
+            "state_type": "custom_points_adjust_input",
+            "state_data": {
+                "target_chat_id": -1001,
+                "type_id": 7,
+                "mode": "add",
+                "target_user_id": 7788,
+                "target_label": "settingbother",
+            },
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_handle_points_extended_input_prompts_amount_after_forwarded_user(monkeypatch):
+    replies: list[str] = []
+    ensured_users: list[dict] = []
+    state_updates: list[dict] = []
+
+    async def fake_require_manage(*args, **kwargs):
+        return True, None
+
+    async def fake_get_custom_point_type(session, chat_id: int, type_id: int):
+        return SimpleNamespace(id=type_id, name="斗气")
+
+    async def fake_get_custom_point_balance(session, **kwargs):
+        return 3
+
+    async def fake_set_user_state(session, **kwargs):
+        state_updates.append(kwargs)
+
+    async def fake_ensure_user(session, **kwargs):
+        ensured_users.append(kwargs)
+
+    monkeypatch.setattr(admin_handler.PermissionPolicyService, "require_manage", fake_require_manage)
+    monkeypatch.setattr(admin_handler.PointsExtendedService, "get_custom_point_type", fake_get_custom_point_type)
+    monkeypatch.setattr(admin_handler.PointsExtendedService, "get_custom_point_balance", fake_get_custom_point_balance)
+    monkeypatch.setattr(admin_handler, "set_user_state", fake_set_user_state)
+    monkeypatch.setattr(admin_handler, "ensure_user", fake_ensure_user)
+
+    async def _reply_text(text):
+        replies.append(text)
+
+    forwarded_user = SimpleNamespace(
+        id=8899,
+        username="bob",
+        first_name="Bob",
+        last_name=None,
+        language_code="zh-CN",
+    )
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=42),
+        effective_message=SimpleNamespace(
+            text=None,
+            caption=None,
+            forward_from=forwarded_user,
+            reply_text=_reply_text,
+        ),
+    )
+    context = SimpleNamespace()
+    session = _FakeSession()
+    state = SimpleNamespace(
+        state_type="custom_points_adjust_input",
+        state_data={"target_chat_id": -1001, "type_id": 7, "mode": "deduct"},
+        chat_id=42,
+    )
+
+    await handle_points_extended_input(update, context, session, state, "")
+
+    assert replies == ["扣除积分\n\n@bob => 3\n\n👉 输入数量："]
+    assert ensured_users == [
+        {
+            "user_id": 8899,
+            "username": "bob",
+            "first_name": "Bob",
+            "last_name": None,
+            "language_code": "zh-CN",
+        }
+    ]
+    assert state_updates[0]["state_data"]["target_user_id"] == 8899
+    assert state_updates[0]["state_data"]["target_label"] == "@bob"
+
+
+@pytest.mark.asyncio
+async def test_handle_points_extended_input_does_not_use_forwarded_message_text_as_amount(monkeypatch):
+    replies: list[str] = []
+    deltas: list[int] = []
+    state_updates: list[dict] = []
+
+    async def fake_require_manage(*args, **kwargs):
+        return True, None
+
+    async def fake_get_custom_point_type(session, chat_id: int, type_id: int):
+        return SimpleNamespace(id=type_id, name="斗气")
+
+    async def fake_get_custom_point_balance(session, **kwargs):
+        return 0
+
+    async def fake_set_user_state(session, **kwargs):
+        state_updates.append(kwargs)
+
+    async def fake_adjust_custom_points(session, **kwargs):
+        deltas.append(kwargs["delta"])
+        return 88
+
+    async def fake_ensure_user(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(admin_handler.PermissionPolicyService, "require_manage", fake_require_manage)
+    monkeypatch.setattr(admin_handler.PointsExtendedService, "get_custom_point_type", fake_get_custom_point_type)
+    monkeypatch.setattr(admin_handler.PointsExtendedService, "get_custom_point_balance", fake_get_custom_point_balance)
+    monkeypatch.setattr(admin_handler.PointsExtendedService, "adjust_custom_points", fake_adjust_custom_points)
+    monkeypatch.setattr(admin_handler, "set_user_state", fake_set_user_state)
+    monkeypatch.setattr(admin_handler, "ensure_user", fake_ensure_user)
+
+    async def _reply_text(text):
+        replies.append(text)
+
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=42),
+        effective_message=SimpleNamespace(
+            text="原消息 20",
+            caption=None,
+            forward_from=SimpleNamespace(id=8899, username="bob", first_name=None, last_name=None, language_code=None),
+            reply_text=_reply_text,
+        ),
+    )
+    context = SimpleNamespace()
+    session = _FakeSession()
+    state = SimpleNamespace(
+        state_type="custom_points_adjust_input",
+        state_data={"target_chat_id": -1001, "type_id": 7, "mode": "add"},
+        chat_id=42,
+    )
+
+    await handle_points_extended_input(update, context, session, state, "原消息 20")
+
+    assert deltas == []
+    assert replies == ["增加积分\n\n@bob => 0\n\n👉 输入数量："]
+    assert state_updates[0]["state_data"]["target_user_id"] == 8899
+
+
+@pytest.mark.asyncio
+async def test_handle_points_extended_input_clears_invalid_adjust_mode_before_target(monkeypatch):
+    clear_calls: list[tuple[int, int]] = []
+    replies: list[str] = []
+
+    async def fake_require_manage(*args, **kwargs):
+        return True, None
+
+    async def fake_get_custom_point_type(session, chat_id: int, type_id: int):
+        return SimpleNamespace(id=type_id, name="斗气")
+
+    async def fake_clear_user_state(session, *, chat_id: int, user_id: int):
+        clear_calls.append((chat_id, user_id))
+
+    async def fake_clear_private_input_state(session, user_id: int):
+        clear_calls.append((user_id, user_id))
+
+    monkeypatch.setattr(admin_handler.PermissionPolicyService, "require_manage", fake_require_manage)
+    monkeypatch.setattr(admin_handler.PointsExtendedService, "get_custom_point_type", fake_get_custom_point_type)
+    monkeypatch.setattr(admin_handler, "clear_user_state", fake_clear_user_state)
+    monkeypatch.setattr(admin_handler, "clear_private_input_state", fake_clear_private_input_state)
+
+    async def _reply_text(text):
+        replies.append(text)
+
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=42),
+        effective_message=SimpleNamespace(text="@bob", caption=None, reply_text=_reply_text),
+    )
+    context = SimpleNamespace()
+    session = _FakeSession()
+    state = SimpleNamespace(
+        state_type="custom_points_adjust_input",
+        state_data={"target_chat_id": -1001, "type_id": 7, "mode": "bad"},
+        chat_id=42,
+    )
+
+    await handle_points_extended_input(update, context, session, state, "@bob")
+
+    assert clear_calls == [(-1001, 42), (42, 42)]
+    assert session.commits == 1
+    assert replies == ["自定义积分操作类型异常，已自动退出，请重新进入页面。"]
+
+
+@pytest.mark.asyncio
+async def test_handle_points_extended_input_clears_invalid_cached_target(monkeypatch):
+    clear_calls: list[tuple[int, int]] = []
+    replies: list[str] = []
+
+    async def fake_require_manage(*args, **kwargs):
+        return True, None
+
+    async def fake_get_custom_point_type(session, chat_id: int, type_id: int):
+        return SimpleNamespace(id=type_id, name="斗气")
+
+    async def fake_clear_user_state(session, *, chat_id: int, user_id: int):
+        clear_calls.append((chat_id, user_id))
+
+    async def fake_clear_private_input_state(session, user_id: int):
+        clear_calls.append((user_id, user_id))
+
+    monkeypatch.setattr(admin_handler.PermissionPolicyService, "require_manage", fake_require_manage)
+    monkeypatch.setattr(admin_handler.PointsExtendedService, "get_custom_point_type", fake_get_custom_point_type)
+    monkeypatch.setattr(admin_handler, "clear_user_state", fake_clear_user_state)
+    monkeypatch.setattr(admin_handler, "clear_private_input_state", fake_clear_private_input_state)
+
+    async def _reply_text(text):
+        replies.append(text)
+
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=42),
+        effective_message=SimpleNamespace(text="20", caption=None, reply_text=_reply_text),
+    )
+    context = SimpleNamespace()
+    session = _FakeSession()
+    state = SimpleNamespace(
+        state_type="custom_points_adjust_input",
+        state_data={"target_chat_id": -1001, "type_id": 7, "mode": "add", "target_user_id": "bad"},
+        chat_id=42,
+    )
+
+    await handle_points_extended_input(update, context, session, state, "20")
+
+    assert clear_calls == [(-1001, 42), (42, 42)]
+    assert session.commits == 1
+    assert replies == ["自定义积分目标用户异常，已自动退出，请重新进入页面。"]
+
+
+@pytest.mark.asyncio
 async def test_handle_points_extended_input_supports_custom_point_deduct(monkeypatch):
     clear_calls: list[tuple[int, int]] = []
     deltas: list[int] = []
     shown: list[tuple[int, int]] = []
     ensured_users: list[int] = []
+    resolved_users: list[str] = []
     replies: list[str] = []
 
     async def fake_require_manage(*args, **kwargs):
@@ -197,6 +563,10 @@ async def test_handle_points_extended_input_supports_custom_point_deduct(monkeyp
         deltas.append(kwargs["delta"])
         return 88
 
+    async def fake_resolve_user_id(session, raw_value: str):
+        resolved_users.append(raw_value)
+        return 12345
+
     async def fake_show_detail(update, context, chat_id: int, type_id: int):
         shown.append((chat_id, type_id))
 
@@ -208,6 +578,7 @@ async def test_handle_points_extended_input_supports_custom_point_deduct(monkeyp
     monkeypatch.setattr(admin_handler, "clear_private_input_state", fake_clear_private_input_state)
     monkeypatch.setattr(admin_handler, "ensure_user", fake_ensure_user)
     monkeypatch.setattr(admin_handler.PointsExtendedService, "get_custom_point_type", fake_get_custom_point_type)
+    monkeypatch.setattr(admin_handler.PointsExtendedService, "resolve_user_id", fake_resolve_user_id)
     monkeypatch.setattr(admin_handler.PointsExtendedService, "adjust_custom_points", fake_adjust_custom_points)
     monkeypatch.setattr(admin_handler._admin_handler, "_show_custom_point_detail", fake_show_detail)
 
@@ -226,8 +597,9 @@ async def test_handle_points_extended_input_supports_custom_point_deduct(monkeyp
         chat_id=42,
     )
 
-    await handle_points_extended_input(update, context, session, state, "12345 20 管理员扣分")
+    await handle_points_extended_input(update, context, session, state, "@alice 20 管理员扣分")
 
+    assert resolved_users == ["@alice"]
     assert ensured_users == [12345]
     assert deltas == [-20]
     assert clear_calls == [(-1001, 42), (42, 42)]
@@ -409,6 +781,33 @@ async def test_points_handler_replies_when_custom_point_rank_command_is_disabled
     await handler.handle_message_points(update, context)
 
     assert replies == ["出击分 已关闭。"]
+
+
+@pytest.mark.asyncio
+async def test_handle_points_level_add_returns_to_list(monkeypatch):
+    created: list[int] = []
+    menu_calls: list[int] = []
+
+    async def fake_create_level(session, chat_id: int):
+        created.append(chat_id)
+        return SimpleNamespace(id=9, level_name="待配置", point_threshold=1)
+
+    async def fake_show_menu(update, context, chat_id: int):
+        menu_calls.append(chat_id)
+
+    monkeypatch.setattr(admin_handler.PointsExtendedService, "create_level", fake_create_level)
+    monkeypatch.setattr(admin_handler._admin_handler, "_show_points_level_menu", fake_show_menu)
+
+    session = _FakeSession()
+    update = SimpleNamespace(callback_query=SimpleNamespace())
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(session)}))
+    cb = CallbackParser.parse("adm:lvl:-1001:add")
+
+    await admin_handler._admin_handler._handle_points_level(update, context, -1001, cb)
+
+    assert created == [-1001]
+    assert menu_calls == [-1001]
+    assert session.commits == 1
 
 
 @pytest.mark.asyncio

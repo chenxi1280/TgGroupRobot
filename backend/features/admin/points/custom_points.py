@@ -114,8 +114,18 @@ class CustomPointsAdminControllerMixin:
                     state_data={"target_chat_id": chat_id, "type_id": type_id},
                 )
                 await session.commit()
-            prompt = "👉 现在输入积分名字：" if field == "name" else "👉 现在输入排行指令："
-            await self.message_helper.safe_edit(update, text=prompt, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"adm:cpt:{chat_id}:detail:{type_id}")]]))
+            prompt = (
+                "👉 现在输入积分名字：\n\n保存后会自动生成“积分名字排行”指令。"
+                if field == "name"
+                else "👉 现在输入排行指令："
+            )
+            await self.message_helper.safe_edit(
+                update,
+                text=prompt,
+                reply_markup=InlineKeyboardMarkup(
+                    [[InlineKeyboardButton("🔙 返回", callback_data=f"adm:cpt:{chat_id}:detail:{type_id}")]]
+                ),
+            )
             return
         if op == "adjust":
             mode = callback_data.get(4)
@@ -133,12 +143,7 @@ class CustomPointsAdminControllerMixin:
                     state_data={"target_chat_id": chat_id, "type_id": type_id, "mode": mode},
                 )
                 await session.commit()
-            prompt = (
-                "👉 请输入：用户ID 数量 备注(可选)\n\n"
-                "例如：123456 20 活动奖励"
-                if mode == "add"
-                else "👉 请输入：用户ID 数量 备注(可选)\n\n例如：123456 20 管理员扣分"
-            )
+            prompt = "💡已支持命令快捷操作\n\n👉 请输入用户名，用户ID，或转发成员消息到这里："
             await self.message_helper.safe_edit(
                 update,
                 text=prompt,
@@ -199,4 +204,3 @@ class CustomPointsAdminControllerMixin:
             await answer_callback_query_safely(update, "已导出最近 200 条日志")
             return
         await answer_callback_query_safely(update, "未识别的自定义积分操作，请刷新页面后重试", show_alert=True)
-

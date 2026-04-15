@@ -14,6 +14,19 @@ from backend.shared.ui.message_config_panel import (
 )
 
 
+def format_welcome_text_input_prompt(current_text: str | None) -> str:
+    return (
+        "🎉 进群欢迎 | 修改文本内容\n\n"
+        f"当前的文本内容:{str(current_text or '')}\n\n"
+        "替换符\n"
+        "└ {member} = 新入群成员名字\n"
+        "└ {userid} = 用户id\n"
+        "└ {nickname} = 用户昵称\n"
+        "└ {group} = 群名称\n\n"
+        "👉🏻 现在输入新的文本内容:"
+    )
+
+
 class WelcomeAdminControllerMixin:
     async def _show_welcome_list_menu(
         self,
@@ -265,6 +278,12 @@ class WelcomeAdminControllerMixin:
             if state_type is None:
                 await answer_callback_query_safely(update, "无效配置项", show_alert=True)
                 return
+            current_text = None
+            if field == "text":
+                async with db.session_factory() as session:
+                    item = await WelcomeService.get_message(session, chat_id, welcome_id)
+                    current_text = getattr(item, "text_content", "") or ""
+                    await session.commit()
             await self._start_text_input_state(
                 context,
                 update.effective_user.id,
@@ -274,7 +293,7 @@ class WelcomeAdminControllerMixin:
             )
             prompt = {
                 "title": "👉 请输入标题备注：",
-                "text": "👉 请输入欢迎文本，可使用 {member} {group} {userid} {nickname}：",
+                "text": format_welcome_text_input_prompt(current_text),
                 "cover": "👉 请发送图片或视频；发送“清空”可移除封面。",
                 "buttons": "👉 请输入按钮 JSON，例如 [[{\"text\":\"联系管理员\",\"url\":\"https://t.me/example\"}]]；发送“清空”可移除按钮。",
             }[field]

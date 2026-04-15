@@ -54,6 +54,8 @@ async def _process_garage_features(
             text,
             teacher_setting,
             is_teacher=is_teacher,
+            is_admin=is_admin,
+            is_whitelisted=is_whitelisted,
         ):
             return True
 

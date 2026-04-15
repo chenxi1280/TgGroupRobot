@@ -4,7 +4,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 from sqlalchemy import select
 
-from backend.features.invite.services.invite_service import get_user_links
+from backend.features.invite.services.invite_service import create_user_invite_link, get_user_links
 from backend.features.invite.ui.invite_link import user_invite_menu_keyboard
 from backend.platform.db.runtime.session import Database
 from backend.platform.db.schema.models.core import ChatSettings
@@ -13,14 +13,45 @@ from backend.platform.telegram.errors import answer_callback_query_safely, mark_
 from backend.shared.callback_parser import CallbackParser
 from backend.shared.services.chat_service import ensure_chat, get_chat_settings
 from backend.shared.services.command_config_service import ensure_command_enabled
+from backend.shared.services.user_service import ensure_user
 
 
-async def link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+def _user_link_name(user) -> str:
+    return f"{getattr(user, 'first_name', None) or getattr(user, 'username', None) or '用户'}的链接"
+
+
+def _relay_link(bot_username: str | None, link_id: int) -> str | None:
+    username = (bot_username or "").strip().lstrip("@")
+    if not username:
+        return None
+    return f"https://t.me/{username}?start=inv_{link_id}"
+
+
+def _delivery_link(settings, bot_username: str | None, link) -> str:
+    if getattr(settings, "invite_link_mode", "direct") == "relay":
+        return _relay_link(bot_username, link.id) or link.invite_link
+    return link.invite_link
+
+
+def _format_created_link_message(settings, link, delivery_link: str) -> str:
+    mode = getattr(settings, "invite_link_mode", "direct")
+    mode_label = "中转" if mode == "relay" else "直接"
+    return (
+        "✅ 邀请链接已生成\n\n"
+        f"{delivery_link}\n\n"
+        f"模式：{mode_label}\n"
+        f"有效邀请人数：{getattr(link, 'member_count', 0) or 0}\n"
+        "防作弊：同一成员在本群只计算第一次进群。"
+    )
+
+
+async def _create_and_send_user_invite_link(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.effective_chat is None or update.effective_user is None or update.effective_message is None:
         return
     if update.effective_chat.type not in ["group", "supergroup"]:
         await update.effective_message.reply_text("请在群组中使用此功能")
         return
+
     allowed = await ensure_command_enabled(context, update, command_key="link")
     if not allowed:
         return
@@ -30,12 +61,79 @@ async def link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
         await ensure_chat(session, chat_id=chat.id, chat_type=chat.type, title=chat.title)
+        await ensure_user(
+            session,
+            user_id=user.id,
+            username=user.username,
+            first_name=user.first_name,
+            last_name=user.last_name,
+            language_code=user.language_code,
+        )
         settings = await get_chat_settings(session, chat.id)
+        if not settings.invite_link_enabled:
+            await session.commit()
+            await update.effective_message.reply_text("本群未开启邀请链接功能")
+            return
+
+        success, link, error = await create_user_invite_link(
+            session,
+            context.bot,
+            chat.id,
+            user.id,
+            name=_user_link_name(user),
+        )
+        if success and link:
+            delivery_link = _delivery_link(settings, getattr(context.bot, "username", None), link)
+            message_text = _format_created_link_message(settings, link, delivery_link)
+        else:
+            message_text = f"❌ {error or '创建失败'}"
         await session.commit()
-    if not settings.invite_link_enabled:
-        await update.effective_message.reply_text("本群未开启邀请链接功能")
+
+    await update.effective_message.reply_text(message_text)
+
+
+async def link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await _create_and_send_user_invite_link(update, context)
+
+
+async def link_stat_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.effective_chat is None or update.effective_user is None or update.effective_message is None:
         return
-    await show_user_invite_menu(update, context, chat.id, user.id)
+    if update.effective_chat.type not in ["group", "supergroup"]:
+        await update.effective_message.reply_text("请在群组中使用此功能")
+        return
+
+    allowed = await ensure_command_enabled(context, update, command_key="link_stat")
+    if not allowed:
+        return
+
+    from backend.features.invite.services.invite_service import get_user_invite_stats, get_user_rank
+
+    chat = update.effective_chat
+    user = update.effective_user
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        await ensure_chat(session, chat_id=chat.id, chat_type=chat.type, title=chat.title)
+        await ensure_user(
+            session,
+            user_id=user.id,
+            username=user.username,
+            first_name=user.first_name,
+            last_name=user.last_name,
+            language_code=user.language_code,
+        )
+        stats = await get_user_invite_stats(session, chat.id, user.id)
+        rank = await get_user_rank(session, chat.id, user.id)
+        await session.commit()
+
+    rank_text = f"第 {rank} 名" if rank else "暂无排名"
+    await update.effective_message.reply_text(
+        "📊 邀请统计\n\n"
+        f"有效邀请人数：{stats.total_invites}\n"
+        f"已生成数量：{stats.links_generated}\n"
+        f"活跃链接：{stats.active_links}\n"
+        f"当前排名：{rank_text}"
+    )
 
 
 async def show_user_invite_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int) -> None:
@@ -49,16 +147,19 @@ async def show_user_invite_menu(update: Update, context: ContextTypes.DEFAULT_TY
         await session.commit()
 
     text = (
-        "🔗 邀请链接\n\n"
-        f"状态: {'✅ 启用' if settings and settings.invite_link_enabled else '❌ 禁用'}\n"
-        f"总邀请人数: {stats.total_invites}\n"
-        f"活跃链接: {stats.active_links}\n"
-        f"链接过期: {settings.invite_link_expire_days or '无限制'} 天\n"
-        f"最大邀请: {settings.invite_link_max_joins or '无限制'} 人\n"
+        "🔗 邀请链接生成\n\n"
+        "指令列表\n"
+        "└ 自动生成链接：邀请 或 /link\n"
+        "└ 查询邀请统计：邀请统计 或 /link_stat\n\n"
+        "防作弊\n"
+        "└ 只有第一次进群视为有效邀请数，退群再用其他人的链接加群不计算邀请数\n\n"
+        "当前信息\n"
+        f"┌状态:{'✅ 启动' if settings and settings.invite_link_enabled else '❌ 关闭'}\n"
+        f"├总邀请人数:{stats.total_invites}\n"
     )
     if stats.link_limit:
-        text += f"生成上限: {stats.link_limit} 个\n"
-    text += f"已生成: {stats.links_generated} 个"
+        text += f"├生成上限:{stats.link_limit}\n"
+    text += f"└已生成数量:{stats.links_generated}"
 
     keyboard = user_invite_menu_keyboard(chat_id)
     if update.callback_query:
@@ -80,17 +181,21 @@ async def user_invite_create_callback(update: Update, context: ContextTypes.DEFA
         await answer_callback_query_safely(update, "无效的群组ID", show_alert=True)
         return
 
-    from backend.features.invite.services.invite_service import create_invite_link as user_create_link
-
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
-        success, link, error = await user_create_link(
+        settings = await get_chat_settings(session, chat_id)
+        success, link, error = await create_user_invite_link(
             session,
             context.bot,
             chat_id,
             user.id,
-            name=f"{user.first_name or user.username or '用户'}的链接",
+            name=_user_link_name(user),
         )
+        if success and link:
+            delivery_link = _delivery_link(settings, getattr(context.bot, "username", None), link)
+            message_text = _format_created_link_message(settings, link, delivery_link)
+        else:
+            message_text = f"❌ {error or '创建失败'}"
         await session.commit()
 
     if success and link:
@@ -99,13 +204,12 @@ async def user_invite_create_callback(update: Update, context: ContextTypes.DEFA
         await show_user_invite_menu(update, context, chat_id, user.id)
         await context.bot.send_message(
             chat_id=user.id,
-            text=f"✅ 邀请链接创建成功！\n\n`{link.invite_link}`\n\n点击链接即可邀请好友加入群组",
-            parse_mode="Markdown",
+            text=message_text,
         )
     else:
         await q.answer()
         mark_callback_query_answered(update)
-        await q.edit_message_text(f"❌ {error or '创建失败'}")
+        await q.edit_message_text(message_text)
         await show_user_invite_menu(update, context, chat_id, user.id)
 
 

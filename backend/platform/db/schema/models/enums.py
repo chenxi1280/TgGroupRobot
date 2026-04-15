@@ -140,6 +140,10 @@ class ConversationStateType(str, enum.Enum):
     garage_limit_max_count_input = "garage_limit_max_count_input"  # 车库限制次数输入
     teacher_search_footer_text_input = "teacher_footer_text_input"  # 老师搜索底部按钮文字
     teacher_search_footer_link_input = "teacher_footer_link_input"  # 老师搜索底部按钮链接
+    teacher_search_attendance_target_input = "teacher_attend_target_input"  # 老师搜索代打卡目标
+    teacher_search_attendance_open_input = "teacher_att_open_input"  # 老师搜索开课词
+    teacher_search_attendance_full_input = "teacher_att_full_input"  # 老师搜索满课词
+    teacher_search_attendance_rest_input = "teacher_att_rest_input"  # 老师搜索休息词
     teacher_search_delegate_target_input = "teacher_delegate_target_input"  # 老师搜索代录目标
     teacher_search_delegate_location_input = "teacher_delegate_location_input"  # 老师搜索代录定位
     car_review_submit_command_input = "car_review_submit_command_input"  # 车评提交指令

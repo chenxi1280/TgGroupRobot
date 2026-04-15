@@ -1,23 +1,46 @@
 from __future__ import annotations
 
+import datetime as dt
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.features.nearby.services.nearby_profile_service import build_user_display_name, format_distance, haversine_distance_km
 from backend.platform.db.schema.models.core import TgUser
-from backend.platform.db.schema.models.garage_features import TeacherProfile
+from backend.platform.db.schema.models.garage_features import TeacherDailyAttendance, TeacherProfile, TeacherSearchSetting
+from backend.shared.time_helper import LOCAL_TIMEZONE
 
 
 class TeacherSearchQueryMixin:
+    @staticmethod
+    async def get_attendance_source_chat_id(session: AsyncSession, chat_id: int) -> int:
+        setting = await session.get(TeacherSearchSetting, chat_id)
+        if (
+            setting is not None
+            and setting.attendance_mode == "external"
+            and setting.attendance_source_chat_id is not None
+        ):
+            return int(setting.attendance_source_chat_id)
+        return chat_id
+
     @staticmethod
     async def list_open_course_teachers(
         session: AsyncSession,
         chat_id: int,
     ) -> list[tuple[TeacherProfile, TgUser | None]]:
+        today = dt.datetime.now(dt.UTC).astimezone(LOCAL_TIMEZONE).date()
+        attendance_chat_id = await TeacherSearchQueryMixin.get_attendance_source_chat_id(session, chat_id)
         result = await session.execute(
             select(TeacherProfile, TgUser)
+            .join(
+                TeacherDailyAttendance,
+                (TeacherDailyAttendance.chat_id == attendance_chat_id)
+                & (TeacherDailyAttendance.user_id == TeacherProfile.user_id)
+                & (TeacherDailyAttendance.biz_date == today),
+            )
             .join(TgUser, TgUser.id == TeacherProfile.user_id, isouter=True)
-            .where(TeacherProfile.chat_id == chat_id, TeacherProfile.open_course_today.is_(True))
+            .where(TeacherProfile.chat_id == chat_id)
+            .where(TeacherDailyAttendance.status.in_(["open", "full"]))
             .order_by(TeacherProfile.updated_at.desc())
         )
         return list(result.all())

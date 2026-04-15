@@ -24,6 +24,7 @@ from backend.features.invite.invite_link_handler import (
     invite_link_stats_callback,
     invite_link_text_callback,
     link_command,
+    link_stat_command,
     user_invite_create_callback,
     user_invite_list_callback,
     user_invite_rank_callback,
@@ -45,6 +46,9 @@ class InviteRouter(BaseRouter):
         
         # 命令处理器
         app.add_handler(CommandHandler("link", link_command))
+        app.add_handler(CommandHandler("link_stat", link_stat_command))
+        app.add_handler(MessageHandler(filters.ChatType.GROUPS & filters.Regex(r"^邀请$"), link_command))
+        app.add_handler(MessageHandler(filters.ChatType.GROUPS & filters.Regex(r"^邀请统计$"), link_stat_command))
         
         # 回调处理器
         app.add_handler(CallbackQueryHandler(invite_link_menu_callback, pattern=r"^inv:menu$"))

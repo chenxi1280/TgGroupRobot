@@ -6,7 +6,7 @@ import pytest
 
 from backend.features.admin import admin_handler
 from backend.features.admin.garage.teacher_search_inputs import handle_teacher_search_feature_input
-from backend.features.garage.services.garage_features_service import TeacherSearchFooterButtonConfig, TeacherSearchService
+from backend.features.garage.services.garage_features_service import GarageAuthService, TeacherSearchFooterButtonConfig, TeacherSearchService
 from backend.shared.callback_parser import CallbackParser
 from backend.shared.services.base import ValidationError
 
@@ -86,7 +86,9 @@ async def test_teacher_search_home_layout_matches_doc(monkeypatch):
     async def fake_get_setting(session, chat_id: int):
         return SimpleNamespace(
             tag_search_enabled=True,
+            only_open_course_enabled=True,
             attendance_enabled=False,
+            attendance_mode="message",
             nearby_search_enabled=False,
             force_location_enabled=True,
             delete_mode="none",
@@ -118,14 +120,81 @@ async def test_teacher_search_home_layout_matches_doc(monkeypatch):
         ["返回"],
     ]
     assert captured["keyboard"][3][1].callback_data == "tsearch:footer:menu:-1001"
-    assert "强制录入：✅ 启动" in captured["text"]
+    assert all("打卡模式：" not in row for row in rows)
+    assert all("只显开课：" not in row for row in rows)
+    assert all("📝 手动替老师打卡" not in row for row in rows)
+    assert all("强制录入：" not in row for row in rows)
+    assert "强制录入：✅ 启动" not in captured["text"]
+    assert "只显开课：✅ 启动" not in captured["text"]
+    assert "打卡模式：发言就是打卡" not in captured["text"]
     assert "底部按钮：无" in captured["text"]
     assert "开课老师：2 人" in captured["text"]
     assert "📚 开课老师" not in {button for row in rows for button in row}
 
 
 @pytest.mark.asyncio
-async def test_teacher_search_attendance_menu_keeps_force_and_open_teacher_entry(monkeypatch):
+async def test_teacher_search_home_shows_dependent_rows_after_parent_enabled(monkeypatch):
+    captured: dict[str, object] = {}
+    session = _SessionContext()
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(session)}))
+    update = SimpleNamespace(effective_user=SimpleNamespace(id=123))
+
+    async def fake_safe_edit(update, text, reply_markup):
+        captured["text"] = text
+        captured["keyboard"] = reply_markup.inline_keyboard
+
+    async def fake_set_current_chat(db, user_id: int, chat_id: int):
+        return None
+
+    async def fake_get_setting(session, chat_id: int):
+        return SimpleNamespace(
+            tag_search_enabled=True,
+            only_open_course_enabled=False,
+            attendance_enabled=True,
+            attendance_mode="message",
+            nearby_search_enabled=True,
+            force_location_enabled=False,
+            delete_mode="none",
+            footer_button_label=None,
+        )
+
+    async def fake_list_open_course_teachers(session, chat_id: int):
+        return []
+
+    monkeypatch.setattr(admin_handler._admin_handler.message_helper, "safe_edit", fake_safe_edit)
+    monkeypatch.setattr(admin_handler._admin_handler, "_set_current_chat", fake_set_current_chat)
+    monkeypatch.setattr(TeacherSearchService, "get_setting", fake_get_setting)
+    monkeypatch.setattr(
+        TeacherSearchService,
+        "list_open_course_teachers",
+        fake_list_open_course_teachers,
+    )
+
+    await admin_handler._admin_handler._show_teacher_search_menu(update, context, -1001)
+
+    rows = [[button.text for button in row] for row in captured["keyboard"]]
+    assert rows == [
+        ["标签搜索：", "✅ 启动", "关闭"],
+        ["开课打卡：", "✅ 启动", "关闭"],
+        ["打卡模式：", "发言就是打卡"],
+        ["只显开课：", "启动", "✅ 关闭"],
+        ["📝 手动替老师打卡"],
+        ["附近搜索：", "✅ 启动", "关闭"],
+        ["强制录入：", "启动", "✅ 关闭"],
+        ["底部按钮：", "无"],
+        ["删除消息：", "不删除"],
+        ["📍 代录老师位置"],
+        ["返回"],
+    ]
+    assert captured["keyboard"][2][1].callback_data == "tsearch:attendance_mode:menu:-1001"
+    assert captured["keyboard"][4][0].callback_data == "tsearch:attendance:manual:-1001"
+    assert "强制录入：❌ 关闭" in captured["text"]
+    assert "只显开课：❌ 关闭" in captured["text"]
+    assert "打卡模式：发言就是打卡" in captured["text"]
+
+
+@pytest.mark.asyncio
+async def test_teacher_search_attendance_menu_hides_force_when_nearby_is_off(monkeypatch):
     captured: dict[str, object] = {}
     session = _SessionContext()
     context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(session)}))
@@ -141,6 +210,7 @@ async def test_teacher_search_attendance_menu_keeps_force_and_open_teacher_entry
     async def fake_get_setting(session, chat_id: int):
         return SimpleNamespace(
             attendance_enabled=True,
+            nearby_search_enabled=False,
             force_location_enabled=False,
         )
 
@@ -160,12 +230,48 @@ async def test_teacher_search_attendance_menu_keeps_force_and_open_teacher_entry
 
     rows = [[button.text for button in row] for row in captured["keyboard"]]
     assert rows == [
-        ["强制录入：", "启动", "✅ 关闭"],
         ["📚 开课老师", "1 人"],
         ["返回"],
     ]
     assert "开课打卡：✅ 启动" in captured["text"]
-    assert "强制录入：❌ 关闭" in captured["text"]
+    assert "强制录入：❌ 关闭" not in captured["text"]
+
+
+@pytest.mark.asyncio
+async def test_teacher_search_attendance_mode_menu_shows_fixed_words(monkeypatch):
+    captured: dict[str, object] = {}
+    session = _SessionContext()
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(session)}))
+    update = SimpleNamespace(effective_user=SimpleNamespace(id=123))
+
+    async def fake_safe_edit(update, text, reply_markup):
+        captured["text"] = text
+        captured["keyboard"] = reply_markup.inline_keyboard
+
+    async def fake_set_current_chat(db, user_id: int, chat_id: int):
+        return None
+
+    async def fake_get_setting(session, chat_id: int):
+        return SimpleNamespace(
+            attendance_mode="keyword",
+            attendance_source_chat_id=None,
+            attendance_open_keyword="开课",
+            attendance_full_keyword="满课",
+            attendance_rest_keyword="休息",
+        )
+
+    monkeypatch.setattr(admin_handler._admin_handler.message_helper, "safe_edit", fake_safe_edit)
+    monkeypatch.setattr(admin_handler._admin_handler, "_set_current_chat", fake_set_current_chat)
+    monkeypatch.setattr(TeacherSearchService, "get_setting", fake_get_setting)
+
+    await admin_handler._admin_handler._show_teacher_search_attendance_mode_menu(update, context, -1001)
+
+    rows = [[button.text for button in row] for row in captured["keyboard"]]
+    assert "🔍 老师搜索 | 选择打卡模式" in captured["text"]
+    assert rows[:3] == [["不在此群打卡"], ["发言就是打卡"], ["✅ 固定话术打卡"]]
+    assert rows[3:6] == [["🟡 开课词：", "开课"], ["🔴 满课词：", "满课"], ["⚪ 休息词：", "休息"]]
+    assert captured["keyboard"][0][0].callback_data == "tsearch:attendance_source:menu:-1001"
+    assert captured["keyboard"][3][1].callback_data == "tsearch:attendance_word:open:-1001"
 
 
 @pytest.mark.asyncio
@@ -329,6 +435,163 @@ async def test_teacher_search_delegate_button_starts_short_target_state(monkeypa
 
 
 @pytest.mark.asyncio
+async def test_teacher_search_attendance_manual_button_starts_short_target_state(monkeypatch):
+    captured: dict[str, object] = {}
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(_SessionContext())}))
+    update = SimpleNamespace(effective_user=SimpleNamespace(id=123))
+
+    async def fake_start_text_input_state(context, user_id, state_chat_id, state_type, payload):
+        captured["state"] = (user_id, state_chat_id, state_type, payload)
+
+    async def fake_safe_edit(update, text, reply_markup):
+        captured["text"] = text
+
+    monkeypatch.setattr(admin_handler._admin_handler, "_start_text_input_state", fake_start_text_input_state)
+    monkeypatch.setattr(admin_handler._admin_handler.message_helper, "safe_edit", fake_safe_edit)
+
+    await admin_handler._admin_handler._handle_teacher_search(
+        update,
+        context,
+        -1001,
+        CallbackParser.parse("tsearch:attendance:manual:-1001"),
+    )
+
+    assert captured["state"] == (
+        123,
+        -1001,
+        "teacher_attend_target_input",
+        {"target_chat_id": -1001},
+    )
+    assert "手动替老师打卡" in captured["text"]
+
+
+@pytest.mark.asyncio
+async def test_teacher_search_attendance_mode_callback_updates_setting(monkeypatch):
+    captured: dict[str, object] = {}
+    session = _SessionContext()
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(session)}))
+    update = SimpleNamespace(effective_user=SimpleNamespace(id=123))
+
+    async def fake_update_setting(session, chat_id, **updates):
+        captured["updates"] = (chat_id, updates)
+
+    async def fake_show_menu(update, context, chat_id):
+        captured["shown"] = chat_id
+
+    monkeypatch.setattr(TeacherSearchService, "update_setting", fake_update_setting)
+    monkeypatch.setattr(admin_handler._admin_handler, "_show_teacher_search_attendance_mode_menu", fake_show_menu)
+
+    await admin_handler._admin_handler._handle_teacher_search(
+        update,
+        context,
+        -1001,
+        CallbackParser.parse("tsearch:attendance_mode:set:-1001:keyword"),
+    )
+
+    assert captured["updates"] == (-1001, {"attendance_mode": "keyword"})
+    assert session.commits == 1
+    assert captured["shown"] == -1001
+
+
+@pytest.mark.asyncio
+async def test_teacher_search_attendance_source_set_opens_source_mode_page(monkeypatch):
+    captured: dict[str, object] = {}
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(_SessionContext())}))
+    update = SimpleNamespace(effective_user=SimpleNamespace(id=123))
+
+    async def fake_require_manage(context, chat_id, user_id, capability):
+        captured["permission"] = (chat_id, user_id, capability)
+        return True, None
+
+    async def fake_show_source_mode(update, context, chat_id, source_chat_id):
+        captured["source_mode_page"] = (chat_id, source_chat_id)
+
+    monkeypatch.setattr(admin_handler.PermissionPolicyService, "require_manage", fake_require_manage)
+    monkeypatch.setattr(
+        admin_handler._admin_handler,
+        "_show_teacher_search_attendance_source_mode_menu",
+        fake_show_source_mode,
+    )
+
+    await admin_handler._admin_handler._handle_teacher_search(
+        update,
+        context,
+        -1001,
+        CallbackParser.parse("tsearch:attendance_source:set:-1001:-2002"),
+    )
+
+    assert captured["permission"] == (-2002, 123, "manage")
+    assert captured["source_mode_page"] == (-1001, -2002)
+
+
+@pytest.mark.asyncio
+async def test_teacher_search_attendance_source_mode_callback_links_group_and_sets_source_mode(monkeypatch):
+    captured: dict[str, object] = {"updates": []}
+    session = _SessionContext()
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(session)}))
+    update = SimpleNamespace(effective_user=SimpleNamespace(id=123))
+
+    async def fake_require_manage(context, chat_id, user_id, capability):
+        captured["permission"] = (chat_id, user_id, capability)
+        return True, None
+
+    async def fake_update_setting(session, chat_id, **updates):
+        captured["updates"].append((chat_id, updates))
+
+    async def fake_show_menu(update, context, chat_id):
+        captured["shown"] = chat_id
+
+    monkeypatch.setattr(admin_handler.PermissionPolicyService, "require_manage", fake_require_manage)
+    monkeypatch.setattr(TeacherSearchService, "update_setting", fake_update_setting)
+    monkeypatch.setattr(admin_handler._admin_handler, "_show_teacher_search_attendance_mode_menu", fake_show_menu)
+
+    await admin_handler._admin_handler._handle_teacher_search(
+        update,
+        context,
+        -1001,
+        CallbackParser.parse("tsearch:attendance_source_mode:set:-1001:-2002:keyword"),
+    )
+
+    assert captured["permission"] == (-2002, 123, "manage")
+    assert captured["updates"] == [
+        (-1001, {"attendance_mode": "external", "attendance_source_chat_id": -2002}),
+        (-2002, {"attendance_enabled": True, "attendance_mode": "keyword"}),
+    ]
+    assert session.commits == 1
+    assert captured["shown"] == -1001
+
+
+@pytest.mark.asyncio
+async def test_teacher_search_force_location_toggle_enables_nearby(monkeypatch):
+    captured: dict[str, object] = {}
+    session = _SessionContext()
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(session)}))
+    update = SimpleNamespace(effective_user=SimpleNamespace(id=123))
+
+    async def fake_update_setting(session, chat_id, **updates):
+        captured["updates"] = (chat_id, updates)
+
+    async def fake_show_menu(update, context, chat_id):
+        captured["shown"] = chat_id
+
+    monkeypatch.setattr(TeacherSearchService, "update_setting", fake_update_setting)
+    monkeypatch.setattr(admin_handler._admin_handler, "_show_teacher_search_menu", fake_show_menu)
+
+    await admin_handler._admin_handler._handle_teacher_search(
+        update,
+        context,
+        -1001,
+        CallbackParser.parse("tsearch:toggle:force_loc:-1001:1"),
+    )
+
+    assert captured["updates"] == (
+        -1001,
+        {"force_location_enabled": True, "nearby_search_enabled": True},
+    )
+    assert captured["shown"] == -1001
+
+
+@pytest.mark.asyncio
 async def test_teacher_search_footer_text_input_updates_label(monkeypatch):
     captured: dict[str, object] = {"replies": []}
     session = _SessionContext()
@@ -419,6 +682,66 @@ async def test_teacher_search_footer_link_input_updates_url(monkeypatch):
     assert captured["cleared"] == (-1001, 123)
     assert session.commits == 1
     assert captured["replies"] == ["已设置底部按钮链接：https://example.com/h5/teacher-search"]
+    assert captured["shown"] == -1001
+
+
+@pytest.mark.asyncio
+async def test_teacher_search_attendance_target_input_marks_teacher(monkeypatch):
+    captured: dict[str, object] = {"replies": []}
+    session = _SessionContext()
+    context = SimpleNamespace()
+
+    class _Message:
+        message_id = 88
+
+        async def reply_text(self, text, **kwargs):
+            captured["replies"].append(text)
+
+    update = SimpleNamespace(effective_user=SimpleNamespace(id=123), effective_message=_Message())
+    state = SimpleNamespace(state_type="teacher_attend_target_input")
+    teacher = SimpleNamespace(id=456, username="teacher_a")
+
+    async def fake_resolve_user(session, raw):
+        captured["resolved"] = raw
+        return teacher
+
+    async def fake_is_certified(session, chat_id, user_id):
+        captured["certified_lookup"] = (chat_id, user_id)
+        return True
+
+    async def fake_mark_attendance(session, *, chat_id, user_id, source_message_id):
+        captured["attendance"] = (chat_id, user_id, source_message_id)
+
+    async def fake_clear_state(session, *, target_chat_id, user_id):
+        captured["cleared"] = (target_chat_id, user_id)
+
+    async def fake_show_menu(update, context, chat_id):
+        captured["shown"] = chat_id
+
+    import backend.features.admin.garage.teacher_search_inputs as teacher_search_inputs
+
+    monkeypatch.setattr(TeacherSearchService, "resolve_delegate_user", fake_resolve_user)
+    monkeypatch.setattr(GarageAuthService, "is_certified_teacher", fake_is_certified)
+    monkeypatch.setattr(TeacherSearchService, "mark_attendance", fake_mark_attendance)
+    monkeypatch.setattr(teacher_search_inputs, "clear_admin_input_state", fake_clear_state)
+    monkeypatch.setattr(admin_handler._admin_handler, "_show_teacher_search_menu", fake_show_menu)
+
+    handled = await handle_teacher_search_feature_input(
+        update,
+        context,
+        session,
+        state,
+        -1001,
+        "@teacher_a",
+    )
+
+    assert handled is True
+    assert captured["resolved"] == "@teacher_a"
+    assert captured["certified_lookup"] == (-1001, 456)
+    assert captured["attendance"] == (-1001, 456, 88)
+    assert captured["cleared"] == (-1001, 123)
+    assert session.commits == 1
+    assert captured["replies"] == ["✅ 已替 @teacher_a 记录今日开课打卡。"]
     assert captured["shown"] == -1001
 
 

@@ -152,6 +152,9 @@ CREATE TABLE IF NOT EXISTS bot.chat_settings (
     auto_delete_avatar BOOLEAN NOT NULL DEFAULT FALSE,             -- 自动删除修改头像消息
     auto_delete_title BOOLEAN NOT NULL DEFAULT FALSE,              -- 自动删除修改群名消息
     auto_delete_anonymous BOOLEAN NOT NULL DEFAULT FALSE,          -- 自动删除匿名管理员消息
+    points_display_rule_enabled BOOLEAN NOT NULL DEFAULT TRUE,     -- 是否在积分中心展示规则入口
+    points_speech_rank_enabled BOOLEAN NOT NULL DEFAULT TRUE,      -- 是否启用发言总排行入口
+    points_personal_speech_enabled BOOLEAN NOT NULL DEFAULT TRUE,  -- 是否启用个人发言量入口
     points_alias VARCHAR(32) NOT NULL DEFAULT '积分',              -- 积分查询命令别名
     points_rank_alias VARCHAR(32) NOT NULL DEFAULT '积分排行',      -- 积分排行命令别名
     control_permission_policy VARCHAR(32) NOT NULL DEFAULT 'can_promote_members', -- 机器人管理权限门槛
@@ -282,6 +285,9 @@ COMMENT ON COLUMN bot.chat_settings.auto_delete_pinned IS '是否自动删除置
 COMMENT ON COLUMN bot.chat_settings.auto_delete_avatar IS '是否自动删除修改头像消息';
 COMMENT ON COLUMN bot.chat_settings.auto_delete_title IS '是否自动删除修改群名消息';
 COMMENT ON COLUMN bot.chat_settings.auto_delete_anonymous IS '是否自动删除匿名管理员消息';
+COMMENT ON COLUMN bot.chat_settings.points_display_rule_enabled IS '是否在积分中心展示规则入口';
+COMMENT ON COLUMN bot.chat_settings.points_speech_rank_enabled IS '是否启用发言总排行入口';
+COMMENT ON COLUMN bot.chat_settings.points_personal_speech_enabled IS '是否启用个人发言量入口';
 COMMENT ON COLUMN bot.chat_settings.points_alias IS '积分查询命令别名（如：积分）';
 COMMENT ON COLUMN bot.chat_settings.points_rank_alias IS '积分排行命令别名（如：积分排行）';
 COMMENT ON COLUMN bot.chat_settings.control_permission_policy IS '机器人管理权限门槛：all_admins / can_restrict_members / can_change_info / can_promote_members / owner_only';
@@ -361,6 +367,9 @@ ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS night_mode_warn_text TEXT
 ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS night_mode_warn_delete_after_seconds INTEGER NOT NULL DEFAULT 60;
 ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS command_config_enabled BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS command_config JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS points_display_rule_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS points_speech_rank_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS points_personal_speech_enabled BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS control_permission_policy VARCHAR(32) NOT NULL DEFAULT 'can_promote_members';
 ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS group_lock_phrase_enabled BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS group_lock_open_phrase TEXT;
@@ -2006,8 +2015,14 @@ CREATE INDEX IF NOT EXISTS ix_garage_speech_whitelist_chat_id ON bot.garage_spee
 CREATE TABLE IF NOT EXISTS bot.teacher_search_settings (
     chat_id BIGINT PRIMARY KEY,
     tag_search_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    only_open_course_enabled BOOLEAN NOT NULL DEFAULT TRUE,
     nearby_search_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     attendance_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    attendance_mode VARCHAR(16) NOT NULL DEFAULT 'message',
+    attendance_source_chat_id BIGINT,
+    attendance_open_keyword VARCHAR(32) NOT NULL DEFAULT '开课',
+    attendance_full_keyword VARCHAR(32) NOT NULL DEFAULT '满课',
+    attendance_rest_keyword VARCHAR(32) NOT NULL DEFAULT '休息',
     force_location_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     delete_mode VARCHAR(16) NOT NULL DEFAULT 'none',
     footer_button_label VARCHAR(64),
@@ -2028,6 +2043,7 @@ CREATE TABLE IF NOT EXISTS bot.teacher_profiles (
     region_text VARCHAR(128),
     price_text VARCHAR(128),
     open_course_today BOOLEAN NOT NULL DEFAULT FALSE,
+    open_course_status VARCHAR(16),
     last_location_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL,
@@ -2045,6 +2061,7 @@ CREATE TABLE IF NOT EXISTS bot.teacher_daily_attendance (
     chat_id BIGINT NOT NULL,
     user_id BIGINT NOT NULL,
     biz_date DATE NOT NULL,
+    status VARCHAR(16) NOT NULL DEFAULT 'open',
     source_message_id BIGINT,
     created_at TIMESTAMPTZ NOT NULL,
     CONSTRAINT fk_teacher_daily_attendance_chat_id FOREIGN KEY (chat_id)

@@ -70,7 +70,9 @@ def _full_tables() -> dict[str, dict]:
                 "invite_link_cover_media_type", "invite_link_cover_file_id",
                 "invite_link_text_template", "invite_link_buttons", "auto_delete_enabled",
                 "auto_delete_join", "auto_delete_left", "auto_delete_pinned", "auto_delete_avatar",
-                "auto_delete_title", "auto_delete_anonymous", "points_alias", "points_rank_alias",
+                "auto_delete_title", "auto_delete_anonymous",
+                "points_display_rule_enabled", "points_speech_rank_enabled",
+                "points_personal_speech_enabled", "points_alias", "points_rank_alias",
                 "verification_enabled", "verification_mode", "verification_timeout_seconds",
                 "verification_restrict_can_send", "verification_timeout_action", "verification_mute_duration",
                 "join_spam_guard_enabled", "join_spam_detect_rules_count", "join_spam_send_invalid_msg_enabled",
@@ -319,6 +321,8 @@ def _full_tables() -> dict[str, dict]:
         "teacher_search_settings": {
             "columns": {
                 "chat_id", "tag_search_enabled", "nearby_search_enabled", "attendance_enabled",
+                "only_open_course_enabled", "attendance_mode", "attendance_source_chat_id",
+                "attendance_open_keyword", "attendance_full_keyword", "attendance_rest_keyword",
                 "force_location_enabled", "delete_mode", "footer_button_label", "footer_button_url",
                 "created_at", "updated_at",
             },
@@ -326,13 +330,13 @@ def _full_tables() -> dict[str, dict]:
         "teacher_profiles": {
             "columns": {
                 "id", "chat_id", "user_id", "labels", "region_text", "price_text",
-                "latitude", "longitude", "open_course_today", "last_location_at",
+                "latitude", "longitude", "open_course_today", "open_course_status", "last_location_at",
                 "created_at", "updated_at",
             },
             "uniques": [{"name": "uq_teacher_profile_chat_user", "column_names": ["chat_id", "user_id"]}],
         },
         "teacher_daily_attendance": {
-            "columns": {"id", "chat_id", "user_id", "biz_date", "source_message_id", "created_at"},
+            "columns": {"id", "chat_id", "user_id", "biz_date", "status", "source_message_id", "created_at"},
             "uniques": [{"name": "uq_teacher_attendance_chat_user_date", "column_names": ["chat_id", "user_id", "biz_date"]}],
         },
         "member_locations": {

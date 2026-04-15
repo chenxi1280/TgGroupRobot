@@ -20,7 +20,6 @@ from backend.features.invite.ui.invite_link import (
 from backend.platform.db.runtime.session import Database
 from backend.shared.handlers.base.base_handler import BaseHandler
 from backend.shared.services.chat_service import get_chat_settings
-from backend.shared.ui.message_config_panel import PanelField, button_status, format_panel, media_status, summarize_text
 from backend.platform.state.state_service import clear_user_state
 
 WAIT_NAME = 1
@@ -51,31 +50,10 @@ class InviteLinkHandler(BaseHandler):
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
             settings = await get_chat_settings(session, target_chat_id)
+            stats = await get_link_stats(session, target_chat_id)
             await session.commit()
 
-        mode_label = "🧭 中转模式" if settings.invite_link_mode == "relay" else "➡️ 直达模式"
-        text_template = settings.invite_link_text_template or ""
-        text = format_panel(
-            f"🔗 [{chat_title or target_chat_id}] 邀请链接",
-            [
-                PanelField(
-                    "🏞️",
-                    "封面设置",
-                    media_status(
-                        has_media=bool(settings.invite_link_cover_file_id),
-                        media_type=getattr(settings, "invite_link_cover_media_type", None),
-                    ),
-                ),
-                PanelField("📄", "文本模板", summarize_text(text_template, limit=180)),
-                PanelField("⭕", "设置按钮", button_status(settings.invite_link_buttons)),
-            ],
-            footer=[
-                f"⚙️ 状态: {'✅ 启动' if settings.invite_link_enabled else '❌ 关闭'}",
-                f"🔔 邀请提醒: {'✅ 启动' if settings.invite_link_notify else '❌ 关闭'}",
-                f"🧭 模式: {mode_label}",
-                "🏖️ 预览: 发送到当前私聊",
-            ],
-        )
+        text = format_invite_link_admin_text(settings, stats)
         keyboard = _build_invite_home_keyboard(target_chat_id, settings)
         await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
 
@@ -95,7 +73,7 @@ class InviteLinkHandler(BaseHandler):
         if not links:
             await self.message_helper.safe_edit(
                 update,
-                text="🔗 邀请链接列表\n\n暂无邀请链接，点击「创建邀请链接」开始",
+                text="🔗 邀请链接列表\n\n暂无邀请链接，成员发送「邀请」或 /link 后会自动生成。",
                 reply_markup=_build_invite_home_keyboard(target_chat_id, settings),
             )
             return
@@ -154,6 +132,35 @@ def _build_invite_home_keyboard(target_chat_id: int, settings) -> InlineKeyboard
         has_cover=bool(getattr(settings, "invite_link_cover_file_id", None)),
         text_configured=bool(str(getattr(settings, "invite_link_text_template", "") or "").strip()),
         button_rows=len(getattr(settings, "invite_link_buttons", None) or []),
+    )
+
+
+def format_invite_link_admin_text(settings, stats: dict[str, int]) -> str:
+    enabled = bool(getattr(settings, "invite_link_enabled", True))
+    mode = getattr(settings, "invite_link_mode", None) or "direct"
+    total_invites = int(stats.get("total_invites", stats.get("total_members", 0)) or 0)
+    generated_count = int(stats.get("total", 0) or 0)
+    mode_label = "中转" if mode == "relay" else "直接"
+    return (
+        "🔗 邀请链接生成\n"
+        "\n"
+        "指令列表\n"
+        "└ 自动生成链接：邀请 或 /link\n"
+        "└ 查询邀请统计：邀请统计 或 /link_stat\n"
+        "\n"
+        "防作弊\n"
+        "└ 只有第一次进群视为有效邀请数，退群再用其他人的链接加群不计算邀请数\n"
+        "\n"
+        "模式选择\n"
+        "└ 中转（推荐）：点击链接先到机器人界面，再进去群组，开了审核也可以统计和加分！\n"
+        "└ 直接：通过链接直接进群，如果开了审核则统计不到，加不了积分。\n"
+        "└ 模式切换后，成员需重新使用指令获取新链接，已邀请的数据不变！\n"
+        "\n"
+        "当前信息\n"
+        f"┌状态:{'✅ 启动' if enabled else '❌ 关闭'}\n"
+        f"├当前模式:{mode_label}\n"
+        f"├总邀请人数:{total_invites}\n"
+        f"└已生成数量:{generated_count}"
     )
 
 

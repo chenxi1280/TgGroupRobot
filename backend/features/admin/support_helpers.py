@@ -92,6 +92,14 @@ def _resolve_private_scoped_target_chat_id(cb: CallbackParser) -> int | None:
             return cb.get_int_optional(2)
         if action in {"toggle", "attendance"}:
             return cb.get_int_optional(3)
+        if action == "attendance_mode":
+            if cb.get(2) in {"menu", "set"}:
+                return cb.get_int_optional(3)
+            return cb.get_int_optional(2)
+        if action in {"attendance_word", "attendance_source"}:
+            return cb.get_int_optional(3)
+        if action == "attendance_source_mode":
+            return cb.get_int_optional(3)
         if action == "delete_mode":
             return cb.get_int_optional(2)
         if action == "delegate":

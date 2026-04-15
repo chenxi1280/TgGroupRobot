@@ -65,6 +65,17 @@ def test_state_type_values_fit_db_column() -> None:
     assert too_long == {}
 
 
+def test_teacher_search_attendance_states_registered_for_private_input() -> None:
+    from backend.platform.telegram.private_config_registry import build_private_config_handlers
+
+    handlers = build_private_config_handlers()
+
+    assert ConversationStateType.teacher_search_attendance_target_input.value in handlers
+    assert ConversationStateType.teacher_search_attendance_open_input.value in handlers
+    assert ConversationStateType.teacher_search_attendance_full_input.value in handlers
+    assert ConversationStateType.teacher_search_attendance_rest_input.value in handlers
+
+
 @pytest.mark.asyncio
 async def test_clear_private_input_state_preserves_selected_chat(monkeypatch):
     calls: list[tuple] = []

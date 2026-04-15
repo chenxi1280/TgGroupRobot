@@ -45,6 +45,7 @@ async def command_alias_handler(update: Update, context: ContextTypes.DEFAULT_TY
         "points",
         "rank",
         "link",
+        "link_stat",
         "renew",
         "mydata",
         "nearby",
@@ -97,6 +98,11 @@ async def command_alias_handler(update: Update, context: ContextTypes.DEFAULT_TY
         from backend.features.invite.invite_link_handler import link_command
 
         await link_command(update, context)
+        return
+    if target_key == "link_stat":
+        from backend.features.invite.invite_link_handler import link_stat_command
+
+        await link_stat_command(update, context)
         return
     if target_key == "renew":
         from backend.features.subscription.renewal_handler import renew_command

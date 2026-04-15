@@ -1,17 +1,20 @@
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
 import structlog
+from sqlalchemy import select
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from backend.platform.config.core.settings import get_settings
 from backend.platform.db.runtime.session import Database
+from backend.platform.db.schema.models.core import InviteLink
+from backend.platform.db.schema.models.enums import ConversationStateType, InviteLinkStatus
 from backend.shared.handlers.base.state_helper import StateHelper
 from backend.shared.i18n.strings import t
 from backend.shared.ui.common.chat_group import chat_group_list_keyboard
 from backend.shared.ui.common.start import create_start_guide_keyboard
-from backend.platform.db.schema.models.enums import ConversationStateType
 from backend.features.group_ops.services.chat_group_service import (
     format_empty_chat_list_hint,
     format_group_guide_message,
@@ -30,6 +33,54 @@ from backend.shared.services.user_service import ensure_user
 
 
 log = structlog.get_logger(__name__)
+
+
+def _extract_start_payload(text: str | None) -> str:
+    parts = (text or "").strip().split(maxsplit=1)
+    return parts[1].strip() if len(parts) == 2 else ""
+
+
+async def _handle_invite_relay_start(update: Update, context: ContextTypes.DEFAULT_TYPE, payload: str) -> bool:
+    if update.effective_message is None or update.effective_user is None:
+        return False
+    if not payload.startswith("inv_"):
+        return False
+    try:
+        link_id = int(payload.removeprefix("inv_"))
+    except ValueError:
+        await update.effective_message.reply_text("邀请链接无效，请重新获取。")
+        return True
+
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        result = await session.execute(select(InviteLink).where(InviteLink.id == link_id))
+        link = result.scalar_one_or_none()
+        await session.commit()
+
+    now = dt.datetime.now(dt.UTC)
+    if (
+        link is None
+        or link.status != InviteLinkStatus.active.value
+        or (link.expire_date is not None and link.expire_date < now)
+    ):
+        await update.effective_message.reply_text("邀请链接已失效，请重新获取。")
+        return True
+
+    user_id = update.effective_user.id
+    user_data = getattr(context, "user_data", None)
+    if isinstance(user_data, dict):
+        user_data["pending_invite_link_id"] = link.id
+
+    from backend.features.verification.verification_join_guards import cache_invite_join_hint
+
+    cache_invite_join_hint(context, chat_id=link.chat_id, user_id=user_id, invite_link=link.invite_link)
+    await update.effective_message.reply_text(
+        "🔗 邀请链接已准备好\n\n点击下方按钮进入群组，审核通过后会自动计入邀请统计。",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("进入群组", url=link.invite_link)],
+        ]),
+    )
+    return True
 
 
 async def _send_guide_message(update: Update, context: ContextTypes.DEFAULT_TYPE, chat, user) -> None:
@@ -97,6 +148,10 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             return
 
     if chat.type == "private":
+        payload = _extract_start_payload(update.effective_message.text)
+        if payload and await _handle_invite_relay_start(update, context, payload):
+            return
+
         # 私聊中显示群组列表
         chats = await get_user_managed_chats(db, user.id, context.bot)
         current_chat_id = await get_user_current_chat(db, user.id)

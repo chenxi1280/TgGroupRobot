@@ -13,8 +13,16 @@ from backend.platform.db.schema.models.core import (
 )
 from backend.shared.services.base import ValidationError
 
+_UNSET = object()
+
 
 class PointsExtendedCustomMixin:
+    @staticmethod
+    def default_custom_point_rank_command(name: str) -> str:
+        normalized_name = name.strip()
+        suffix = "排行"
+        return f"{normalized_name[:32 - len(suffix)]}{suffix}"
+
     @staticmethod
     async def _lock_chat_scope(session: AsyncSession, chat_id: int) -> None:
         await session.execute(select(TgChat.id).where(TgChat.id == chat_id).with_for_update())
@@ -98,10 +106,11 @@ class PointsExtendedCustomMixin:
         *,
         enabled: bool | None = None,
         name: str | None = None,
-        rank_command: str | None = None,
+        rank_command: str | None | object = _UNSET,
     ) -> CustomPointType:
-        if enabled is not None:
-            item.enabled = enabled
+        normalized_name: str | None = None
+        normalized_command: str | None | object = _UNSET
+
         if name is not None:
             normalized_name = name.strip()
             if not normalized_name:
@@ -112,9 +121,10 @@ class PointsExtendedCustomMixin:
                 name=normalized_name,
                 exclude_type_id=item.id,
             )
-            item.name = normalized_name
-        if rank_command is not None:
-            normalized_command = rank_command.strip() if rank_command else None
+        if rank_command is not _UNSET:
+            normalized_command = rank_command.strip() if isinstance(rank_command, str) else None
+            if normalized_command == "":
+                normalized_command = None
             if normalized_command:
                 await PointsExtendedCustomMixin._ensure_custom_point_rank_command_unique(
                     session,
@@ -122,6 +132,12 @@ class PointsExtendedCustomMixin:
                     rank_command=normalized_command,
                     exclude_type_id=item.id,
                 )
+
+        if enabled is not None:
+            item.enabled = enabled
+        if normalized_name is not None:
+            item.name = normalized_name
+        if normalized_command is not _UNSET:
             item.rank_command = normalized_command
         item.updated_at = dt.datetime.now(dt.UTC)
         await session.flush()
@@ -221,6 +237,23 @@ class PointsExtendedCustomMixin:
             .limit(limit)
         )
         return list(result.scalars().all())
+
+    @staticmethod
+    async def get_custom_point_balance(
+        session: AsyncSession,
+        *,
+        chat_id: int,
+        type_id: int,
+        user_id: int,
+    ) -> int:
+        result = await session.execute(
+            select(CustomPointAccount.balance).where(
+                CustomPointAccount.chat_id == chat_id,
+                CustomPointAccount.type_id == type_id,
+                CustomPointAccount.user_id == user_id,
+            )
+        )
+        return int(result.scalar_one_or_none() or 0)
 
     @staticmethod
     async def get_custom_point_leaderboard(

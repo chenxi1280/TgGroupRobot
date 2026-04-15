@@ -11,7 +11,7 @@ class PointsOverviewViewsMixin:
         chat_id: int,
     ) -> None:
         """显示积分设置菜单"""
-        from backend.features.admin.ui.points import points_config_keyboard
+        from backend.features.admin.ui.points import format_points_home_text, points_config_keyboard
 
         db: Database = context.application.bot_data["db"]
         await self._set_current_chat(db, update.effective_user.id, chat_id)
@@ -21,15 +21,7 @@ class PointsOverviewViewsMixin:
             await session.commit()
 
         chat_title = await self._get_chat_title(db, chat_id)
-        all_enabled = bool(settings.sign_enabled or settings.message_points_enabled or settings.invite_points_enabled)
-        text = (
-            f"💰 [{chat_title}] 主积分\n\n"
-            f"状态：{'✅ 启动' if all_enabled else '❌ 关闭'}\n"
-            f"签到：{'✅ 启动' if settings.sign_enabled else '❌ 关闭'}｜{settings.sign_points}分\n"
-            f"发言：{'✅ 启动' if settings.message_points_enabled else '❌ 关闭'}｜{settings.message_points}分\n"
-            f"邀请：{'✅ 启动' if settings.invite_points_enabled else '❌ 关闭'}｜{settings.invite_points}分\n\n"
-            "已支持签到、发言、邀请、转让、管理员加减分、日志导出与清空积分。"
-        )
+        text = format_points_home_text(settings, chat_title=chat_title)
 
         keyboard = points_config_keyboard(settings, chat_id)
 

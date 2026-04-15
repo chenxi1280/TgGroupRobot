@@ -8,7 +8,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from backend.features.admin.points_config_shared import safe_edit_message
-from backend.features.admin.ui.points import back_button, points_config_keyboard, points_rule_keyboard
+from backend.features.admin.ui.points import back_button, format_points_home_text, points_config_keyboard, points_rule_keyboard
 from backend.platform.db.runtime.session import Database
 from backend.platform.db.schema.models.core import PointsTransaction, TgUser, UserDailyStats
 from backend.platform.db.schema.models.enums import PointsTxnType
@@ -42,18 +42,7 @@ async def show_points_home(
         chat_id,
         get_chat_settings_func=get_chat_settings_func,
     )
-    text = "💰 主积分\n\n"
-    if changed:
-        text += "配置已更新。\n\n"
-    text += (
-        f"状态：{'✅ 启动' if (settings.sign_enabled or settings.message_points_enabled or settings.invite_points_enabled) else '❌ 关闭'}\n"
-        f"签到：{'✅ 启动' if settings.sign_enabled else '❌ 关闭'}｜{settings.sign_points}分\n"
-        f"发言：{'✅ 启动' if settings.message_points_enabled else '❌ 关闭'}｜{settings.message_points}分\n"
-        f"邀请：{'✅ 启动' if settings.invite_points_enabled else '❌ 关闭'}｜{settings.invite_points}分\n"
-        f"积分别名：{settings.points_alias}\n"
-        f"排行别名：{settings.points_rank_alias}\n\n"
-        "说明：支持签到、发言、邀请、转让、管理员加减分、日志导出与清空积分。"
-    )
+    text = format_points_home_text(settings, changed=changed)
     await safe_edit_func(update.callback_query, text, reply_markup=points_config_keyboard(settings, chat_id))
 
 

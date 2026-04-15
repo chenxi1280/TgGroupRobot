@@ -99,6 +99,9 @@ class ChatSettings(Base):
     auto_delete_title: Mapped[bool] = mapped_column(Boolean, default=False)
     auto_delete_anonymous: Mapped[bool] = mapped_column(Boolean, default=False)
 
+    points_display_rule_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    points_speech_rank_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    points_personal_speech_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     points_alias: Mapped[str] = mapped_column(String(32), default="积分")
     points_rank_alias: Mapped[str] = mapped_column(String(32), default="积分排行")
 

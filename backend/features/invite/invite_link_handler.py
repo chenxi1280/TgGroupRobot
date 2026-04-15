@@ -40,6 +40,7 @@ from backend.features.invite.invite_shared import (
 )
 from backend.features.invite.invite_user_callbacks import (
     link_command,
+    link_stat_command,
     show_user_invite_menu as _show_user_invite_menu,
     user_invite_create_callback,
     user_invite_list_callback,

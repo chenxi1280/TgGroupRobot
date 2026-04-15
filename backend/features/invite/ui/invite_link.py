@@ -30,28 +30,24 @@ def invite_link_menu_keyboard(
     Args:
         chat_id: 群组 ID，用于在私聊中操作群组时指定目标群组
     """
-    create_callback = f"inv:create:{chat_id}" if chat_id else "inv:create"
     enabled_on, enabled_off = _toggle_labels(enabled)
     remind_on, remind_off = _toggle_labels(remind_enabled)
     back_button = create_back_button(chat_id, "back_to_menu")
-    relay_label = "✅ 中转模式" if mode == "relay" else "中转模式"
-    direct_label = "✅ 直达模式" if mode == "direct" else "直达模式"
+    relay_label = "✅ 中转" if mode == "relay" else "中转"
+    direct_label = "✅ 直接" if mode == "direct" else "直接"
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("⚙️ 状态：", callback_data=f"inv:home:{chat_id}" if chat_id else "inv:menu"),
+            InlineKeyboardButton("状态:", callback_data=f"inv:home:{chat_id}" if chat_id else "inv:menu"),
             InlineKeyboardButton(enabled_on, callback_data=f"inv:toggle:enabled:{chat_id}:1" if chat_id else "inv:toggle:enabled"),
             InlineKeyboardButton(enabled_off, callback_data=f"inv:toggle:enabled:{chat_id}:0" if chat_id else "inv:toggle:enabled"),
         ],
         [
-            InlineKeyboardButton("🔔 邀请提醒：", callback_data=f"inv:home:{chat_id}" if chat_id else "inv:menu"),
+            InlineKeyboardButton("邀请提醒:", callback_data=f"inv:home:{chat_id}" if chat_id else "inv:menu"),
             InlineKeyboardButton(remind_on, callback_data=f"inv:toggle:remind:{chat_id}:1" if chat_id else "inv:toggle:remind"),
             InlineKeyboardButton(remind_off, callback_data=f"inv:toggle:remind:{chat_id}:0" if chat_id else "inv:toggle:remind"),
         ],
         [
-            InlineKeyboardButton("➕ 创建邀请链接", callback_data=create_callback),
-            InlineKeyboardButton("📋 链接列表", callback_data=f"inv:list:{0}:{chat_id}" if chat_id else "inv:list"),
-        ],
-        [
+            InlineKeyboardButton("模式:", callback_data=f"inv:home:{chat_id}" if chat_id else "inv:menu"),
             InlineKeyboardButton(relay_label, callback_data=f"inv:mode:{chat_id}:relay" if chat_id else "inv:mode:relay"),
             InlineKeyboardButton(direct_label, callback_data=f"inv:mode:{chat_id}:direct" if chat_id else "inv:mode:direct"),
         ],
@@ -68,7 +64,6 @@ def invite_link_menu_keyboard(
             InlineKeyboardButton("♻️ 清空链接", callback_data=f"inv:reset:links:{chat_id}" if chat_id else "inv:reset:links"),
         ],
         [InlineKeyboardButton("📤 导出数据", callback_data=f"inv:export:{chat_id}" if chat_id else "inv:export")],
-        [InlineKeyboardButton("📊 统计", callback_data=f"inv:stats:{chat_id}" if chat_id else "inv:stats")],
         [back_button],
     ])
 

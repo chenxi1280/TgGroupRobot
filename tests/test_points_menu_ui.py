@@ -44,6 +44,9 @@ def _build_settings():
         invite_points_enabled=False,
         invite_points=3,
         invite_points_daily_limit=20,
+        points_display_rule_enabled=True,
+        points_speech_rank_enabled=True,
+        points_personal_speech_enabled=True,
         points_alias="积分",
         points_rank_alias="积分排行",
     )
@@ -54,16 +57,15 @@ def test_points_home_keyboard_matches_doc_style_layout():
     rows = [[button.text for button in row] for row in keyboard]
 
     assert rows == [
-        ["⚙️ 状态：", "✅ 启动", "关闭"],
-        ["📘 展示规则：", "查看"],
-        ["🏆 发言总排行", "查看"],
-        ["👤 个人发言量", "查看"],
-        ["📅 签到规则", "💬 发言规则", "🔗 邀请规则"],
-        ["🧾 积分任务", "🧩 额外规则"],
-        ["🔄 转让积分", "🏷️ 积分别名", "🥇 排行别名"],
+        ["状态：", "✅ 启动", "关闭"],
+        ["展示规则：", "✅ 开启", "关闭"],
+        ["发言总排行", "✅ 开启", "关闭"],
+        ["个人发言量", "✅ 开启", "关闭"],
+        ["⚙️ 签到规则", "⚙️ 发言规则", "⚙️ 邀请规则"],
+        ["⚙️ 转让积分", "⚙️ 积分别名", "⚙️ 排行别名"],
         ["➕ 增加积分", "➖ 扣除积分"],
-        ["🎁 积分抽奖"],
-        ["📤 导出操作日志", "🧹 清空积分"],
+        ["🎁 积分抽奖", "📝 额外规则"],
+        ["🧾 导出操作日志", "🗑 清空积分"],
         ["🔙 返回"],
     ]
 
@@ -161,6 +163,7 @@ async def test_points_config_home_answers_callback_only_once(monkeypatch):
     assert len(answers) == 1
     assert edits
     assert edits[0][0].startswith("💰 主积分")
+    assert "群成员签到或发言获得积分" in edits[0][0]
 
 
 @pytest.mark.asyncio
@@ -194,7 +197,8 @@ async def test_points_config_cancel_returns_to_config_page(monkeypatch):
     assert result == points_config_handler.ConversationHandler.END
     assert context.user_data == {}
     assert edits
-    assert edits[0][0] == "💰 主积分"
+    assert edits[0][0].startswith("💰 主积分")
+    assert "加积分 数字 备注" in edits[0][0]
 
 
 @pytest.mark.asyncio

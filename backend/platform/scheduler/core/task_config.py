@@ -62,4 +62,9 @@ TASK_CONFIG = {
         "enabled": True,
         "max_consecutive_failures": 10,
     },
+    "teacher_search": {
+        "interval": 60,
+        "enabled": True,
+        "max_consecutive_failures": 10,
+    },
 }

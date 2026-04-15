@@ -63,6 +63,9 @@ CHAT_SETTINGS_COMPAT_SQL: tuple[str, ...] = (
     "ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS night_mode_warn_delete_after_seconds INTEGER NOT NULL DEFAULT 60",
     "ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS command_config_enabled BOOLEAN NOT NULL DEFAULT FALSE",
     "ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS command_config JSONB NOT NULL DEFAULT '{}'::jsonb",
+    "ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS points_display_rule_enabled BOOLEAN NOT NULL DEFAULT TRUE",
+    "ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS points_speech_rank_enabled BOOLEAN NOT NULL DEFAULT TRUE",
+    "ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS points_personal_speech_enabled BOOLEAN NOT NULL DEFAULT TRUE",
     "ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS control_permission_policy VARCHAR(32) NOT NULL DEFAULT 'can_promote_members'",
     "ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS group_lock_phrase_enabled BOOLEAN NOT NULL DEFAULT FALSE",
     "ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS group_lock_open_phrase TEXT",
@@ -101,7 +104,15 @@ GARAGE_FORWARD_SETTINGS_COMPAT_SQL: tuple[str, ...] = (
 )
 
 TEACHER_SEARCH_SETTINGS_COMPAT_SQL: tuple[str, ...] = (
+    "ALTER TABLE bot.teacher_search_settings ADD COLUMN IF NOT EXISTS only_open_course_enabled BOOLEAN NOT NULL DEFAULT TRUE",
+    "ALTER TABLE bot.teacher_search_settings ADD COLUMN IF NOT EXISTS attendance_mode VARCHAR(16) NOT NULL DEFAULT 'message'",
+    "ALTER TABLE bot.teacher_search_settings ADD COLUMN IF NOT EXISTS attendance_source_chat_id BIGINT",
+    "ALTER TABLE bot.teacher_search_settings ADD COLUMN IF NOT EXISTS attendance_open_keyword VARCHAR(32) NOT NULL DEFAULT '开课'",
+    "ALTER TABLE bot.teacher_search_settings ADD COLUMN IF NOT EXISTS attendance_full_keyword VARCHAR(32) NOT NULL DEFAULT '满课'",
+    "ALTER TABLE bot.teacher_search_settings ADD COLUMN IF NOT EXISTS attendance_rest_keyword VARCHAR(32) NOT NULL DEFAULT '休息'",
     "ALTER TABLE bot.teacher_search_settings ADD COLUMN IF NOT EXISTS footer_button_url VARCHAR(512)",
+    "ALTER TABLE bot.teacher_profiles ADD COLUMN IF NOT EXISTS open_course_status VARCHAR(16)",
+    "ALTER TABLE bot.teacher_daily_attendance ADD COLUMN IF NOT EXISTS status VARCHAR(16) NOT NULL DEFAULT 'open'",
 )
 
 SCHEDULED_MESSAGE_COMPAT_SQL: tuple[str, ...] = (

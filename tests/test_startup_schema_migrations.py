@@ -63,7 +63,13 @@ async def test_run_startup_schema_migrations_executes_known_compat_patches(monke
     assert any("CREATE SCHEMA IF NOT EXISTS bot" in sql for sql in executed_sql)
     assert any("ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS command_config_enabled" in sql for sql in executed_sql)
     assert any("ALTER TABLE bot.garage_forward_settings ADD COLUMN IF NOT EXISTS button_template_enabled" in sql for sql in executed_sql)
+    assert any("ALTER TABLE bot.teacher_search_settings ADD COLUMN IF NOT EXISTS only_open_course_enabled" in sql for sql in executed_sql)
+    assert any("ALTER TABLE bot.teacher_search_settings ADD COLUMN IF NOT EXISTS attendance_mode" in sql for sql in executed_sql)
+    assert any("ALTER TABLE bot.teacher_search_settings ADD COLUMN IF NOT EXISTS attendance_source_chat_id" in sql for sql in executed_sql)
+    assert any("ALTER TABLE bot.teacher_search_settings ADD COLUMN IF NOT EXISTS attendance_open_keyword" in sql for sql in executed_sql)
     assert any("ALTER TABLE bot.teacher_search_settings ADD COLUMN IF NOT EXISTS footer_button_url" in sql for sql in executed_sql)
+    assert any("ALTER TABLE bot.teacher_profiles ADD COLUMN IF NOT EXISTS open_course_status" in sql for sql in executed_sql)
+    assert any("ALTER TABLE bot.teacher_daily_attendance ADD COLUMN IF NOT EXISTS status" in sql for sql in executed_sql)
     assert any("CREATE UNIQUE INDEX IF NOT EXISTS uq_smt_short_id ON bot.scheduled_message_tasks(short_id)" in sql for sql in executed_sql)
     assert any("ALTER TABLE bot.ad_campaigns ADD COLUMN IF NOT EXISTS sort_order" in sql for sql in executed_sql)
 

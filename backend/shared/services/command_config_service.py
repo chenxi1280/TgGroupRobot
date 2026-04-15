@@ -17,6 +17,7 @@ COMMAND_DEFINITIONS: list[dict[str, Any]] = [
     {"key": "points", "label": "/points", "allow_alias": True},
     {"key": "rank", "label": "/rank", "allow_alias": True},
     {"key": "link", "label": "/link", "allow_alias": True},
+    {"key": "link_stat", "label": "/link_stat", "allow_alias": True},
     {"key": "renew", "label": "/renew", "allow_alias": True},
     {"key": "mydata", "label": "/mydata", "allow_alias": True},
     {"key": "nearby", "label": "/nearby", "allow_alias": True},

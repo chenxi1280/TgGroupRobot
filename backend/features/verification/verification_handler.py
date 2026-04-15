@@ -71,6 +71,48 @@ async def invite_link_join_hint_handler(update: Update, context: ContextTypes.DE
     _cache_invite_join_hint(context, chat_id=chat.id, user_id=from_user.id, invite_link=invite_link)
 
 
+async def _track_invite_for_member(context: ContextTypes.DEFAULT_TYPE, session, chat, member, settings) -> None:
+    invite_hint = _pop_invite_join_hint(context, chat_id=chat.id, user_id=member.id)
+    user_data = getattr(context, "user_data", None)
+    if invite_hint is None and isinstance(user_data, dict):
+        invite_link_id = user_data.pop("pending_invite_link_id", None)
+        if invite_link_id:
+            invite_hint = {"invite_link_id": invite_link_id}
+
+    link = None
+    if invite_hint:
+        if invite_hint.get("invite_link"):
+            link_result = await session.execute(
+                select(InviteLink).where(
+                    InviteLink.chat_id == chat.id,
+                    InviteLink.invite_link == invite_hint["invite_link"],
+                )
+            )
+            link = link_result.scalar_one_or_none()
+        elif invite_hint.get("invite_link_id"):
+            link_result = await session.execute(select(InviteLink).where(InviteLink.id == invite_hint["invite_link_id"]))
+            link = link_result.scalar_one_or_none()
+
+    if link and link.chat_id == chat.id and link.created_by_user_id:
+        is_new, awarded, _ = await track_and_award_invite(
+            session,
+            chat_id=chat.id,
+            inviter_user_id=link.created_by_user_id,
+            invited_user_id=member.id,
+            invite_link_id=link.id,
+        )
+        if is_new:
+            link.member_count += 1
+            if awarded and getattr(settings, "invite_link_notify", True):
+                try:
+                    await context.bot.send_message(
+                        chat_id=link.created_by_user_id,
+                        text=f"🎉 恭喜！您邀请的 {member.first_name or member.username or '用户'} 加入了群组 {chat.title}",
+                    )
+                except Exception:
+                    pass
+
+
 async def new_members_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.effective_chat is None or update.effective_message is None:
         return
@@ -111,6 +153,7 @@ async def new_members_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         if not settings.verification_enabled:
             for u in new_members:
+                await _track_invite_for_member(context, session, chat, u, settings)
                 started = await _start_self_review_if_needed(context, session, chat, u, settings)
                 if started:
                     try:
@@ -143,36 +186,7 @@ async def new_members_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             if await _handle_join_spam_guard(context, chat, u, settings):
                 continue
 
-            invite_hint = _pop_invite_join_hint(context, chat_id=chat.id, user_id=u.id)
-            if invite_hint is None and context.user_data:
-                invite_link_id = context.user_data.get("pending_invite_link_id")
-                if invite_link_id:
-                    invite_hint = {"invite_link_id": invite_link_id}
-
-            link = None
-            if invite_hint:
-                if invite_hint.get("invite_link"):
-                    link_result = await session.execute(select(InviteLink).where(InviteLink.chat_id == chat.id, InviteLink.invite_link == invite_hint["invite_link"]))
-                    link = link_result.scalar_one_or_none()
-                elif invite_hint.get("invite_link_id"):
-                    link_result = await session.execute(select(InviteLink).where(InviteLink.id == invite_hint["invite_link_id"]))
-                    link = link_result.scalar_one_or_none()
-
-            if link and link.chat_id == chat.id and link.created_by_user_id:
-                is_new, awarded, _ = await track_and_award_invite(
-                    session,
-                    chat_id=chat.id,
-                    inviter_user_id=link.created_by_user_id,
-                    invited_user_id=u.id,
-                    invite_link_id=link.id,
-                )
-                if is_new:
-                    link.member_count += 1
-                    if awarded and settings.invite_link_notify:
-                        try:
-                            await context.bot.send_message(chat_id=link.created_by_user_id, text=f"🎉 恭喜！您邀请的 {u.first_name or u.username or '用户'} 加入了群组 {chat.title}")
-                        except Exception:
-                            pass
+            await _track_invite_for_member(context, session, chat, u, settings)
 
             ch = await create_or_replace_challenge(
                 session,
@@ -244,4 +258,3 @@ async def new_members_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
                     pass
 
         await session.commit()
-

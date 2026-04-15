@@ -21,7 +21,7 @@ def points_level_list_keyboard(setting, levels, chat_id: int) -> InlineKeyboardM
     if levels:
         rows.extend([[InlineKeyboardButton(f"{level.level_name} / {level.point_threshold}", callback_data=f"adm:lvl:{chat_id}:detail:{level.id}")] for level in levels])
     else:
-        rows.append([InlineKeyboardButton("🕒 待配置", callback_data=f"adm:lvl:{chat_id}:noop")])
+        rows.append([InlineKeyboardButton("🕒 待配置", callback_data=f"adm:lvl:{chat_id}:add")])
     rows.append([InlineKeyboardButton("➕ 添加一个等级", callback_data=f"adm:lvl:{chat_id}:add")])
     rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:points:{chat_id}")])
     return InlineKeyboardMarkup(rows)

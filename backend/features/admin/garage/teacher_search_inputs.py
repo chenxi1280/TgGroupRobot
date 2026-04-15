@@ -16,6 +16,12 @@ from backend.shared.services.base import ValidationError
 CLEAR_VALUES = {"清空", "无"}
 DELEGATE_TARGET_STATE = "teacher_delegate_target_input"
 DELEGATE_LOCATION_STATE = "teacher_delegate_location_input"
+ATTENDANCE_TARGET_STATE = "teacher_attend_target_input"
+ATTENDANCE_KEYWORD_STATES = {
+    "teacher_att_open_input": "open",
+    "teacher_att_full_input": "full",
+    "teacher_att_rest_input": "rest",
+}
 _MAP_URL_RE = re.compile(r"https?://[^\s<>()]+", re.IGNORECASE)
 _AT_COORD_RE = re.compile(r"@(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)")
 _BANG_COORD_RE = re.compile(r"!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)")
@@ -136,6 +142,21 @@ async def handle_teacher_search_feature_input(
         await _handle_delegate_target_input(update, session, target_chat_id, text_value)
         return True
 
+    if state.state_type == ATTENDANCE_TARGET_STATE:
+        await _handle_attendance_target_input(update, context, session, target_chat_id, text_value)
+        return True
+
+    if state.state_type in ATTENDANCE_KEYWORD_STATES:
+        await _handle_attendance_keyword_input(
+            update,
+            context,
+            session,
+            target_chat_id,
+            ATTENDANCE_KEYWORD_STATES[state.state_type],
+            text_value,
+        )
+        return True
+
     if state.state_type == DELEGATE_LOCATION_STATE:
         await _handle_delegate_location_input(update, context, session, state, target_chat_id, text_value)
         return True
@@ -247,6 +268,67 @@ async def _handle_delegate_target_input(
         _delegate_location_prompt(),
         reply_markup=ReplyKeyboardRemove(),
     )
+
+
+async def _handle_attendance_target_input(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    session,
+    target_chat_id: int,
+    text_value: str,
+) -> None:
+    from backend.features.garage.services.garage_features_service import GarageAuthService, TeacherSearchService
+
+    if update.effective_user is None or update.effective_message is None:
+        return
+
+    try:
+        user = await TeacherSearchService.resolve_delegate_user(session, text_value)
+    except ValidationError as exc:
+        await update.effective_message.reply_text(str(exc))
+        return
+
+    if not await GarageAuthService.is_certified_teacher(session, target_chat_id, user.id):
+        await update.effective_message.reply_text("该用户不是当前群的上牌老师，无法替他打卡。")
+        return
+
+    await TeacherSearchService.mark_attendance(
+        session,
+        chat_id=target_chat_id,
+        user_id=user.id,
+        source_message_id=update.effective_message.message_id,
+    )
+    await clear_admin_input_state(session, target_chat_id=target_chat_id, user_id=update.effective_user.id)
+    await session.commit()
+    display_name = f"@{user.username}" if getattr(user, "username", None) else str(user.id)
+    await update.effective_message.reply_text(f"✅ 已替 {display_name} 记录今日开课打卡。")
+    await admin_handler_instance()._show_teacher_search_menu(update, context, target_chat_id)
+
+
+async def _handle_attendance_keyword_input(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    session,
+    target_chat_id: int,
+    kind: str,
+    text_value: str,
+) -> None:
+    from backend.features.garage.services.garage_features_service import TeacherSearchService
+
+    if update.effective_user is None or update.effective_message is None:
+        return
+
+    try:
+        await TeacherSearchService.update_attendance_keyword(session, target_chat_id, kind, text_value)
+    except ValidationError as exc:
+        await update.effective_message.reply_text(str(exc))
+        return
+
+    label_map = {"open": "开课词", "full": "满课词", "rest": "休息词"}
+    await clear_admin_input_state(session, target_chat_id=target_chat_id, user_id=update.effective_user.id)
+    await session.commit()
+    await update.effective_message.reply_text(f"✅ 已更新{label_map[kind]}：{text_value.strip()}")
+    await admin_handler_instance()._show_teacher_search_attendance_mode_menu(update, context, target_chat_id)
 
 
 async def _handle_delegate_location_input(

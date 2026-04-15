@@ -7,6 +7,7 @@ import pytest
 
 from backend.features.invite import invite_link_handler
 from backend.features.invite import invite_admin_config_callbacks
+from backend.features.invite import invite_user_callbacks
 from backend.features.invite.invite_shared import _invite_link_handler
 from backend.features.invite.ui.invite_link import invite_link_menu_keyboard
 
@@ -15,15 +16,13 @@ def test_invite_link_menu_keyboard_matches_basic_mode_layout():
     rows = [[button.text for button in row] for row in invite_link_menu_keyboard(-1001, enabled=False, remind_enabled=True).inline_keyboard]
 
     assert rows == [
-        ["⚙️ 状态：", "启动", "❌ 关闭"],
-        ["🔔 邀请提醒：", "✅ 启动", "关闭"],
-        ["➕ 创建邀请链接", "📋 链接列表"],
-        ["中转模式", "✅ 直达模式"],
+        ["状态:", "启动", "❌ 关闭"],
+        ["邀请提醒:", "✅ 启动", "关闭"],
+        ["模式:", "中转", "✅ 直接"],
         ["设置封面", "设置文本"],
         ["设置按钮", "👀 预览效果"],
         ["🧹 清零统计", "♻️ 清空链接"],
         ["📤 导出数据"],
-        ["📊 统计"],
         ["🔙 返回"],
     ]
 
@@ -47,6 +46,9 @@ async def test_invite_link_show_menu_uses_shared_message_panel(monkeypatch):
         rendered["text"] = text
         rendered["keyboard"] = reply_markup.inline_keyboard
 
+    async def fake_get_link_stats(session, chat_id: int):
+        return {"total": 2, "active": 2, "revoked": 0, "expired": 0, "total_members": 3, "total_invites": 3}
+
     class _Session:
         async def commit(self):
             return None
@@ -63,6 +65,7 @@ async def test_invite_link_show_menu_uses_shared_message_panel(monkeypatch):
             return _SessionContext()
 
     monkeypatch.setattr("backend.features.invite.invite_shared.get_chat_settings", fake_get_chat_settings)
+    monkeypatch.setattr("backend.features.invite.invite_shared.get_link_stats", fake_get_link_stats)
     monkeypatch.setattr(_invite_link_handler.message_helper, "safe_edit", fake_safe_edit)
 
     update = SimpleNamespace()
@@ -71,12 +74,15 @@ async def test_invite_link_show_menu_uses_shared_message_panel(monkeypatch):
     await _invite_link_handler.show_menu(update, context, -1001, "测试群")
 
     rows = [[button.text for button in row] for row in rendered["keyboard"]]
-    assert "🏞️ 封面设置: 已设置 photo" in rendered["text"]
-    assert "📄 文本模板: 🔗 邀请好友加入 {group}" in rendered["text"]
-    assert "⭕ 设置按钮: 已设置 1 个" in rendered["text"]
-    assert "🧭 模式: 🧭 中转模式" in rendered["text"]
-    assert rows[4] == ["✅ 设置封面", "✅ 设置文本"]
-    assert rows[5] == ["✅ 设置按钮", "👀 预览效果"]
+    assert "🔗 邀请链接生成" in rendered["text"]
+    assert "自动生成链接：邀请 或 /link" in rendered["text"]
+    assert "查询邀请统计：邀请统计 或 /link_stat" in rendered["text"]
+    assert "├当前模式:中转" in rendered["text"]
+    assert "├总邀请人数:3" in rendered["text"]
+    assert "└已生成数量:2" in rendered["text"]
+    assert rows[2] == ["模式:", "✅ 中转", "直接"]
+    assert rows[3] == ["✅ 设置封面", "✅ 设置文本"]
+    assert rows[4] == ["✅ 设置按钮", "👀 预览效果"]
 
 
 @pytest.mark.asyncio
@@ -125,11 +131,11 @@ async def test_invite_link_empty_list_uses_current_settings_for_keyboard(monkeyp
     await _invite_link_handler.show_list(update, context, -1001)
 
     rows = [[button.text for button in row] for row in rendered["keyboard"]]
-    assert rows[0] == ["⚙️ 状态：", "启动", "❌ 关闭"]
-    assert rows[1] == ["🔔 邀请提醒：", "启动", "❌ 关闭"]
-    assert rows[3] == ["✅ 中转模式", "直达模式"]
-    assert rows[4] == ["✅ 设置封面", "✅ 设置文本"]
-    assert rows[5] == ["✅ 设置按钮", "👀 预览效果"]
+    assert rows[0] == ["状态:", "启动", "❌ 关闭"]
+    assert rows[1] == ["邀请提醒:", "启动", "❌ 关闭"]
+    assert rows[2] == ["模式:", "✅ 中转", "直接"]
+    assert rows[3] == ["✅ 设置封面", "✅ 设置文本"]
+    assert rows[4] == ["✅ 设置按钮", "👀 预览效果"]
 
 
 @pytest.mark.asyncio
@@ -183,9 +189,9 @@ async def test_invite_link_stats_uses_current_settings_for_keyboard(monkeypatch)
 
     rows = [[button.text for button in row] for row in rendered["keyboard"]]
     assert "📊 邀请链接统计" in rendered["text"]
-    assert rows[0] == ["⚙️ 状态：", "启动", "❌ 关闭"]
-    assert rows[3] == ["✅ 中转模式", "直达模式"]
-    assert rows[4] == ["设置封面", "✅ 设置文本"]
+    assert rows[0] == ["状态:", "启动", "❌ 关闭"]
+    assert rows[2] == ["模式:", "✅ 中转", "直接"]
+    assert rows[3] == ["设置封面", "✅ 设置文本"]
 
 
 def test_parse_invite_buttons_supports_multi_row_layout():
@@ -411,3 +417,124 @@ async def test_invite_link_buttons_callback_opens_shared_editor(monkeypatch):
     assert opened
     assert opened[0].module_type == "invite"
     assert opened[0].target_chat_id == -1005566
+
+
+@pytest.mark.asyncio
+async def test_link_command_generates_relay_start_link(monkeypatch):
+    replies: list[str] = []
+    created: list[dict] = []
+
+    async def fake_ensure_command_enabled(*args, **kwargs):
+        return True
+
+    async def fake_ensure_chat(*args, **kwargs):
+        return None
+
+    async def fake_ensure_user(*args, **kwargs):
+        return None
+
+    async def fake_get_chat_settings(session, chat_id: int):
+        return SimpleNamespace(invite_link_enabled=True, invite_link_mode="relay")
+
+    async def fake_create_user_invite_link(session, bot, chat_id: int, user_id: int, name: str):
+        created.append({"chat_id": chat_id, "user_id": user_id, "name": name})
+        return True, SimpleNamespace(id=88, invite_link="https://t.me/+real", member_count=0), None
+
+    class _Session:
+        async def commit(self):
+            return None
+
+    class _SessionContext:
+        async def __aenter__(self):
+            return _Session()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class _Db:
+        def session_factory(self):
+            return _SessionContext()
+
+    async def _reply_text(text, **kwargs):
+        replies.append(text)
+
+    monkeypatch.setattr(invite_user_callbacks, "ensure_command_enabled", fake_ensure_command_enabled)
+    monkeypatch.setattr(invite_user_callbacks, "ensure_chat", fake_ensure_chat)
+    monkeypatch.setattr(invite_user_callbacks, "ensure_user", fake_ensure_user)
+    monkeypatch.setattr(invite_user_callbacks, "get_chat_settings", fake_get_chat_settings)
+    monkeypatch.setattr(invite_user_callbacks, "create_user_invite_link", fake_create_user_invite_link)
+
+    update = SimpleNamespace(
+        effective_chat=SimpleNamespace(id=-1001, type="supergroup", title="群"),
+        effective_user=SimpleNamespace(id=42, username="tester", first_name="Tester", last_name=None, language_code="zh-CN"),
+        effective_message=SimpleNamespace(reply_text=_reply_text),
+    )
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}), bot=SimpleNamespace(username="DemoBot"))
+
+    await invite_user_callbacks.link_command(update, context)
+
+    assert created == [{"chat_id": -1001, "user_id": 42, "name": "Tester的链接"}]
+    assert replies
+    assert "https://t.me/DemoBot?start=inv_88" in replies[0]
+    assert "模式：中转" in replies[0]
+
+
+@pytest.mark.asyncio
+async def test_link_stat_command_replies_personal_stats(monkeypatch):
+    replies: list[str] = []
+
+    async def fake_ensure_command_enabled(*args, **kwargs):
+        return True
+
+    async def fake_ensure_chat(*args, **kwargs):
+        return None
+
+    async def fake_ensure_user(*args, **kwargs):
+        return None
+
+    async def fake_get_user_invite_stats(session, chat_id: int, user_id: int):
+        return SimpleNamespace(total_invites=5, links_generated=2, active_links=1)
+
+    async def fake_get_user_rank(session, chat_id: int, user_id: int):
+        return 3
+
+    class _Session:
+        async def commit(self):
+            return None
+
+    class _SessionContext:
+        async def __aenter__(self):
+            return _Session()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class _Db:
+        def session_factory(self):
+            return _SessionContext()
+
+    async def _reply_text(text, **kwargs):
+        replies.append(text)
+
+    monkeypatch.setattr(invite_user_callbacks, "ensure_command_enabled", fake_ensure_command_enabled)
+    monkeypatch.setattr(invite_user_callbacks, "ensure_chat", fake_ensure_chat)
+    monkeypatch.setattr(invite_user_callbacks, "ensure_user", fake_ensure_user)
+    monkeypatch.setattr("backend.features.invite.services.invite_service.get_user_invite_stats", fake_get_user_invite_stats)
+    monkeypatch.setattr("backend.features.invite.services.invite_service.get_user_rank", fake_get_user_rank)
+
+    update = SimpleNamespace(
+        effective_chat=SimpleNamespace(id=-1001, type="supergroup", title="群"),
+        effective_user=SimpleNamespace(id=42, username="tester", first_name="Tester", last_name=None, language_code="zh-CN"),
+        effective_message=SimpleNamespace(reply_text=_reply_text),
+    )
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}))
+
+    await invite_user_callbacks.link_stat_command(update, context)
+
+    assert replies == [
+        "📊 邀请统计\n\n"
+        "有效邀请人数：5\n"
+        "已生成数量：2\n"
+        "活跃链接：1\n"
+        "当前排名：第 3 名"
+    ]

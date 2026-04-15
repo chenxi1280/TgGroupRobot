@@ -120,10 +120,12 @@ async def create_user_invite_link(
             chat_id=chat_id,
             created_by_user_id=user_id,
             invite_link=invite.invite_link,
-            name=name,
+            name=getattr(invite, "name", None) or name,
             status=InviteLinkStatus.active.value,
             member_limit=settings.invite_link_max_joins,
+            member_count=0,
             expire_date=expire_date,
+            creates_join_request=bool(getattr(invite, "creates_join_request", settings.invite_link_mode == "relay")),
         )
         session.add(link)
         await session.flush()

@@ -205,7 +205,9 @@ async def test_garage_auth_and_teacher_search_buttons_use_icons(monkeypatch):
     async def fake_teacher_settings(session, chat_id: int):
         return SimpleNamespace(
             tag_search_enabled=True,
-            attendance_enabled=False,
+            only_open_course_enabled=True,
+            attendance_enabled=True,
+            attendance_mode="message",
             nearby_search_enabled=True,
             force_location_enabled=False,
             footer_button_label="车库入口",
@@ -256,6 +258,9 @@ async def test_garage_auth_and_teacher_search_buttons_use_icons(monkeypatch):
     assert summary_keyboard.inline_keyboard[1][2].text == "✅ 全部老师"
     assert summary_keyboard.inline_keyboard[2][0].callback_data == "grg:summary:gen:-100123"
     assert teacher_keyboard.inline_keyboard[0][0].text == "标签搜索："
-    assert teacher_keyboard.inline_keyboard[3][0].text == "底部按钮："
-    assert teacher_keyboard.inline_keyboard[3][1].text == "车库入口"
-    assert teacher_keyboard.inline_keyboard[4][1].text == "删除"
+    assert teacher_keyboard.inline_keyboard[1][0].text == "开课打卡："
+    assert teacher_keyboard.inline_keyboard[2][0].text == "打卡模式："
+    assert teacher_keyboard.inline_keyboard[3][0].text == "只显开课："
+    assert teacher_keyboard.inline_keyboard[7][0].text == "底部按钮："
+    assert teacher_keyboard.inline_keyboard[7][1].text == "车库入口"
+    assert teacher_keyboard.inline_keyboard[8][1].text == "删除"

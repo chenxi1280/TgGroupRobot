@@ -12,12 +12,17 @@ from backend.platform.db.schema.models.enums import InviteLinkStatus
 async def get_link_stats(session: AsyncSession, chat_id: int) -> dict[str, int]:
     """获取邀请链接统计"""
     links = await get_chat_invite_links(session, chat_id)
+    invite_result = await session.execute(
+        select(func.count(InviteTracking.id)).where(InviteTracking.chat_id == chat_id)
+    )
+    total_invites = int(invite_result.scalar() or 0)
     return {
         "total": len(links),
         "active": sum(1 for l in links if l.status == InviteLinkStatus.active.value),
         "revoked": sum(1 for l in links if l.status == InviteLinkStatus.revoked.value),
         "expired": sum(1 for l in links if l.status == InviteLinkStatus.expired.value),
         "total_members": sum(l.member_count for l in links),
+        "total_invites": total_invites,
     }
 
 

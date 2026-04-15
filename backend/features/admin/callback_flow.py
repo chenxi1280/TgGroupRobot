@@ -106,6 +106,11 @@ async def group_admin_callback_impl(update: Update, context: ContextTypes.DEFAUL
                     mute_duration=settings.verification_mute_duration,
                 )
                 await admin_runtime.message_helper.safe_edit(callback, text, reply_markup=verification_mode_menu(settings.verification_mode))
+                return
+
+        await session.commit()
+
+    await admin_runtime.process(update, context, chat.id)
 
 
 async def admin_callback_impl(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

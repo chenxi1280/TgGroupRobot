@@ -13,6 +13,7 @@ from backend.platform.scheduler.tasks.bottom_button_task import BottomButtonTask
 from backend.platform.scheduler.tasks.engagement_task import EngagementTask
 from backend.platform.scheduler.tasks.game_task import GameTask
 from backend.platform.scheduler.tasks.guess_task import GuessTask
+from backend.platform.scheduler.tasks.teacher_search_task import TeacherSearchTask
 
 __all__ = [
     "LotteryTask",
@@ -28,4 +29,5 @@ __all__ = [
     "EngagementTask",
     "GameTask",
     "GuessTask",
+    "TeacherSearchTask",
 ]

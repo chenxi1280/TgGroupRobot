@@ -30,9 +30,9 @@ class PointsLevelActionsMixin:
             return
         if op == "add":
             async with db.session_factory() as session:
-                level = await PointsExtendedService.create_level(session, chat_id)
+                await PointsExtendedService.create_level(session, chat_id)
                 await session.commit()
-            await self._show_points_level_detail(update, context, chat_id, level.id)
+            await self._show_points_level_menu(update, context, chat_id)
             return
         if op == "detail":
             await self._show_points_level_detail(update, context, chat_id, callback_data.get_int(4))
