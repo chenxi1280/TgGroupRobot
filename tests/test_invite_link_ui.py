@@ -79,6 +79,115 @@ async def test_invite_link_show_menu_uses_shared_message_panel(monkeypatch):
     assert rows[5] == ["✅ 设置按钮", "👀 预览效果"]
 
 
+@pytest.mark.asyncio
+async def test_invite_link_empty_list_uses_current_settings_for_keyboard(monkeypatch):
+    rendered: dict[str, object] = {}
+
+    async def fake_get_chat_settings(session, chat_id: int):
+        return SimpleNamespace(
+            invite_link_enabled=False,
+            invite_link_notify=False,
+            invite_link_mode="relay",
+            invite_link_cover_file_id="photo-file-id",
+            invite_link_text_template="邀请模板",
+            invite_link_buttons=[[{"text": "官网", "url": "https://example.com"}]],
+        )
+
+    async def fake_get_chat_invite_links(session, chat_id: int):
+        return []
+
+    async def fake_safe_edit(update, text, reply_markup):
+        rendered["text"] = text
+        rendered["keyboard"] = reply_markup.inline_keyboard
+
+    class _Session:
+        async def commit(self):
+            return None
+
+    class _SessionContext:
+        async def __aenter__(self):
+            return _Session()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class _Db:
+        def session_factory(self):
+            return _SessionContext()
+
+    monkeypatch.setattr("backend.features.invite.invite_shared.get_chat_settings", fake_get_chat_settings)
+    monkeypatch.setattr("backend.features.invite.invite_shared.get_chat_invite_links", fake_get_chat_invite_links)
+    monkeypatch.setattr(_invite_link_handler.message_helper, "safe_edit", fake_safe_edit)
+
+    update = SimpleNamespace()
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}))
+
+    await _invite_link_handler.show_list(update, context, -1001)
+
+    rows = [[button.text for button in row] for row in rendered["keyboard"]]
+    assert rows[0] == ["⚙️ 状态：", "启动", "❌ 关闭"]
+    assert rows[1] == ["🔔 邀请提醒：", "启动", "❌ 关闭"]
+    assert rows[3] == ["✅ 中转模式", "直达模式"]
+    assert rows[4] == ["✅ 设置封面", "✅ 设置文本"]
+    assert rows[5] == ["✅ 设置按钮", "👀 预览效果"]
+
+
+@pytest.mark.asyncio
+async def test_invite_link_stats_uses_current_settings_for_keyboard(monkeypatch):
+    rendered: dict[str, object] = {}
+
+    async def fake_get_chat_settings(session, chat_id: int):
+        return SimpleNamespace(
+            invite_link_enabled=False,
+            invite_link_notify=True,
+            invite_link_mode="relay",
+            invite_link_cover_file_id=None,
+            invite_link_text_template="邀请模板",
+            invite_link_buttons=[],
+        )
+
+    async def fake_get_link_stats(session, chat_id: int):
+        return {"total": 0, "active": 0, "revoked": 0, "expired": 0, "total_members": 0}
+
+    async def fake_get_invite_leaderboard(session, chat_id: int, limit: int):
+        return []
+
+    async def fake_safe_edit(update, text, reply_markup):
+        rendered["text"] = text
+        rendered["keyboard"] = reply_markup.inline_keyboard
+
+    class _Session:
+        async def commit(self):
+            return None
+
+    class _SessionContext:
+        async def __aenter__(self):
+            return _Session()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class _Db:
+        def session_factory(self):
+            return _SessionContext()
+
+    monkeypatch.setattr("backend.features.invite.invite_shared.get_chat_settings", fake_get_chat_settings)
+    monkeypatch.setattr("backend.features.invite.invite_shared.get_link_stats", fake_get_link_stats)
+    monkeypatch.setattr("backend.features.invite.services.invite_stats.get_invite_leaderboard", fake_get_invite_leaderboard)
+    monkeypatch.setattr(_invite_link_handler.message_helper, "safe_edit", fake_safe_edit)
+
+    update = SimpleNamespace()
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}))
+
+    await _invite_link_handler.show_stats(update, context, -1001)
+
+    rows = [[button.text for button in row] for row in rendered["keyboard"]]
+    assert "📊 邀请链接统计" in rendered["text"]
+    assert rows[0] == ["⚙️ 状态：", "启动", "❌ 关闭"]
+    assert rows[3] == ["✅ 中转模式", "直达模式"]
+    assert rows[4] == ["设置封面", "✅ 设置文本"]
+
+
 def test_parse_invite_buttons_supports_multi_row_layout():
     rows = invite_link_handler._parse_invite_buttons(
         "关注频道|https://t.me/demo; 联系管理|https://t.me/admin\n官网|https://example.com"

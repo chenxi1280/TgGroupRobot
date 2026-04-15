@@ -79,14 +79,15 @@ class WelcomeAdminControllerMixin:
             WelcomeDeleteMode.delete_prev.value: "删除上一条",
             WelcomeDeleteMode.seconds.value: f"{int(item.delete_delay_seconds or 15)}秒后删除",
         }.get(item.delete_mode, "15秒后删除")
-        title_configured = bool(str(getattr(item, "title", "") or "").strip())
+        title_text = str(getattr(item, "title", "") or "").strip()
+        title_configured = bool(title_text and title_text != "待配置")
         cover_configured = bool(getattr(item, "cover_media_file_id", None))
         text_configured = bool(str(getattr(item, "text_content", "") or "").strip())
         buttons_configured = button_count(getattr(item, "buttons", None)) > 0
         text = format_panel(
             "🎉 进群欢迎",
             [
-                PanelField("📮", "标题备注", summarize_text(getattr(item, "title", None), limit=80)),
+                PanelField("📮", "标题备注", summarize_text(title_text if title_configured else None, limit=80)),
                 PanelField("🪩", "欢迎模式", mode_label),
                 PanelField(
                     "🏞️",

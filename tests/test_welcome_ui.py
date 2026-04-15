@@ -75,3 +75,38 @@ async def test_welcome_detail_keyboard_matches_doc_style(monkeypatch):
     assert "🏞️ 封面设置: 【等待设置】" in rendered["text"]
     assert "📄 文本内容: 你好 {member}" in rendered["text"]
     assert "⚙️ 状态: ✅ 启用" in rendered["text"]
+
+
+@pytest.mark.asyncio
+async def test_welcome_default_title_is_not_marked_configured(monkeypatch):
+    rendered: dict[str, object] = {}
+
+    async def fake_get_message(session, chat_id: int, welcome_id: int):
+        return SimpleNamespace(
+            id=welcome_id,
+            title="待配置",
+            enabled=False,
+            welcome_mode="after_verify",
+            cover_media_file_id=None,
+            cover_media_type=None,
+            text_content="你好 {member}",
+            buttons=[],
+            delete_mode="seconds",
+            delete_delay_seconds=15,
+        )
+
+    async def fake_safe_edit(update, text, reply_markup):
+        rendered["text"] = text
+        rendered["keyboard"] = reply_markup.inline_keyboard
+
+    monkeypatch.setattr(WelcomeService, "get_message", fake_get_message)
+    monkeypatch.setattr(admin_handler._admin_handler.message_helper, "safe_edit", fake_safe_edit)
+
+    update = SimpleNamespace()
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(_FakeSession())}))
+
+    await admin_handler._admin_handler._show_welcome_detail_menu(update, context, -1001, 9)
+
+    rows = [[button.text for button in row] for row in rendered["keyboard"]]
+    assert "📮 标题备注: 【等待设置】" in rendered["text"]
+    assert rows[2][0] == "标题备注"

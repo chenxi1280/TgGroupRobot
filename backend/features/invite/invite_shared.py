@@ -55,8 +55,6 @@ class InviteLinkHandler(BaseHandler):
 
         mode_label = "🧭 中转模式" if settings.invite_link_mode == "relay" else "➡️ 直达模式"
         text_template = settings.invite_link_text_template or ""
-        text_configured = bool(str(text_template).strip())
-        button_rows = len(settings.invite_link_buttons or [])
         text = format_panel(
             f"🔗 [{chat_title or target_chat_id}] 邀请链接",
             [
@@ -78,15 +76,7 @@ class InviteLinkHandler(BaseHandler):
                 "🏖️ 预览: 发送到当前私聊",
             ],
         )
-        keyboard = invite_link_menu_keyboard(
-            target_chat_id,
-            enabled=bool(settings.invite_link_enabled),
-            remind_enabled=bool(settings.invite_link_notify),
-            mode=settings.invite_link_mode or "direct",
-            has_cover=bool(settings.invite_link_cover_file_id),
-            text_configured=text_configured,
-            button_rows=button_rows,
-        )
+        keyboard = _build_invite_home_keyboard(target_chat_id, settings)
         await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
 
     async def show_list(
@@ -99,13 +89,14 @@ class InviteLinkHandler(BaseHandler):
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
             links = await get_chat_invite_links(session, target_chat_id)
+            settings = await get_chat_settings(session, target_chat_id)
             await session.commit()
 
         if not links:
             await self.message_helper.safe_edit(
                 update,
                 text="🔗 邀请链接列表\n\n暂无邀请链接，点击「创建邀请链接」开始",
-                reply_markup=invite_link_menu_keyboard(target_chat_id),
+                reply_markup=_build_invite_home_keyboard(target_chat_id, settings),
             )
             return
 
@@ -126,6 +117,7 @@ class InviteLinkHandler(BaseHandler):
 
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
+            settings = await get_chat_settings(session, target_chat_id)
             stats = await get_link_stats(session, target_chat_id)
             leaderboard = await get_invite_leaderboard(session, target_chat_id, limit=10)
             await session.commit()
@@ -147,10 +139,22 @@ class InviteLinkHandler(BaseHandler):
         else:
             lines.append("暂无邀请数据")
         text = "\n".join(lines)
-        await self.message_helper.safe_edit(update, text=text, reply_markup=invite_link_menu_keyboard(target_chat_id))
+        await self.message_helper.safe_edit(update, text=text, reply_markup=_build_invite_home_keyboard(target_chat_id, settings))
 
 
 _invite_link_handler = InviteLinkHandler()
+
+
+def _build_invite_home_keyboard(target_chat_id: int, settings) -> InlineKeyboardMarkup:
+    return invite_link_menu_keyboard(
+        target_chat_id,
+        enabled=bool(getattr(settings, "invite_link_enabled", True)),
+        remind_enabled=bool(getattr(settings, "invite_link_notify", True)),
+        mode=getattr(settings, "invite_link_mode", None) or "direct",
+        has_cover=bool(getattr(settings, "invite_link_cover_file_id", None)),
+        text_configured=bool(str(getattr(settings, "invite_link_text_template", "") or "").strip()),
+        button_rows=len(getattr(settings, "invite_link_buttons", None) or []),
+    )
 
 
 def parse_invite_buttons(raw: str) -> list[list[dict]]:
