@@ -62,6 +62,7 @@ class TeacherSearchSetting(Base):
     force_location_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     delete_mode: Mapped[str] = mapped_column(String(16), default="none")
     footer_button_label: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    footer_button_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC))
     updated_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True),

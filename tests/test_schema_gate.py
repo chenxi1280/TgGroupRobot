@@ -319,7 +319,8 @@ def _full_tables() -> dict[str, dict]:
         "teacher_search_settings": {
             "columns": {
                 "chat_id", "tag_search_enabled", "nearby_search_enabled", "attendance_enabled",
-                "force_location_enabled", "delete_mode", "footer_button_label", "created_at", "updated_at",
+                "force_location_enabled", "delete_mode", "footer_button_label", "footer_button_url",
+                "created_at", "updated_at",
             },
         },
         "teacher_profiles": {

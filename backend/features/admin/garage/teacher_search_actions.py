@@ -23,6 +23,55 @@ class TeacherSearchActionsMixin:
         if action == "attendance" and callback_data.get(2) == "menu":
             await self._show_teacher_search_attendance_menu(update, context, chat_id)
             return
+        if action == "footer" and callback_data.get(2) in {"menu", "input"}:
+            await self._show_teacher_search_footer_menu(update, context, chat_id)
+            return
+        if action == "footer" and callback_data.get(2) == "text":
+            await self._start_text_input_state(
+                context,
+                update.effective_user.id,
+                chat_id,
+                ConversationStateType.teacher_search_footer_text_input.value,
+                {"target_chat_id": chat_id},
+            )
+            await self.message_helper.safe_edit(
+                update,
+                (
+                    "🔎 老师搜索 | 底部按钮\n\n"
+                    "👉 请输入按钮名称，例如：老师搜索\n"
+                    "输入 /clear 可清空底部按钮。"
+                ),
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔙 返回", callback_data=f"tsearch:footer:menu:{chat_id}")]
+                ]),
+            )
+            return
+        if action == "footer" and callback_data.get(2) == "link":
+            await self._start_text_input_state(
+                context,
+                update.effective_user.id,
+                chat_id,
+                ConversationStateType.teacher_search_footer_link_input.value,
+                {"target_chat_id": chat_id},
+            )
+            await self.message_helper.safe_edit(
+                update,
+                (
+                    "🔎 老师搜索 | 底部按钮链接\n\n"
+                    "👉 请输入 H5 页面链接，需要以 http:// 或 https:// 开头。\n"
+                    "输入 /clear 可清空按钮链接。"
+                ),
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔙 返回", callback_data=f"tsearch:footer:menu:{chat_id}")]
+                ]),
+            )
+            return
+        if action == "footer" and callback_data.get(2) == "clear":
+            async with db.session_factory() as session:
+                await TeacherSearchService.clear_footer_button_config(session, chat_id)
+                await session.commit()
+            await self._show_teacher_search_footer_menu(update, context, chat_id)
+            return
         if action == "toggle":
             field = callback_data.get(2)
             value = callback_data.get_int_optional(4)

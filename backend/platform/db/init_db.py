@@ -14,7 +14,10 @@ log = structlog.get_logger(__name__)
 
 async def init_db() -> None:
     settings = get_settings()
-    db = create_database(settings.database_url)
+    db = create_database(
+        settings.database_url,
+        connect_timeout_seconds=settings.database_connect_timeout_seconds,
+    )
 
     try:
         await run_startup_schema_migrations(db.engine)

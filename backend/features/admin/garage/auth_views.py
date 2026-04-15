@@ -25,13 +25,9 @@ class GarageAuthViewsMixin:
             "image": "图",
             "image_text": "文+图",
         }.get(settings.garage_limit_mode, settings.garage_limit_mode)
-        partition_label = {"region": "地区", "price": "价格"}.get(
-            settings.garage_summary_partition_by,
-            settings.garage_summary_partition_by,
-        )
         text = (
             "🚗 车库认证\n\n"
-            "自动对车库频道进行识别，需要提前找天行者进行车库对接。\n\n"
+            "自动对车库频道进行识别，需要提前找锅巴洋芋进行车库对接。\n\n"
             f"状态：{'✅ 启用' if settings.garage_auth_enabled else '❌ 关闭'}\n"
             f"认证图标：{settings.garage_auth_badge}\n"
             f"手动认证老师：{len(teachers)} 人\n"
@@ -39,9 +35,7 @@ class GarageAuthViewsMixin:
             f"限制模式：{limit_mode_label}\n"
             f"时间间隔：{settings.garage_limit_interval_sec // 3600} 小时\n"
             f"限制条数：{settings.garage_limit_max_count} 条\n"
-            f"白名单：{len(whitelist)} 人\n"
-            f"分区类型：{partition_label}\n"
-            f"只显开课：{'✅ 开' if settings.garage_summary_only_open_course else '❌ 关'}"
+            f"白名单：{len(whitelist)} 人"
         )
         keyboard = InlineKeyboardMarkup([
             [
@@ -60,7 +54,7 @@ class GarageAuthViewsMixin:
                 InlineKeyboardButton(settings.garage_auth_badge or "🤝", callback_data=f"grg:badge:{chat_id}"),
             ],
             [InlineKeyboardButton("💌 手动认证老师", callback_data=f"grg:teacher:list:{chat_id}:0")],
-            [InlineKeyboardButton("🧾 生成老师汇总信息", callback_data=f"grg:summary:gen:{chat_id}")],
+            [InlineKeyboardButton("📇 生成老师汇总信息", callback_data=f"grg:summary:menu:{chat_id}")],
             [
                 InlineKeyboardButton("⚙️ 限制发言：", callback_data=f"grg:home:{chat_id}"),
                 InlineKeyboardButton(
@@ -97,7 +91,37 @@ class GarageAuthViewsMixin:
                 ),
             ],
             [InlineKeyboardButton("📄 限制发言白名单", callback_data=f"grg:wl:list:{chat_id}:0")],
+            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
+        ])
+        await self.message_helper.safe_edit(update, text, reply_markup=keyboard)
+
+    async def _show_garage_summary_menu(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+    ) -> None:
+        from backend.features.garage.services.garage_features_service import GarageAuthService
+
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            settings = await GarageAuthService.get_settings(session, chat_id)
+            await session.commit()
+
+        partition_label = {"region": "地区", "price": "价格"}.get(
+            settings.garage_summary_partition_by,
+            settings.garage_summary_partition_by,
+        )
+        open_filter_label = "只显开课" if settings.garage_summary_only_open_course else "全部老师"
+        text = (
+            "📇 生成老师汇总信息\n\n"
+            "选择分组方式和开课筛选项后，再生成老师汇总。\n\n"
+            f"分组方式：{partition_label}\n"
+            f"开课筛选：{open_filter_label}"
+        )
+        keyboard = InlineKeyboardMarkup([
             [
+                InlineKeyboardButton("分组方式：", callback_data=f"grg:summary:menu:{chat_id}"),
                 InlineKeyboardButton(
                     "✅ 地区" if settings.garage_summary_partition_by == "region" else "地区",
                     callback_data=f"grg:summary:partition:{chat_id}:region",
@@ -108,16 +132,18 @@ class GarageAuthViewsMixin:
                 ),
             ],
             [
+                InlineKeyboardButton("筛选项：", callback_data=f"grg:summary:menu:{chat_id}"),
                 InlineKeyboardButton(
-                    "✅ 只显开课：开" if settings.garage_summary_only_open_course else "只显开课：开",
+                    "✅ 只显开课" if settings.garage_summary_only_open_course else "只显开课",
                     callback_data=f"grg:summary:open:{chat_id}:1",
                 ),
                 InlineKeyboardButton(
-                    "只显开课：关" if settings.garage_summary_only_open_course else "✅ 只显开课：关",
+                    "全部老师" if settings.garage_summary_only_open_course else "✅ 全部老师",
                     callback_data=f"grg:summary:open:{chat_id}:0",
                 ),
             ],
-            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
+            [InlineKeyboardButton("📇 生成老师汇总信息", callback_data=f"grg:summary:gen:{chat_id}")],
+            [InlineKeyboardButton("🔙 返回", callback_data=f"grg:home:{chat_id}")],
         ])
         await self.message_helper.safe_edit(update, text, reply_markup=keyboard)
 

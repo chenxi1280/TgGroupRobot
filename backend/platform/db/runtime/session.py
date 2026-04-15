@@ -11,7 +11,7 @@ class Database:
     session_factory: async_sessionmaker[AsyncSession]
 
 
-def create_database(database_url: str) -> Database:
+def create_database(database_url: str, connect_timeout_seconds: int = 10) -> Database:
     # 如果数据在 bot schema 下，设置 search_path
     # 注意：DATABASE_URL 保持标准格式，schema 通过 connect_args 设置
     engine = create_async_engine(
@@ -20,12 +20,12 @@ def create_database(database_url: str) -> Database:
         pool_size=5,
         max_overflow=10,
         connect_args={
-            "options": "-csearch_path=bot"
+            "options": "-csearch_path=bot",
+            "connect_timeout": connect_timeout_seconds,
         },
     )
     session_factory = async_sessionmaker(engine, expire_on_commit=False, autoflush=False)
     return Database(engine=engine, session_factory=session_factory)
-
 
 
 

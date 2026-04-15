@@ -11,6 +11,8 @@ from backend.features.admin.garage.input_runtime import (
 )
 from backend.shared.services.base import ValidationError
 
+CLEAR_VALUES = {"清空", "无"}
+
 
 async def handle_teacher_search_feature_input(
     update: Update,
@@ -20,6 +22,14 @@ async def handle_teacher_search_feature_input(
     target_chat_id: int,
     text_value: str,
 ) -> bool:
+    if state.state_type in {"teacher_footer_text_input", "teacher_footer_button_input"}:
+        await _handle_footer_button_text_input(update, context, session, target_chat_id, text_value)
+        return True
+
+    if state.state_type == "teacher_footer_link_input":
+        await _handle_footer_button_link_input(update, context, session, target_chat_id, text_value)
+        return True
+
     if state.state_type == "teacher_search_delegate_target_input":
         await _handle_delegate_target_input(update, session, target_chat_id, text_value)
         return True
@@ -29,6 +39,79 @@ async def handle_teacher_search_feature_input(
         return True
 
     return False
+
+
+def _is_clear_input(value: str) -> bool:
+    return value.strip().lower().startswith("/clear") or value.strip() in CLEAR_VALUES
+
+
+async def _finish_footer_input(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    session,
+    target_chat_id: int,
+    reply_text: str,
+) -> None:
+    if update.effective_user is None or update.effective_message is None:
+        return
+    await clear_admin_input_state(session, target_chat_id=target_chat_id, user_id=update.effective_user.id)
+    await session.commit()
+    await update.effective_message.reply_text(reply_text)
+    await admin_handler_instance()._show_teacher_search_footer_menu(update, context, target_chat_id)
+
+
+async def _handle_footer_button_text_input(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    session,
+    target_chat_id: int,
+    text_value: str,
+) -> None:
+    from backend.features.garage.services.garage_features_service import TeacherSearchService
+
+    if update.effective_message is None:
+        return
+
+    label = None if _is_clear_input(text_value) else text_value
+    try:
+        config = await TeacherSearchService.update_footer_button_text(session, target_chat_id, label)
+    except ValidationError as exc:
+        await update.effective_message.reply_text(str(exc))
+        return
+    await _finish_footer_input(
+        update,
+        context,
+        session,
+        target_chat_id,
+        f"已设置底部按钮文字：{config.button_text}" if config.button_text else "已清空底部按钮文字。",
+    )
+
+
+async def _handle_footer_button_link_input(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    session,
+    target_chat_id: int,
+    text_value: str,
+) -> None:
+    from backend.features.garage.services.garage_features_service import TeacherSearchService
+
+    if update.effective_message is None:
+        return
+
+    url = None if _is_clear_input(text_value) else text_value
+    try:
+        config = await TeacherSearchService.update_footer_button_url(session, target_chat_id, url)
+    except ValidationError as exc:
+        await update.effective_message.reply_text(str(exc))
+        return
+    await _finish_footer_input(
+        update,
+        context,
+        session,
+        target_chat_id,
+        f"已设置底部按钮链接：{config.button_url}" if config.button_url else "已清空底部按钮链接。",
+    )
 
 
 async def _handle_delegate_target_input(

@@ -236,16 +236,25 @@ async def test_garage_auth_and_teacher_search_buttons_use_icons(monkeypatch):
     context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}))
 
     await admin_handler._admin_handler._show_garage_auth_menu(update, context, -100123)
+    await admin_handler._admin_handler._show_garage_summary_menu(update, context, -100123)
     await admin_handler._admin_handler._show_teacher_search_menu(update, context, -100123)
 
-    garage_keyboard = rendered[0][1]
-    teacher_keyboard = rendered[1][1]
+    garage_text, garage_keyboard = rendered[0]
+    summary_text, summary_keyboard = rendered[1]
+    teacher_keyboard = rendered[2][1]
+    assert "分区类型" not in garage_text
+    assert "只显开课" not in garage_text
     assert garage_keyboard.inline_keyboard[0][0].text == "⚙️ 状态："
     assert garage_keyboard.inline_keyboard[0][1].text == "✅ 启动"
+    assert garage_keyboard.inline_keyboard[3][0].text == "📇 生成老师汇总信息"
+    assert garage_keyboard.inline_keyboard[3][0].callback_data == "grg:summary:menu:-100123"
     assert garage_keyboard.inline_keyboard[4][0].text == "⚙️ 限制发言："
     assert garage_keyboard.inline_keyboard[5][1].text == "✅ 文+图"
-    assert garage_keyboard.inline_keyboard[8][1].text == "✅ 价格"
-    assert garage_keyboard.inline_keyboard[9][1].text == "✅ 只显开课：关"
+    assert "分组方式：价格" in summary_text
+    assert "开课筛选：全部老师" in summary_text
+    assert summary_keyboard.inline_keyboard[0][2].text == "✅ 价格"
+    assert summary_keyboard.inline_keyboard[1][2].text == "✅ 全部老师"
+    assert summary_keyboard.inline_keyboard[2][0].callback_data == "grg:summary:gen:-100123"
     assert teacher_keyboard.inline_keyboard[0][0].text == "标签搜索："
     assert teacher_keyboard.inline_keyboard[3][0].text == "底部按钮："
     assert teacher_keyboard.inline_keyboard[3][1].text == "车库入口"

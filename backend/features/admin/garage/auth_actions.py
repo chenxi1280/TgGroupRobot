@@ -165,6 +165,9 @@ class GarageAuthActionsMixin:
                 return
         if action == "summary":
             sub = callback_data.get(2)
+            if sub == "menu":
+                await self._show_garage_summary_menu(update, context, chat_id)
+                return
             if sub == "partition":
                 value = callback_data.get(4)
                 if value not in {"region", "price"}:
@@ -173,7 +176,7 @@ class GarageAuthActionsMixin:
                 async with db.session_factory() as session:
                     await GarageAuthService.update_settings(session, chat_id, garage_summary_partition_by=value)
                     await session.commit()
-                await self._show_garage_auth_menu(update, context, chat_id)
+                await self._show_garage_summary_menu(update, context, chat_id)
                 return
             if sub == "open":
                 value = callback_data.get_int_optional(4)
@@ -183,7 +186,7 @@ class GarageAuthActionsMixin:
                 async with db.session_factory() as session:
                     await GarageAuthService.update_settings(session, chat_id, garage_summary_only_open_course=bool(value))
                     await session.commit()
-                await self._show_garage_auth_menu(update, context, chat_id)
+                await self._show_garage_summary_menu(update, context, chat_id)
                 return
             if sub == "gen":
                 async with db.session_factory() as session:
@@ -192,7 +195,10 @@ class GarageAuthActionsMixin:
                 await self.message_helper.safe_edit(
                     update,
                     summary_text,
-                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"grg:home:{chat_id}")]]),
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🔙 返回汇总设置", callback_data=f"grg:summary:menu:{chat_id}")],
+                        [InlineKeyboardButton("返回车库认证", callback_data=f"grg:home:{chat_id}")],
+                    ]),
                 )
                 return
         await self._show_garage_auth_menu(update, context, chat_id)

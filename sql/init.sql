@@ -2011,6 +2011,7 @@ CREATE TABLE IF NOT EXISTS bot.teacher_search_settings (
     force_location_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     delete_mode VARCHAR(16) NOT NULL DEFAULT 'none',
     footer_button_label VARCHAR(64),
+    footer_button_url VARCHAR(512),
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL,
     CONSTRAINT fk_teacher_search_settings_chat_id FOREIGN KEY (chat_id)

@@ -6,11 +6,12 @@ from backend.features.garage.services.garage_features_shared import (
     _normalize_username_or_id,
     _resolve_user,
 )
-from backend.features.garage.services.teacher_search_service import TeacherSearchService
+from backend.features.garage.services.teacher_search_service import TeacherSearchFooterButtonConfig, TeacherSearchService
 
 __all__ = [
     "GarageAuthService",
     "TeacherSearchService",
+    "TeacherSearchFooterButtonConfig",
     "CarReviewService",
     "_normalize_username_or_id",
     "_resolve_user",

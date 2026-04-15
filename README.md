@@ -158,6 +158,7 @@ BOT_TOKEN=your_bot_token_here
 
 # 数据库连接（必填，连接独立 infra）
 DATABASE_URL=postgresql+psycopg://app_user:replace_with_shared_app_password@postgres:5432/tggrouprobot
+DATABASE_CONNECT_TIMEOUT_SECONDS=10
 
 # 外部 Docker 网络
 INFRA_NETWORK_NAME=infra_default
@@ -1105,8 +1106,11 @@ sequenceDiagram
 
 ```python
 # 会话工厂创建
-def create_database(database_url: str) -> Database:
-    engine = create_async_engine(database_url, echo=False)
+def create_database(database_url: str, connect_timeout_seconds: int = 10) -> Database:
+    engine = create_async_engine(
+        database_url,
+        connect_args={"connect_timeout": connect_timeout_seconds},
+    )
     session_factory = async_sessionmaker(
         bind=engine,
         class_=AsyncSession,

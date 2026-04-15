@@ -38,6 +38,7 @@ class Settings(BaseSettings):
         default="postgresql+psycopg://tg_bot:tg_bot@db:5432/tg_bot",
         alias="DATABASE_URL",
     )
+    database_connect_timeout_seconds: int = Field(default=10, alias="DATABASE_CONNECT_TIMEOUT_SECONDS")
 
     # 代理设置（用于连接 Telegram API）
     proxy_url: str | None = Field(default=None, alias="PROXY_URL")

@@ -87,7 +87,10 @@ def build_application() -> Application:
 
     log.info("bot_application_building")
 
-    db = create_database(settings.database_url)
+    db = create_database(
+        settings.database_url,
+        connect_timeout_seconds=settings.database_connect_timeout_seconds,
+    )
 
     # 构建应用。
     # 显式关闭 trust_env，避免 IDE/系统环境变量中的代理设置导致 Telegram 初始化失败。

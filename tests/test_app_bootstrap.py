@@ -11,6 +11,7 @@ class _FakeBuilder:
         self.token_value = None
         self.request_value = None
         self.get_updates_request_value = None
+        self.post_shutdown_value = None
         self.app = SimpleNamespace(bot_data={}, add_error_handler=lambda handler: None)
 
     def token(self, token: str):
@@ -29,6 +30,10 @@ class _FakeBuilder:
         self.get_updates_request_value = request
         return self
 
+    def post_shutdown(self, callback):
+        self.post_shutdown_value = callback
+        return self
+
     def build(self):
         return self.app
 
@@ -39,6 +44,7 @@ def test_build_application_uses_serial_updates(monkeypatch):
     settings = SimpleNamespace(
         log_level="INFO",
         database_url="postgresql+asyncpg://example",
+        database_connect_timeout_seconds=10,
         proxy_url=None,
         bot_token="token",
         telegram_connection_pool_size=32,
@@ -48,6 +54,7 @@ def test_build_application_uses_serial_updates(monkeypatch):
         telegram_write_timeout_seconds=20.0,
     )
     fake_db = object()
+    captured_db: list[tuple[str, int]] = []
 
     class _FakeRequest:
         def __init__(self, proxy=None, **kwargs):
@@ -55,7 +62,11 @@ def test_build_application_uses_serial_updates(monkeypatch):
 
     monkeypatch.setattr(app_main, "get_settings", lambda: settings)
     monkeypatch.setattr(app_main, "configure_logging", lambda level: None)
-    monkeypatch.setattr(app_main, "create_database", lambda url: fake_db)
+    def fake_create_database(url: str, connect_timeout_seconds: int = 10):
+        captured_db.append((url, connect_timeout_seconds))
+        return fake_db
+
+    monkeypatch.setattr(app_main, "create_database", fake_create_database)
     monkeypatch.setattr(app_main, "_register_commands", lambda app: None)
     monkeypatch.setattr(app_main, "_register_routers", lambda app: None)
     monkeypatch.setattr(app_main, "_register_common_handlers", lambda app: None)
@@ -66,6 +77,7 @@ def test_build_application_uses_serial_updates(monkeypatch):
 
     assert app is fake_builder.app
     assert fake_builder.concurrent_updates_value is False
+    assert captured_db == [("postgresql+asyncpg://example", 10)]
     assert len(captured_requests) == 2
     assert captured_requests[0][1]["connection_pool_size"] == 32
     assert captured_requests[0][1]["pool_timeout"] == 15.0

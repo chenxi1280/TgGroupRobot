@@ -100,6 +100,10 @@ GARAGE_FORWARD_SETTINGS_COMPAT_SQL: tuple[str, ...] = (
     "ALTER TABLE bot.garage_forward_settings ADD COLUMN IF NOT EXISTS button_template JSONB NOT NULL DEFAULT '[]'::jsonb",
 )
 
+TEACHER_SEARCH_SETTINGS_COMPAT_SQL: tuple[str, ...] = (
+    "ALTER TABLE bot.teacher_search_settings ADD COLUMN IF NOT EXISTS footer_button_url VARCHAR(512)",
+)
+
 SCHEDULED_MESSAGE_COMPAT_SQL: tuple[str, ...] = (
     "ALTER TABLE bot.scheduled_message_tasks ADD COLUMN IF NOT EXISTS short_id VARCHAR(8)",
     """
@@ -144,6 +148,7 @@ AD_CAMPAIGNS_COMPAT_SQL: tuple[str, ...] = (
 COMPATIBILITY_MIGRATIONS: dict[str, tuple[str, ...]] = {
     "chat_settings": CHAT_SETTINGS_COMPAT_SQL,
     "garage_forward_settings": GARAGE_FORWARD_SETTINGS_COMPAT_SQL,
+    "teacher_search_settings": TEACHER_SEARCH_SETTINGS_COMPAT_SQL,
     "scheduled_message_tasks": SCHEDULED_MESSAGE_COMPAT_SQL,
     "ad_campaigns": AD_CAMPAIGNS_COMPAT_SQL,
 }
