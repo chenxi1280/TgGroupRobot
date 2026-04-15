@@ -25,7 +25,7 @@ async def handle_welcome_input(
     state,
     message_text: str,
 ) -> None:
-    from backend.platform.state.state_service import clear_user_state
+    from backend.platform.state.state_service import clear_private_input_state, clear_user_state
     from backend.features.verification.welcome_service import WelcomeService
 
     if update.effective_user is None or update.effective_message is None:
@@ -85,6 +85,7 @@ async def handle_welcome_input(
                 return
 
     await clear_user_state(session, chat_id=target_chat_id, user_id=update.effective_user.id)
-    await clear_user_state(session, chat_id=update.effective_user.id, user_id=update.effective_user.id)
+    if target_chat_id != update.effective_user.id:
+        await clear_private_input_state(session, update.effective_user.id)
     await session.commit()
     await _admin_handler_instance()._show_welcome_detail_menu(update, context, target_chat_id, welcome_id)

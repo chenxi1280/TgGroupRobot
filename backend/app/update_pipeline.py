@@ -118,10 +118,14 @@ class MessageDispatcher:
     async def _get_user_state(self, session: Any, db: Database, user_id: int, chat_id: int) -> Any:
         """兼容旧调用方，同时通过新的 scoped state 规则解析状态。"""
         private_state = await get_user_state(session, chat_id=chat_id, user_id=user_id)
-        if private_state is not None:
+        if private_state is not None and private_state.state_type != "selected_chat":
             return private_state
 
-        target_chat_id = await ChatResolver.get_current_chat(db, user_id)
+        target_chat_id = None
+        if private_state is not None and isinstance(private_state.state_data, dict):
+            target_chat_id = private_state.state_data.get("managed_chat_id")
+        if not target_chat_id:
+            target_chat_id = await ChatResolver.get_current_chat(db, user_id)
         if target_chat_id:
             return await get_user_state(session, chat_id=target_chat_id, user_id=user_id)
 

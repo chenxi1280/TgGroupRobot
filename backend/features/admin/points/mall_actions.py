@@ -218,8 +218,8 @@ class PointsMallActionsMixin:
                     "price": ("points_mall_product_price_input", "👉 请输入所需积分："),
                     "limit": ("points_mall_product_limit_input", "👉 请输入限购次数（输入 0 表示不限购）："),
                     "stock": ("points_mall_product_stock_input", "👉 请输入可售总数量："),
-                    "fulfiller": ("points_mall_product_fulfiller_input", "👉 请输入发放人员用户名或用户ID（输入 清空 取消设置）："),
-                    "description": ("points_mall_product_description_input", "👉 请输入兑换说明（输入 清空 清空说明）："),
+                    "fulfiller": ("points_mall_fulfiller_input", "👉 请输入发放人员用户名或用户ID（输入 清空 取消设置）："),
+                    "description": ("points_mall_desc_input", "👉 请输入兑换说明（输入 清空 清空说明）："),
                     "sort": ("points_mall_product_sort_input", "👉 请输入排序权重："),
                 }
                 state_entry = state_map.get(field)

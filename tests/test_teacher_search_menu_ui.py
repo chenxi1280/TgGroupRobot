@@ -44,6 +44,26 @@ def test_teacher_search_footer_config_reports_configured_state():
 
 
 @pytest.mark.asyncio
+async def test_garage_clear_admin_input_state_preserves_private_selected_chat(monkeypatch):
+    from backend.features.admin.garage.input_runtime import clear_admin_input_state
+
+    calls: list[tuple] = []
+
+    async def fake_clear_user_state(session, chat_id: int, user_id: int):
+        calls.append(("clear", chat_id, user_id))
+
+    async def fake_clear_private_input_state(session, user_id: int):
+        calls.append(("clear_private_input", user_id))
+
+    monkeypatch.setattr("backend.platform.state.state_service.clear_user_state", fake_clear_user_state)
+    monkeypatch.setattr("backend.platform.state.state_service.clear_private_input_state", fake_clear_private_input_state)
+
+    await clear_admin_input_state(object(), target_chat_id=-1001, user_id=123)
+
+    assert calls == [("clear", -1001, 123), ("clear_private_input", 123)]
+
+
+@pytest.mark.asyncio
 async def test_teacher_search_footer_service_rejects_non_http_url():
     with pytest.raises(ValidationError):
         await TeacherSearchService.update_footer_button_url(object(), -1001, "ftp://example.com")
@@ -277,14 +297,47 @@ async def test_teacher_search_footer_link_button_starts_link_state(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_teacher_search_delegate_button_starts_short_target_state(monkeypatch):
+    captured: dict[str, object] = {}
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(_SessionContext())}))
+    update = SimpleNamespace(effective_user=SimpleNamespace(id=123))
+
+    async def fake_start_text_input_state(context, user_id, state_chat_id, state_type, payload):
+        captured["state"] = (user_id, state_chat_id, state_type, payload)
+
+    async def fake_safe_edit(update, text, reply_markup):
+        captured["text"] = text
+        captured["keyboard"] = reply_markup.inline_keyboard
+
+    monkeypatch.setattr(admin_handler._admin_handler, "_start_text_input_state", fake_start_text_input_state)
+    monkeypatch.setattr(admin_handler._admin_handler.message_helper, "safe_edit", fake_safe_edit)
+
+    await admin_handler._admin_handler._handle_teacher_search(
+        update,
+        context,
+        -1001,
+        CallbackParser.parse("tsearch:delegate:start:-1001"),
+    )
+
+    assert captured["state"] == (
+        123,
+        -1001,
+        "teacher_delegate_target_input",
+        {"target_chat_id": -1001},
+    )
+    assert "请输入上牌老师的用户名或ID" in captured["text"]
+
+
+@pytest.mark.asyncio
 async def test_teacher_search_footer_text_input_updates_label(monkeypatch):
     captured: dict[str, object] = {"replies": []}
     session = _SessionContext()
     context = SimpleNamespace()
 
     class _Message:
-        async def reply_text(self, text):
+        async def reply_text(self, text, **kwargs):
             captured["replies"].append(text)
+            captured.setdefault("reply_markups", []).append(kwargs.get("reply_markup"))
 
     update = SimpleNamespace(effective_user=SimpleNamespace(id=123), effective_message=_Message())
     state = SimpleNamespace(state_type="teacher_footer_text_input")
@@ -329,8 +382,9 @@ async def test_teacher_search_footer_link_input_updates_url(monkeypatch):
     context = SimpleNamespace()
 
     class _Message:
-        async def reply_text(self, text):
+        async def reply_text(self, text, **kwargs):
             captured["replies"].append(text)
+            captured.setdefault("reply_markups", []).append(kwargs.get("reply_markup"))
 
     update = SimpleNamespace(effective_user=SimpleNamespace(id=123), effective_message=_Message())
     state = SimpleNamespace(state_type="teacher_footer_link_input")
@@ -441,4 +495,342 @@ async def test_teacher_search_footer_text_input_clear(monkeypatch):
     assert handled is True
     assert captured["setting"] == (-1001, None)
     assert captured["replies"] == ["已清空底部按钮文字。"]
+    assert captured["shown"] == -1001
+
+
+@pytest.mark.asyncio
+async def test_teacher_search_delegate_target_input_starts_short_location_state(monkeypatch):
+    captured: dict[str, object] = {"replies": []}
+    session = _SessionContext()
+    context = SimpleNamespace()
+
+    class _Message:
+        async def reply_text(self, text, **kwargs):
+            captured["replies"].append(text)
+            captured.setdefault("reply_markups", []).append(kwargs.get("reply_markup"))
+
+    update = SimpleNamespace(effective_user=SimpleNamespace(id=123), effective_message=_Message())
+    state = SimpleNamespace(state_type="teacher_delegate_target_input")
+
+    async def fake_resolve_delegate_user(session, raw_value):
+        captured["resolved"] = raw_value
+        return SimpleNamespace(id=456)
+
+    async def fake_clear_state(session, *, target_chat_id, user_id):
+        captured["cleared"] = (target_chat_id, user_id)
+
+    async def fake_set_user_state(session, chat_id, user_id, state_type, state_data):
+        captured["state"] = (chat_id, user_id, state_type, state_data)
+
+    import backend.features.admin.garage.teacher_search_inputs as teacher_search_inputs
+    import backend.platform.state.state_service as state_service
+
+    monkeypatch.setattr(TeacherSearchService, "resolve_delegate_user", fake_resolve_delegate_user)
+    monkeypatch.setattr(teacher_search_inputs, "clear_admin_input_state", fake_clear_state)
+    monkeypatch.setattr(state_service, "set_user_state", fake_set_user_state)
+
+    handled = await handle_teacher_search_feature_input(
+        update,
+        context,
+        session,
+        state,
+        -1001,
+        "@teacher_a",
+    )
+
+    assert handled is True
+    assert captured["resolved"] == "@teacher_a"
+    assert captured["cleared"] == (-1001, 123)
+    assert captured["state"] == (
+        -1001,
+        123,
+        "teacher_delegate_location_input",
+        {"target_chat_id": -1001, "delegate_user_id": 456},
+    )
+    assert session.commits == 1
+    assert captured["replies"] == [
+        (
+            "📍 请发送这位老师的位置。\n\n"
+            "手机端可以直接发送位置；桌面端请点输入框旁的回形针 → 位置 → 在地图上选择/搜索地点后发送。\n"
+            "也可以粘贴 Google 地图定位链接。\n"
+            "不要手动输入经纬度。"
+        )
+    ]
+    assert captured["reply_markups"][0].to_dict() == {"remove_keyboard": True}
+
+
+@pytest.mark.asyncio
+async def test_teacher_search_delegate_location_input_requires_location_message():
+    captured: dict[str, object] = {"replies": []}
+    session = _SessionContext()
+    context = SimpleNamespace()
+
+    class _Message:
+        location = None
+        venue = None
+
+        async def reply_text(self, text, **kwargs):
+            captured["replies"].append(text)
+            captured["reply_markup"] = kwargs.get("reply_markup")
+
+    update = SimpleNamespace(effective_user=SimpleNamespace(id=123), effective_message=_Message())
+    state = SimpleNamespace(
+        state_type="teacher_delegate_location_input",
+        state_data={"target_chat_id": -1001, "delegate_user_id": 456},
+    )
+
+    handled = await handle_teacher_search_feature_input(
+        update,
+        context,
+        session,
+        state,
+        -1001,
+        "39.1,116.1",
+    )
+
+    assert handled is True
+    assert captured["replies"] == ["请通过回形针 → 位置 发送地点，或粘贴 Google 地图定位链接。"]
+    assert captured["reply_markup"].to_dict() == {"remove_keyboard": True}
+    assert session.commits == 0
+
+
+@pytest.mark.asyncio
+async def test_teacher_search_delegate_location_input_saves_telegram_location(monkeypatch):
+    captured: dict[str, object] = {"replies": []}
+    session = _SessionContext()
+    context = SimpleNamespace()
+
+    class _Message:
+        location = SimpleNamespace(latitude=39.9042, longitude=116.4074)
+        venue = None
+
+        async def reply_text(self, text, **kwargs):
+            captured["replies"].append(text)
+            captured.setdefault("reply_markups", []).append(kwargs.get("reply_markup"))
+
+    update = SimpleNamespace(effective_user=SimpleNamespace(id=123), effective_message=_Message())
+    state = SimpleNamespace(
+        state_type="teacher_delegate_location_input",
+        state_data={"target_chat_id": -1001, "delegate_user_id": 456},
+    )
+
+    async def fake_upsert_member_location(session, **kwargs):
+        captured["member_location"] = kwargs
+
+    async def fake_upsert_teacher_profile(session, **kwargs):
+        captured["teacher_profile"] = kwargs
+
+    async def fake_clear_state(session, *, target_chat_id, user_id):
+        captured["cleared"] = (target_chat_id, user_id)
+
+    async def fake_show_menu(update, context, chat_id):
+        captured["shown"] = chat_id
+
+    import backend.features.admin.garage.teacher_search_inputs as teacher_search_inputs
+
+    monkeypatch.setattr(TeacherSearchService, "upsert_member_location", fake_upsert_member_location)
+    monkeypatch.setattr(TeacherSearchService, "upsert_teacher_profile_from_location", fake_upsert_teacher_profile)
+    monkeypatch.setattr(teacher_search_inputs, "clear_admin_input_state", fake_clear_state)
+    monkeypatch.setattr(admin_handler._admin_handler, "_show_teacher_search_menu", fake_show_menu)
+
+    handled = await handle_teacher_search_feature_input(
+        update,
+        context,
+        session,
+        state,
+        -1001,
+        "",
+    )
+
+    assert handled is True
+    assert captured["member_location"] == {
+        "chat_id": -1001,
+        "user_id": 456,
+        "latitude": 39.9042,
+        "longitude": 116.4074,
+        "operator_user_id": 123,
+    }
+    assert captured["teacher_profile"] == {
+        "chat_id": -1001,
+        "user_id": 456,
+        "latitude": 39.9042,
+        "longitude": 116.4074,
+    }
+    assert captured["cleared"] == (-1001, 123)
+    assert captured["replies"] == ["✅ 已为该老师录入位置。"]
+    assert captured["shown"] == -1001
+    assert session.commits == 1
+
+
+@pytest.mark.asyncio
+async def test_teacher_search_delegate_location_input_saves_shared_map_venue(monkeypatch):
+    captured: dict[str, object] = {"replies": []}
+    session = _SessionContext()
+    context = SimpleNamespace()
+
+    class _Message:
+        location = None
+        venue = SimpleNamespace(location=SimpleNamespace(latitude=31.2304, longitude=121.4737))
+
+        async def reply_text(self, text, **kwargs):
+            captured["replies"].append(text)
+
+    update = SimpleNamespace(effective_user=SimpleNamespace(id=123), effective_message=_Message())
+    state = SimpleNamespace(
+        state_type="teacher_delegate_location_input",
+        state_data={"target_chat_id": -1001, "delegate_user_id": 456},
+    )
+
+    async def fake_upsert_member_location(session, **kwargs):
+        captured["member_location"] = kwargs
+
+    async def fake_upsert_teacher_profile(session, **kwargs):
+        captured["teacher_profile"] = kwargs
+
+    async def fake_clear_state(session, *, target_chat_id, user_id):
+        captured["cleared"] = (target_chat_id, user_id)
+
+    async def fake_show_menu(update, context, chat_id):
+        captured["shown"] = chat_id
+
+    import backend.features.admin.garage.teacher_search_inputs as teacher_search_inputs
+
+    monkeypatch.setattr(TeacherSearchService, "upsert_member_location", fake_upsert_member_location)
+    monkeypatch.setattr(TeacherSearchService, "upsert_teacher_profile_from_location", fake_upsert_teacher_profile)
+    monkeypatch.setattr(teacher_search_inputs, "clear_admin_input_state", fake_clear_state)
+    monkeypatch.setattr(admin_handler._admin_handler, "_show_teacher_search_menu", fake_show_menu)
+
+    handled = await handle_teacher_search_feature_input(
+        update,
+        context,
+        session,
+        state,
+        -1001,
+        "",
+    )
+
+    assert handled is True
+    assert captured["member_location"]["latitude"] == 31.2304
+    assert captured["member_location"]["longitude"] == 121.4737
+    assert captured["teacher_profile"]["latitude"] == 31.2304
+    assert captured["teacher_profile"]["longitude"] == 121.4737
+    assert captured["cleared"] == (-1001, 123)
+    assert captured["shown"] == -1001
+
+
+@pytest.mark.asyncio
+async def test_teacher_search_delegate_location_input_saves_google_maps_link(monkeypatch):
+    captured: dict[str, object] = {"replies": []}
+    session = _SessionContext()
+    context = SimpleNamespace()
+
+    class _Message:
+        location = None
+        venue = None
+
+        async def reply_text(self, text, **kwargs):
+            captured["replies"].append(text)
+
+    update = SimpleNamespace(effective_user=SimpleNamespace(id=123), effective_message=_Message())
+    state = SimpleNamespace(
+        state_type="teacher_delegate_location_input",
+        state_data={"target_chat_id": -1001, "delegate_user_id": 456},
+    )
+
+    async def fake_upsert_member_location(session, **kwargs):
+        captured["member_location"] = kwargs
+
+    async def fake_upsert_teacher_profile(session, **kwargs):
+        captured["teacher_profile"] = kwargs
+
+    async def fake_clear_state(session, *, target_chat_id, user_id):
+        captured["cleared"] = (target_chat_id, user_id)
+
+    async def fake_show_menu(update, context, chat_id):
+        captured["shown"] = chat_id
+
+    import backend.features.admin.garage.teacher_search_inputs as teacher_search_inputs
+
+    monkeypatch.setattr(TeacherSearchService, "upsert_member_location", fake_upsert_member_location)
+    monkeypatch.setattr(TeacherSearchService, "upsert_teacher_profile_from_location", fake_upsert_teacher_profile)
+    monkeypatch.setattr(teacher_search_inputs, "clear_admin_input_state", fake_clear_state)
+    monkeypatch.setattr(admin_handler._admin_handler, "_show_teacher_search_menu", fake_show_menu)
+
+    handled = await handle_teacher_search_feature_input(
+        update,
+        context,
+        session,
+        state,
+        -1001,
+        "https://www.google.com/maps/place/Test/@31.2304,121.4737,17z",
+    )
+
+    assert handled is True
+    assert captured["member_location"]["latitude"] == 31.2304
+    assert captured["member_location"]["longitude"] == 121.4737
+    assert captured["teacher_profile"]["latitude"] == 31.2304
+    assert captured["teacher_profile"]["longitude"] == 121.4737
+    assert captured["cleared"] == (-1001, 123)
+    assert captured["shown"] == -1001
+
+
+@pytest.mark.asyncio
+async def test_teacher_search_delegate_location_input_expands_short_google_maps_link(monkeypatch):
+    captured: dict[str, object] = {"replies": []}
+    session = _SessionContext()
+    context = SimpleNamespace()
+
+    class _Message:
+        location = None
+        venue = None
+
+        async def reply_text(self, text, **kwargs):
+            captured["replies"].append(text)
+
+    update = SimpleNamespace(effective_user=SimpleNamespace(id=123), effective_message=_Message())
+    state = SimpleNamespace(
+        state_type="teacher_delegate_location_input",
+        state_data={"target_chat_id": -1001, "delegate_user_id": 456},
+    )
+
+    async def fake_expand_map_url(url):
+        captured["expanded"] = url
+        return "https://www.google.com/maps/search/?api=1&query=39.9042%2C116.4074"
+
+    async def fake_upsert_member_location(session, **kwargs):
+        captured["member_location"] = kwargs
+
+    async def fake_upsert_teacher_profile(session, **kwargs):
+        captured["teacher_profile"] = kwargs
+
+    async def fake_clear_state(session, *, target_chat_id, user_id):
+        captured["cleared"] = (target_chat_id, user_id)
+
+    async def fake_show_menu(update, context, chat_id):
+        captured["shown"] = chat_id
+
+    import backend.features.admin.garage.teacher_search_inputs as teacher_search_inputs
+
+    monkeypatch.setattr(teacher_search_inputs, "_expand_map_url", fake_expand_map_url)
+    monkeypatch.setattr(TeacherSearchService, "upsert_member_location", fake_upsert_member_location)
+    monkeypatch.setattr(TeacherSearchService, "upsert_teacher_profile_from_location", fake_upsert_teacher_profile)
+    monkeypatch.setattr(teacher_search_inputs, "clear_admin_input_state", fake_clear_state)
+    monkeypatch.setattr(admin_handler._admin_handler, "_show_teacher_search_menu", fake_show_menu)
+
+    handled = await handle_teacher_search_feature_input(
+        update,
+        context,
+        session,
+        state,
+        -1001,
+        "https://maps.app.goo.gl/abc123",
+    )
+
+    assert handled is True
+    assert captured["expanded"] == "https://maps.app.goo.gl/abc123"
+    assert captured["member_location"]["latitude"] == 39.9042
+    assert captured["member_location"]["longitude"] == 116.4074
+    assert captured["teacher_profile"]["latitude"] == 39.9042
+    assert captured["teacher_profile"]["longitude"] == 116.4074
+    assert captured["cleared"] == (-1001, 123)
     assert captured["shown"] == -1001

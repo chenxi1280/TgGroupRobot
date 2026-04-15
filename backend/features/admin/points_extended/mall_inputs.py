@@ -10,6 +10,18 @@ from backend.features.admin.points_extended.runtime import (
 )
 
 
+PRODUCT_INPUT_STATES = {
+    "points_mall_product_name_input",
+    "points_mall_product_price_input",
+    "points_mall_product_limit_input",
+    "points_mall_product_stock_input",
+    "points_mall_fulfiller_input",
+    "points_mall_desc_input",
+    "points_mall_product_sort_input",
+    "points_mall_product_cover_input",
+}
+
+
 async def handle_points_mall_input(
     update,
     context,
@@ -71,7 +83,7 @@ async def handle_points_mall_input(
         await admin_handler_instance()._show_points_mall_cover_page(update, context, target_chat_id)
         return True
 
-    if not state_type.startswith("points_mall_product_"):
+    if state_type not in PRODUCT_INPUT_STATES:
         return False
 
     product_id = parse_state_int(state, "product_id")
@@ -121,7 +133,7 @@ async def handle_points_mall_input(
             product,
             stock_total=int(text_value),
         )
-    elif state_type == "points_mall_product_fulfiller_input":
+    elif state_type == "points_mall_fulfiller_input":
         if text_value == "清空":
             await module.PointsExtendedService.update_product(session, product, fulfiller_user_id=None)
         else:
@@ -133,7 +145,7 @@ async def handle_points_mall_input(
                 await update.effective_message.reply_text("发放人员必须是当前群组成员。")
                 return True
             await module.PointsExtendedService.update_product(session, product, fulfiller_user_id=fulfiller_user_id)
-    elif state_type == "points_mall_product_description_input":
+    elif state_type == "points_mall_desc_input":
         await module.PointsExtendedService.update_product(
             session,
             product,

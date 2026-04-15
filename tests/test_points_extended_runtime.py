@@ -141,8 +141,12 @@ async def test_handle_points_extended_input_clears_invalid_custom_point_state(mo
     async def fake_clear_user_state(session, *, chat_id: int, user_id: int):
         clear_calls.append((chat_id, user_id))
 
+    async def fake_clear_private_input_state(session, user_id: int):
+        clear_calls.append((user_id, user_id))
+
     monkeypatch.setattr(admin_handler.PermissionPolicyService, "require_manage", fake_require_manage)
     monkeypatch.setattr(admin_handler, "clear_user_state", fake_clear_user_state)
+    monkeypatch.setattr(admin_handler, "clear_private_input_state", fake_clear_private_input_state)
 
     update = SimpleNamespace(
         effective_user=SimpleNamespace(id=42),
@@ -183,6 +187,9 @@ async def test_handle_points_extended_input_supports_custom_point_deduct(monkeyp
     async def fake_clear_user_state(session, *, chat_id: int, user_id: int):
         clear_calls.append((chat_id, user_id))
 
+    async def fake_clear_private_input_state(session, user_id: int):
+        clear_calls.append((user_id, user_id))
+
     async def fake_get_custom_point_type(session, chat_id: int, type_id: int):
         return SimpleNamespace(id=type_id, name="出击分")
 
@@ -198,6 +205,7 @@ async def test_handle_points_extended_input_supports_custom_point_deduct(monkeyp
 
     monkeypatch.setattr(admin_handler.PermissionPolicyService, "require_manage", fake_require_manage)
     monkeypatch.setattr(admin_handler, "clear_user_state", fake_clear_user_state)
+    monkeypatch.setattr(admin_handler, "clear_private_input_state", fake_clear_private_input_state)
     monkeypatch.setattr(admin_handler, "ensure_user", fake_ensure_user)
     monkeypatch.setattr(admin_handler.PointsExtendedService, "get_custom_point_type", fake_get_custom_point_type)
     monkeypatch.setattr(admin_handler.PointsExtendedService, "adjust_custom_points", fake_adjust_custom_points)
@@ -239,6 +247,9 @@ async def test_handle_points_extended_input_updates_mall_cover(monkeypatch):
     async def fake_clear_user_state(session, *, chat_id: int, user_id: int):
         clear_calls.append((chat_id, user_id))
 
+    async def fake_clear_private_input_state(session, user_id: int):
+        clear_calls.append((user_id, user_id))
+
     async def fake_get_or_create_mall_setting(session, chat_id: int):
         return SimpleNamespace(chat_id=chat_id)
 
@@ -251,6 +262,7 @@ async def test_handle_points_extended_input_updates_mall_cover(monkeypatch):
 
     monkeypatch.setattr(admin_handler.PermissionPolicyService, "require_manage", fake_require_manage)
     monkeypatch.setattr(admin_handler, "clear_user_state", fake_clear_user_state)
+    monkeypatch.setattr(admin_handler, "clear_private_input_state", fake_clear_private_input_state)
     monkeypatch.setattr(admin_handler.PointsExtendedService, "get_or_create_mall_setting", fake_get_or_create_mall_setting)
     monkeypatch.setattr(admin_handler.PointsExtendedService, "update_mall_setting", fake_update_mall_setting)
     monkeypatch.setattr(admin_handler._admin_handler, "_show_points_mall_cover_page", fake_show_cover)
@@ -774,7 +786,7 @@ async def test_handle_points_extended_input_rejects_non_member_fulfiller(monkeyp
     context = SimpleNamespace()
     session = _FakeSession()
     state = SimpleNamespace(
-        state_type="points_mall_product_fulfiller_input",
+        state_type="points_mall_fulfiller_input",
         state_data={"target_chat_id": -1001, "product_id": 9},
         chat_id=42,
     )

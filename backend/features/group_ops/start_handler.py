@@ -213,8 +213,8 @@ async def private_message_handler(update: Update, context: ContextTypes.DEFAULT_
         state = await StateHelper.get_state_by_chat(session, chat, user.id)
         await session.commit()
 
-    # 如果有对话状态，不做处理（让其他专门的消息处理器处理）
-    if state is not None:
+    # selected_chat 只是当前群组选择，不是输入流程状态。
+    if state is not None and state.state_type != "selected_chat":
         return
 
     # 没有对话状态，显示群组列表

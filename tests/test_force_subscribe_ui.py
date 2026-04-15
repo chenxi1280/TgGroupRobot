@@ -192,6 +192,9 @@ async def test_force_subscribe_buttons_input_accepts_line_format(monkeypatch):
     async def fake_clear_user_state(session, *, chat_id: int, user_id: int):
         clear_calls.append((chat_id, user_id))
 
+    async def fake_clear_private_input_state(session, user_id: int):
+        clear_calls.append((user_id, user_id))
+
     async def fake_show_force_subscribe_menu(update, context, chat_id: int):
         shown.append(chat_id)
 
@@ -199,6 +202,7 @@ async def test_force_subscribe_buttons_input_accepts_line_format(monkeypatch):
     monkeypatch.setattr(admin_handler, "get_chat_settings", fake_get_chat_settings)
     from backend.platform.state import state_service
     monkeypatch.setattr(state_service, "clear_user_state", fake_clear_user_state)
+    monkeypatch.setattr(state_service, "clear_private_input_state", fake_clear_private_input_state)
     monkeypatch.setattr(admin_handler._admin_handler, "_show_force_subscribe_menu", fake_show_force_subscribe_menu)
 
     async def _reply_text(*args, **kwargs):

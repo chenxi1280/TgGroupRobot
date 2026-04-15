@@ -237,11 +237,15 @@ async def test_handle_garage_forward_input_updates_keywords(monkeypatch):
     async def fake_clear_user_state(session, *, chat_id, user_id):
         clear_calls.append((chat_id, user_id))
 
+    async def fake_clear_private_input_state(session, user_id):
+        clear_calls.append((user_id, user_id))
+
     async def fake_show(update, context, chat_id):
         shown.append(chat_id)
 
     monkeypatch.setattr(admin_handler.PermissionPolicyService, "require_manage", fake_require_manage)
     monkeypatch.setattr(state_service, "clear_user_state", fake_clear_user_state)
+    monkeypatch.setattr(state_service, "clear_private_input_state", fake_clear_private_input_state)
     monkeypatch.setattr(admin_handler._admin_handler, "_show_garage_forward_prompt", fake_show)
     monkeypatch.setattr(GarageForwardService, "update_setting", fake_update_setting)
 

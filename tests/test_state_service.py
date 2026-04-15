@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import ast
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 from backend.platform.db.schema.models.core import ConversationState
+from backend.platform.db.schema.models.enums import ConversationStateType
 from backend.shared.services.module_settings_service import ModuleSettingsService
-from backend.platform.state.conversation_state_service import ConversationStateService
+from backend.platform.state.conversation_state_service import ConversationStateService, clear_private_input_state
 
 
 class DummySession:
@@ -23,6 +26,138 @@ class DummySession:
 
     async def delete(self, entity: object) -> None:
         self.deleted.append(entity)
+
+
+def test_state_type_values_fit_db_column() -> None:
+    from backend.platform.telegram.private_config_registry import build_private_config_handlers
+
+    max_length = 32
+    candidates: dict[str, set[str]] = {}
+
+    def add(source: str, value: str) -> None:
+        candidates.setdefault(value, set()).add(source)
+
+    for item in ConversationStateType:
+        add(f"ConversationStateType.{item.name}", item.value)
+
+    for state_name in build_private_config_handlers():
+        add("private_config_registry", state_name)
+
+    for path in Path("backend").rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                value = node.value
+                if (
+                    value.endswith("_input")
+                    and not value.startswith(("handle_", "parse_"))
+                    and "." not in value
+                    and "\n" not in value
+                ):
+                    add(f"{path}:{node.lineno}", value)
+
+    too_long = {
+        value: sorted(sources)
+        for value, sources in sorted(candidates.items())
+        if len(value) > max_length
+    }
+
+    assert too_long == {}
+
+
+@pytest.mark.asyncio
+async def test_clear_private_input_state_preserves_selected_chat(monkeypatch):
+    calls: list[tuple] = []
+    state = SimpleNamespace(state_type="selected_chat")
+
+    async def fake_get(session, chat_id: int, user_id: int):
+        calls.append(("get", chat_id, user_id))
+        return state
+
+    async def fake_clear(session, chat_id: int, user_id: int):
+        calls.append(("clear", chat_id, user_id))
+
+    monkeypatch.setattr(ConversationStateService, "get", fake_get)
+    monkeypatch.setattr(ConversationStateService, "clear", fake_clear)
+
+    await clear_private_input_state(object(), 42)
+
+    assert calls == [("get", 42, 42)]
+
+
+@pytest.mark.asyncio
+async def test_clear_private_input_state_clears_real_input_state(monkeypatch):
+    calls: list[tuple] = []
+    state = SimpleNamespace(state_type="teacher_delegate_target_input")
+
+    async def fake_get(session, chat_id: int, user_id: int):
+        calls.append(("get", chat_id, user_id))
+        return state
+
+    async def fake_clear(session, chat_id: int, user_id: int):
+        calls.append(("clear", chat_id, user_id))
+
+    monkeypatch.setattr(ConversationStateService, "get", fake_get)
+    monkeypatch.setattr(ConversationStateService, "clear", fake_clear)
+
+    await clear_private_input_state(object(), 42)
+
+    assert calls == [("get", 42, 42), ("clear", 42, 42)]
+
+
+@pytest.mark.asyncio
+async def test_start_text_input_state_preserves_private_selected_chat(monkeypatch):
+    from backend.features.admin.moderation.state import ModerationStateMixin
+
+    calls: list[tuple] = []
+
+    class _Session:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def commit(self):
+            calls.append(("commit",))
+
+    class _Db:
+        def session_factory(self):
+            return _Session()
+
+    class _Handler(ModerationStateMixin):
+        pass
+
+    async def fake_clear_user_state(session, chat_id: int, user_id: int):
+        calls.append(("clear", chat_id, user_id))
+
+    async def fake_clear_private_input_state(session, user_id: int):
+        calls.append(("clear_private_input", user_id))
+
+    async def fake_set_user_state(session, chat_id: int, user_id: int, state_type: str, state_data: dict):
+        calls.append(("set", chat_id, user_id, state_type, state_data))
+
+    monkeypatch.setattr("backend.platform.state.state_service.clear_user_state", fake_clear_user_state)
+    monkeypatch.setattr("backend.platform.state.state_service.clear_private_input_state", fake_clear_private_input_state)
+    monkeypatch.setattr("backend.platform.state.state_service.set_user_state", fake_set_user_state)
+
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}))
+
+    await _Handler()._start_text_input_state(
+        context,
+        42,
+        -1001,
+        "teacher_delegate_target_input",
+        {"target_chat_id": -1001},
+    )
+
+    assert ("clear", 42, 42) not in calls
+    assert calls == [
+        ("clear", -1001, 42),
+        ("clear_private_input", 42),
+        ("set", -1001, 42, "teacher_delegate_target_input", {"target_chat_id": -1001}),
+        ("commit",),
+    ]
 
 
 @pytest.mark.asyncio

@@ -16,7 +16,7 @@ from backend.features.activity.services.game_service import (
     get_or_create_setting as get_game_setting,
     get_rake_owner_label as get_game_rake_owner_label,
 )
-from backend.platform.state.state_service import clear_user_state, set_user_state
+from backend.platform.state.state_service import clear_private_input_state, clear_user_state, set_user_state
 from backend.platform.telegram.errors import answer_callback_query_safely
 from backend.shared.services.chat_service import get_chat_settings
 from backend.shared.services.permission_service import is_user_admin
@@ -25,6 +25,7 @@ from backend.shared.services.user_service import ensure_user
 _ORIG_get_chat_settings = get_chat_settings
 _ORIG_answer_callback_query_safely = answer_callback_query_safely
 _ORIG_clear_user_state = clear_user_state
+_ORIG_clear_private_input_state = clear_private_input_state
 _ORIG_ensure_user = ensure_user
 _ORIG_set_user_state = set_user_state
 _ORIG_get_egg_event_counts = get_egg_event_counts
@@ -65,6 +66,10 @@ async def answer_callback_query_safely(*args, **kwargs):
 
 async def clear_user_state(*args, **kwargs):
     return await _resolve_admin_override("clear_user_state", _ORIG_clear_user_state)(*args, **kwargs)
+
+
+async def clear_private_input_state(*args, **kwargs):
+    return await _resolve_admin_override("clear_private_input_state", _ORIG_clear_private_input_state)(*args, **kwargs)
 
 
 async def ensure_user(*args, **kwargs):

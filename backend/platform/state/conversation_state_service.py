@@ -15,6 +15,7 @@ log = structlog.get_logger(__name__)
 
 
 _EXPIRE_AT_KEY = "__expire_at__"
+SELECTED_CHAT_STATE = "selected_chat"
 
 
 def _serialize_expire_at(expire_at: dt.datetime | None) -> str | None:
@@ -252,3 +253,12 @@ async def clear_user_state(
     user_id: int,
 ) -> None:
     await ConversationStateService.clear(session, chat_id, user_id)
+
+
+async def clear_private_input_state(
+    session: AsyncSession,
+    user_id: int,
+) -> None:
+    state = await ConversationStateService.get(session, user_id, user_id)
+    if state is not None and state.state_type != SELECTED_CHAT_STATE:
+        await ConversationStateService.clear(session, user_id, user_id)

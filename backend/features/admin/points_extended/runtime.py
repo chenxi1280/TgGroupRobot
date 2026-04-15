@@ -16,7 +16,8 @@ def admin_module():
 async def clear_points_state(session, *, target_chat_id: int, user_id: int) -> None:
     module = admin_module()
     await module.clear_user_state(session, chat_id=target_chat_id, user_id=user_id)
-    await module.clear_user_state(session, chat_id=user_id, user_id=user_id)
+    if target_chat_id != user_id:
+        await module.clear_private_input_state(session, user_id)
 
 
 def parse_state_int(state, key: str) -> int | None:

@@ -129,7 +129,7 @@ from backend.features.invite.services.account_inherit_service import build_summa
 from backend.features.points.services.points_extended_service import PointsExtendedService
 from backend.platform.config.core.settings import get_settings
 from backend.platform.db.runtime.session import Database
-from backend.platform.state.state_service import clear_user_state, get_user_state, set_user_state
+from backend.platform.state.state_service import clear_private_input_state, clear_user_state, get_user_state, set_user_state
 from backend.platform.telegram.errors import answer_callback_query_safely, build_public_error_text, mark_callback_query_answered
 from backend.shared.callback_parser import CallbackParser
 from backend.shared.handlers.base.base_handler import BaseHandler

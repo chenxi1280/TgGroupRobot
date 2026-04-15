@@ -56,7 +56,10 @@ class VerificationConfigStartMixin:
 
                 state_chat_id = target_chat_id
                 await clear_user_state(session, chat_id=state_chat_id, user_id=user.id)
-                await clear_user_state(session, chat_id=user.id, user_id=user.id)
+                if state_chat_id != user.id:
+                    from backend.platform.state.state_service import clear_private_input_state
+
+                    await clear_private_input_state(session, user.id)
                 await session.execute(
                     delete(ConversationState).where(
                         ConversationState.user_id == user.id,
