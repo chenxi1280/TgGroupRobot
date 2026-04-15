@@ -31,9 +31,7 @@ log = structlog.get_logger(__name__)
 
 
 def _task_has_sendable_content(task) -> bool:
-    return bool(str(getattr(task, "text", "") or "").strip()) or (
-        getattr(task, "media_type", "none") != "none" and bool(getattr(task, "media_file_id", None))
-    )
+    return ScheduledMessageService.has_sendable_content(task)
 
 
 def _build_task_buttons(buttons: list | None) -> InlineKeyboardMarkup | None:
@@ -368,7 +366,7 @@ class ScheduledMessageMutationMixin:
             elif task.media_type == "animation" and task.media_file_id:
                 await context.bot.send_animation(preview_chat_id, task.media_file_id, caption=task.text, parse_mode=parse_mode, reply_markup=reply_markup)
             else:
-                await context.bot.send_message(preview_chat_id, task.text or "（无内容）", parse_mode=parse_mode, reply_markup=reply_markup)
+                await context.bot.send_message(preview_chat_id, task.text, parse_mode=parse_mode, reply_markup=reply_markup)
         except Exception as exc:
             log.warning("scheduled_message_preview_failed", task_id=task_id, error=str(exc))
             await answer_callback_query_safely(update, "预览发送失败，请检查封面或文本配置", show_alert=True)

@@ -69,6 +69,17 @@ class ScheduledMessageTaskRunner(ScheduledTask):
                         # 不在时段内，跳过
                         continue
 
+                    if not ScheduledMessageService.has_sendable_content(task):
+                        await ScheduledMessageService.toggle_task_enabled(session, task.task_id, False)
+                        await session.commit()
+                        log.warning(
+                            "scheduled_message_skipped_empty_content",
+                            task_id=str(task.task_id),
+                            title=task.title,
+                            chat_id=task.chat_id,
+                        )
+                        continue
+
                     # 删除上一条消息（如果需要）
                     if task.delete_previous and task.last_sent_message_id:
                         try:
@@ -145,6 +156,14 @@ class ScheduledMessageTaskRunner(ScheduledTask):
             发送的消息 ID，失败返回 None
         """
         try:
+            if not ScheduledMessageService.has_sendable_content(task):
+                log.warning(
+                    "scheduled_message_send_skipped_empty_content",
+                    task_id=str(task.task_id),
+                    title=task.title,
+                )
+                return None
+
             # 构建回复键盘（如果有按钮）
             reply_markup = None
             if task.buttons:
@@ -219,14 +238,16 @@ class ScheduledMessageTaskRunner(ScheduledTask):
                     parse_mode=task.parse_mode if task.parse_mode != "none" else None,
                     reply_markup=reply_markup,
                 )
-            else:
+            elif str(task.text or "").strip():
                 # 发送纯文本消息
                 msg = await app.bot.send_message(
                     task.chat_id,
-                    task.text or "（无内容）",
+                    task.text,
                     parse_mode=task.parse_mode if task.parse_mode != "none" else None,
                     reply_markup=reply_markup,
                 )
+            else:
+                return None
 
             return msg.message_id
 

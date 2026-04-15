@@ -85,6 +85,7 @@ def test_scheduled_message_detail_panel_marks_configured_fields() -> None:
     assert keyboard.inline_keyboard[2][0].text == "✅ 设置文本"
     assert keyboard.inline_keyboard[2][1].text == "✅ 设置按钮"
     assert keyboard.inline_keyboard[5][1].text == "✅ 启用"
+    assert keyboard.inline_keyboard[-1][0].callback_data == "sm:list:-100123:0"
 
 
 def test_parse_buttons_text_supports_line_format_and_same_row_separator() -> None:

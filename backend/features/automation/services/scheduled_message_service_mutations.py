@@ -44,6 +44,13 @@ class ScheduledMessageMutationMixin:
         end_at = kwargs.get("end_at")
         cls.validate_time_range(start_at, end_at)
 
+        media_type = kwargs.get("media_type", "none")
+        media_file_id = kwargs.get("media_file_id")
+        text = kwargs.get("text")
+        enabled = kwargs.get("enabled", True)
+        if enabled and not cls.has_sendable_payload(text=text, media_type=media_type, media_file_id=media_file_id):
+            raise ValidationError("请先设置文本或封面")
+
         raw_buttons = kwargs.get("buttons", [])
         buttons = cls.normalize_buttons_config(raw_buttons) if raw_buttons else []
 
@@ -61,16 +68,16 @@ class ScheduledMessageMutationMixin:
             chat_id=chat_id,
             created_by_user_id=created_by_user_id,
             title=title.strip(),
-            enabled=kwargs.get("enabled", True),
+            enabled=enabled,
             repeat_interval_min=repeat_interval_min,
             day_start_hour=day_start_hour,
             day_end_hour=day_end_hour,
             start_at=start_at,
             end_at=end_at,
-            text=kwargs.get("text"),
+            text=text,
             parse_mode=kwargs.get("parse_mode", "HTML"),
-            media_type=kwargs.get("media_type", "none"),
-            media_file_id=kwargs.get("media_file_id"),
+            media_type=media_type,
+            media_file_id=media_file_id,
             buttons=buttons,
             delete_previous=kwargs.get("delete_previous", True),
             pin_message=kwargs.get("pin_message", False),
@@ -102,6 +109,9 @@ class ScheduledMessageMutationMixin:
 
         cls.validate_time_range(task.start_at, task.end_at)
 
+        if task.enabled and not cls.has_sendable_content(task):
+            task.enabled = False
+
         recalculate_keys = ["repeat_interval_min", "day_start_hour", "day_end_hour", "start_at"]
         if any(key in kwargs for key in recalculate_keys):
             now_timestamp = int(dt.datetime.now(dt.UTC).timestamp())
@@ -118,6 +128,8 @@ class ScheduledMessageMutationMixin:
         enabled: bool,
     ) -> ScheduledMessageTask:
         task = await cls.get_task_by_id_or_404(session, task_id)
+        if enabled and not cls.has_sendable_content(task):
+            raise ValidationError("请先设置文本或封面")
         task.enabled = enabled
         if enabled:
             now_timestamp = int(dt.datetime.now(dt.UTC).timestamp())

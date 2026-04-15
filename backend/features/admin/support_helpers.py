@@ -9,6 +9,13 @@ from backend.shared.callback_parser import CallbackParser
 T = TypeVar("T")
 
 
+def _parse_int_silent(value: str) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _cycle_config_value(current: T, options: list[T]) -> T:
     if current not in options:
         return options[0]
@@ -23,10 +30,11 @@ def _resolve_private_admin_target_chat_id(cb: CallbackParser) -> int | None:
         return 0
 
     if action == "menu":
-        if cb.length() >= 4 and cb.get(3) == "back_to_menu":
-            return cb.get_int_optional(2)
         if cb.length() >= 4:
-            return cb.get_int_optional(3)
+            chat_first = _parse_int_silent(cb.get(2))
+            if chat_first is not None:
+                return chat_first
+            return _parse_int_silent(cb.get(3))
         return None
 
     if action == "renewal":

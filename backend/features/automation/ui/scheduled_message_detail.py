@@ -4,7 +4,6 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from backend.shared.time_helper import get_interval_description
 from backend.shared.ui.message_config_panel import action_button, button_count, mark_configured
-from backend.shared.ui.base.helpers import create_back_button
 
 
 def sm_detail_keyboard(task, chat_id: int) -> InlineKeyboardMarkup:
@@ -46,6 +45,6 @@ def sm_detail_keyboard(task, chat_id: int) -> InlineKeyboardMarkup:
             InlineKeyboardButton("❌ 删除配置", callback_data=f"sm:del_confirm:{chat_id}:{task.short_id}"),
         ],
         [
-            create_back_button(chat_id, "sm:list"),
+            InlineKeyboardButton("🔙 返回", callback_data=f"sm:list:{chat_id}:0"),
         ],
     ])

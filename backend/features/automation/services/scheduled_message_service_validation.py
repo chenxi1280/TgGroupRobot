@@ -23,6 +23,25 @@ class ScheduledMessageValidationMixin:
     _VALID_TOGGLE_OPTIONS = ["enabled", "delete_previous", "pin_message"]
 
     @staticmethod
+    def has_sendable_payload(
+        *,
+        text: str | None,
+        media_type: str | None,
+        media_file_id: str | None,
+    ) -> bool:
+        has_text = bool(str(text or "").strip())
+        has_media = bool(media_type and media_type != "none" and media_file_id)
+        return has_text or has_media
+
+    @classmethod
+    def has_sendable_content(cls, task) -> bool:
+        return cls.has_sendable_payload(
+            text=getattr(task, "text", None),
+            media_type=getattr(task, "media_type", "none"),
+            media_file_id=getattr(task, "media_file_id", None),
+        )
+
+    @staticmethod
     def _normalize_button_url(url: str) -> str:
         """规范化按钮 URL，支持常见简写。"""
         normalized = url.strip()

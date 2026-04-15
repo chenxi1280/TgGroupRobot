@@ -46,7 +46,10 @@ def _resolve_admin_override(name: str, default):
     admin_module = sys.modules.get("backend.features.admin.admin_handler")
     if admin_module is None:
         return default
-    return getattr(admin_module, name, default)
+    candidate = getattr(admin_module, name, default)
+    if candidate is globals().get(name):
+        return default
+    return candidate
 
 
 async def get_chat_settings(*args, **kwargs):

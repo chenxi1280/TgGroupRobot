@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from backend.features.admin import admin_handler
+from backend.shared.ui.base.helpers import create_back_button
 
 
 @pytest.mark.asyncio
@@ -32,6 +33,66 @@ async def test_admin_callback_handles_two_part_action_in_private(monkeypatch):
     await admin_handler.admin_callback(update, context)
 
     assert called == {"target_chat_id": 0}
+
+
+@pytest.mark.asyncio
+async def test_admin_callback_handles_legacy_chat_first_menu_callback(monkeypatch):
+    called: dict[str, int] = {}
+
+    async def fake_process(update, context, target_chat_id: int):
+        called["target_chat_id"] = target_chat_id
+
+    async def fake_require_manage(*args, **kwargs):
+        return True, None
+
+    monkeypatch.setattr(admin_handler._admin_handler, "process", fake_process)
+    monkeypatch.setattr(admin_handler.PermissionPolicyService, "require_manage", fake_require_manage)
+
+    class _Q:
+        data = "adm:menu:-1005566:sm:list"
+
+        async def answer(self, *args, **kwargs):
+            return None
+
+    update = SimpleNamespace(
+        callback_query=_Q(),
+        effective_chat=SimpleNamespace(type="private"),
+        effective_user=SimpleNamespace(id=12345),
+    )
+    context = SimpleNamespace()
+
+    await admin_handler.admin_callback(update, context)
+
+    assert called == {"target_chat_id": -1005566}
+
+
+@pytest.mark.asyncio
+async def test_admin_callback_invalid_private_menu_answers_without_recursion():
+    answers: list[tuple[str, bool]] = []
+
+    class _Q:
+        data = "adm:menu:sm:list"
+        id = "invalid-menu"
+
+        async def answer(self, text: str = "", show_alert: bool = False):
+            answers.append((text, show_alert))
+
+    update = SimpleNamespace(
+        callback_query=_Q(),
+        effective_chat=SimpleNamespace(type="private"),
+        effective_user=SimpleNamespace(id=12345),
+    )
+    context = SimpleNamespace()
+
+    await admin_handler.admin_callback(update, context)
+
+    assert answers == [("❌ 群组参数无效，请返回重试", True)]
+
+
+def test_create_back_button_uses_admin_menu_order() -> None:
+    button = create_back_button(-1005566, "main")
+
+    assert button.callback_data == "adm:menu:main:-1005566"
 
 
 @pytest.mark.asyncio

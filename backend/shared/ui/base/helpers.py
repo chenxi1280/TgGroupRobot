@@ -29,8 +29,14 @@ def create_back_button(
     Example:
         >>> btn = create_back_button(123, "main", "🔙 返回")
         >>> btn.callback_data
-        'adm:menu:123:main'
+        'adm:menu:main:123'
     """
+    if prefix == "adm":
+        callback_data = f"{prefix}:menu:{to_menu}"
+        if chat_id is not None:
+            callback_data = f"{callback_data}:{chat_id}"
+        return InlineKeyboardButton(label, callback_data=callback_data)
+
     callback_builder = CallbackBuilder(prefix, chat_id)
     callback_data = callback_builder.build("menu", to_menu)
     return InlineKeyboardButton(label, callback_data=callback_data)
