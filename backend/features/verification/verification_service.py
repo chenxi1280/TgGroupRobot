@@ -41,7 +41,7 @@ def generate_math_question() -> tuple[str, str]:
     Returns:
         (question, answer) - 问题和答案
     """
-    ops = ["+", "-", "*"]
+    ops = ["+", "-"]
     op = random.choice(ops)
 
     if op == "+":
@@ -49,17 +49,12 @@ def generate_math_question() -> tuple[str, str]:
         b = random.randint(1, 50)
         question = f"{a} + {b} = ?"
         answer = str(a + b)
-    elif op == "-":
-        a = random.randint(10, 50)
-        b = random.randint(1, a)
-        question = f"{a} - {b} = ?"
-        answer = str(a - b)
-    else:  # *
-        a = random.randint(2, 10)
-        b = random.randint(2, 10)
-        question = f"{a} × {b} = ?"
-        answer = str(a * b)
+        return question, answer
 
+    a = random.randint(10, 50)
+    b = random.randint(1, a)
+    question = f"{a} - {b} = ?"
+    answer = str(a - b)
     return question, answer
 
 

@@ -91,6 +91,9 @@ class ConversationStateType(str, enum.Enum):
     auto_reply_edit_buttons = "auto_reply_edit_buttons"  # 编辑自动回复按钮
     banned_word_add = "banned_word_add"  # 添加违禁词流程
     verification_config = "verification_config"  # 验证配置流程
+    verification_cover_input = "verification_cover_input"  # 进群验证封面
+    verification_agreement_text_input = "vfy_agreement_text_input"  # 简单接受条约文案
+    verification_math_prompt_text_input = "vfy_math_prompt_text_input"  # 简单加减法文案
     anti_flood_config = "anti_flood_config"  # 防刷屏配置流程
     anti_spam_config = "anti_spam_config"  # 反垃圾配置流程
     renewal_card_input = "renewal_card_input"  # 续费卡密输入流程
@@ -214,8 +217,9 @@ class ScheduleType(str, enum.Enum):
 
 class VerificationMode(str, enum.Enum):
     """验证模式"""
-    button = "button"  # 按钮验证
-    math = "math"  # 数学题验证
+    button = "button"  # 简单接受条约
+    math = "math"  # 简单加减法
+    mute = "mute"  # 直接禁言新人
     captcha = "captcha"  # 验证码验证
     admin = "admin"  # 管理员确认（管理员手动审核）
 

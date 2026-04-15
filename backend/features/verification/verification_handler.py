@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import html
+
 from sqlalchemy import select
 from telegram import ChatPermissions, Update
 from telegram.ext import ContextTypes
@@ -32,6 +34,8 @@ from backend.features.verification.verification_helpers import (
     user_mention_html as _user_mention_html,
 )
 from backend.features.verification.verification_runtime import (
+    apply_verification_punishment as _apply_verification_punishment,
+    restrict_for_verification as _restrict_for_verification,
     send_after_verify_welcome as _send_after_verify_welcome,
     unrestrict_and_notify as _unrestrict_and_notify,
 )
@@ -113,6 +117,42 @@ async def _track_invite_for_member(context: ContextTypes.DEFAULT_TYPE, session, 
                     pass
 
 
+async def _send_verification_prompt(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+    settings,
+    text: str,
+    *,
+    reply_markup=None,
+) -> None:
+    media_type = getattr(settings, "verification_cover_media_type", None)
+    file_id = getattr(settings, "verification_cover_file_id", None)
+    if media_type == "photo" and file_id:
+        await context.bot.send_photo(
+            chat_id=chat_id,
+            photo=file_id,
+            caption=text,
+            parse_mode="HTML",
+            reply_markup=reply_markup,
+        )
+        return
+    if media_type == "video" and file_id:
+        await context.bot.send_video(
+            chat_id=chat_id,
+            video=file_id,
+            caption=text,
+            parse_mode="HTML",
+            reply_markup=reply_markup,
+        )
+        return
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text=text,
+        parse_mode="HTML",
+        reply_markup=reply_markup,
+    )
+
+
 async def new_members_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.effective_chat is None or update.effective_message is None:
         return
@@ -137,56 +177,40 @@ async def new_members_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             await _upsert_chat_member_join(session, chat.id, u)
         await session.flush()
 
-        sent_doc_welcome = await WelcomeService.send_for_mode(context, session, chat_id=chat.id, mode="on_join", members=new_members)
-        if not sent_doc_welcome and settings.welcome_enabled:
-            for u in new_members:
-                mention = u.mention_html()
-                welcome_text = settings.welcome_message.format(user=mention, chat=chat.title or "本群") if settings.welcome_message else t(settings.language, "welcome.default", user=mention, chat=chat.title or "本群")
-                try:
-                    await context.bot.send_message(chat_id=chat.id, text=welcome_text, parse_mode="HTML")
-                except Exception:
-                    pass
-
         if await _handle_join_burst_guard(context, session, chat, new_members, settings):
             await session.commit()
             return
 
-        if not settings.verification_enabled:
-            for u in new_members:
-                await _track_invite_for_member(context, session, chat, u, settings)
-                started = await _start_self_review_if_needed(context, session, chat, u, settings)
-                if started:
-                    try:
-                        await context.bot.restrict_chat_member(
-                            chat_id=chat.id,
-                            user_id=u.id,
-                            permissions=ChatPermissions(
-                                can_send_messages=False,
-                                can_send_audios=False,
-                                can_send_documents=False,
-                                can_send_photos=False,
-                                can_send_videos=False,
-                                can_send_video_notes=False,
-                                can_send_voice_notes=False,
-                                can_send_polls=False,
-                                can_send_other_messages=False,
-                                can_add_web_page_previews=False,
-                                can_change_info=False,
-                                can_invite_users=False,
-                                can_pin_messages=False,
-                                can_manage_topics=False,
-                            ),
-                        )
-                    except Exception:
-                        pass
-            await session.commit()
-            return
-
+        welcomed_members = []
         for u in new_members:
             if await _handle_join_spam_guard(context, chat, u, settings):
                 continue
 
+            welcomed_members.append(u)
             await _track_invite_for_member(context, session, chat, u, settings)
+
+            if not settings.verification_enabled:
+                started = await _start_self_review_if_needed(context, session, chat, u, settings)
+                if started:
+                    try:
+                        await _restrict_for_verification(context, chat.id, u.id)
+                    except Exception:
+                        pass
+                continue
+
+            if settings.verification_mode == "mute":
+                try:
+                    await _apply_verification_punishment(
+                        context,
+                        chat.id,
+                        u.id,
+                        settings,
+                        action="mute",
+                        mute_seconds=int(getattr(settings, "verification_direct_mute_duration", 0) or 0),
+                    )
+                except Exception:
+                    pass
+                continue
 
             ch = await create_or_replace_challenge(
                 session,
@@ -223,14 +247,30 @@ async def new_members_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
                 if settings.verification_mode == "button":
                     from backend.shared.ui.common.verification import verification_keyboard
 
-                    await context.bot.send_message(
-                        chat_id=chat.id,
-                        text=t(settings.language, "verify.prompt", user=mention, seconds=settings.verification_timeout_seconds),
+                    agreement_text = html.escape(
+                        (getattr(settings, "verification_agreement_text", None) or "请阅读并同意本群规则后再发言。").strip()
+                    )
+                    await _send_verification_prompt(
+                        context,
+                        chat.id,
+                        settings,
+                        (
+                            f"{mention}\n\n"
+                            f"{agreement_text}\n\n"
+                            f"⏱️ 请在 {settings.verification_timeout_seconds} 秒内点击按钮。"
+                        ),
                         reply_markup=verification_keyboard(ch.token),
-                        parse_mode="HTML",
                     )
                 elif settings.verification_mode == "math":
-                    await context.bot.send_message(chat_id=chat.id, text=f"🔢 {mention} 请回答以下数学题以完成验证：\n\n<b>{ch.question}</b>\n\n⏱️ {settings.verification_timeout_seconds} 秒内完成", parse_mode="HTML")
+                    prompt_text = html.escape(
+                        (getattr(settings, "verification_math_prompt_text", None) or "请回答下面的简单算术题完成验证。").strip()
+                    )
+                    await _send_verification_prompt(
+                        context,
+                        chat.id,
+                        settings,
+                        f"🔢 {mention}\n\n{prompt_text}\n\n<b>{ch.question}</b>\n\n⏱️ {settings.verification_timeout_seconds} 秒内完成",
+                    )
                 elif settings.verification_mode == "captcha":
                     await context.bot.send_message(chat_id=chat.id, text=f"🔢 {mention} 请输入以下验证码以完成验证：\n\n<b>{ch.question}</b>\n\n⏱️ {settings.verification_timeout_seconds} 秒内完成", parse_mode="HTML")
                 elif settings.verification_mode == "admin":
@@ -256,5 +296,26 @@ async def new_members_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
                     await context.bot.send_message(chat_id=chat.id, text=f"⚠️ {mention} 验证提示发送失败，已临时放行。请管理员检查机器人在本群发言权限。", parse_mode="HTML")
                 except Exception:
                     pass
+
+        if welcomed_members:
+            sent_doc_welcome = await WelcomeService.send_for_mode(
+                context,
+                session,
+                chat_id=chat.id,
+                mode="on_join",
+                members=welcomed_members,
+            )
+            if not sent_doc_welcome and settings.welcome_enabled:
+                for u in welcomed_members:
+                    mention = u.mention_html()
+                    welcome_text = (
+                        settings.welcome_message.format(user=mention, chat=chat.title or "本群")
+                        if settings.welcome_message
+                        else t(settings.language, "welcome.default", user=mention, chat=chat.title or "本群")
+                    )
+                    try:
+                        await context.bot.send_message(chat_id=chat.id, text=welcome_text, parse_mode="HTML")
+                    except Exception:
+                        pass
 
         await session.commit()

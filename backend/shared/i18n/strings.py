@@ -19,8 +19,8 @@ STRINGS: dict[str, dict[str, str]] = {
         "points.signed": "签到成功，获得 {points} 积分。当前余额：{balance}",
         "points.already_signed": "你今天已经签到过了。当前余额：{balance}",
         "points.balance": "你在本群的积分余额：{balance}",
-        "verify.prompt": "欢迎 {user}！请在 {seconds} 秒内点击按钮完成验证，否则将继续限制发言。",
-        "verify.button": "我不是机器人",
+        "verify.prompt": "欢迎 {user}！请在 {seconds} 秒内点击同意按钮，表示已阅读并接受本群规则，否则将继续限制发言。",
+        "verify.button": "同意",
         "verify.ok": "验证通过，已解除限制。",
         "verify.expired": "验证已过期，请联系管理员或重新入群触发验证。",
         "moderation.deleted": "已删除违规消息。",
@@ -43,8 +43,8 @@ STRINGS: dict[str, dict[str, str]] = {
         "points.signed": "Signed in! +{points} points. Balance: {balance}",
         "points.already_signed": "You already signed in today. Balance: {balance}",
         "points.balance": "Your points balance in this group: {balance}",
-        "verify.prompt": "Welcome {user}! Click the button within {seconds}s to verify.",
-        "verify.button": "I'm human",
+        "verify.prompt": "Welcome {user}! Tap Agree within {seconds}s to accept the group rules and verify.",
+        "verify.button": "Agree",
         "verify.ok": "Verified. Restrictions lifted.",
         "verify.expired": "Verification expired.",
         "moderation.deleted": "Removed a violating message.",
@@ -61,8 +61,6 @@ def t(lang: str | None, key: str, **kwargs: object) -> str:
         return template.format(**kwargs)
     except Exception:
         return template
-
-
 
 
 

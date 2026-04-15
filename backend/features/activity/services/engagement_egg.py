@@ -12,6 +12,7 @@ from backend.features.activity.services.engagement_core import (
 from backend.features.points.services.points_service import change_points
 from backend.platform.db.schema.models.enums import PointsTxnType
 from backend.platform.db.schema.models.expansion import EngagementEgg, EngagementEggEvent, EngagementEggHistory
+from backend.shared.services.base import ValidationError
 
 
 async def create_egg_event(session: AsyncSession, chat_id: int, title: str | None = None) -> EngagementEggEvent:
@@ -73,6 +74,8 @@ async def update_egg_event(session: AsyncSession, event: EngagementEggEvent, **u
 
 async def update_egg_from_template(session: AsyncSession, chat_id: int, raw: str) -> EngagementEgg:
     parsed = parse_egg_template(raw)
+    if parsed.get("chat_id") is not None and parsed["chat_id"] != chat_id:
+        raise ValidationError("模板中的群ID与当前正在配置的群不一致。")
     egg = await get_or_create_egg(session, chat_id)
     await archive_egg_snapshot(session, egg, reward_points=0)
     egg.enabled = True
@@ -95,6 +98,8 @@ async def update_egg_event_from_template(
     event_id: int | None = None,
 ) -> EngagementEggEvent:
     parsed = parse_egg_template(raw)
+    if parsed.get("chat_id") is not None and parsed["chat_id"] != chat_id:
+        raise ValidationError("模板中的群ID与当前正在配置的群不一致。")
     event = await get_egg_event(session, chat_id, event_id) if event_id else None
     if event is None:
         event = await create_egg_event(session, chat_id, title=parsed.get("title"))

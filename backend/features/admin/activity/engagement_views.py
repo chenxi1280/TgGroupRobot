@@ -3,6 +3,24 @@ from __future__ import annotations
 from backend.features.admin.support import *
 
 
+_CHAT_REWARD_DAY_LABELS = ["第一日", "第二日", "第三日", "第四日", "第五日", "第六日", "第七日"]
+
+
+def _format_chat_reward_plan_lines(plan: list[int], reward_type: str, after_7d_mode: str) -> list[str]:
+    values = plan or [30, 50, 70, 90, 110, 130, 150]
+    title = "递增激励:" if reward_type == "daily_increment" else "周期激励:"
+    lines = [title]
+    for label, points in zip(_CHAT_REWARD_DAY_LABELS, values[:7]):
+        lines.append(f"└ {label} 达标奖励 {points} 积分")
+    if values:
+        if after_7d_mode == "reset":
+            lines.append("└ 七日后 从首日开始计算")
+        else:
+            lines.append(f"└ 七日后 达标奖励 {values[min(6, len(values) - 1)]} 积分")
+    lines.append("└ 中断后 从首日开始计算")
+    return lines
+
+
 class EngagementAdminViewsMixin:
     async def _show_engagement_home(
         self,
@@ -24,27 +42,31 @@ class EngagementAdminViewsMixin:
             [
                 "✨ 促活工具",
                 "",
-                f"🥚 彩蛋活动：📋 总数 {counts['all']} | 🟢 运行中 {counts['running']} | ✅ 已结束 {counts['finished']}",
+                "通过有奖彩蛋和水群达标奖励，促进群友持续发言。",
+                "",
+                "🥚 有奖彩蛋",
+                f"└ 活动：总数 {counts['all']} | 运行中 {counts['running']} | 已结束 {counts['finished']}",
                 (
-                    f"🧩 当前活动：{latest_running.title} | 线索 {latest_running.published_clue_count}/{len(latest_running.clues or [])}"
+                    f"└ 当前：{latest_running.title} | 线索 {latest_running.published_clue_count}/{len(latest_running.clues or [])}"
                     if latest_running is not None
-                    else "🧩 当前活动：暂无运行中的彩蛋"
+                    else "└ 当前：暂无运行中的彩蛋"
                 ),
-                f"💬 水群激励：{'✅ 开启' if reward.enabled else '❌ 关闭'} | {reward_type_label}",
-                f"🎯 发言目标：{reward.daily_message_target}",
-                f"⌨️ 领奖口令：{reward.command_keyword}",
-                f"📊 近7日领取次数：{recent_claims}",
+                "└ 添加彩蛋：复制模板后粘贴，系统按时间发布线索",
+                "",
+                "🍬 水群激励",
+                f"└ 状态：{'✅ 开启' if reward.enabled else '❌ 关闭'} | {reward_type_label}",
+                f"└ 达标：每日 {reward.daily_message_target} 条 | 口令：{reward.command_keyword}",
+                f"└ 近7日领取次数：{recent_claims}",
             ]
         )
         keyboard = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("🥚 彩蛋活动", callback_data=f"act:egg:{chat_id}:list:all"),
-                InlineKeyboardButton("💬 水群激励", callback_data=f"act:chat:{chat_id}:home"),
+                InlineKeyboardButton("➕ 添加彩蛋", callback_data=f"act:egg:{chat_id}:new"),
+                InlineKeyboardButton("🥚 彩蛋管理", callback_data=f"act:egg:{chat_id}:list:all"),
             ],
             [
-                InlineKeyboardButton("📚 彩蛋历史", callback_data=f"act:egg:{chat_id}:history"),
-                InlineKeyboardButton("📈 近7日统计", callback_data=f"act:chat:{chat_id}:stats"),
-                InlineKeyboardButton("🧾 领奖记录", callback_data=f"act:chat:{chat_id}:history"),
+                InlineKeyboardButton("🍬 水群激励", callback_data=f"act:chat:{chat_id}:home"),
+                InlineKeyboardButton("📊 水群数据", callback_data=f"act:chat:{chat_id}:stats"),
             ],
             [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
         ])
@@ -63,7 +85,10 @@ class EngagementAdminViewsMixin:
             events = await list_egg_events(session, chat_id, status=status, limit=12)
             await session.commit()
         lines = [
-            "🥚 有奖彩蛋 | 活动列表",
+            "🥚 有奖彩蛋",
+            "",
+            "不同时段发布线索，第一个猜中答案的用户中奖。",
+            "点击“添加彩蛋”可复制模板，粘贴后自动创建活动。",
             "",
             f"📋 全部 {counts['all']} | ⚪ 草稿/暂停 {counts['idle']} | 🟢 运行中 {counts['running']} | ✅ 已结束 {counts['finished']}",
             "",
@@ -78,8 +103,8 @@ class EngagementAdminViewsMixin:
                 )
         keyboard_rows = [
             [
-                InlineKeyboardButton("🆕 新建活动", callback_data=f"act:egg:{chat_id}:new"),
-                InlineKeyboardButton("📚 历史记录", callback_data=f"act:egg:{chat_id}:history"),
+                InlineKeyboardButton("➕ 添加彩蛋", callback_data=f"act:egg:{chat_id}:new"),
+                InlineKeyboardButton("📚 彩蛋历史", callback_data=f"act:egg:{chat_id}:history"),
             ],
             [
                 InlineKeyboardButton("✅ 全部" if status == "all" else "全部", callback_data=f"act:egg:{chat_id}:list:all"),
@@ -162,37 +187,45 @@ class EngagementAdminViewsMixin:
         async with db.session_factory() as session:
             reward = await get_engagement_chat_reward(session, chat_id)
             await session.commit()
-        plan_preview = " ".join(str(item) for item in (reward.reward_points_plan or [])) or "未配置"
-        type_label = "📈 递增奖励" if reward.reward_type == "daily_increment" else "🔁 周期奖励"
-        after_7d_label = "♻️ 重置奖励" if reward.after_7d_mode == "reset" else "➡️ 延续奖励"
+        plan_lines = _format_chat_reward_plan_lines(reward.reward_points_plan or [], reward.reward_type, reward.after_7d_mode)
         text = "\n".join(
             [
-                "💬 水群激励",
+                "🍬 水群激励",
                 "",
-                f"📌 状态：{'✅ 开启' if reward.enabled else '❌ 关闭'}",
-                f"🎛 奖励类型：{type_label}",
-                f"🎯 达标发言：{reward.daily_message_target}",
-                f"🎁 七日奖励：{plan_preview}",
-                f"🗓 7日后策略：{after_7d_label}",
-                f"⌨️ 领奖口令：{reward.command_keyword}",
+                "发言量满足设置规则情况下，对用户进行奖励，达到持续促活",
+                "",
+                f"状态:{'✅ 开启' if reward.enabled else '❌ 关闭'}",
+                "发言数量:",
+                f"└ 每日发言数量达到 {reward.daily_message_target} 条即为达标",
+                *plan_lines,
+                "",
+                "规则指令:",
+                f"└ 群组中发送“{reward.command_keyword}”，查看最新水群活动",
             ]
         )
         keyboard = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton(("✅ 状态" if reward.enabled else "❌ 状态"), callback_data=f"act:chat:{chat_id}:toggle:{0 if reward.enabled else 1}"),
-                InlineKeyboardButton(type_label, callback_data=f"act:chat:{chat_id}:type:{'weekly_cycle' if reward.reward_type == 'daily_increment' else 'daily_increment'}"),
+                InlineKeyboardButton("状态:", callback_data=f"act:chat:{chat_id}:home"),
+                InlineKeyboardButton("✅ 启动" if reward.enabled else "启动", callback_data=f"act:chat:{chat_id}:toggle:1"),
+                InlineKeyboardButton("❌ 关闭" if not reward.enabled else "关闭", callback_data=f"act:chat:{chat_id}:toggle:0"),
             ],
             [
-                InlineKeyboardButton("🎯 发言数量", callback_data=f"act:chat:{chat_id}:target"),
-                InlineKeyboardButton("🎁 奖励设置", callback_data=f"act:chat:{chat_id}:plan"),
+                InlineKeyboardButton("类型:", callback_data=f"act:chat:{chat_id}:home"),
+                InlineKeyboardButton("✅ 递增" if reward.reward_type == "daily_increment" else "递增", callback_data=f"act:chat:{chat_id}:type:daily_increment"),
+                InlineKeyboardButton("✅ 周期" if reward.reward_type == "weekly_cycle" else "周期", callback_data=f"act:chat:{chat_id}:type:weekly_cycle"),
             ],
             [
-                InlineKeyboardButton("♻️ 7日后重置" + (" ✅" if reward.after_7d_mode == "reset" else ""), callback_data=f"act:chat:{chat_id}:after7:reset"),
-                InlineKeyboardButton("➡️ 7日后延续" + (" ✅" if reward.after_7d_mode == "continue" else ""), callback_data=f"act:chat:{chat_id}:after7:continue"),
+                InlineKeyboardButton("⚙️ 发言数量", callback_data=f"act:chat:{chat_id}:target"),
+                InlineKeyboardButton("⚙️ 水群奖励", callback_data=f"act:chat:{chat_id}:plan"),
+            ],
+            [
+                InlineKeyboardButton("七日后:", callback_data=f"act:chat:{chat_id}:home"),
+                InlineKeyboardButton("✅ 重置" if reward.after_7d_mode == "reset" else "重置", callback_data=f"act:chat:{chat_id}:after7:reset"),
+                InlineKeyboardButton("✅ 延续" if reward.after_7d_mode == "continue" else "延续", callback_data=f"act:chat:{chat_id}:after7:continue"),
             ],
             [
                 InlineKeyboardButton("⌨️ 领奖口令", callback_data=f"act:chat:{chat_id}:command"),
-                InlineKeyboardButton("👀 预览配置", callback_data=f"act:chat:{chat_id}:preview"),
+                InlineKeyboardButton("✅ 套用推荐规则", callback_data=f"act:chat:{chat_id}:preset:default"),
             ],
             [
                 InlineKeyboardButton("📈 近7日统计", callback_data=f"act:chat:{chat_id}:stats"),

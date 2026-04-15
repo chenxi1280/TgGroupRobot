@@ -13,6 +13,7 @@ from backend.features.admin.module_settings.limit_night_command_inputs import (
     handle_new_member_limit_input,
     handle_night_mode_input,
 )
+from backend.features.admin.module_settings.verification_inputs import handle_verification_input
 
 __all__ = [
     "build_force_subscribe_preview_markup",
@@ -23,6 +24,7 @@ __all__ = [
     "handle_new_member_limit_input",
     "handle_night_mode_input",
     "handle_rename_monitor_text_input",
+    "handle_verification_input",
     "is_valid_hhmm",
     "parse_force_subscribe_buttons_input",
 ]

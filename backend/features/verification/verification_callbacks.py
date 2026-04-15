@@ -3,8 +3,9 @@ from __future__ import annotations
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from backend.features.verification.verification_helpers import start_self_review_if_needed
+from backend.features.verification.verification_helpers import mark_challenge_released, start_self_review_if_needed
 from backend.features.verification.verification_runtime import (
+    apply_verification_punishment,
     send_after_verify_welcome,
     unrestrict_and_notify,
 )
@@ -15,12 +16,26 @@ from backend.shared.i18n.strings import t
 from backend.shared.services.chat_service import get_chat_settings
 
 
+def _parse_verify_callback_data(data: str) -> tuple[str, str]:
+    if not data.startswith("vfy:"):
+        return "", "agree"
+    payload = data.removeprefix("vfy:")
+    if payload.startswith("verify:"):
+        payload = payload.removeprefix("verify:")
+    parts = payload.split(":")
+    token = parts[0].strip() if parts else ""
+    action = parts[1].strip() if len(parts) > 1 else "agree"
+    if action not in {"agree", "decline"}:
+        action = "agree"
+    return token, action
+
+
 async def verify_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
         return
     q = update.callback_query
     data = q.data or ""
-    token = data.split("vfy:verify:", 1)[-1].strip() if data.startswith("vfy:verify:") else data.split("vfy:", 1)[-1].strip() if data.startswith("vfy:") else ""
+    token, action = _parse_verify_callback_data(data)
     if not token:
         await answer_callback_query_safely(update, "验证参数无效", show_alert=True)
         return
@@ -42,6 +57,19 @@ async def verify_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         if origin.user_id != update.effective_user.id:
             await session.commit()
             await answer_callback_query_safely(update, "仅新成员本人可点击此按钮验证", show_alert=True)
+            return
+        if action == "decline":
+            try:
+                await apply_verification_punishment(context, chat.id, update.effective_user.id, settings)
+            except Exception:
+                await session.commit()
+                await answer_callback_query_safely(update, "处理失败，请检查机器人禁言/踢人权限", show_alert=True)
+                return
+            await mark_challenge_released(session, chat.id, update.effective_user.id)
+            await session.commit()
+            await q.answer()
+            mark_callback_query_answered(update)
+            await q.edit_message_text("❌ 已选择不同意，已按本群配置处理。")
             return
         ch = await solve_by_token_scoped(session, token, expected_chat_id=chat.id, expected_user_id=update.effective_user.id)
         await session.commit()

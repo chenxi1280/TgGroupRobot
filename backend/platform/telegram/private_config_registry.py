@@ -35,6 +35,15 @@ def build_private_config_handlers() -> dict[str, ConfigHandler]:
     )
     _register_states(
         handlers,
+        [
+            "verification_cover_input",
+            "vfy_agreement_text_input",
+            "vfy_math_prompt_text_input",
+        ],
+        full_args_handler("backend.features.admin.module_settings", "handle_verification_input"),
+    )
+    _register_states(
+        handlers,
         ["anti_flood_config"],
         full_args_handler("backend.features.moderation.anti_flood_config_handler", "anti_flood_config_message_handler"),
     )

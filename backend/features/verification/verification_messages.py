@@ -11,6 +11,7 @@ from backend.features.verification.verification_helpers import (
     start_self_review_if_needed,
 )
 from backend.features.verification.verification_runtime import (
+    apply_verification_punishment,
     send_after_verify_welcome,
     unrestrict_and_notify,
 )
@@ -80,13 +81,27 @@ async def verify_message_handler(update: Update, context: ContextTypes.DEFAULT_T
         else:
             if is_self_review_question(ch.question) and settings.join_self_review_wrong_action == "reject_block":
                 try:
+                    await context.bot.ban_chat_member(chat_id=chat.id, user_id=user.id)
                     async with db.session_factory() as next_session:
                         await mark_challenge_released(next_session, chat.id, user.id)
                         await next_session.commit()
-                    await context.bot.ban_chat_member(chat_id=chat.id, user_id=user.id)
                     await update.effective_message.reply_text("❌ 自助审核失败，已拒绝入群。")
                 except Exception:
                     pass
+                return
+            wrong_action = getattr(settings, "verification_wrong_action", "none") or "none"
+            if not is_self_review_question(ch.question) and wrong_action != "none":
+                try:
+                    await apply_verification_punishment(context, chat.id, user.id, settings, action=wrong_action)
+                    async with db.session_factory() as next_session:
+                        await mark_challenge_released(next_session, chat.id, user.id)
+                        await next_session.commit()
+                    await update.effective_message.reply_text("❌ 答案错误，已按本群配置处理。")
+                except Exception:
+                    try:
+                        await update.effective_message.reply_text("❌ 处理失败，请检查机器人禁言/踢人权限。")
+                    except Exception:
+                        pass
                 return
             prompt = render_self_review_question(ch.question) if is_self_review_question(ch.question) else ch.question
             try:

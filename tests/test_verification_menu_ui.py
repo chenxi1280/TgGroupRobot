@@ -5,6 +5,8 @@ from types import SimpleNamespace
 import pytest
 
 from backend.features.admin import admin_handler
+from backend.features.admin.moderation import verification_home_actions, verification_views
+from backend.shared.callback_parser import CallbackParser
 
 
 class _FakeSession:
@@ -32,7 +34,7 @@ class _FakeDb:
 
 
 @pytest.mark.asyncio
-async def test_verification_menu_uses_four_entry_home(monkeypatch):
+async def test_verification_menu_shows_four_top_level_entries(monkeypatch):
     rendered: dict[str, object] = {}
 
     async def fake_set_current_chat(*args, **kwargs):
@@ -56,6 +58,7 @@ async def test_verification_menu_uses_four_entry_home(monkeypatch):
 
     monkeypatch.setattr(admin_handler._admin_handler, "_set_current_chat", fake_set_current_chat)
     monkeypatch.setattr(admin_handler, "get_chat_settings", fake_get_chat_settings)
+    monkeypatch.setattr(verification_views, "get_chat_settings", fake_get_chat_settings)
     monkeypatch.setattr(admin_handler._admin_handler, "_get_chat_title", fake_get_chat_title)
     monkeypatch.setattr(admin_handler._admin_handler.message_helper, "safe_edit", fake_safe_edit)
 
@@ -66,14 +69,80 @@ async def test_verification_menu_uses_four_entry_home(monkeypatch):
 
     rows = [[button.text for button in row] for row in rendered["keyboard"]]
     assert rows == [
-        ["🛡️ 进群验证"],
-        ["🚯 垃圾拦截"],
-        ["📝 进群自助审核"],
-        ["🚪 禁止批量进群"],
+        ["🤖 进群验证"],
+        ["👻 垃圾拦截"],
+        ["🛡️ 进群自助审核"],
+        ["🚧 禁止批量进群"],
         ["🔙 返回"],
     ]
-    assert "进群验证：✅ 开启｜当前方式：数学题" in rendered["text"]
-    assert "进群自助审核：✅ 开启" in rendered["text"]
+    assert "进群验证 - 新人未通过验证则进行限制" in rendered["text"]
+    assert "进群验证：简单加减法" in rendered["text"]
+    assert "进群自助审核：启动" in rendered["text"]
+
+
+@pytest.mark.asyncio
+async def test_verification_rules_menu_uses_three_mutually_exclusive_rules(monkeypatch):
+    rendered: dict[str, object] = {}
+
+    async def fake_get_chat_settings(session, chat_id: int):
+        return SimpleNamespace(
+            verification_enabled=True,
+            verification_mode="math",
+        )
+
+    async def fake_safe_edit(update, text, reply_markup):
+        rendered["text"] = text
+        rendered["keyboard"] = reply_markup.inline_keyboard
+
+    monkeypatch.setattr(verification_views, "get_chat_settings", fake_get_chat_settings)
+    monkeypatch.setattr(admin_handler._admin_handler.message_helper, "safe_edit", fake_safe_edit)
+
+    update = SimpleNamespace()
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(_FakeSession())}))
+
+    await admin_handler._admin_handler._show_verification_rules_menu(update, context, -1001)
+
+    rows = [[button.text for button in row] for row in rendered["keyboard"]]
+    assert rows == [
+        ["❌ 📄 简单接受条约"],
+        ["✅ 🔢 简单加减法"],
+        ["❌ 🤐 直接禁言新人"],
+        ["🔙 返回"],
+    ]
+    assert "简单接受条约 - 用户需要点击同意按钮" in rendered["text"]
+    assert "只能启用一个验证" in rendered["text"]
+    assert "当前启用：简单加减法" in rendered["text"]
+
+
+@pytest.mark.asyncio
+async def test_verification_rule_action_enables_one_rule_without_disabling_self_review(monkeypatch):
+    settings = SimpleNamespace(
+        verification_enabled=True,
+        verification_mode="button",
+        join_self_review_enabled=True,
+    )
+
+    async def fake_get_chat_settings(session, chat_id: int):
+        return settings
+
+    shown: list[tuple[int, str]] = []
+
+    async def fake_show_detail(update, context, chat_id: int, mode: str):
+        shown.append((chat_id, mode))
+
+    monkeypatch.setattr(verification_home_actions, "get_chat_settings", fake_get_chat_settings)
+    monkeypatch.setattr(admin_handler._admin_handler, "_show_verification_rule_detail", fake_show_detail)
+
+    update = SimpleNamespace()
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(_FakeSession())}))
+    callback_data = CallbackParser.parse("adm:vfy_home:-1001:rule:mute:toggle")
+
+    await admin_handler._admin_handler._handle_verification_home(update, context, -1001, callback_data)
+
+    assert settings.verification_enabled is True
+    assert settings.verification_mode == "mute"
+    assert settings.join_self_review_enabled is True
+    assert shown == [(-1001, "mute")]
 
 
 @pytest.mark.asyncio
@@ -114,3 +183,38 @@ async def test_verification_spam_guard_page_shows_live_controls(monkeypatch):
         ["🔙 返回"],
     ]
     assert "📌 状态：✅ 开启" in rendered["text"]
+
+
+@pytest.mark.asyncio
+async def test_self_review_force_subscribe_preview_returns_to_self_review(monkeypatch):
+    rendered: dict[str, object] = {}
+
+    async def fake_get_chat_settings(session, chat_id: int):
+        return SimpleNamespace(
+            force_subscribe_custom_buttons_enabled=False,
+            force_subscribe_buttons=[],
+            force_subscribe_bound_channel_1="@channel_a",
+            force_subscribe_bound_channel_2=None,
+        )
+
+    async def fake_safe_edit(update, text, reply_markup):
+        rendered["text"] = text
+        rendered["keyboard"] = reply_markup.inline_keyboard
+
+    monkeypatch.setattr(verification_home_actions, "get_chat_settings", fake_get_chat_settings)
+    monkeypatch.setattr(admin_handler._admin_handler.message_helper, "safe_edit", fake_safe_edit)
+
+    update = SimpleNamespace()
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(_FakeSession())}))
+
+    await admin_handler._admin_handler._handle_join_self_review_action(
+        update,
+        context,
+        -1001,
+        "fs_preview",
+        "",
+        context.application.bot_data["db"],
+    )
+
+    assert "强制关注" in rendered["text"]
+    assert rendered["keyboard"][-1][0].callback_data == "adm:vfy_home:-1001:self_review"

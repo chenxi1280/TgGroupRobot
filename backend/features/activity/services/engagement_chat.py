@@ -6,6 +6,7 @@ from sqlalchemy import Integer, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.features.activity.services.engagement_core import (
+    DEFAULT_CHAT_REWARD_PLAN,
     get_or_create_chat_reward,
     get_or_create_chat_stat,
     now_utc,
@@ -144,7 +145,7 @@ async def try_claim_chat_reward(session: AsyncSession, chat_id: int, user_id: in
     if reward.after_7d_mode == "reset" and streak > 7:
         streak = 1
     stat.streak_days = streak
-    plan = reward.reward_points_plan or [10, 20, 30, 40, 50, 60, 70]
+    plan = reward.reward_points_plan or DEFAULT_CHAT_REWARD_PLAN
     if reward.reward_type == "weekly_cycle":
         index = (streak - 1) % len(plan)
     else:

@@ -52,7 +52,12 @@ def _build_force_subscribe_channel_button_preview(value: str | None) -> InlineKe
     return None
 
 
-def build_force_subscribe_preview_markup(settings, chat_id: int) -> InlineKeyboardMarkup:
+def build_force_subscribe_preview_markup(
+    settings,
+    chat_id: int,
+    *,
+    back_callback: str | None = None,
+) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
     custom_enabled = bool(getattr(settings, "force_subscribe_custom_buttons_enabled", False))
     custom_buttons = getattr(settings, "force_subscribe_buttons", None) or []
@@ -69,7 +74,7 @@ def build_force_subscribe_preview_markup(settings, chat_id: int) -> InlineKeyboa
             _build_force_subscribe_channel_button_preview(getattr(settings, "force_subscribe_bound_channel_2", None)),
         ]
         rows.extend([[button] for button in fallback_buttons if button is not None])
-    rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:forcesub:{chat_id}")])
+    rows.append([InlineKeyboardButton("🔙 返回", callback_data=back_callback or f"adm:menu:forcesub:{chat_id}")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -106,6 +111,9 @@ async def handle_force_subscribe_channel_input(
 
     await clear_admin_input_state(session, target_chat_id=target_chat_id, user_id=update.effective_user.id)
     await session.commit()
+    if isinstance(state.state_data, dict) and state.state_data.get("return_to") == "verification_self_review":
+        await admin_handler_instance()._show_join_self_review_menu(update, context, target_chat_id)
+        return
     await admin_handler_instance()._show_force_subscribe_menu(update, context, target_chat_id)
 
 

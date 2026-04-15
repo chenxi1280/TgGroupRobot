@@ -13,10 +13,13 @@ def verification_keyboard(token: str) -> InlineKeyboardMarkup:
         token: 验证令牌
 
     Returns:
-        验证键盘，包含"我不是机器人"按钮
+        验证键盘，包含同意和不同意按钮
     """
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("我不是机器人", callback_data=f"vfy:{token}")]
+        [
+            InlineKeyboardButton("✅ 同意", callback_data=f"vfy:{token}:agree"),
+            InlineKeyboardButton("❌ 不同意", callback_data=f"vfy:{token}:decline"),
+        ]
     ])
 
 

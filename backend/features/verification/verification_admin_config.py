@@ -80,22 +80,31 @@ async def parse_verification_config_impl(update: Update, session, state, text: s
         settings.verification_timeout_seconds = config["timeout_seconds"]
         settings.verification_timeout_action = config["timeout_action"]
         settings.verification_mute_duration = config["mute_duration"]
+        settings.verification_direct_mute_duration = config["direct_mute_duration"]
         settings.verification_restrict_can_send = config["restrict_can_send"]
         if update.effective_user is not None:
             await ConversationStateService.clear(session, chat_id=target_chat_id, user_id=update.effective_user.id)
         await session.commit()
 
-        mode_label = {"button": "按钮验证", "math": "数学题", "captcha": "验证码", "admin": "管理员确认"}.get(config["mode"], config["mode"])
+        mode_label = {
+            "button": "简单接受条约",
+            "math": "简单加减法",
+            "mute": "直接禁言新人",
+            "captcha": "验证码",
+            "admin": "管理员确认",
+        }.get(config["mode"], config["mode"])
         result_text = (
             "✅ 验证配置已更新！\n\n"
             "📋 配置内容：\n"
             f"• 状态: {'开启' if config['enabled'] else '关闭'}\n"
             f"• 验证方式: {mode_label}\n"
             f"• 超时时间: {config['timeout_seconds']} 秒\n"
-            f"• 超时处理: {'禁言' if config['timeout_action'] == 'mute' else '踢出'}\n"
+            f"• 超时处理: {_verification_action_label(config['timeout_action'])}\n"
         )
         if config["timeout_action"] == "mute":
             result_text += f"• 禁言时长: {config['mute_duration']} 秒\n"
+        if config["mode"] == "mute":
+            result_text += f"• 直接禁言时长: {config['direct_mute_duration']} 秒（0=永久）\n"
         result_text += f"• 限制发言: {'是' if config['restrict_can_send'] else '否'}\n"
         keyboard = InlineKeyboardMarkup(
             [
@@ -118,6 +127,7 @@ def _parse_verification_config_text(text: str) -> dict:
         "timeout_seconds": 180,
         "timeout_action": "mute",
         "mute_duration": 86400,
+        "direct_mute_duration": 0,
         "restrict_can_send": False,
     }
     for line in [item.strip() for item in text.strip().split("\n")]:
@@ -126,26 +136,43 @@ def _parse_verification_config_text(text: str) -> dict:
         elif line.startswith("验证方式:"):
             raw_mode = line.split(":", 1)[1].strip()
             config["mode"] = {
+                "简单接受条约": "button",
                 "按钮验证": "button",
                 "button": "button",
+                "简单加减法": "math",
                 "数学题": "math",
                 "math": "math",
-                "验证码": "captcha",
-                "captcha": "captcha",
-                "管理员确认": "admin",
-                "admin": "admin",
-                "管理员": "admin",
+                "直接禁言新人": "mute",
+                "禁言新人": "mute",
+                "mute": "mute",
             }.get(raw_mode, raw_mode)
         elif line.startswith("超时时间:"):
             config["timeout_seconds"] = int(line.split(":", 1)[1].strip())
         elif line.startswith("超时处理:"):
             action_str = line.split(":", 1)[1].strip()
-            config["timeout_action"] = "kick" if action_str in ["踢出", "踢出群聊", "kick"] else "mute"
+            if action_str in ["无", "不处理", "不额外处理", "none"]:
+                config["timeout_action"] = "none"
+            elif action_str in ["踢出", "踢出群聊", "kick"]:
+                config["timeout_action"] = "kick"
+            else:
+                config["timeout_action"] = "mute"
         elif line.startswith("禁言时长:"):
             config["mute_duration"] = int(line.split(":", 1)[1].strip())
+        elif line.startswith("直接禁言时长:") or line.startswith("禁言新人时长:"):
+            config["direct_mute_duration"] = int(line.split(":", 1)[1].strip())
         elif line.startswith("限制发言:"):
             config["restrict_can_send"] = line.split(":", 1)[1].strip().lower() in ["是", "yes", "true", "1", "开启"]
+    if config["mode"] not in {"button", "math", "mute"}:
+        raise ValueError("验证方式仅支持：简单接受条约、简单加减法、直接禁言新人")
     return config
+
+
+def _verification_action_label(action: str) -> str:
+    return {
+        "none": "不额外处理",
+        "mute": "禁言",
+        "kick": "踢出",
+    }.get(action, action)
 
 
 async def verification_cancel_callback_impl(update: Update, context: ContextTypes.DEFAULT_TYPE, *, reopen_menu) -> None:

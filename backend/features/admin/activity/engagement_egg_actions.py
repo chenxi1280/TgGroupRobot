@@ -1,6 +1,58 @@
 from __future__ import annotations
 
+import datetime as dt
+
 from backend.features.admin.support import *
+
+
+def _build_egg_quick_template(chat_id: int, bot_username: str | None) -> str:
+    command = f"@{bot_username} 添加彩蛋" if bot_username else "添加彩蛋"
+    today = dt.datetime.now().strftime("%Y-%m-%d")
+    return "\n".join(
+        [
+            command,
+            "",
+            f"【群ID】{chat_id}",
+            "【答案】爱情买卖",
+            "",
+            "【线索1】猜一首歌",
+            "【线索1奖励】50口令+300积分",
+            f"【线索1时间】{today} 09:00",
+            "",
+            "【线索2】火遍大江南北",
+            "【线索2奖励】30口令+200积分",
+            f"【线索2时间】{today} 11:00",
+            "",
+            "【线索3】演唱是两个人",
+            "【线索3奖励】20口令+100积分",
+            f"【线索3时间】{today} 14:00",
+            "",
+            "【线索4】凤凰传奇唱的",
+            "【线索4奖励】10口令+50积分",
+            f"【线索4时间】{today} 16:00",
+            "",
+            "【颁奖人】@UserName",
+        ]
+    )
+
+
+def _copy_text_button(text: str) -> InlineKeyboardButton:
+    return InlineKeyboardButton("📋 复制彩蛋模板", api_kwargs={"copy_text": {"text": text}})
+
+
+def _format_egg_template_prompt(template_text: str, *, editing: bool = False) -> str:
+    title = "🥚 有奖彩蛋 | 编辑活动" if editing else "🥚 有奖彩蛋 | 添加彩蛋"
+    return "\n".join(
+        [
+            title,
+            "",
+            "点击下方“复制彩蛋模板”，把答案、线索、奖励和时间改好后，直接发给我即可创建。",
+            "支持你截图里的【字段】格式；奖励里写“50口令+300积分”时，系统会按 300 积分发放。",
+            "",
+            "可复制模板：",
+            template_text,
+        ]
+    )
 
 
 class EngagementAdminEggActionsMixin:
@@ -18,6 +70,7 @@ class EngagementAdminEggActionsMixin:
             await self._show_engagement_egg_list(update, context, chat_id, status=callback_data.get(4, "all") or "all")
             return
         if sub == "new":
+            template_text = _build_egg_quick_template(chat_id, getattr(context.bot, "username", None))
             await self._start_text_input_state(
                 context,
                 update.effective_user.id,
@@ -28,16 +81,11 @@ class EngagementAdminEggActionsMixin:
             await session.commit()
             await self.message_helper.safe_edit(
                 update,
-                (
-                    "🥚 有奖彩蛋 | 新建活动\n\n"
-                    "请按以下格式发送：\n"
-                    "标题=四月彩蛋（可选）\n"
-                    "答案=xxx\n线索1=...\n奖励1=100\n时间1=09:00\n"
-                    "线索2=...\n奖励2=80\n时间2=10:00\n"
-                    "线索3=...\n奖励3=60\n时间3=11:00\n"
-                    "线索4=...\n奖励4=40\n时间4=12:00"
-                ),
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"act:egg:{chat_id}:list:all")]]),
+                _format_egg_template_prompt(template_text),
+                reply_markup=InlineKeyboardMarkup([
+                    [_copy_text_button(template_text)],
+                    [InlineKeyboardButton("🔙 返回", callback_data=f"act:egg:{chat_id}:list:all")],
+                ]),
             )
             return
         if sub == "detail":
@@ -83,6 +131,7 @@ class EngagementAdminEggActionsMixin:
             return
         if sub == "template":
             event_id = callback_data.get_int(4)
+            template_text = _build_egg_quick_template(chat_id, getattr(context.bot, "username", None))
             await self._start_text_input_state(
                 context,
                 update.effective_user.id,
@@ -93,16 +142,11 @@ class EngagementAdminEggActionsMixin:
             await session.commit()
             await self.message_helper.safe_edit(
                 update,
-                (
-                    "🥚 有奖彩蛋 | 模板输入\n\n"
-                    "请按以下格式发送：\n"
-                    "标题=四月彩蛋（可选）\n"
-                    "答案=xxx\n线索1=...\n奖励1=100\n时间1=09:00\n"
-                    "线索2=...\n奖励2=80\n时间2=10:00\n"
-                    "线索3=...\n奖励3=60\n时间3=11:00\n"
-                    "线索4=...\n奖励4=40\n时间4=12:00"
-                ),
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"act:egg:{chat_id}:detail:{event_id}" if event_id else f"act:egg:{chat_id}:list:all")]]),
+                _format_egg_template_prompt(template_text, editing=True),
+                reply_markup=InlineKeyboardMarkup([
+                    [_copy_text_button(template_text)],
+                    [InlineKeyboardButton("🔙 返回", callback_data=f"act:egg:{chat_id}:detail:{event_id}" if event_id else f"act:egg:{chat_id}:list:all")],
+                ]),
             )
             return
         if sub == "preview":

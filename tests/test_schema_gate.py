@@ -75,6 +75,8 @@ def _full_tables() -> dict[str, dict]:
                 "points_personal_speech_enabled", "points_alias", "points_rank_alias",
                 "verification_enabled", "verification_mode", "verification_timeout_seconds",
                 "verification_restrict_can_send", "verification_timeout_action", "verification_mute_duration",
+                "verification_cover_media_type", "verification_cover_file_id", "verification_agreement_text",
+                "verification_math_prompt_text", "verification_wrong_action", "verification_direct_mute_duration",
                 "join_spam_guard_enabled", "join_spam_detect_rules_count", "join_spam_send_invalid_msg_enabled",
                 "join_spam_mute_member_enabled", "join_spam_kick_member_enabled", "join_spam_tip_delete_after_seconds",
                 "join_self_review_enabled", "join_self_review_timeout_seconds", "join_self_review_timeout_action",

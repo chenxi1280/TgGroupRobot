@@ -230,10 +230,12 @@ async def test_engagement_home_shows_recent_summary_and_stats_entry(monkeypatch)
     assert rendered
     text, keyboard = rendered[0]
     assert "运行中 2" in text
-    assert "当前活动：四月彩蛋 | 线索 2/3" in text
+    assert "当前：四月彩蛋 | 线索 2/3" in text
     assert "近7日领取次数：3" in text
-    assert keyboard.inline_keyboard[1][0].text == "📚 彩蛋历史"
-    assert keyboard.inline_keyboard[1][1].text == "📈 近7日统计"
+    assert keyboard.inline_keyboard[0][0].text == "➕ 添加彩蛋"
+    assert keyboard.inline_keyboard[0][1].text == "🥚 彩蛋管理"
+    assert keyboard.inline_keyboard[1][0].text == "🍬 水群激励"
+    assert keyboard.inline_keyboard[1][1].text == "📊 水群数据"
 
 
 @pytest.mark.asyncio

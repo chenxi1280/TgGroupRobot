@@ -83,6 +83,7 @@ from backend.features.admin.module_settings import (
     handle_new_member_limit_input,
     handle_night_mode_input,
     handle_rename_monitor_text_input,
+    handle_verification_input,
     is_valid_hhmm as _is_valid_hhmm,
 )
 from backend.features.admin.points_extended import handle_points_extended_input

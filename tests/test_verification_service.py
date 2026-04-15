@@ -9,6 +9,16 @@ from backend.platform.db.schema.models.enums import VerificationMode
 from backend.features.verification import verification_service
 
 
+def test_generate_math_question_uses_only_simple_add_subtract():
+    for _ in range(100):
+        question, answer = verification_service.generate_math_question()
+
+        assert "×" not in question
+        assert "*" not in question
+        assert "+" in question or "-" in question
+        assert answer.lstrip("-").isdigit()
+
+
 @pytest.mark.asyncio
 async def test_solve_by_token_non_admin_expired_not_solved(monkeypatch):
     challenge = SimpleNamespace(

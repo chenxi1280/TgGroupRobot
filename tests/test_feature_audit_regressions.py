@@ -908,3 +908,86 @@ async def test_new_member_with_cached_invite_hint_awards_points(monkeypatch):
         }
     ]
     assert context.application.bot_data["invite_join_hints"] == {}
+
+
+@pytest.mark.asyncio
+async def test_new_member_direct_mute_mode_restricts_without_challenge(monkeypatch):
+    async def fake_ensure_chat(*args, **kwargs):
+        return None
+
+    async def fake_get_chat_settings(session, chat_id: int):
+        return SimpleNamespace(
+            welcome_enabled=False,
+            welcome_message=None,
+            language="zh-CN",
+            verification_enabled=True,
+            verification_timeout_seconds=60,
+            verification_mode="mute",
+            verification_restrict_can_send=False,
+            invite_link_notify=False,
+        )
+
+    async def fake_ensure_user(*args, **kwargs):
+        return None
+
+    async def fake_upsert(*args, **kwargs):
+        return None
+
+    async def fake_send_for_mode(*args, **kwargs):
+        return False
+
+    async def fake_burst_guard(*args, **kwargs):
+        return False
+
+    async def fake_join_spam_guard(*args, **kwargs):
+        return False
+
+    async def fake_create_challenge(*args, **kwargs):
+        raise AssertionError("direct mute mode should not create verification challenges")
+
+    monkeypatch.setattr(verification_handler, "ensure_chat", fake_ensure_chat)
+    monkeypatch.setattr(verification_handler, "get_chat_settings", fake_get_chat_settings)
+    monkeypatch.setattr(verification_handler, "ensure_user", fake_ensure_user)
+    monkeypatch.setattr(verification_handler, "_upsert_chat_member_join", fake_upsert)
+    monkeypatch.setattr(verification_handler.WelcomeService, "send_for_mode", fake_send_for_mode)
+    monkeypatch.setattr(verification_handler, "_handle_join_burst_guard", fake_burst_guard)
+    monkeypatch.setattr(verification_handler, "_handle_join_spam_guard", fake_join_spam_guard)
+    monkeypatch.setattr(verification_handler, "create_or_replace_challenge", fake_create_challenge)
+
+    class _Bot:
+        def __init__(self):
+            self.restrict_calls: list[dict] = []
+            self.messages: list[dict] = []
+
+        async def restrict_chat_member(self, **kwargs):
+            self.restrict_calls.append(kwargs)
+
+        async def send_message(self, **kwargs):
+            self.messages.append(kwargs)
+
+    member = SimpleNamespace(
+        id=99,
+        username="newbie",
+        first_name="New",
+        last_name=None,
+        language_code="zh-CN",
+        mention_html=lambda: "<a>New</a>",
+    )
+    bot = _Bot()
+    update = SimpleNamespace(
+        effective_chat=SimpleNamespace(id=-100123, type="supergroup", title="测试群"),
+        effective_message=SimpleNamespace(new_chat_members=[member]),
+    )
+    context = SimpleNamespace(
+        application=SimpleNamespace(bot_data={"db": _Db()}),
+        bot=bot,
+        user_data={},
+    )
+
+    await verification_handler.new_members_handler(update, context)
+
+    assert len(bot.restrict_calls) == 1
+    assert bot.restrict_calls[0]["chat_id"] == -100123
+    assert bot.restrict_calls[0]["user_id"] == 99
+    assert bot.restrict_calls[0]["permissions"].can_send_messages is False
+    assert bot.messages == []

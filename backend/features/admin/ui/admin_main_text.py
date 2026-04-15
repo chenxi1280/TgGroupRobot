@@ -11,12 +11,13 @@ def format_verification_menu_text(
     mute_duration: int,
 ) -> str:
     mode_label = {
-        "button": "🔘 按钮验证",
-        "math": "🔢 数学题验证",
+        "button": "📄 简单接受条约",
+        "math": "🔢 简单加减法",
+        "mute": "🤐 直接禁言新人",
         "captcha": "🔑 验证码验证",
         "admin": "👤 管理员确认",
     }.get(verification_mode, verification_mode)
-    action_label = {"mute": "🔇 禁言", "kick": "👢 踢出"}.get(timeout_action, timeout_action)
+    action_label = {"none": "不额外处理", "mute": "🔇 禁言", "kick": "👢 踢出"}.get(timeout_action, timeout_action)
     status_label = "✅ 开启" if enabled else "❌ 关闭"
 
     text = f"🤖 [{chat_title}] 新人验证设置\n\n"

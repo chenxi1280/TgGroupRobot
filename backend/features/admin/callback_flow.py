@@ -66,17 +66,8 @@ async def group_admin_callback_impl(update: Update, context: ContextTypes.DEFAUL
                 )
                 return
             if menu == "verification":
-                text = format_verification_menu_text(
-                    chat_title="群组",
-                    enabled=settings.verification_enabled,
-                    verification_mode=settings.verification_mode,
-                    timeout_seconds=settings.verification_timeout_seconds,
-                    restrict_can_send=settings.verification_restrict_can_send,
-                    timeout_action=settings.verification_timeout_action,
-                    mute_duration=settings.verification_mute_duration,
-                )
                 await session.commit()
-                await admin_runtime.message_helper.safe_edit(callback, text, reply_markup=verification_mode_menu(settings.verification_mode))
+                await admin_runtime._show_verification_menu(update, context, chat.id)
                 return
 
         if cb.get(1) == "toggle":
@@ -93,8 +84,9 @@ async def group_admin_callback_impl(update: Update, context: ContextTypes.DEFAUL
 
         if cb.get(1) == "vfy_mode":
             selected_mode = cb.get(2)
-            if selected_mode in ["button", "question"]:
+            if selected_mode in {"button", "math", "mute"}:
                 settings.verification_mode = selected_mode
+                settings.verification_enabled = True
                 await session.commit()
                 text = format_verification_menu_text(
                     chat_title="群组",
