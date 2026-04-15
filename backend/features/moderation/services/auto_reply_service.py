@@ -31,6 +31,41 @@ from backend.shared.services.base import ServiceBase
 from backend.shared.services.result import CreateResult, MatchResult
 
 
+def get_auto_reply_enable_error(rule: AutoReplyRule) -> str | None:
+    keywords = [str(item).strip() for item in (getattr(rule, "keywords", None) or [])]
+    if not any(keywords):
+        return "请先配置关键词"
+    if not str(getattr(rule, "reply_content", "") or "").strip():
+        return "请先配置文本内容"
+    return None
+
+
+async def create_auto_reply_draft(
+    session: AsyncSession,
+    chat_id: int,
+    created_by_user_id: int,
+) -> AutoReplyRule:
+    rule = AutoReplyRule(
+        chat_id=chat_id,
+        created_by_user_id=created_by_user_id,
+        keywords=[],
+        reply_content="",
+        cover_media_type=None,
+        cover_media_file_id=None,
+        buttons=[],
+        match_type=AutoReplyMatchType.exact.value,
+        case_sensitive=False,
+        sort_order=await get_next_sort_order(session, chat_id),
+        delete_source=False,
+        delete_reply_delay_seconds=0,
+        is_active=False,
+        stop_after_match=True,
+    )
+    session.add(rule)
+    await session.flush()
+    return rule
+
+
 async def create_auto_reply_rule(
     session: AsyncSession,
     chat_id: int,

@@ -105,10 +105,11 @@ def test_format_ad_detail_text_matches_detail_flow() -> None:
     text = _format_ad_detail_text(ad)
 
     assert "🎠 轮播消息" in text
-    assert "📮 优选榜单（✅ 启用）" in text
-    assert "🖼️ 封面设置：已设置封面" in text
-    assert "⭕ 设置按钮：已设置按钮" in text
-    assert "📄 文本内容：" in text
+    assert "📮 标题备注: 优选榜单" in text
+    assert "🏞️ 封面设置: 已设置" in text
+    assert "⭕ 设置按钮: 已设置 1 个" in text
+    assert "📄 文本内容: 郑州精品榜单" in text
+    assert "⚙️ 状态: ✅ 启用" in text
 
 
 def test_render_ads_home_text_contains_rule_summary() -> None:
@@ -193,12 +194,13 @@ def test_parse_interval_minutes_text_supports_custom_minutes() -> None:
     assert format_interval_seconds_label(1800) == "30分钟"
 
 
-def test_ads_copy_time_keyboard_uses_copy_text_payload() -> None:
+def test_ads_copy_time_keyboard_is_back_only_for_tg_time_prompt() -> None:
     keyboard = ads_copy_time_keyboard("ads:rules:-100123", "2026-04-14 12:00:00")
 
     button = keyboard.inline_keyboard[0][0]
-    assert button.text == "📋 复制 2026-04-14 12:00:00"
-    assert button.to_dict()["copy_text"]["text"] == "2026-04-14 12:00:00"
+    assert button.text == "🔙 返回"
+    assert button.callback_data == "ads:rules:-100123"
+    assert "copy_text" not in button.to_dict()
 
 
 def test_ads_item_detail_keyboard_includes_chat_id_for_private_flow() -> None:

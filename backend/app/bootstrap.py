@@ -8,8 +8,9 @@ import tempfile
 import warnings
 
 import structlog
+from telegram import Update
 from telegram.warnings import PTBUserWarning
-from telegram.ext import Application, CallbackQueryHandler, ChatMemberHandler, ContextTypes, MessageHandler, filters
+from telegram.ext import Application, CallbackQueryHandler, ChatMemberHandler, ContextTypes, MessageHandler, TypeHandler, filters
 from telegram.request import HTTPXRequest
 
 from backend.platform.config.core.settings import get_settings
@@ -36,8 +37,34 @@ from backend.features.verification.verification_handler import (
 from backend.platform.config.core.logging import configure_logging
 from backend.platform.telegram.message_router import MessageRouter
 from backend.platform.telegram.errors import answer_callback_query_safely, build_public_error_text
+from backend.shared.async_tasks import cancel_background_tasks
 
 log = structlog.get_logger(__name__)
+
+
+async def _raw_update_probe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Log every received Telegram update before feature filters run."""
+    message = update.effective_message
+    chat = update.effective_chat
+    user = update.effective_user
+    sender_chat = getattr(message, "sender_chat", None) if message is not None else None
+    text = ""
+    if message is not None:
+        text = message.text or message.caption or ""
+
+    log.info(
+        "raw_update_entry",
+        update_id=update.update_id,
+        has_message=update.message is not None,
+        has_channel_post=update.channel_post is not None,
+        has_callback_query=update.callback_query is not None,
+        has_chat_member=update.chat_member is not None,
+        chat_id=chat.id if chat else None,
+        chat_type=chat.type if chat else None,
+        user_id=user.id if user else None,
+        sender_chat_id=sender_chat.id if sender_chat else None,
+        text_preview=text[:50],
+    )
 
 
 def _configure_ptb_runtime() -> None:
@@ -84,6 +111,7 @@ def build_application() -> Application:
         .concurrent_updates(False)
         .request(request)
         .get_updates_request(get_updates_request)
+        .post_shutdown(cancel_background_tasks)
     )
 
     app = builder.build()
@@ -118,6 +146,8 @@ def _register_routers(app: Application) -> None:
 def _register_common_handlers(app: Application) -> None:
     """注册通用处理器"""
     dispatcher = MessageRouter()
+
+    app.add_handler(TypeHandler(Update, _raw_update_probe), group=-99)
 
     # ==================== Group -3: 群风控入口（优先于业务处理）====================
     app.add_handler(

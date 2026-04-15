@@ -7,6 +7,8 @@ from typing import Any
 from telegram import InlineKeyboardMarkup, Message
 from telegram.ext import ContextTypes
 
+from backend.shared.async_tasks import spawn_background_task
+
 
 @dataclass(frozen=True)
 class PublishResult:
@@ -191,13 +193,15 @@ class PublishService:
             **kwargs,
         )
         if result.message_id is not None and delete_after_seconds and delete_after_seconds > 0:
-            asyncio.create_task(
+            spawn_background_task(
+                context,
                 PublishService._delete_later(
                     context,
                     chat_id=chat_id,
                     message_id=result.message_id,
                     delay_seconds=delete_after_seconds,
-                )
+                ),
+                name="publish_service.delete_later",
             )
         return result
 
@@ -209,7 +213,10 @@ class PublishService:
         message_id: int,
         delay_seconds: int,
     ) -> None:
-        await asyncio.sleep(max(delay_seconds, 1))
+        try:
+            await asyncio.sleep(max(delay_seconds, 1))
+        except asyncio.CancelledError:
+            raise
         try:
             await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
         except Exception:

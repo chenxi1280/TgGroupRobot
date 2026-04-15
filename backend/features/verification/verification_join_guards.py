@@ -11,6 +11,7 @@ from telegram.ext import ContextTypes
 
 from backend.platform.db.schema.models.core import ChatMember
 from backend.platform.db.schema.models.enums import MemberRole
+from backend.shared.async_tasks import spawn_background_task
 
 log = structlog.get_logger(__name__)
 
@@ -92,7 +93,11 @@ async def send_temporary_notice(
         log.warning("send_join_guard_notice_failed", chat_id=chat_id, error=str(exc))
         return
     if delete_after_seconds and delete_after_seconds > 0:
-        asyncio.create_task(_cleanup_notice(message, delete_after_seconds))
+        spawn_background_task(
+            context,
+            _cleanup_notice(message, delete_after_seconds),
+            name="verification.cleanup_notice",
+        )
 
 
 async def apply_join_guard_action(
@@ -187,7 +192,10 @@ async def handle_join_burst_guard(context: ContextTypes.DEFAULT_TYPE, session, c
 
 
 async def _cleanup_notice(message, delete_after_seconds: int) -> None:
-    await asyncio.sleep(delete_after_seconds)
+    try:
+        await asyncio.sleep(max(delete_after_seconds, 1))
+    except asyncio.CancelledError:
+        raise
     try:
         await message.delete()
     except Exception:

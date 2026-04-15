@@ -80,7 +80,7 @@ def test_build_layout_keyboard_shows_add_and_existing_buttons() -> None:
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("module_type", "entity_id"),
-    [("ads", 9), ("welcome", 12), ("invite", 0)],
+    [("ads", 9), ("auto_reply", 10), ("welcome", 12), ("invite", 0)],
 )
 async def test_button_layout_editor_input_persists_complete_buttons(monkeypatch, module_type: str, entity_id: int) -> None:
     saved: list[list[dict[str, str]]] = []

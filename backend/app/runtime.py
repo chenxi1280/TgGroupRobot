@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import sys
 
+from telegram import Update
+
 from backend.app.bootstrap import (
     _PID_FILE,
     _check_single_instance,
@@ -50,14 +52,27 @@ async def run_bot_with_scheduler() -> None:
 
     await _validate_schema_or_exit(app)
     await scheduler.start()
+    initialized = False
+    started = False
+    polling_started = False
 
     try:
         await app.initialize()
+        initialized = True
         await app.start()
-        await app.updater.start_polling(drop_pending_updates=True)
+        started = True
+        await app.updater.start_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
+        polling_started = True
+        log.info("polling_started", allowed_updates="ALL_TYPES")
         await asyncio.Event().wait()
     finally:
         await scheduler.stop()
+        if polling_started and app.updater is not None:
+            await app.updater.stop()
+        if started:
+            await app.stop()
+        if initialized:
+            await app.shutdown()
 
 
 def main() -> None:
@@ -81,4 +96,4 @@ def main_polling() -> None:
     app = build_application()
     log.info("bot_starting")
     asyncio.run(_validate_schema_or_exit(app))
-    app.run_polling(drop_pending_updates=True)
+    app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)

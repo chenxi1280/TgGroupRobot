@@ -18,6 +18,7 @@ from backend.features.moderation.auto_reply_views import (
     extract_auto_reply_list_page,
     format_auto_reply_rule_detail,
     render_auto_reply_list,
+    show_auto_reply_delay_page,
     show_auto_reply_rule_detail,
 )
 
@@ -57,6 +58,7 @@ async def _send_auto_reply_payload(
     text: str,
     rule,
     reply_to_message_id: int | None = None,
+    message_thread_id: int | None = None,
 ) -> object:
     return await send_auto_reply_payload(
         context,
@@ -64,6 +66,7 @@ async def _send_auto_reply_payload(
         text=text,
         rule=rule,
         reply_to_message_id=reply_to_message_id,
+        message_thread_id=message_thread_id,
     )
 
 
@@ -75,6 +78,16 @@ async def _show_auto_reply_rule_detail(
     rule_id: int,
 ) -> None:
     await show_auto_reply_rule_detail(update, context, chat_id=chat_id, rule_id=rule_id)
+
+
+async def _show_auto_reply_delay_page(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    chat_id: int,
+    rule_id: int,
+) -> None:
+    await show_auto_reply_delay_page(update, context, chat_id=chat_id, rule_id=rule_id)
 
 
 def _extract_auto_reply_list_page(callback_data: str | None) -> int:

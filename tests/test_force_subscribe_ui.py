@@ -64,10 +64,15 @@ async def test_force_subscribe_menu_shows_action_row(monkeypatch):
 
     assert rendered
     text, keyboard = rendered[0]
-    assert "没订阅时处理: 仅提示订阅" in text
-    assert "订阅判定: ✅ 全部频道都订阅" in text
-    assert keyboard.inline_keyboard[0][0].text == "⚙️ 状态："
+    assert "🚫 没订阅时处理: 仅提示订阅" in text
+    assert "🎯 订阅判定: ✅ 全部频道都订阅" in text
+    assert "📄 提示文案: 请先订阅" in text
+    assert "🧩 按钮来源: 跟随频道按钮" in text
+    assert keyboard.inline_keyboard[0][0].text == "⚙️ 状态:"
     assert keyboard.inline_keyboard[0][1].text == "✅ 启动"
+    assert keyboard.inline_keyboard[3][0].text == "设置封面"
+    assert keyboard.inline_keyboard[3][1].text == "✅ 设置文案"
+    assert keyboard.inline_keyboard[4][0].text == "设置按钮"
     assert keyboard.inline_keyboard[5][0].text == "⚙️ 订阅判定："
     assert keyboard.inline_keyboard[6][0].text == "⚙️ 没订阅时处理："
     assert keyboard.inline_keyboard[6][1].text == "仅提示订阅"

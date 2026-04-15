@@ -256,7 +256,7 @@ def build_private_config_handlers() -> dict[str, ConfigHandler]:
     _register_states(handlers, ["quick_publish_input"], handle_quick_publish_input)
     _register_states(
         handlers,
-        ["sm_edit_text", "sm_edit_buttons", "sm_edit_start_at", "sm_edit_end_at"],
+        ["sm_edit_title", "sm_edit_text", "sm_edit_buttons", "sm_edit_start_at", "sm_edit_end_at"],
         scheduled_message_text_input,
     )
     _register_states(handlers, ["sm_edit_media"], scheduled_message_media_input)

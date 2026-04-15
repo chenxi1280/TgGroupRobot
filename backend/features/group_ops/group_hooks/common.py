@@ -4,6 +4,7 @@ import asyncio
 
 from telegram.ext import ContextTypes
 
+from backend.shared.async_tasks import spawn_background_task
 from backend.shared.services.publish_service import PublishService
 
 
@@ -60,8 +61,22 @@ def _extract_car_review_media_file_ids(message) -> list[str]:
 
 async def _delete_message_later(message, seconds: int) -> None:
     try:
-        await asyncio.sleep(seconds)
+        await asyncio.sleep(max(seconds, 1))
+    except asyncio.CancelledError:
+        raise
+    try:
         await message.delete()
     except Exception:
         return
 
+
+def _schedule_message_delete(
+    context: ContextTypes.DEFAULT_TYPE,
+    message,
+    seconds: int,
+    *,
+    name: str = "group_hooks.delete_message_later",
+) -> None:
+    if seconds <= 0:
+        return
+    spawn_background_task(context, _delete_message_later(message, seconds), name=name)

@@ -30,6 +30,7 @@ class ScheduledMessageRouter(BaseRouter):
         app.add_handler(CallbackQueryHandler(sm_callback_handler, pattern=r"^sm:open:"))
         app.add_handler(CallbackQueryHandler(sm_callback_handler, pattern=r"^sm:set:"))
         app.add_handler(CallbackQueryHandler(sm_callback_handler, pattern=r"^sm:edit:"))
+        app.add_handler(CallbackQueryHandler(sm_callback_handler, pattern=r"^sm:preview:"))
         app.add_handler(CallbackQueryHandler(sm_callback_handler, pattern=r"^sm:del_confirm:"))
         app.add_handler(CallbackQueryHandler(sm_callback_handler, pattern=r"^sm:del_do:"))
         app.add_handler(CallbackQueryHandler(sm_callback_handler, pattern=r"^sm:del_cancel:"))
@@ -63,12 +64,13 @@ class ScheduledMessageRouter(BaseRouter):
                 async with db.session_factory() as session:
                     # 尝试从状态中获取
                     from backend.platform.db.schema.models.enums import ConversationStateType
-                    state_types = [
-                        ConversationStateType.sm_edit_text,
-                        ConversationStateType.sm_edit_buttons,
-                        ConversationStateType.sm_edit_start_at,
-                        ConversationStateType.sm_edit_end_at,
-                    ]
+                    state_types = {
+                        ConversationStateType.sm_edit_title.value,
+                        ConversationStateType.sm_edit_text.value,
+                        ConversationStateType.sm_edit_buttons.value,
+                        ConversationStateType.sm_edit_start_at.value,
+                        ConversationStateType.sm_edit_end_at.value,
+                    }
 
                     state = await get_user_state(
                         session,
@@ -123,7 +125,7 @@ class ScheduledMessageRouter(BaseRouter):
                         update.effective_user.id,
                     )
 
-                    if not state or state.state_type != ConversationStateType.sm_edit_media:
+                    if not state or state.state_type != ConversationStateType.sm_edit_media.value:
                         return
 
                     # 从 state_data 中获取目标群组 ID

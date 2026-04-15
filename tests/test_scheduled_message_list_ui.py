@@ -3,7 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from backend.features.automation.scheduled_message_handler import ScheduledMessageHandler, _parse_buttons_text
-from backend.features.automation.ui.scheduled_message import sm_list_keyboard
+from backend.features.automation.ui.scheduled_message import sm_detail_keyboard, sm_list_keyboard
 
 
 def test_scheduled_message_list_keyboard_matches_document_layout() -> None:
@@ -50,6 +50,41 @@ def test_format_task_list_renders_task_summary_lines() -> None:
     assert "状态: 启用" in text
     assert "终止: 无限制" in text
     assert "下次:" in text
+
+
+def test_scheduled_message_detail_panel_marks_configured_fields() -> None:
+    handler = ScheduledMessageHandler()
+    task = SimpleNamespace(
+        short_id="abcd1234",
+        title="早安播报",
+        enabled=True,
+        repeat_interval_min=60,
+        day_start_hour=0,
+        day_end_hour=23,
+        start_at=1_800_000_000,
+        end_at=None,
+        next_run_at=None,
+        text="今日通知",
+        media_type="photo",
+        media_file_id="photo-file-id",
+        buttons=[[{"text": "官网", "url": "https://example.com"}]],
+        delete_previous=True,
+        pin_message=False,
+    )
+
+    text = handler._format_task_detail(task)
+    keyboard = sm_detail_keyboard(task, chat_id=-100123)
+
+    assert "📮 标题备注: 早安播报" in text
+    assert "🏞️ 封面设置: 已设置 photo" in text
+    assert "📄 文本内容: 今日通知" in text
+    assert "⭕ 设置按钮: 已设置 1 个" in text
+    assert "⏰ 开始时间:" in text
+    assert keyboard.inline_keyboard[1][0].text == "✅ 标题备注"
+    assert keyboard.inline_keyboard[1][1].text == "✅ 设置封面"
+    assert keyboard.inline_keyboard[2][0].text == "✅ 设置文本"
+    assert keyboard.inline_keyboard[2][1].text == "✅ 设置按钮"
+    assert keyboard.inline_keyboard[5][1].text == "✅ 启用"
 
 
 def test_parse_buttons_text_supports_line_format_and_same_row_separator() -> None:

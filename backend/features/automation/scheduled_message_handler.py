@@ -103,6 +103,8 @@ async def sm_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
                 parser.get(3),
                 parser.get(4),
             )
+        elif action == "preview":
+            await _scheduled_message_handler.preview_task(update, context, target_chat_id, parser.get(3))
         elif action == "del_confirm":
             await _scheduled_message_handler.confirm_delete(update, context, target_chat_id, parser.get(3))
         elif action == "del_do":

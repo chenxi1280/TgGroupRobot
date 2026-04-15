@@ -17,7 +17,6 @@ async def auto_reply_detail_action(
     if not ensure_callback_update_func(update):
         return
     q = update.callback_query
-    await q.answer()
 
     target_chat_id = await resolve_target_chat_id_func(update, context)
     if target_chat_id is None:
@@ -26,13 +25,16 @@ async def auto_reply_detail_action(
     parts = (q.data or "").split(":")
     if len(parts) < 4:
         await q.edit_message_text("规则不存在")
+        await q.answer()
         return
     try:
         rule_id = int(parts[3])
     except ValueError:
         await q.edit_message_text("规则不存在")
+        await q.answer()
         return
 
+    await q.answer()
     await show_rule_detail_func(update, context, chat_id=target_chat_id, rule_id=rule_id)
 
 
@@ -48,7 +50,6 @@ async def auto_reply_preview_action(
     if not ensure_callback_update_func(update):
         return
     q = update.callback_query
-    await q.answer()
 
     target_chat_id = await resolve_target_chat_id_func(update, context)
     if target_chat_id is None:
@@ -57,11 +58,13 @@ async def auto_reply_preview_action(
     parts = (q.data or "").split(":")
     if len(parts) < 4:
         await q.edit_message_text("规则不存在")
+        await q.answer()
         return
     try:
         rule_id = int(parts[3])
     except ValueError:
         await q.edit_message_text("规则不存在")
+        await q.answer()
         return
 
     from backend.features.moderation.ui.auto_reply import auto_reply_preview_keyboard
@@ -76,6 +79,11 @@ async def auto_reply_preview_action(
         await q.answer()
         return
 
+    if not str(getattr(rule, "reply_content", "") or "").strip():
+        await q.answer("请先配置文本内容", show_alert=True)
+        return
+
+    await q.answer()
     if getattr(rule, "cover_media_file_id", None):
         await send_auto_reply_payload_func(
             context,

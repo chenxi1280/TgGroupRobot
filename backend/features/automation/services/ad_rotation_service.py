@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.features.automation.services.scheduled_message_service import ScheduledMessageService
 from backend.platform.db.schema.models.automation import AdCampaign, AdRotationRule
+from backend.shared.async_tasks import spawn_background_task
 from backend.shared.services.base import ValidationError
 from backend.shared.services.publish_service import PublishService
 from backend.shared.time_helper import LOCAL_TIMEZONE, parse_date_time_string
@@ -481,7 +482,10 @@ async def _delete_later(
     message_id: int,
     delay_seconds: int,
 ) -> None:
-    await asyncio.sleep(max(delay_seconds, 1))
+    try:
+        await asyncio.sleep(max(delay_seconds, 1))
+    except asyncio.CancelledError:
+        raise
     await _delete_message_safely(context, chat_id=chat_id, message_id=message_id)
 
 
@@ -563,7 +567,7 @@ async def _dispatch_one_rule(
         rule.next_run_at = compute_next_run_at(rule, now=now, sent_at=now)
         return False
 
-    context = type("BotContext", (), {"bot": app.bot})()
+    context = type("BotContext", (), {"bot": app.bot, "application": app})()
 
     if rule.delete_policy == "delete_prev":
         await _delete_message_safely(context, chat_id=rule.chat_id, message_id=rule.last_sent_message_id)
@@ -586,13 +590,15 @@ async def _dispatch_one_rule(
         rule.last_pinned_message_id = None
 
     if rule.delete_policy == "delete_delay" and message_id is not None:
-        asyncio.create_task(
+        spawn_background_task(
+            app,
             _delete_later(
                 context,
                 chat_id=rule.chat_id,
                 message_id=message_id,
                 delay_seconds=int(rule.delete_delay_seconds or DEFAULT_DELETE_DELAY_SECONDS),
-            )
+            ),
+            name="ad_rotation.delete_later",
         )
 
     item.last_sent_at = now

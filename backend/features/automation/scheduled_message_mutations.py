@@ -3,7 +3,7 @@ from __future__ import annotations
 import traceback
 
 import structlog
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from backend.features.automation.scheduled_message_helpers import resolve_state_chat_id
@@ -16,16 +16,42 @@ from backend.features.automation.ui.scheduled_message import (
     sm_edit_media_keyboard,
     sm_edit_text_keyboard,
     sm_repeat_keyboard,
+    sm_time_range_keyboard,
 )
 from backend.platform.db.runtime.session import Database
 from backend.platform.db.schema.models.enums import ConversationStateType
 from backend.platform.state.conversation_state_service import ConversationStateService
-from backend.platform.telegram.errors import build_public_error_text
+from backend.platform.telegram.errors import answer_callback_query_safely, build_public_error_text
+from backend.shared.services.base import ValidationError
 from backend.shared.services.module_settings_service import ModuleSettingsService
-from backend.shared.time_ui import build_copy_time_keyboard, build_datetime_prompt_text, next_top_of_hour
+from backend.shared.time_ui import build_back_keyboard, build_datetime_prompt_text, next_top_of_hour
 from backend.shared.time_helper import format_timestamp
 
 log = structlog.get_logger(__name__)
+
+
+def _task_has_sendable_content(task) -> bool:
+    return bool(str(getattr(task, "text", "") or "").strip()) or (
+        getattr(task, "media_type", "none") != "none" and bool(getattr(task, "media_file_id", None))
+    )
+
+
+def _build_task_buttons(buttons: list | None) -> InlineKeyboardMarkup | None:
+    if not buttons:
+        return None
+    try:
+        normalized_buttons = ScheduledMessageService.normalize_buttons_config(buttons)
+    except ValidationError:
+        normalized_buttons = []
+    rows: list[list[InlineKeyboardButton]] = []
+    for button_row in normalized_buttons:
+        row: list[InlineKeyboardButton] = []
+        for button in button_row:
+            if isinstance(button, dict):
+                row.append(InlineKeyboardButton(text=button.get("text", ""), url=button.get("url", "")))
+        if row:
+            rows.append(row)
+    return InlineKeyboardMarkup(rows) if rows else None
 
 
 class ScheduledMessageMutationMixin:
@@ -58,7 +84,7 @@ class ScheduledMessageMutationMixin:
                     chat_id=target_chat_id,
                     created_by_user_id=update.effective_user.id if update.effective_user else 0,
                     title="定时消息",
-                    enabled=True,
+                    enabled=False,
                 )
             except Exception as exc:
                 await session.rollback()
@@ -87,8 +113,12 @@ class ScheduledMessageMutationMixin:
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
             try:
-                await ScheduledMessageService.get_task_in_chat_or_404(session, target_chat_id, task_id)
+                task = await ScheduledMessageService.get_task_in_chat_or_404(session, target_chat_id, task_id)
                 if field == "enabled":
+                    if value == "1" and not _task_has_sendable_content(task):
+                        await session.rollback()
+                        await answer_callback_query_safely(update, "请先设置文本或封面", show_alert=True)
+                        return
                     task = await ScheduledMessageService.toggle_task_enabled(session, task_id, value == "1")
                 elif field == "delete_previous":
                     task = await ScheduledMessageService.update_task_toggle_option(
@@ -106,7 +136,7 @@ class ScheduledMessageMutationMixin:
                         session,
                         state_chat_id,
                         update.effective_user.id if update.effective_user else 0,
-                        str(ConversationStateType.sm_edit_day_start),
+                        ConversationStateType.sm_edit_day_start.value,
                         {"task_id": task_id, "start_hour": int(value), "target_chat_id": target_chat_id},
                     )
                     await session.commit()
@@ -186,7 +216,7 @@ class ScheduledMessageMutationMixin:
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
             try:
-                await ScheduledMessageService.get_task_in_chat_or_404(session, target_chat_id, task_id)
+                task = await ScheduledMessageService.get_task_in_chat_or_404(session, target_chat_id, task_id)
             except Exception as exc:
                 await session.rollback()
                 await self.message_helper.safe_edit(
@@ -195,16 +225,20 @@ class ScheduledMessageMutationMixin:
                 )
                 return
 
-            if field == "text":
-                state_type = ConversationStateType.sm_edit_text
+            if field == "title":
+                state_type = ConversationStateType.sm_edit_title.value
+                text = "📮 编辑标题备注\n\n请输入新的标题备注，或输入 /clear 清空标题备注"
+                keyboard = sm_edit_text_keyboard(target_chat_id, task_id)
+            elif field == "text":
+                state_type = ConversationStateType.sm_edit_text.value
                 text = "✏️ 编辑文本\n\n请输入新的文本内容，或输入 /clear 清空文本"
                 keyboard = sm_edit_text_keyboard(target_chat_id, task_id)
             elif field == "media":
-                state_type = ConversationStateType.sm_edit_media
+                state_type = ConversationStateType.sm_edit_media.value
                 text = "🎬 编辑媒体\n\n请发送图片/视频/文档/贴纸/动画"
                 keyboard = sm_edit_media_keyboard(target_chat_id, task_id)
             elif field == "buttons":
-                state_type = ConversationStateType.sm_edit_buttons
+                state_type = ConversationStateType.sm_edit_buttons.value
                 text = (
                     "🔗 编辑按钮\n\n"
                     "请输入按钮配置，支持逐行格式或 JSON。\n\n"
@@ -227,32 +261,51 @@ class ScheduledMessageMutationMixin:
                 keyboard = sm_repeat_keyboard(target_chat_id, task_id, task.repeat_interval_min)
                 await self.message_helper.safe_edit(update, text="请选择轮播间隔", reply_markup=keyboard)
                 return
+            elif field == "time_range":
+                await session.commit()
+                start_text = format_timestamp(task.start_at) if task.start_at else "【等待设置】"
+                end_text = format_timestamp(task.end_at) if task.end_at else "【等待设置】"
+                await self.message_helper.safe_edit(
+                    update,
+                    text=(
+                        "⏰ 定时消息 | 时间范围\n\n"
+                        f"开始时间：{start_text}\n"
+                        f"结束时间：{end_text}\n\n"
+                        "未设置开始时间时，从启用后的下一个调度点开始。"
+                    ),
+                    reply_markup=sm_time_range_keyboard(target_chat_id, task_id),
+                )
+                return
             elif field == "day_period":
-                state_type = ConversationStateType.sm_edit_day_start
+                state_type = ConversationStateType.sm_edit_day_start.value
                 text = "🕐 选择时段开始时间"
                 keyboard = sm_day_period_start_keyboard(target_chat_id, task_id)
             elif field == "start_at":
-                state_type = ConversationStateType.sm_edit_start_at
+                state_type = ConversationStateType.sm_edit_start_at.value
                 sample_dt = next_top_of_hour()
                 sample_text = format_timestamp(int(sample_dt.timestamp()))
                 text = build_datetime_prompt_text(
                     title="⏰ 定时消息 | 编辑开始时间",
                     sample_time_text=sample_text,
+                    sample_time_unix=int(sample_dt.timestamp()),
+                    show_copy_hint=False,
                     input_hint="👉🏻 现在输入定时开始时间:",
                     extra_tips=["发送 /clear 可清空开始时间"],
                 )
-                keyboard = build_copy_time_keyboard(f"sm:open:{target_chat_id}:{task_id}", sample_text)
+                keyboard = build_back_keyboard(f"sm:edit:{target_chat_id}:{task_id}:time_range")
             elif field == "end_at":
-                state_type = ConversationStateType.sm_edit_end_at
+                state_type = ConversationStateType.sm_edit_end_at.value
                 sample_dt = next_top_of_hour(days_offset=1)
                 sample_text = format_timestamp(int(sample_dt.timestamp()))
                 text = build_datetime_prompt_text(
                     title="⏰ 定时消息 | 编辑结束时间",
                     sample_time_text=sample_text,
+                    sample_time_unix=int(sample_dt.timestamp()),
+                    show_copy_hint=False,
                     input_hint="👉🏻 现在输入定时结束时间:",
                     extra_tips=["发送 /clear 可清空结束时间"],
                 )
-                keyboard = build_copy_time_keyboard(f"sm:open:{target_chat_id}:{task_id}", sample_text)
+                keyboard = build_back_keyboard(f"sm:edit:{target_chat_id}:{task_id}:time_range")
             else:
                 await session.rollback()
                 await self.message_helper.safe_edit(update, text=f"❌ 未知字段: {field}")
@@ -263,7 +316,7 @@ class ScheduledMessageMutationMixin:
                 session,
                 state_chat_id,
                 update.effective_user.id if update.effective_user else 0,
-                str(state_type),
+                state_type,
                 {"task_id": task_id, "target_chat_id": target_chat_id},
             )
             await session.commit()
@@ -272,6 +325,56 @@ class ScheduledMessageMutationMixin:
         if field in {"start_at", "end_at"}:
             kwargs["parse_mode"] = "HTML"
         await self.message_helper.safe_edit(update, **kwargs)
+
+    async def preview_task(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        target_chat_id: int,
+        task_id: str,
+    ) -> None:
+        if update.effective_user is None:
+            return
+        if not await self._check_permission(update, context, target_chat_id):
+            await answer_callback_query_safely(update, "❌ 需要管理员权限", show_alert=True)
+            return
+
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            try:
+                task = await ScheduledMessageService.get_task_in_chat_or_404(session, target_chat_id, task_id)
+            except Exception as exc:
+                await session.rollback()
+                await answer_callback_query_safely(update, build_public_error_text(exc, fallback="任务不可用"), show_alert=True)
+                return
+            await session.commit()
+
+        if not _task_has_sendable_content(task):
+            await answer_callback_query_safely(update, "请先设置文本或封面", show_alert=True)
+            return
+
+        reply_markup = _build_task_buttons(task.buttons)
+        preview_chat_id = update.effective_user.id
+        parse_mode = task.parse_mode if task.parse_mode != "none" else None
+        try:
+            if task.media_type == "photo" and task.media_file_id:
+                await context.bot.send_photo(preview_chat_id, task.media_file_id, caption=task.text, parse_mode=parse_mode, reply_markup=reply_markup)
+            elif task.media_type == "video" and task.media_file_id:
+                await context.bot.send_video(preview_chat_id, task.media_file_id, caption=task.text, parse_mode=parse_mode, reply_markup=reply_markup)
+            elif task.media_type == "document" and task.media_file_id:
+                await context.bot.send_document(preview_chat_id, task.media_file_id, caption=task.text, parse_mode=parse_mode, reply_markup=reply_markup)
+            elif task.media_type == "sticker" and task.media_file_id:
+                await context.bot.send_sticker(preview_chat_id, task.media_file_id)
+            elif task.media_type == "animation" and task.media_file_id:
+                await context.bot.send_animation(preview_chat_id, task.media_file_id, caption=task.text, parse_mode=parse_mode, reply_markup=reply_markup)
+            else:
+                await context.bot.send_message(preview_chat_id, task.text or "（无内容）", parse_mode=parse_mode, reply_markup=reply_markup)
+        except Exception as exc:
+            log.warning("scheduled_message_preview_failed", task_id=task_id, error=str(exc))
+            await answer_callback_query_safely(update, "预览发送失败，请检查封面或文本配置", show_alert=True)
+            return
+
+        await answer_callback_query_safely(update, "预览已发送到当前私聊", show_alert=False)
 
     async def confirm_delete(
         self,

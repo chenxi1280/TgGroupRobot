@@ -1,64 +1,29 @@
 from __future__ import annotations
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import Update
 from telegram.ext import ContextTypes
 
 from backend.features.moderation.auto_reply_common import ensure_callback_update, resolve_auto_reply_target_chat_id
+from backend.features.moderation.auto_reply_views import show_auto_reply_rule_detail
+from backend.features.moderation.services.auto_reply_service import create_auto_reply_draft
 from backend.platform.db.runtime.session import Database
 from backend.platform.db.schema.models.core import TgChat
-from backend.platform.db.schema.models.enums import ConversationStateType
-from backend.platform.state.state_service import set_user_state
 from backend.shared.services.chat_service import ensure_chat
 from backend.shared.services.user_service import ensure_user
 from sqlalchemy import select
-
-CREATE_AUTO_REPLY_PROMPT = """💬 创建自动回复规则  ( /cancel 取消)
-
-请按以下格式发送配置：
-
-```
-关键词1,关键词2,关键词3
-匹配类型: contains
-区分大小写: false
-停止继续匹配: true
-删除来源: false
-延迟删除: 0
-回复内容:
-这是自动回复的内容
-可以多行
-```
-
-匹配类型选项:
-• exact - 精确匹配
-• contains - 包含匹配（默认）
-• starts_with - 以...开头
-• ends_with - 以...结尾
-• regex - 正则表达式
-
-示例:
-```
-你好,hi,hello
-匹配类型: contains
-区分大小写: false
-停止继续匹配: true
-删除来源: false
-延迟删除: 0
-回复内容:
-你好呀！欢迎来到我们的群组！
-```"""
 
 
 async def auto_reply_create_start_impl(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not ensure_callback_update(update):
         return
     query = update.callback_query
-    await query.answer()
 
     chat = update.effective_chat
     user = update.effective_user
     target_chat_id = await resolve_auto_reply_target_chat_id(update, context)
     if target_chat_id is None:
         return
+    await query.answer()
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
@@ -72,20 +37,15 @@ async def auto_reply_create_start_impl(update: Update, context: ContextTypes.DEF
             last_name=user.last_name,
             language_code=user.language_code,
         )
-        state_chat_id = chat.id if chat.type == "private" else target_chat_id
-        await set_user_state(
+        rule = await create_auto_reply_draft(
             session,
-            chat_id=state_chat_id,
-            user_id=user.id,
-            state_type=ConversationStateType.auto_reply_create.value,
-            state_data={"step": "config", "target_chat_id": target_chat_id},
+            chat_id=target_chat_id,
+            created_by_user_id=user.id,
         )
+        rule_id = rule.id
         await session.commit()
 
-    keyboard = InlineKeyboardMarkup(
-        [[InlineKeyboardButton("❌ 取消配置", callback_data=f"autoreply:cancel:{target_chat_id}")]]
-    )
-    await query.edit_message_text(CREATE_AUTO_REPLY_PROMPT, parse_mode="Markdown", reply_markup=keyboard)
+    await show_auto_reply_rule_detail(update, context, chat_id=target_chat_id, rule_id=rule_id)
 
 
 async def _load_target_chat_title(session, chat_type: str, chat_title: str | None, target_chat_id: int) -> str:

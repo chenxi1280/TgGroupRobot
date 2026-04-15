@@ -8,6 +8,8 @@ from backend.features.moderation.auto_reply_handler import (
     auto_reply_delete_callback,
     auto_reply_delete_confirm_callback,
     auto_reply_delete_do_callback,
+    auto_reply_delay_callback,
+    auto_reply_delay_set_callback,
     auto_reply_detail_callback,
     auto_reply_edit_callback,
     auto_reply_list_callback,
@@ -15,6 +17,7 @@ from backend.features.moderation.auto_reply_handler import (
     auto_reply_move_callback,
     auto_reply_preview_callback,
     auto_reply_rule_config_callback,
+    auto_reply_set_callback,
     auto_reply_toggle_callback,
 )
 from backend.app.router_base import BaseRouter
@@ -35,6 +38,9 @@ class AutoReplyRouter(BaseRouter):
         app.add_handler(CallbackQueryHandler(auto_reply_create_start, pattern=r"^auto_reply:create"))
         app.add_handler(CallbackQueryHandler(auto_reply_cancel_callback, pattern=r"^autoreply:cancel:"))
         app.add_handler(CallbackQueryHandler(auto_reply_list_callback, pattern=r"^auto_reply:list"))
+        app.add_handler(CallbackQueryHandler(auto_reply_set_callback, pattern=r"^auto_reply:set:"))
+        app.add_handler(CallbackQueryHandler(auto_reply_delay_set_callback, pattern=r"^auto_reply:delay:set:"))
+        app.add_handler(CallbackQueryHandler(auto_reply_delay_callback, pattern=r"^auto_reply:delay:"))
         app.add_handler(CallbackQueryHandler(auto_reply_detail_callback, pattern=r"^auto_reply:detail:"))
         app.add_handler(CallbackQueryHandler(auto_reply_preview_callback, pattern=r"^auto_reply:preview:"))
         app.add_handler(CallbackQueryHandler(auto_reply_edit_callback, pattern=r"^auto_reply:edit:"))

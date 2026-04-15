@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from backend.features.automation.ui.scheduled_message_edit import sm_repeat_keyboard
 from backend.shared.time_ui import (
+    build_back_keyboard,
     build_copy_time_keyboard,
     build_datetime_prompt_text,
     build_interval_keyboard,
@@ -18,17 +19,28 @@ def test_next_top_of_hour_rounds_up_in_local_timezone() -> None:
     assert rounded == dt.datetime(2026, 4, 14, 2, 0, tzinfo=dt.UTC)
 
 
-def test_build_datetime_prompt_text_contains_copy_hint() -> None:
+def test_build_datetime_prompt_text_supports_tg_time_without_copy_hint() -> None:
     text = build_datetime_prompt_text(
         title="🎠 轮播消息 | 编辑开始时间",
         sample_time_text="2026-04-14 10:00",
+        sample_time_unix=1_776_124_800,
+        show_copy_hint=False,
         input_hint="👉🏻 现在输入定时开始时间:",
         extra_tips=["发送 /clear 可清空开始时间"],
     )
 
     assert "最近整点示例" in text
-    assert "点击下方蓝色按钮可直接复制" in text
+    assert '<tg-time unix="1776124800" format="wDT">2026-04-14 10:00</tg-time>' in text
+    assert "点击下方蓝色按钮可直接复制" not in text
     assert "发送 /clear 可清空开始时间" in text
+
+
+def test_build_back_keyboard_only_contains_return_button() -> None:
+    keyboard = build_back_keyboard("sm:open:-1001:abcd")
+
+    assert len(keyboard.inline_keyboard) == 1
+    assert keyboard.inline_keyboard[0][0].text == "🔙 返回"
+    assert keyboard.inline_keyboard[0][0].callback_data == "sm:open:-1001:abcd"
 
 
 def test_build_copy_time_keyboard_uses_copy_text_payload() -> None:

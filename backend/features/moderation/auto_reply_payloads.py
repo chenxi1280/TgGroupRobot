@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import json
 
+import structlog
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
 from backend.features.automation.services.scheduled_message_service import ScheduledMessageService
+
+log = structlog.get_logger(__name__)
 
 
 def parse_auto_reply_buttons_input(raw_text: str) -> list[list[dict[str, str]]]:
@@ -58,6 +62,22 @@ def build_auto_reply_markup(rule) -> InlineKeyboardMarkup | None:
     return InlineKeyboardMarkup(keyboard_rows) if keyboard_rows else None
 
 
+async def _send_auto_reply_text(context: ContextTypes.DEFAULT_TYPE, kwargs: dict) -> object:
+    try:
+        return await context.bot.send_message(**kwargs)
+    except TelegramError as exc:
+        if not kwargs.get("reply_to_message_id"):
+            raise
+        retry_kwargs = dict(kwargs)
+        retry_kwargs["reply_to_message_id"] = None
+        log.warning(
+            "auto_reply_reply_reference_failed_fallback_plain",
+            chat_id=kwargs.get("chat_id"),
+            error=str(exc),
+        )
+        return await context.bot.send_message(**retry_kwargs)
+
+
 async def send_auto_reply_payload(
     context: ContextTypes.DEFAULT_TYPE,
     *,
@@ -65,29 +85,68 @@ async def send_auto_reply_payload(
     text: str,
     rule,
     reply_to_message_id: int | None = None,
+    message_thread_id: int | None = None,
 ) -> object:
     reply_markup = build_auto_reply_markup(rule)
     cover_type = getattr(rule, "cover_media_type", None)
     cover_file_id = getattr(rule, "cover_media_file_id", None)
-    if cover_type == "photo" and cover_file_id:
-        return await context.bot.send_photo(
-            chat_id=chat_id,
-            photo=cover_file_id,
-            caption=text,
-            reply_markup=reply_markup,
-            reply_to_message_id=reply_to_message_id,
-        )
-    if cover_type == "video" and cover_file_id:
-        return await context.bot.send_video(
-            chat_id=chat_id,
-            video=cover_file_id,
-            caption=text,
-            reply_markup=reply_markup,
-            reply_to_message_id=reply_to_message_id,
-        )
-    return await context.bot.send_message(
+    fallback_kwargs = {
+        "chat_id": chat_id,
+        "text": text,
+        "reply_markup": reply_markup,
+        "reply_to_message_id": reply_to_message_id,
+        "allow_sending_without_reply": True,
+    }
+    if message_thread_id is not None:
+        fallback_kwargs["message_thread_id"] = message_thread_id
+    log.info(
+        "auto_reply_payload_send_attempt",
         chat_id=chat_id,
-        text=text,
-        reply_markup=reply_markup,
+        send_mode=cover_type if cover_type in {"photo", "video"} and cover_file_id else "text",
+        has_reply_markup=reply_markup is not None,
         reply_to_message_id=reply_to_message_id,
+        message_thread_id=message_thread_id,
     )
+    if cover_type == "photo" and cover_file_id:
+        try:
+            kwargs = {
+                "chat_id": chat_id,
+                "photo": cover_file_id,
+                "caption": text,
+                "reply_markup": reply_markup,
+                "reply_to_message_id": reply_to_message_id,
+                "allow_sending_without_reply": True,
+            }
+            if message_thread_id is not None:
+                kwargs["message_thread_id"] = message_thread_id
+            return await context.bot.send_photo(**kwargs)
+        except TelegramError as exc:
+            log.warning(
+                "auto_reply_cover_send_failed_fallback_text",
+                chat_id=chat_id,
+                cover_type=cover_type,
+                error=str(exc),
+            )
+            return await _send_auto_reply_text(context, fallback_kwargs)
+    if cover_type == "video" and cover_file_id:
+        try:
+            kwargs = {
+                "chat_id": chat_id,
+                "video": cover_file_id,
+                "caption": text,
+                "reply_markup": reply_markup,
+                "reply_to_message_id": reply_to_message_id,
+                "allow_sending_without_reply": True,
+            }
+            if message_thread_id is not None:
+                kwargs["message_thread_id"] = message_thread_id
+            return await context.bot.send_video(**kwargs)
+        except TelegramError as exc:
+            log.warning(
+                "auto_reply_cover_send_failed_fallback_text",
+                chat_id=chat_id,
+                cover_type=cover_type,
+                error=str(exc),
+            )
+            return await _send_auto_reply_text(context, fallback_kwargs)
+    return await _send_auto_reply_text(context, fallback_kwargs)

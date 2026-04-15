@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import datetime as dt
 import html
 
@@ -9,7 +8,7 @@ from telegram import ChatPermissions, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
 from backend.features.automation.services.scheduled_message_service import ScheduledMessageService
-from backend.features.group_ops.group_hooks.common import _delete_message_later
+from backend.features.group_ops.group_hooks.common import _schedule_message_delete
 
 log = structlog.get_logger(__name__)
 
@@ -139,7 +138,7 @@ async def _check_force_subscribe(
                 )
             delete_after = int(getattr(settings, "force_subscribe_delete_warn_after_seconds", 60) or 60)
             if delete_after > 0:
-                asyncio.create_task(_delete_message_later(sent, delete_after))
+                _schedule_message_delete(context, sent, delete_after, name="group_hooks.force_subscribe_warn_delete")
         except Exception as exc:
             log.warning("force_subscribe_warn_failed", chat_id=chat.id, user_id=user.id, error=str(exc))
 

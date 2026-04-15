@@ -12,6 +12,7 @@ from backend.features.moderation.services.auto_reply_service import create_auto_
 from backend.platform.db.runtime.session import Database
 from backend.platform.db.schema.models.enums import AutoReplyMatchType, ConversationStateType
 from backend.platform.state.state_service import clear_user_state, get_user_state
+from backend.shared.async_tasks import spawn_background_task
 
 log = structlog.get_logger(__name__)
 
@@ -103,6 +104,7 @@ async def auto_reply_message_handler_impl(update: Update, context: ContextTypes.
                 text=matched_rule.reply_content,
                 rule=matched_rule,
                 reply_to_message_id=update.effective_message.message_id,
+                message_thread_id=getattr(update.effective_message, "message_thread_id", None),
             )
             for matched_rule in matched_rules
         ]
@@ -115,7 +117,11 @@ async def auto_reply_message_handler_impl(update: Update, context: ContextTypes.
         for matched_rule, sent_message in zip(matched_rules, sent_messages, strict=False):
             delete_after = getattr(matched_rule, "delete_reply_delay_seconds", 0) or 0
             if delete_after > 0:
-                asyncio.create_task(_delete_later(sent_message, delete_after))
+                spawn_background_task(
+                    context,
+                    _delete_later(sent_message, delete_after),
+                    name="auto_reply_runtime.delete_later",
+                )
     except Exception as exc:
         log.debug("auto_reply_send_failed", error=str(exc))
 
@@ -298,7 +304,10 @@ async def _apply_auto_reply_edit(update: Update, session, state_type: str, targe
 
 
 async def _delete_later(message, delay_seconds: int) -> None:
-    await asyncio.sleep(delay_seconds)
+    try:
+        await asyncio.sleep(max(delay_seconds, 1))
+    except asyncio.CancelledError:
+        raise
     try:
         await message.delete()
     except Exception:

@@ -2,43 +2,50 @@ from __future__ import annotations
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-from backend.shared.time_helper import format_timestamp, get_interval_description
+from backend.shared.time_helper import get_interval_description
+from backend.shared.ui.message_config_panel import action_button, button_count, mark_configured
 from backend.shared.ui.base.helpers import create_back_button
 
 
 def sm_detail_keyboard(task, chat_id: int) -> InlineKeyboardMarkup:
-    text_preview = ""
-    if task.text:
-        text_preview = task.text[:30] + "..." if len(task.text) > 30 else task.text
-
-    period_desc = "全天" if task.day_start_hour == 0 and task.day_end_hour == 23 else (
-        f"{task.day_start_hour:02d}:00-{task.day_end_hour:02d}:00"
-    )
-
+    title_configured = bool(str(getattr(task, "title", "") or "").strip() and task.title != "定时消息")
+    media_configured = getattr(task, "media_type", "none") != "none" and bool(getattr(task, "media_file_id", None))
+    text_configured = bool(str(getattr(task, "text", "") or "").strip())
+    buttons_configured = button_count(getattr(task, "buttons", None)) > 0
+    time_configured = bool(getattr(task, "start_at", None) or getattr(task, "end_at", None))
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton(
-                f"{'🟢' if task.enabled else '🔴'} 启用",
-                callback_data=f"sm:set:{chat_id}:{task.short_id}:enabled:{1 if not task.enabled else 0}",
-            ),
-            InlineKeyboardButton(
-                f"{'✅' if task.delete_previous else '❌'} 删除上条",
-                callback_data=f"sm:set:{chat_id}:{task.short_id}:delete_previous:{1 if not task.delete_previous else 0}",
-            ),
-            InlineKeyboardButton(
-                f"{'📌' if task.pin_message else '⬜'} 置顶",
-                callback_data=f"sm:set:{chat_id}:{task.short_id}:pin_message:{1 if not task.pin_message else 0}",
-            ),
+            InlineKeyboardButton("⚙️ 状态:", callback_data=f"sm:open:{chat_id}:{task.short_id}"),
+            InlineKeyboardButton(mark_configured("启用", bool(task.enabled)), callback_data=f"sm:set:{chat_id}:{task.short_id}:enabled:1"),
+            InlineKeyboardButton(mark_configured("关闭", not bool(task.enabled)), callback_data=f"sm:set:{chat_id}:{task.short_id}:enabled:0"),
         ],
-        [InlineKeyboardButton(f"📝 文本: {text_preview if task.text else '(空)'}", callback_data=f"sm:edit:{chat_id}:{task.short_id}:text")],
-        [InlineKeyboardButton(f"🎬 媒体: {task.media_type}", callback_data=f"sm:edit:{chat_id}:{task.short_id}:media")],
-        [InlineKeyboardButton(f"🔗 按钮: {len(task.buttons)} 行", callback_data=f"sm:edit:{chat_id}:{task.short_id}:buttons")],
-        [InlineKeyboardButton(f"⏰ 重复: {get_interval_description(task.repeat_interval_min)}", callback_data=f"sm:edit:{chat_id}:{task.short_id}:repeat")],
-        [InlineKeyboardButton(f"🕐 时段: {period_desc}", callback_data=f"sm:edit:{chat_id}:{task.short_id}:day_period")],
-        [InlineKeyboardButton(f"📅 开始: {format_timestamp(task.start_at) if task.start_at else '(未设置)'}", callback_data=f"sm:edit:{chat_id}:{task.short_id}:start_at")],
-        [InlineKeyboardButton(f"📅 终止: {format_timestamp(task.end_at) if task.end_at else '(未设置)'}", callback_data=f"sm:edit:{chat_id}:{task.short_id}:end_at")],
         [
-            InlineKeyboardButton("🗑️ 删除任务", callback_data=f"sm:del_confirm:{chat_id}:{task.short_id}"),
+            action_button("标题备注", f"sm:edit:{chat_id}:{task.short_id}:title", configured=title_configured),
+            action_button("设置封面", f"sm:edit:{chat_id}:{task.short_id}:media", configured=media_configured),
+        ],
+        [
+            action_button("设置文本", f"sm:edit:{chat_id}:{task.short_id}:text", configured=text_configured),
+            action_button("设置按钮", f"sm:edit:{chat_id}:{task.short_id}:buttons", configured=buttons_configured),
+        ],
+        [
+            action_button("时间范围", f"sm:edit:{chat_id}:{task.short_id}:time_range", configured=time_configured),
+            InlineKeyboardButton(f"发送频率：{get_interval_description(task.repeat_interval_min)}", callback_data=f"sm:edit:{chat_id}:{task.short_id}:repeat"),
+        ],
+        [
+            InlineKeyboardButton("⚙️ 置顶:", callback_data=f"sm:open:{chat_id}:{task.short_id}"),
+            InlineKeyboardButton(mark_configured("启用", bool(task.pin_message)), callback_data=f"sm:set:{chat_id}:{task.short_id}:pin_message:1"),
+            InlineKeyboardButton(mark_configured("关闭", not bool(task.pin_message)), callback_data=f"sm:set:{chat_id}:{task.short_id}:pin_message:0"),
+        ],
+        [
+            InlineKeyboardButton("🧹 删除上条:", callback_data=f"sm:open:{chat_id}:{task.short_id}"),
+            InlineKeyboardButton(mark_configured("启用", bool(task.delete_previous)), callback_data=f"sm:set:{chat_id}:{task.short_id}:delete_previous:1"),
+            InlineKeyboardButton(mark_configured("关闭", not bool(task.delete_previous)), callback_data=f"sm:set:{chat_id}:{task.short_id}:delete_previous:0"),
+        ],
+        [
+            InlineKeyboardButton("🏖️ 预览效果", callback_data=f"sm:preview:{chat_id}:{task.short_id}"),
+            InlineKeyboardButton("❌ 删除配置", callback_data=f"sm:del_confirm:{chat_id}:{task.short_id}"),
+        ],
+        [
             create_back_button(chat_id, "sm:list"),
         ],
     ])

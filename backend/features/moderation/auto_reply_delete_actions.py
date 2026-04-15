@@ -50,7 +50,7 @@ async def auto_reply_delete_confirm_action(
         "⚠️ 确认删除自动回复规则？",
         "",
         f"规则 #{rule.sort_order} [{rule.id}]",
-        f"关键词: {', '.join(rule.keywords)}",
+        f"关键词: {', '.join(rule.keywords) if rule.keywords else '待配置'}",
         "",
         "删除后将不再参与匹配。",
     ])

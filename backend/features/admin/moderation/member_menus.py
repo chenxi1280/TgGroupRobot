@@ -1,6 +1,16 @@
 from __future__ import annotations
 
 from backend.features.admin.support import *
+from backend.shared.ui.message_config_panel import (
+    PanelField,
+    action_button,
+    button_count,
+    button_status,
+    format_panel,
+    mark_configured,
+    media_status,
+    summarize_text,
+)
 
 
 class ModerationMemberMenusMixin:
@@ -22,11 +32,13 @@ class ModerationMemberMenusMixin:
         ch1 = getattr(settings, "force_subscribe_bound_channel_1", None) or "未绑定"
         ch2 = getattr(settings, "force_subscribe_bound_channel_2", None) or "未绑定"
         delete_after = int(getattr(settings, "force_subscribe_delete_warn_after_seconds", 60) or 60)
-        guide_text = getattr(settings, "force_subscribe_guide_text", "") or "{member}，您需要关注我们的频道才能发言。"
+        default_guide_text = "{member}，您需要关注我们的频道才能发言。"
+        guide_text = getattr(settings, "force_subscribe_guide_text", "") or default_guide_text
         cover_set = bool(getattr(settings, "force_subscribe_cover_file_id", None))
         custom_buttons = bool(getattr(settings, "force_subscribe_custom_buttons_enabled", False))
         buttons = getattr(settings, "force_subscribe_buttons", None) or []
-        button_summary = f"{len(buttons)} 行" if buttons else "未配置"
+        buttons_configured = custom_buttons and button_count(buttons) > 0
+        button_summary = "跟随频道按钮" if not custom_buttons else button_status(buttons)
         check_mode = getattr(settings, "force_subscribe_check_mode", "all")
         check_mode_label = "✅ 全部频道都订阅" if check_mode == "all" else "🟡 任一频道已订阅"
         action = getattr(
@@ -40,22 +52,35 @@ class ModerationMemberMenusMixin:
             ForceSubscribeAction.warn_only.value: "仅提示订阅",
             ForceSubscribeAction.mute.value: "禁言并提示订阅",
         }.get(action, "删除消息并提示订阅")
-        text = (
-            "📣 强制订阅频道\n\n"
-            "新用户需要订阅指定的频道，没订阅将无法发言。\n\n"
-            f"状态: {'✅ 启动' if enabled else '❌ 关闭'}\n"
-            f"绑定频道1: {ch1}\n"
-            f"绑定频道2: {ch2}\n"
-            f"设置封面: {'已设置' if cover_set else '未设置'}\n"
-            f"自定义按钮: {'✅启用' if custom_buttons else '跟随频道按钮'}（{button_summary}）\n"
-            f"订阅判定: {check_mode_label}\n"
-            f"没订阅时处理: {action_label}\n"
-            f"删除提示消息: {delete_after}秒后删除\n\n"
-            f"当前文案:\n{guide_text}"
+        guide_configured = bool(str(getattr(settings, "force_subscribe_guide_text", "") or "").strip())
+        text = format_panel(
+            "📣 强制订阅频道",
+            [
+                PanelField("📡", "绑定频道1", ch1),
+                PanelField("📡", "绑定频道2", ch2),
+                PanelField(
+                    "🏞️",
+                    "封面设置",
+                    media_status(
+                        has_media=cover_set,
+                        media_type=getattr(settings, "force_subscribe_cover_media_type", None),
+                    ),
+                ),
+                PanelField("📄", "提示文案", summarize_text(guide_text, limit=180)),
+                PanelField("⭕", "设置按钮", button_summary),
+            ],
+            footer=[
+                f"⚙️ 状态: {'✅ 启动' if enabled else '❌ 关闭'}",
+                f"🎯 订阅判定: {check_mode_label}",
+                f"🚫 没订阅时处理: {action_label}",
+                f"🧩 按钮来源: {'自定义按钮' if custom_buttons else '跟随频道按钮'}",
+                f"🕘 删除提示消息: {delete_after}秒后删除",
+                "🏖️ 预览: 发送到当前私聊",
+            ],
         )
         keyboard = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("⚙️ 状态：", callback_data=f"adm:menu:forcesub:{chat_id}"),
+                InlineKeyboardButton("⚙️ 状态:", callback_data=f"adm:menu:forcesub:{chat_id}"),
                 InlineKeyboardButton("✅ 启动" if enabled else "启动", callback_data=f"adm:fs:{chat_id}:toggle:enabled"),
                 InlineKeyboardButton("关闭" if enabled else "❌ 关闭", callback_data=f"adm:fs:{chat_id}:toggle:enabled"),
             ],
@@ -68,11 +93,11 @@ class ModerationMemberMenusMixin:
                 InlineKeyboardButton(ch2[:16], callback_data=f"adm:fs:{chat_id}:input:channel2"),
             ],
             [
-                InlineKeyboardButton("🖼️ 设置封面", callback_data=f"adm:fs:{chat_id}:input:cover"),
-                InlineKeyboardButton("📝 设置文案", callback_data=f"adm:fs:{chat_id}:input:text"),
+                action_button("设置封面", f"adm:fs:{chat_id}:input:cover", configured=cover_set),
+                action_button("设置文案", f"adm:fs:{chat_id}:input:text", configured=guide_configured),
             ],
             [
-                InlineKeyboardButton("⌨️ 编辑自定义按钮", callback_data=f"adm:fs:{chat_id}:input:buttons"),
+                action_button("设置按钮", f"adm:fs:{chat_id}:input:buttons", configured=buttons_configured),
                 InlineKeyboardButton("👀 预览效果", callback_data=f"adm:fs:{chat_id}:preview"),
             ],
             [
@@ -85,7 +110,10 @@ class ModerationMemberMenusMixin:
             ],
             [
                 InlineKeyboardButton("⚙️ 删除提示消息：", callback_data=f"adm:menu:forcesub:{chat_id}"),
-                InlineKeyboardButton(f"{delete_after}秒后删除", callback_data=f"adm:fs:{chat_id}:cycle_delete_after"),
+                InlineKeyboardButton(
+                    mark_configured(f"{delete_after}秒后删除", delete_after != 60),
+                    callback_data=f"adm:fs:{chat_id}:cycle_delete_after",
+                ),
             ],
             [InlineKeyboardButton("🧹 清空封面", callback_data=f"adm:fs:{chat_id}:clear_cover")],
             [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],

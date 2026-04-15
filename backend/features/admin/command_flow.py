@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from backend.features.admin.runtime import admin_runtime
 from backend.features.admin.support import *
+from backend.shared.async_tasks import spawn_background_task
 
 
 async def admin_command_impl(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -61,10 +62,12 @@ async def _handle_group_admin_command(update: Update, context: ContextTypes.DEFA
         try:
             await asyncio.sleep(10)
             await message.delete()
+        except asyncio.CancelledError:
+            raise
         except Exception as exc:
             log.warning("delete_message_failed", error=str(exc))
 
-    asyncio.create_task(delete_later())
+    spawn_background_task(context, delete_later(), name="admin_command.delete_later")
 
 
 async def _handle_private_admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE, user) -> None:

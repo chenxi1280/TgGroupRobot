@@ -1,6 +1,14 @@
 from __future__ import annotations
 
 from backend.features.admin.support import *
+from backend.shared.ui.message_config_panel import (
+    PanelField,
+    action_button,
+    button_status,
+    format_panel,
+    media_status,
+    summarize_text,
+)
 
 
 class QuickPublishAdminMixin:
@@ -116,33 +124,34 @@ class QuickPublishAdminMixin:
 
         draft = _get_quick_publish_draft(context, chat_id)
         text_preview = (draft.get("text") or "").strip()
-        if len(text_preview) > 80:
-            text_preview = text_preview[:80] + "..."
         media_type = draft.get("media_type")
-        media_label = f"已设置（{media_type}）" if media_type else "未设置"
-        buttons_count = len(draft.get("buttons") or [])
-
-        lines = [
+        text_configured = bool(text_preview)
+        media_configured = bool(draft.get("media_file_id"))
+        buttons_configured = bool(draft.get("buttons"))
+        lines = format_panel(
             "⚡ 快捷发布",
-            "",
-            f"目标群组：{chat_title}",
-            f"文本：{text_preview or '未设置'}",
-            f"媒体：{media_label}",
-            f"按钮：{buttons_count} 行" if buttons_count else "按钮：未设置",
-            "",
-            "提示：按钮支持 文本|链接 格式，每行多个按钮用 ; 分隔。",
-        ]
+            [
+                PanelField("🎯", "目标群组", chat_title),
+                PanelField("🏞️", "媒体内容", media_status(has_media=media_configured, media_type=media_type)),
+                PanelField("📄", "文本内容", summarize_text(text_preview, limit=180)),
+                PanelField("⭕", "设置按钮", button_status(draft.get("buttons"))),
+            ],
+            footer=[
+                f"🚀 可发送: {'已就绪' if (text_configured or media_configured) else '待配置文本或媒体'}",
+                "💡 按钮支持 文本|链接 格式，每行多个按钮用 ; 分隔。",
+            ],
+        )
 
         keyboard = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("✍️ 设置文本", callback_data=f"qpub:input:{chat_id}:text"),
-                InlineKeyboardButton("🖼️ 设置媒体", callback_data=f"qpub:input:{chat_id}:media"),
+                action_button("设置文本", f"qpub:input:{chat_id}:text", configured=text_configured),
+                action_button("设置媒体", f"qpub:input:{chat_id}:media", configured=media_configured),
             ],
             [
-                InlineKeyboardButton("🔗 设置按钮", callback_data=f"qpub:input:{chat_id}:buttons"),
+                action_button("设置按钮", f"qpub:input:{chat_id}:buttons", configured=buttons_configured),
                 InlineKeyboardButton("🧹 清空草稿", callback_data=f"qpub:clear:{chat_id}"),
             ],
             [InlineKeyboardButton("🚀 立即发送", callback_data=f"qpub:send:{chat_id}")],
             [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
         ])
-        await self.message_helper.safe_edit(update, "\n".join(lines), reply_markup=keyboard)
+        await self.message_helper.safe_edit(update, lines, reply_markup=keyboard)

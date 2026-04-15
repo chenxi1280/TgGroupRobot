@@ -7,7 +7,8 @@ from backend.features.automation.services.ad_rotation_service import (
     describe_delete_policy,
     format_interval_seconds_label,
 )
-from backend.shared.time_ui import build_copy_time_keyboard, build_interval_keyboard
+from backend.shared.time_ui import build_back_keyboard, build_interval_keyboard
+from backend.shared.ui.message_config_panel import action_button, button_count, mark_configured
 from backend.shared.ui.base.helpers import create_back_button
 
 
@@ -93,9 +94,14 @@ def ads_manage_keyboard(chat_id: int, item, *, page: int, total_pages: int) -> I
     return InlineKeyboardMarkup(rows)
 
 
-def ads_item_detail_keyboard(chat_id: int, item) -> InlineKeyboardMarkup:
+def ads_item_detail_keyboard(chat_id: int, item, rule=None) -> InlineKeyboardMarkup:
+    title_configured = bool(str(getattr(item, "title", "") or "").strip())
+    cover_configured = bool(getattr(item, "image_file_id", None))
+    text_configured = bool(str(getattr(item, "content", "") or "").strip())
+    buttons_configured = button_count(getattr(item, "buttons", None)) > 0
+    time_configured = bool(getattr(item, "start_time", None) or getattr(item, "end_time", None))
     enabled_on = "✅ 启用" if item.enabled else "启用"
-    enabled_off = "关闭" if item.enabled else "❌ 关闭"
+    enabled_off = "关闭" if item.enabled else "✅ 关闭"
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("状态：", callback_data=f"ads:detail:{chat_id}:{item.id}"),
@@ -103,14 +109,20 @@ def ads_item_detail_keyboard(chat_id: int, item) -> InlineKeyboardMarkup:
             InlineKeyboardButton(enabled_off, callback_data=f"ads:item:set:{chat_id}:{item.id}:enabled:0"),
         ],
         [
-            InlineKeyboardButton("标题备注", callback_data=f"ads:item:input:{chat_id}:{item.id}:title"),
-            InlineKeyboardButton("设置封面", callback_data=f"ads:item:input:{chat_id}:{item.id}:cover"),
+            action_button("标题备注", f"ads:item:input:{chat_id}:{item.id}:title", configured=title_configured),
+            action_button("设置封面", f"ads:item:input:{chat_id}:{item.id}:cover", configured=cover_configured),
         ],
         [
-            InlineKeyboardButton("设置文本", callback_data=f"ads:item:input:{chat_id}:{item.id}:text"),
-            InlineKeyboardButton("设置按钮", callback_data=f"btned:open:ads:{chat_id}:{item.id}"),
+            action_button("设置文本", f"ads:item:input:{chat_id}:{item.id}:text", configured=text_configured),
+            action_button("设置按钮", f"btned:open:ads:{chat_id}:{item.id}", configured=buttons_configured),
         ],
-        [InlineKeyboardButton("时间范围", callback_data=f"ads:item:time:{chat_id}:{item.id}")],
+        [
+            action_button("时间范围", f"ads:item:time:{chat_id}:{item.id}", configured=time_configured),
+            InlineKeyboardButton(
+                f"发送频率：{format_interval_seconds_label(getattr(rule, 'interval_seconds', 7200))}" if rule else "发送频率",
+                callback_data=f"ads:rules:input:{chat_id}:interval",
+            ),
+        ],
         [
             InlineKeyboardButton("🏖️ 预览效果", callback_data=f"ads:item:preview:{chat_id}:{item.id}"),
             InlineKeyboardButton("🔁 轮播顺序", callback_data=f"ads:item:input:{chat_id}:{item.id}:order"),
@@ -150,7 +162,7 @@ def ads_rules_interval_keyboard(chat_id: int, current_interval_seconds: int | No
 
 
 def ads_copy_time_keyboard(back_callback: str, sample_time: str) -> InlineKeyboardMarkup:
-    return build_copy_time_keyboard(back_callback, sample_time)
+    return build_back_keyboard(back_callback)
 
 
 def describe_manage_delete_policy(rule) -> str:

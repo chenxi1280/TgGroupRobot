@@ -68,3 +68,29 @@ async def test_get_user_state_falls_back_to_target_chat_state(monkeypatch):
     state = await dispatcher._get_user_state(session=object(), db=object(), user_id=42, chat_id=9001)
 
     assert state is group_state
+
+
+@pytest.mark.asyncio
+async def test_dispatch_routes_sender_chat_group_messages_without_effective_user():
+    dispatcher = MessageDispatcher()
+    calls: list[tuple[int, str]] = []
+
+    async def fake_handle(update, context, chat, user, message_text):
+        calls.append((user.id, message_text))
+
+    dispatcher._group_message_handler.handle = fake_handle
+    message = SimpleNamespace(
+        text="你好",
+        caption=None,
+        sender_chat=SimpleNamespace(id=-100777, title="Channel Identity", username="channel_identity"),
+    )
+    update = SimpleNamespace(
+        effective_chat=SimpleNamespace(id=-1001, type="supergroup", title="Test Group"),
+        effective_user=None,
+        effective_message=message,
+    )
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={}))
+
+    await dispatcher.dispatch(update, context)
+
+    assert calls == [(-100777, "你好")]

@@ -7,43 +7,48 @@ from backend.features.moderation.auto_reply_common import get_match_type_label
 from backend.features.moderation.services.auto_reply_service import (
     get_auto_reply_rule_in_chat,
     get_chat_auto_reply_rules,
-    get_match_count,
 )
 from backend.platform.db.runtime.session import Database
+from backend.shared.ui.message_config_panel import PanelField, button_status, format_panel, media_status, summarize_text
+
+
+def _format_keywords(keywords: list[str] | None) -> str:
+    values = [str(item).strip() for item in (keywords or []) if str(item).strip()]
+    return "、".join(values) if values else "待配置"
+
+
+def _format_match_short(match_type: str | None) -> str:
+    return {
+        "exact": "等于",
+        "contains": "包含",
+    }.get(match_type or "", get_match_type_label(match_type or ""))
+
+
+def _format_cover_status(rule) -> str:
+    return media_status(has_media=bool(getattr(rule, "cover_media_file_id", None)))
+
+
+def _format_delay_status(rule) -> str:
+    delay = int(getattr(rule, "delete_reply_delay_seconds", 0) or 0)
+    return f"{delay}秒后删除" if delay else "不删除"
 
 
 def format_auto_reply_rule_detail(rule) -> str:
-    status = "🟢 启用" if rule.is_active else "🔴 停用"
-    delete_source = "删除" if getattr(rule, "delete_source", False) else "保留"
-    delete_delay = getattr(rule, "delete_reply_delay_seconds", 0)
-    match_type_label = get_match_type_label(rule.match_type)
-    keywords = ", ".join(rule.keywords)
-    cover_label = "未设置"
-    if getattr(rule, "cover_media_file_id", None):
-        cover_type = getattr(rule, "cover_media_type", None) or "media"
-        cover_label = f"已设置（{cover_type}）"
-    button_rows = getattr(rule, "buttons", None) or []
-    button_count = sum(len(row) for row in button_rows if isinstance(row, list))
-    return "\n".join(
+    return format_panel(
+        "💬 自动回复",
         [
-            f"💬 自动回复规则 #{rule.sort_order}",
-            "",
-            f"ID: {rule.id}",
-            f"状态: {status}",
-            f"匹配方式: {match_type_label}",
-            f"区分大小写: {'是' if rule.case_sensitive else '否'}",
-            f"命中后停止继续匹配: {'是' if getattr(rule, 'stop_after_match', True) else '否'}",
-            f"删除触发源: {delete_source}",
-            f"回复延迟删除: {delete_delay} 秒" if delete_delay else "回复延迟删除: 不删除",
-            f"命中次数: {rule.match_count}",
-            f"封面: {cover_label}",
-            f"按钮: {button_count} 个",
-            "",
-            f"关键词: {keywords}",
-            "",
-            "回复内容:",
-            rule.reply_content,
-        ]
+            PanelField("📸", "关键词", f"【{_format_keywords(getattr(rule, 'keywords', None))}】"),
+            PanelField("🏞️", "封面设置", _format_cover_status(rule)),
+            PanelField("📄", "文本内容", summarize_text(getattr(rule, "reply_content", ""), limit=180)),
+            PanelField("⭕", "设置按钮", button_status(getattr(rule, "buttons", None))),
+        ],
+        footer=[
+            f"⚙️ 状态: {'✅ 启用' if rule.is_active else '❌ 关闭'}",
+            f"🎯 匹配: {_format_match_short(getattr(rule, 'match_type', ''))}",
+            f"🧹 删除来源: {'删除' if getattr(rule, 'delete_source', False) else '保留'}",
+            f"🕘 延迟删除: {_format_delay_status(rule)}",
+            f"🔁 顺序: {getattr(rule, 'sort_order', 0)}",
+        ],
     )
 
 
@@ -98,7 +103,6 @@ async def render_auto_reply_list(
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
         rules = await get_chat_auto_reply_rules(session, target_chat_id)
-        total_matches = await get_match_count(session, target_chat_id)
         await session.commit()
 
     page_size = 8
@@ -107,31 +111,15 @@ async def render_auto_reply_list(
     current_page = min(max(page, 0), total_pages - 1)
     page_rules = rules[current_page * page_size:(current_page + 1) * page_size]
 
-    text = "📋 自动回复规则列表\n\n"
+    text = "💬 自动回复\n\n可用于设置 导航/赞助等自动回复内容。\n\n"
     if rules:
-        active_count = sum(1 for rule in rules if rule.is_active)
-        text += (
-            f"总计: {len(rules)} 条  |  激活: {active_count} 条  |  总匹配: {total_matches} 次\n"
-            f"页码: 第 {current_page + 1} 页/共 {total_pages} 页\n\n"
-        )
         for rule in page_rules:
-            status = "🟢 激活" if rule.is_active else "🔴 暂停"
-            keywords_display = ", ".join(rule.keywords[:3]) + ("..." if len(rule.keywords) > 3 else "")
-            delete_source = "删源" if getattr(rule, "delete_source", False) else "留源"
-            delete_delay = getattr(rule, "delete_reply_delay_seconds", 0)
-            delay_label = f"{delete_delay}s删回复" if delete_delay else "不删回复"
-            cover_label = "有封面" if getattr(rule, "cover_media_file_id", None) else "无封面"
-            button_count = sum(len(row) for row in (getattr(rule, "buttons", None) or []) if isinstance(row, list))
-            stop_label = "命中即停" if getattr(rule, "stop_after_match", True) else "继续匹配"
-            text += f"{status} #{rule.sort_order} [{rule.id}] {keywords_display}\n"
-            text += (
-                f"   匹配: {get_match_type_label(rule.match_type)} | {stop_label}\n"
-                f"   行为: {delete_source} | {delay_label}\n"
-                f"   展示: {cover_label} | 按钮 {button_count} 个\n"
-                f"   回复: {rule.reply_content[:30]}{'...' if len(rule.reply_content) > 30 else ''}\n\n"
-            )
-    else:
-        text += "0 条数据，第 1 页/共 1 页\n\n暂无自动回复规则"
+            status = "✅ 启用" if rule.is_active else "❌ 关闭"
+            text += f"关键词： {_format_keywords(getattr(rule, 'keywords', None))} （状态: {status}）\n"
+            text += f"┝匹配: {_format_match_short(getattr(rule, 'match_type', ''))}\n"
+            text += f"┗顺序: {getattr(rule, 'sort_order', 0)}\n\n"
+
+    text += f"{total_count} 条数据，第 {current_page + 1} 页/共 {total_pages} 页"
 
     from backend.features.moderation.ui.auto_reply import auto_reply_list_keyboard
 
@@ -145,3 +133,38 @@ async def render_auto_reply_list(
             total_count=total_count,
         ),
     )
+
+
+async def show_auto_reply_delay_page(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    chat_id: int,
+    rule_id: int,
+) -> None:
+    from backend.features.moderation.ui.auto_reply import auto_reply_delay_keyboard
+
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        rule = await get_auto_reply_rule_in_chat(session, chat_id, rule_id)
+        await session.commit()
+
+    if rule is None or rule.chat_id != chat_id:
+        if update.callback_query is not None:
+            await update.callback_query.edit_message_text("规则不存在")
+        return
+
+    text = "\n".join(
+        [
+            "💬 自动回复 | 延迟删除消息",
+            "",
+            "延时自动删除回复的消息",
+            "",
+            "👇 请选择下面的按钮",
+        ]
+    )
+    if update.callback_query is not None:
+        await update.callback_query.edit_message_text(
+            text,
+            reply_markup=auto_reply_delay_keyboard(rule, chat_id),
+        )

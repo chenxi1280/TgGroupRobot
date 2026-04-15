@@ -142,15 +142,12 @@ class CoreBasicMenusMixin:
         chat_id: int,
     ) -> None:
         """显示自动回复管理菜单"""
-        from backend.features.moderation.ui.auto_reply import auto_reply_menu_keyboard
+        from backend.features.moderation.auto_reply_views import render_auto_reply_list
 
         db: Database = context.application.bot_data["db"]
         await self._set_current_chat(db, update.effective_user.id, chat_id)
 
-        text = "💬 自动回复管理\n\n请选择操作："
-        keyboard = auto_reply_menu_keyboard(chat_id)
-
-        await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
+        await render_auto_reply_list(update, context, target_chat_id=chat_id)
 
     async def _show_keywords_menu(
         self,

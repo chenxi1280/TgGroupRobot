@@ -62,14 +62,21 @@ class ScheduledMessageInputMixin:
 
             log.info("handle_fsm_input_updating", task_id=task_id, state_type=state.state_type)
             try:
-                state_type_str = str(state.state_type) if state.state_type else ""
-                if state_type_str in ("sm_edit_text", str(ConversationStateType.sm_edit_text)):
+                state_type_str = state.state_type or ""
+                if state_type_str == ConversationStateType.sm_edit_title.value:
+                    title = "定时消息" if is_clear_command(text) else text.strip()
+                    if not title:
+                        await session.rollback()
+                        await update.effective_message.reply_text("❌ 标题备注不能为空，请重新输入")
+                        return
+                    await ScheduledMessageService.update_task(session, task_id, title=title[:128])
+                elif state_type_str == ConversationStateType.sm_edit_text.value:
                     await ScheduledMessageService.update_task_text(
                         session,
                         task_id,
                         None if is_clear_command(text) else text,
                     )
-                elif state_type_str in ("sm_edit_buttons", str(ConversationStateType.sm_edit_buttons)):
+                elif state_type_str == ConversationStateType.sm_edit_buttons.value:
                     if is_clear_command(text):
                         await ScheduledMessageService.update_task_buttons(session, task_id, [])
                     else:
@@ -88,7 +95,7 @@ class ScheduledMessageInputMixin:
                             await session.rollback()
                             await update.effective_message.reply_text("❌ 按钮配置错误，请重新输入")
                             return
-                elif state_type_str in ("sm_edit_start_at", str(ConversationStateType.sm_edit_start_at)):
+                elif state_type_str == ConversationStateType.sm_edit_start_at.value:
                     if is_clear_command(text):
                         await ScheduledMessageService.update_task_start_at(session, task_id, None)
                     else:
@@ -97,7 +104,7 @@ class ScheduledMessageInputMixin:
                             await session.rollback()
                             await update.effective_message.reply_text("❌ 日期时间格式错误，请重新输入")
                             return
-                elif state_type_str in ("sm_edit_end_at", str(ConversationStateType.sm_edit_end_at)):
+                elif state_type_str == ConversationStateType.sm_edit_end_at.value:
                     if is_clear_command(text):
                         await ScheduledMessageService.update_task_end_at(session, task_id, None)
                     else:
@@ -129,14 +136,16 @@ class ScheduledMessageInputMixin:
 
         toast_msg = None
         if state:
-            state_type_str = str(state.state_type) if state.state_type else ""
-            if state_type_str in ("sm_edit_text", str(ConversationStateType.sm_edit_text)):
+            state_type_str = state.state_type or ""
+            if state_type_str == ConversationStateType.sm_edit_title.value:
+                toast_msg = "✅ 标题备注已保存"
+            elif state_type_str == ConversationStateType.sm_edit_text.value:
                 toast_msg = "✅ 文本已保存"
-            elif state_type_str in ("sm_edit_buttons", str(ConversationStateType.sm_edit_buttons)):
+            elif state_type_str == ConversationStateType.sm_edit_buttons.value:
                 toast_msg = "✅ 按钮已保存"
-            elif state_type_str in ("sm_edit_start_at", str(ConversationStateType.sm_edit_start_at)):
+            elif state_type_str == ConversationStateType.sm_edit_start_at.value:
                 toast_msg = "✅ 开始时间已保存"
-            elif state_type_str in ("sm_edit_end_at", str(ConversationStateType.sm_edit_end_at)):
+            elif state_type_str == ConversationStateType.sm_edit_end_at.value:
                 toast_msg = "✅ 终止时间已保存"
 
         log.info("handle_fsm_input_showing_detail", task_id=task_id, toast_msg=toast_msg)
@@ -178,7 +187,7 @@ class ScheduledMessageInputMixin:
         async with db.session_factory() as session:
             state_chat_id = update.effective_chat.id if update.effective_chat else target_chat_id
             state = await ConversationStateService.get(session, state_chat_id, user_id)
-            if not state or state.state_type != ConversationStateType.sm_edit_media:
+            if not state or state.state_type != ConversationStateType.sm_edit_media.value:
                 await session.commit()
                 return
 

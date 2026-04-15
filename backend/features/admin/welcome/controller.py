@@ -2,6 +2,16 @@ from __future__ import annotations
 
 from backend.features.admin.support import *
 from backend.shared.button_layout_editor import ButtonEditorContext, show_layout_menu
+from backend.shared.ui.message_config_panel import (
+    PanelField,
+    action_button,
+    button_count,
+    button_status,
+    format_panel,
+    mark_configured,
+    media_status,
+    summarize_text,
+)
 
 
 class WelcomeAdminControllerMixin:
@@ -69,14 +79,31 @@ class WelcomeAdminControllerMixin:
             WelcomeDeleteMode.delete_prev.value: "删除上一条",
             WelcomeDeleteMode.seconds.value: f"{int(item.delete_delay_seconds or 15)}秒后删除",
         }.get(item.delete_mode, "15秒后删除")
-        text = (
-            "🎉 进群欢迎\n\n"
-            f"🧭 标题备注：{item.title}\n\n"
-            f"🪩 欢迎模式：{mode_label}\n\n"
-            f"🖼️ 封面设置：{'已设置' if item.cover_media_file_id else '未设置'}\n\n"
-            f"📄 文本内容：{item.text_content}\n\n"
-            f"⭕ 设置按钮：{'未设置' if not item.buttons else f'{len(item.buttons)} 行已配置'}\n\n"
-            f"⏱️ 延迟删除：{delete_label}"
+        title_configured = bool(str(getattr(item, "title", "") or "").strip())
+        cover_configured = bool(getattr(item, "cover_media_file_id", None))
+        text_configured = bool(str(getattr(item, "text_content", "") or "").strip())
+        buttons_configured = button_count(getattr(item, "buttons", None)) > 0
+        text = format_panel(
+            "🎉 进群欢迎",
+            [
+                PanelField("📮", "标题备注", summarize_text(getattr(item, "title", None), limit=80)),
+                PanelField("🪩", "欢迎模式", mode_label),
+                PanelField(
+                    "🏞️",
+                    "封面设置",
+                    media_status(
+                        has_media=cover_configured,
+                        media_type=getattr(item, "cover_media_type", None),
+                    ),
+                ),
+                PanelField("📄", "文本内容", summarize_text(getattr(item, "text_content", None), limit=180)),
+                PanelField("⭕", "设置按钮", button_status(getattr(item, "buttons", None))),
+            ],
+            footer=[
+                f"⚙️ 状态: {'✅ 启用' if item.enabled else '❌ 关闭'}",
+                f"🕘 延迟删除: {delete_label}",
+                "🏖️ 预览: 发送到当前私聊",
+            ],
         )
         status_on = "✅ 启用" if item.enabled else "启用"
         status_off = "关闭" if item.enabled else "❌ 关闭"
@@ -84,26 +111,26 @@ class WelcomeAdminControllerMixin:
         mode_on_join = "进群欢迎" if item.welcome_mode == WelcomeMode.after_verify.value else "✅ 进群欢迎"
         keyboard = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("状态：", callback_data=f"adm:wel:{chat_id}:toggle:{welcome_id}"),
+                InlineKeyboardButton("⚙️ 状态:", callback_data=f"adm:wel:{chat_id}:toggle:{welcome_id}"),
                 InlineKeyboardButton(status_on, callback_data=f"adm:wel:{chat_id}:toggle:{welcome_id}"),
                 InlineKeyboardButton(status_off, callback_data=f"adm:wel:{chat_id}:toggle:{welcome_id}"),
             ],
             [
-                InlineKeyboardButton("模式：", callback_data=f"adm:wel:{chat_id}:mode:{welcome_id}"),
+                InlineKeyboardButton("🪩 模式:", callback_data=f"adm:wel:{chat_id}:mode:{welcome_id}"),
                 InlineKeyboardButton(mode_after_verify, callback_data=f"adm:wel:{chat_id}:mode:{welcome_id}"),
                 InlineKeyboardButton(mode_on_join, callback_data=f"adm:wel:{chat_id}:mode:{welcome_id}"),
             ],
             [
-                InlineKeyboardButton("标题备注", callback_data=f"adm:wel:{chat_id}:input:{welcome_id}:title"),
-                InlineKeyboardButton("修改封面", callback_data=f"adm:wel:{chat_id}:input:{welcome_id}:cover"),
+                action_button("标题备注", f"adm:wel:{chat_id}:input:{welcome_id}:title", configured=title_configured),
+                action_button("设置封面", f"adm:wel:{chat_id}:input:{welcome_id}:cover", configured=cover_configured),
             ],
             [
-                InlineKeyboardButton("修改文本", callback_data=f"adm:wel:{chat_id}:input:{welcome_id}:text"),
-                InlineKeyboardButton("修改按钮", callback_data=f"btned:open:welcome:{chat_id}:{welcome_id}"),
+                action_button("设置文本", f"adm:wel:{chat_id}:input:{welcome_id}:text", configured=text_configured),
+                action_button("设置按钮", f"btned:open:welcome:{chat_id}:{welcome_id}", configured=buttons_configured),
             ],
             [
                 InlineKeyboardButton("🏖️ 预览效果", callback_data=f"adm:wel:{chat_id}:preview:{welcome_id}"),
-                InlineKeyboardButton("⏱️ 延迟删除", callback_data=f"adm:wel:{chat_id}:cycle_delete:{welcome_id}"),
+                InlineKeyboardButton(mark_configured("🕘 延迟删除", item.delete_mode != WelcomeDeleteMode.seconds.value or int(item.delete_delay_seconds or 15) != 15), callback_data=f"adm:wel:{chat_id}:cycle_delete:{welcome_id}"),
             ],
             [
                 InlineKeyboardButton("❌ 删除配置", callback_data=f"adm:wel:{chat_id}:delete:{welcome_id}"),

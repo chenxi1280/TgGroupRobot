@@ -12,7 +12,7 @@ from backend.features.moderation.services.auto_reply_service import match_auto_r
 from backend.features.moderation.services.banned_word_service import match_banned_words
 from backend.shared.services.action_executor import ActionExecutor
 
-from .common import _delete_message_later
+from .common import _schedule_message_delete
 
 log = structlog.get_logger(__name__)
 
@@ -213,6 +213,7 @@ async def _process_auto_reply(
         "unified_handler_auto_reply_result",
         chat_id=chat.id,
         matched=result.success,
+        matched_rule_ids=[rule.id for rule in (result.matched_rules or [])],
         has_reply_content=bool(result.reply_content),
     )
 
@@ -230,6 +231,7 @@ async def _process_auto_reply(
                     text=matched_rule.reply_content,
                     rule=matched_rule,
                     reply_to_message_id=message.message_id,
+                    message_thread_id=getattr(message, "message_thread_id", None),
                 )
             )
         if any(getattr(rule, "delete_source", False) for rule in matched_rules):
@@ -240,12 +242,16 @@ async def _process_auto_reply(
         for matched_rule, sent_message in zip(matched_rules, sent_messages, strict=False):
             delete_after = getattr(matched_rule, "delete_reply_delay_seconds", 0) or 0
             if delete_after > 0:
-                import asyncio
-
-                asyncio.create_task(_delete_message_later(sent_message, delete_after))
+                _schedule_message_delete(
+                    context,
+                    sent_message,
+                    delete_after,
+                    name="group_hooks.auto_reply_warn_delete",
+                )
         log.info(
             "unified_handler_auto_reply_sent",
             chat_id=chat.id,
+            matched_rule_ids=[rule.id for rule in matched_rules],
             reply_content_preview=result.reply_content[:50],
             delete_source=any(bool(getattr(rule, "delete_source", False)) for rule in matched_rules),
             delete_reply_delay_seconds=max(
@@ -256,4 +262,3 @@ async def _process_auto_reply(
         )
     except Exception as exc:
         log.warning("auto_reply_send_failed", chat_id=chat.id, error=str(exc))
-

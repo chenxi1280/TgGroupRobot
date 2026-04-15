@@ -241,18 +241,25 @@ class ButtonLayoutEditorService:
 def _module_title(module_type: str) -> str:
     return {
         "ads": "轮播消息",
+        "auto_reply": "自动回复",
         "welcome": "欢迎消息",
         "invite": "邀请链接",
     }.get(module_type, "按钮配置")
 
 
 def _module_capability(module_type: str) -> str:
-    return "automation" if module_type == "ads" else "settings"
+    if module_type == "ads":
+        return "automation"
+    if module_type == "auto_reply":
+        return "moderation"
+    return "settings"
 
 
 def _module_return_callback(editor_ctx: ButtonEditorContext) -> str:
     if editor_ctx.module_type == "ads":
         return f"ads:detail:{editor_ctx.target_chat_id}:{editor_ctx.entity_id}"
+    if editor_ctx.module_type == "auto_reply":
+        return f"auto_reply:detail:{editor_ctx.target_chat_id}:{editor_ctx.entity_id}"
     if editor_ctx.module_type == "welcome":
         return f"adm:wel:{editor_ctx.target_chat_id}:detail:{editor_ctx.entity_id}"
     return f"inv:home:{editor_ctx.target_chat_id}"
@@ -273,6 +280,14 @@ async def _load_buttons_for_module(session, editor_ctx: ButtonEditorContext) -> 
         item = await get_rotation_item(session, editor_ctx.entity_id)
         if item is None or item.chat_id != editor_ctx.target_chat_id:
             raise ValidationError("轮播消息不存在。")
+        return list(getattr(item, "buttons", None) or [])
+
+    if editor_ctx.module_type == "auto_reply":
+        from backend.features.moderation.services.auto_reply_service import get_auto_reply_rule_in_chat
+
+        item = await get_auto_reply_rule_in_chat(session, editor_ctx.target_chat_id, editor_ctx.entity_id)
+        if item is None:
+            raise ValidationError("自动回复规则不存在。")
         return list(getattr(item, "buttons", None) or [])
 
     if editor_ctx.module_type == "welcome":
@@ -299,6 +314,19 @@ async def _save_buttons_for_module(
         from backend.features.automation.services.ad_rotation_service import update_rotation_item
 
         await update_rotation_item(session, editor_ctx.entity_id, buttons=buttons)
+        return
+
+    if editor_ctx.module_type == "auto_reply":
+        from backend.features.moderation.services.auto_reply_service import update_auto_reply_rule
+
+        updated = await update_auto_reply_rule(
+            session,
+            editor_ctx.entity_id,
+            chat_id=editor_ctx.target_chat_id,
+            buttons=buttons,
+        )
+        if updated is None:
+            raise ValidationError("自动回复规则不存在。")
         return
 
     if editor_ctx.module_type == "welcome":
@@ -332,6 +360,17 @@ async def _show_module_detail(
         from backend.features.automation.ads_handler import _ads_handler
 
         await _ads_handler.show_detail(update, context, editor_ctx.target_chat_id, editor_ctx.entity_id)
+        return
+
+    if editor_ctx.module_type == "auto_reply":
+        from backend.features.moderation.auto_reply_views import show_auto_reply_rule_detail
+
+        await show_auto_reply_rule_detail(
+            update,
+            context,
+            chat_id=editor_ctx.target_chat_id,
+            rule_id=editor_ctx.entity_id,
+        )
         return
 
     if editor_ctx.module_type == "welcome":

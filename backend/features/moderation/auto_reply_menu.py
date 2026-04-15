@@ -33,7 +33,7 @@ from backend.platform.state.state_service import clear_user_state, get_user_stat
 from backend.shared.services.permission_service import is_user_admin
 from backend.shared.services.user_service import ensure_user
 from backend.shared.chat_context import PrivateChatContext
-from backend.features.moderation.auto_reply_helpers import _get_match_type_label
+from backend.features.moderation.auto_reply_helpers import _get_match_type_label, _render_auto_reply_list
 
 class AutoReplyMenuHandler(BaseHandler):
     """自动回复菜单 Handler"""
@@ -48,15 +48,7 @@ class AutoReplyMenuHandler(BaseHandler):
         q = update.callback_query
         await q.answer()
 
-        chat = update.effective_chat
-
-        # 私聊场景：返回到管理面板
-        if self.chat_resolver.is_private_chat(update):
-            await self._handle_private_chat(update, context, target_chat_id)
-            return
-
-        # 群组场景：显示菜单
-        await self._handle_group_chat(update, context, target_chat_id, chat)
+        await _render_auto_reply_list(update, context, target_chat_id=target_chat_id)
 
     async def _handle_private_chat(
         self,
@@ -195,4 +187,3 @@ class AutoReplyMenuHandler(BaseHandler):
 
 # Handler 实例
 _auto_reply_menu_handler = AutoReplyMenuHandler()
-

@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import asyncio
-
 import structlog
 from telegram.ext import ContextTypes
 
-from backend.features.group_ops.group_hooks.common import _delete_message_later
+from backend.features.group_ops.group_hooks.common import _schedule_message_delete
 
 log = structlog.get_logger(__name__)
 
@@ -47,7 +45,7 @@ async def _process_rename_monitor(
         try:
             sent = await context.bot.send_message(chat.id, text)
             if delete_after > 0:
-                asyncio.create_task(_delete_message_later(sent, delete_after))
+                _schedule_message_delete(context, sent, delete_after, name="group_hooks.rename_warn_delete")
         except Exception as exc:
             log.warning("rename_monitor_send_failed", chat_id=chat.id, user_id=user.id, error=str(exc))
     return True

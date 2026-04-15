@@ -8,6 +8,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from backend.shared.ui.base.helpers import create_back_button
 from backend.shared.ui.formatters import StatusIcons, format_range
+from backend.shared.ui.message_config_panel import action_button
 
 
 def _toggle_labels(enabled: bool) -> tuple[str, str]:
@@ -21,6 +22,7 @@ def invite_link_menu_keyboard(
     remind_enabled: bool = True,
     mode: str = "direct",
     has_cover: bool = False,
+    text_configured: bool = False,
     button_rows: int = 0,
 ) -> InlineKeyboardMarkup:
     """邀请链接管理主菜单
@@ -34,9 +36,6 @@ def invite_link_menu_keyboard(
     back_button = create_back_button(chat_id, "back_to_menu")
     relay_label = "✅ 中转模式" if mode == "relay" else "中转模式"
     direct_label = "✅ 直达模式" if mode == "direct" else "直达模式"
-    cover_label = "🖼️ 修改封面" if has_cover else "🖼️ 设置封面"
-    button_label = f"⌨️ 按钮设置（{button_rows}行）" if button_rows else "⌨️ 按钮设置"
-
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("⚙️ 状态：", callback_data=f"inv:home:{chat_id}" if chat_id else "inv:menu"),
@@ -57,11 +56,11 @@ def invite_link_menu_keyboard(
             InlineKeyboardButton(direct_label, callback_data=f"inv:mode:{chat_id}:direct" if chat_id else "inv:mode:direct"),
         ],
         [
-            InlineKeyboardButton(cover_label, callback_data=f"inv:cover:{chat_id}" if chat_id else "inv:cover"),
-            InlineKeyboardButton("📝 修改文本", callback_data=f"inv:text:{chat_id}" if chat_id else "inv:text"),
+            action_button("设置封面", f"inv:cover:{chat_id}" if chat_id else "inv:cover", configured=has_cover),
+            action_button("设置文本", f"inv:text:{chat_id}" if chat_id else "inv:text", configured=text_configured),
         ],
         [
-            InlineKeyboardButton(button_label, callback_data=f"inv:buttons:{chat_id}" if chat_id else "inv:buttons"),
+            action_button("设置按钮", f"inv:buttons:{chat_id}" if chat_id else "inv:buttons", configured=button_rows > 0),
             InlineKeyboardButton("👀 预览效果", callback_data=f"inv:preview:{chat_id}" if chat_id else "inv:preview"),
         ],
         [

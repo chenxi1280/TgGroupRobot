@@ -6,8 +6,8 @@ from __future__ import annotations
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
+from backend.shared.ui.message_config_panel import action_button, button_count, mark_configured
 from backend.shared.ui.base.helpers import create_back_button
-from backend.shared.ui.formatters import StatusIcons
 
 
 def auto_reply_menu_keyboard(chat_id: int | None = None) -> InlineKeyboardMarkup:
@@ -29,7 +29,7 @@ def auto_reply_menu_keyboard(chat_id: int | None = None) -> InlineKeyboardMarkup
     back_button = create_back_button(chat_id, "back_to_menu")
 
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("➕ 创建自动回复", callback_data=create_callback)],
+        [InlineKeyboardButton("➕ 添加一条", callback_data=create_callback)],
         [InlineKeyboardButton("📋 规则列表", callback_data=list_callback)],
         [back_button],
     ])
@@ -57,32 +57,16 @@ def auto_reply_list_keyboard(
     page_rules = rules[start_idx:end_idx]
 
     for rule in page_rules:
-        status_icon = StatusIcons.active(rule.is_active)
-        label = f"{status_icon} #{rule.sort_order} [{rule.id}]"
         detail_callback = (
             f"auto_reply:detail:{chat_id}:{rule.id}"
             if chat_id is not None
             else f"auto_reply:detail::{rule.id}"
         )
-        toggle_callback = (
-            f"auto_reply:toggle:{chat_id}:{rule.id}"
+        next_active = "0" if rule.is_active else "1"
+        status_callback = (
+            f"auto_reply:set:{chat_id}:{rule.id}:active:{next_active}"
             if chat_id is not None
             else f"auto_reply:toggle::{rule.id}"
-        )
-        up_callback = (
-            f"auto_reply:move:{chat_id}:{rule.id}:up"
-            if chat_id is not None
-            else f"auto_reply:move::{rule.id}:up"
-        )
-        down_callback = (
-            f"auto_reply:move:{chat_id}:{rule.id}:down"
-            if chat_id is not None
-            else f"auto_reply:move::{rule.id}:down"
-        )
-        preview_callback = (
-            f"auto_reply:preview:{chat_id}:{rule.id}"
-            if chat_id is not None
-            else f"auto_reply:preview::{rule.id}"
         )
         delete_callback = (
             f"auto_reply:delete:{chat_id}:{rule.id}:confirm"
@@ -90,13 +74,11 @@ def auto_reply_list_keyboard(
             else f"auto_reply:delete::{rule.id}:confirm"
         )
 
-        buttons.append([InlineKeyboardButton(label, callback_data=detail_callback)])
         buttons.append([
-            InlineKeyboardButton("⬆️", callback_data=up_callback),
-            InlineKeyboardButton("⬇️", callback_data=down_callback),
-            InlineKeyboardButton("👁️ 预览", callback_data=preview_callback),
-            InlineKeyboardButton("⏯️", callback_data=toggle_callback),
-            InlineKeyboardButton("🗑️", callback_data=delete_callback),
+            InlineKeyboardButton(f"顺序 {rule.sort_order}", callback_data=detail_callback),
+            InlineKeyboardButton("✅ 启用" if rule.is_active else "❌ 关闭", callback_data=status_callback),
+            InlineKeyboardButton("修改 🔧", callback_data=detail_callback),
+            InlineKeyboardButton("删除 🗑️", callback_data=delete_callback),
         ])
 
     if total_pages > 1:
@@ -118,9 +100,11 @@ def auto_reply_list_keyboard(
             )
         buttons.append(nav_row)
 
-    # 返回按钮
+    create_callback = f"auto_reply:create:{chat_id}" if chat_id is not None else "auto_reply:create"
+    buttons.append([InlineKeyboardButton("➕ 添加一条", callback_data=create_callback)])
+
     back_callback = (
-        f"adm:menu:autoreply:{chat_id}"
+        f"adm:menu:main:{chat_id}"
         if chat_id
         else "auto_reply:menu"
     )
@@ -130,40 +114,71 @@ def auto_reply_list_keyboard(
 
 
 def auto_reply_detail_keyboard(rule, chat_id: int) -> InlineKeyboardMarkup:
+    is_active = bool(getattr(rule, "is_active", False))
+    match_type = getattr(rule, "match_type", "exact")
+    status_on = "✅ 启用" if is_active else "启用"
+    status_off = "关闭" if is_active else "✅ 关闭"
+    match_exact = "✅ 等于" if match_type == "exact" else "等于"
+    match_contains = "✅ 包含" if match_type == "contains" else "包含"
+    delete_source_on = "✅ 删除" if getattr(rule, "delete_source", False) else "删除"
+    delete_source_off = "保留" if getattr(rule, "delete_source", False) else "✅ 保留"
+    keywords_configured = bool(getattr(rule, "keywords", None))
+    cover_configured = bool(getattr(rule, "cover_media_file_id", None))
+    content_configured = bool(str(getattr(rule, "reply_content", "") or "").strip())
+    buttons_configured = button_count(getattr(rule, "buttons", None)) > 0
+    delay_configured = int(getattr(rule, "delete_reply_delay_seconds", 0) or 0) > 0
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton(
-                "👁️ 预览效果",
-                callback_data=f"auto_reply:preview:{chat_id}:{rule.id}",
-            ),
-            InlineKeyboardButton(
-                "⏯️ 切换状态",
-                callback_data=f"auto_reply:toggle:{chat_id}:{rule.id}",
-            ),
+            InlineKeyboardButton("状态：", callback_data=f"auto_reply:detail:{chat_id}:{rule.id}"),
+            InlineKeyboardButton(status_on, callback_data=f"auto_reply:set:{chat_id}:{rule.id}:active:1"),
+            InlineKeyboardButton(status_off, callback_data=f"auto_reply:set:{chat_id}:{rule.id}:active:0"),
         ],
         [
-            InlineKeyboardButton("🧩 关键词", callback_data=f"auto_reply:edit:{chat_id}:{rule.id}:keywords"),
-            InlineKeyboardButton("✏️ 回复内容", callback_data=f"auto_reply:edit:{chat_id}:{rule.id}:content"),
+            InlineKeyboardButton("匹配：", callback_data=f"auto_reply:detail:{chat_id}:{rule.id}"),
+            InlineKeyboardButton(match_exact, callback_data=f"auto_reply:set:{chat_id}:{rule.id}:match:exact"),
+            InlineKeyboardButton(match_contains, callback_data=f"auto_reply:set:{chat_id}:{rule.id}:match:contains"),
         ],
         [
-            InlineKeyboardButton("🖼️ 封面", callback_data=f"auto_reply:edit:{chat_id}:{rule.id}:cover"),
-            InlineKeyboardButton("🔘 按钮", callback_data=f"auto_reply:edit:{chat_id}:{rule.id}:buttons"),
+            InlineKeyboardButton("删除来源：", callback_data=f"auto_reply:detail:{chat_id}:{rule.id}"),
+            InlineKeyboardButton(delete_source_on, callback_data=f"auto_reply:set:{chat_id}:{rule.id}:source:1"),
+            InlineKeyboardButton(delete_source_off, callback_data=f"auto_reply:set:{chat_id}:{rule.id}:source:0"),
         ],
         [
-            InlineKeyboardButton("🧠 匹配方式", callback_data=f"auto_reply:cycle:{chat_id}:{rule.id}:match"),
-            InlineKeyboardButton("🔤 大小写", callback_data=f"auto_reply:togglecfg:{chat_id}:{rule.id}:case"),
+            action_button("修改关键词", f"auto_reply:edit:{chat_id}:{rule.id}:keywords", configured=keywords_configured),
+            action_button("修改封面", f"auto_reply:edit:{chat_id}:{rule.id}:cover", configured=cover_configured),
         ],
         [
-            InlineKeyboardButton("🧹 删来源", callback_data=f"auto_reply:togglecfg:{chat_id}:{rule.id}:source"),
-            InlineKeyboardButton("⏱️ 延迟删除", callback_data=f"auto_reply:cycle:{chat_id}:{rule.id}:delay"),
+            action_button("修改文本", f"auto_reply:edit:{chat_id}:{rule.id}:content", configured=content_configured),
+            action_button("修改按钮", f"btned:open:auto_reply:{chat_id}:{rule.id}", configured=buttons_configured),
         ],
-        [InlineKeyboardButton("🧱 停止匹配", callback_data=f"auto_reply:togglecfg:{chat_id}:{rule.id}:stop")],
         [
-            InlineKeyboardButton("⬆️ 上移", callback_data=f"auto_reply:move:{chat_id}:{rule.id}:up"),
-            InlineKeyboardButton("⬇️ 下移", callback_data=f"auto_reply:move:{chat_id}:{rule.id}:down"),
+            InlineKeyboardButton("🏖️ 预览效果", callback_data=f"auto_reply:preview:{chat_id}:{rule.id}"),
+            InlineKeyboardButton(mark_configured("🕘 延迟删除", delay_configured), callback_data=f"auto_reply:delay:{chat_id}:{rule.id}"),
         ],
-        [InlineKeyboardButton("🗑️ 删除规则", callback_data=f"auto_reply:delete:{chat_id}:{rule.id}:confirm")],
-        [InlineKeyboardButton("🔙 返回列表", callback_data=f"auto_reply:list:{chat_id}")],
+        [
+            InlineKeyboardButton("❌ 删除配置", callback_data=f"auto_reply:delete:{chat_id}:{rule.id}:confirm"),
+            InlineKeyboardButton("🔙 返回", callback_data=f"auto_reply:list:{chat_id}"),
+        ],
+    ])
+
+
+def auto_reply_delay_keyboard(rule, chat_id: int) -> InlineKeyboardMarkup:
+    current_delay = int(getattr(rule, "delete_reply_delay_seconds", 0) or 0)
+
+    def label(seconds: int, text: str) -> str:
+        return f"✅ {text}" if current_delay == seconds else text
+
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(label(15, "15秒"), callback_data=f"auto_reply:delay:set:{chat_id}:{rule.id}:15"),
+            InlineKeyboardButton(label(30, "30秒"), callback_data=f"auto_reply:delay:set:{chat_id}:{rule.id}:30"),
+            InlineKeyboardButton(label(60, "60秒"), callback_data=f"auto_reply:delay:set:{chat_id}:{rule.id}:60"),
+            InlineKeyboardButton(label(90, "90秒"), callback_data=f"auto_reply:delay:set:{chat_id}:{rule.id}:90"),
+        ],
+        [
+            InlineKeyboardButton(label(0, "不删除"), callback_data=f"auto_reply:delay:set:{chat_id}:{rule.id}:0"),
+            InlineKeyboardButton("🔙 返回", callback_data=f"auto_reply:detail:{chat_id}:{rule.id}"),
+        ],
     ])
 
 

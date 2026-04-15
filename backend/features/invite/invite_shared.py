@@ -20,6 +20,7 @@ from backend.features.invite.ui.invite_link import (
 from backend.platform.db.runtime.session import Database
 from backend.shared.handlers.base.base_handler import BaseHandler
 from backend.shared.services.chat_service import get_chat_settings
+from backend.shared.ui.message_config_panel import PanelField, button_status, format_panel, media_status, summarize_text
 from backend.platform.state.state_service import clear_user_state
 
 WAIT_NAME = 1
@@ -53,17 +54,29 @@ class InviteLinkHandler(BaseHandler):
             await session.commit()
 
         mode_label = "🧭 中转模式" if settings.invite_link_mode == "relay" else "➡️ 直达模式"
-        cover_label = "✅ 已设置" if settings.invite_link_cover_file_id else "❌ 未设置"
+        text_template = settings.invite_link_text_template or ""
+        text_configured = bool(str(text_template).strip())
         button_rows = len(settings.invite_link_buttons or [])
-        text = (
-            f"🔗 [{chat_title or target_chat_id}] 邀请链接\n\n"
-            f"状态：{'✅ 启动' if settings.invite_link_enabled else '❌ 关闭'}\n"
-            f"邀请提醒：{'✅ 启动' if settings.invite_link_notify else '❌ 关闭'}\n\n"
-            f"模式：{mode_label}\n"
-            f"封面：{cover_label}\n"
-            f"按钮：{button_rows} 行\n"
-            f"模板：{(settings.invite_link_text_template or '')[:32] or '未配置'}\n\n"
-            "当前已接通创建、列表、详情、统计、模式、封面、文本、按钮、预览、清零、清空链接与导出。"
+        text = format_panel(
+            f"🔗 [{chat_title or target_chat_id}] 邀请链接",
+            [
+                PanelField(
+                    "🏞️",
+                    "封面设置",
+                    media_status(
+                        has_media=bool(settings.invite_link_cover_file_id),
+                        media_type=getattr(settings, "invite_link_cover_media_type", None),
+                    ),
+                ),
+                PanelField("📄", "文本模板", summarize_text(text_template, limit=180)),
+                PanelField("⭕", "设置按钮", button_status(settings.invite_link_buttons)),
+            ],
+            footer=[
+                f"⚙️ 状态: {'✅ 启动' if settings.invite_link_enabled else '❌ 关闭'}",
+                f"🔔 邀请提醒: {'✅ 启动' if settings.invite_link_notify else '❌ 关闭'}",
+                f"🧭 模式: {mode_label}",
+                "🏖️ 预览: 发送到当前私聊",
+            ],
         )
         keyboard = invite_link_menu_keyboard(
             target_chat_id,
@@ -71,6 +84,7 @@ class InviteLinkHandler(BaseHandler):
             remind_enabled=bool(settings.invite_link_notify),
             mode=settings.invite_link_mode or "direct",
             has_cover=bool(settings.invite_link_cover_file_id),
+            text_configured=text_configured,
             button_rows=button_rows,
         )
         await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)

@@ -49,6 +49,13 @@ from backend.shared.services.chat_service import ensure_chat, get_chat_settings
 from backend.shared.services.module_settings_service import ModuleSettingsService
 from backend.shared.services.permission_service import PermissionPolicyService
 from backend.shared.services.publish_service import PublishService
+from backend.shared.ui.message_config_panel import (
+    PanelField,
+    button_status,
+    format_panel,
+    media_status,
+    summarize_text,
+)
 from backend.platform.telegram.errors import (
     answer_callback_query_safely,
     mark_callback_query_answered,
@@ -134,27 +141,31 @@ def _format_ad_push_text(ad: AdCampaign) -> str:
     return (ad.content or "").strip() or ad.title
 
 
-def _format_ad_detail_text(ad: AdCampaign) -> str:
-    title_line = f"📮 {ad.title}"
-    if ad.enabled:
-        title_line += "（✅ 启用）"
-    else:
-        title_line += "（❌ 关闭）"
-    button_text = "已设置按钮" if getattr(ad, "buttons", None) else "未设置按钮"
-    content_text = (ad.content or "").strip() or "【等待设置】"
+def _format_ad_detail_text(ad: AdCampaign, rule=None) -> str:
     start_text = format_local_datetime(getattr(ad, "start_time", None), empty="【等待设置】")
     end_text = format_local_datetime(getattr(ad, "end_time", None), empty="【等待设置】")
     if getattr(ad, "end_time", None) is None:
         end_text = "【等待设置】"
+    footer = [
+        f"⚙️ 状态: {'✅ 启用' if ad.enabled else '❌ 关闭'}",
+        f"🔁 轮播顺序: {getattr(ad, 'sort_order', 0)}",
+    ]
+    if rule is not None:
+        footer.append(f"⌛ 发送频率: {format_interval_seconds_label(getattr(rule, 'interval_seconds', 7200))}")
+        footer.append(f"📌 轮播方式: {describe_rule_mode(rule)}")
+        footer.append(f"🧹 删除规则: {describe_delete_policy(rule)}")
 
-    return (
-        "🎠 轮播消息\n\n"
-        f"{title_line}\n\n"
-        f"🖼️ 封面设置：{'已设置封面' if ad.image_file_id else '未设置封面'}\n\n"
-        f"📄 文本内容：\n{content_text}\n\n"
-        f"⭕ 设置按钮：{button_text}\n\n"
-        f"⏰ 开始时间：{start_text}\n\n"
-        f"⏰ 结束时间：{end_text}"
+    return format_panel(
+        "🎠 轮播消息",
+        [
+            PanelField("📮", "标题备注", summarize_text(getattr(ad, "title", None), limit=80)),
+            PanelField("🏞️", "封面设置", media_status(has_media=bool(getattr(ad, "image_file_id", None)))),
+            PanelField("📄", "文本内容", summarize_text(getattr(ad, "content", None), limit=180)),
+            PanelField("⭕", "设置按钮", button_status(getattr(ad, "buttons", None))),
+            PanelField("⏰", "开始时间", start_text),
+            PanelField("⏰", "结束时间", end_text),
+        ],
+        footer=footer,
     )
 
 
@@ -279,14 +290,15 @@ class AdsHandler(BaseHandler):
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
             item = await get_rotation_item(session, item_id)
+            rule = await get_or_create_rotation_rule(session, target_chat_id)
             await session.commit()
         if item is None or item.chat_id != target_chat_id:
             await self.message_helper.safe_edit(update, text="轮播消息不存在", reply_markup=ads_menu_keyboard(target_chat_id))
             return
         await self.message_helper.safe_edit(
             update,
-            text=_format_ad_detail_text(item),
-            reply_markup=ads_item_detail_keyboard(target_chat_id, item),
+            text=_format_ad_detail_text(item, rule),
+            reply_markup=ads_item_detail_keyboard(target_chat_id, item, rule),
         )
 
     async def show_time_range(self, update: Update, context: ContextTypes.DEFAULT_TYPE, target_chat_id: int, item_id: int) -> None:
@@ -495,6 +507,8 @@ async def ads_rules_input_callback(update: Update, context: ContextTypes.DEFAULT
             build_datetime_prompt_text(
                 title="🎠 轮播规则 | 编辑开始时间",
                 sample_time_text=sample_label,
+                sample_time_unix=int(sample_time.timestamp()),
+                show_copy_hint=False,
                 input_hint="👉🏻 现在输入定时开始时间:",
             ),
             parse_mode="HTML",
@@ -743,6 +757,8 @@ async def ads_item_input_callback(update: Update, context: ContextTypes.DEFAULT_
             build_datetime_prompt_text(
                 title="🎠 轮播消息 | 编辑开始时间",
                 sample_time_text=sample_label,
+                sample_time_unix=int(sample_time.timestamp()),
+                show_copy_hint=False,
                 input_hint="👉🏻 现在输入定时开始时间:",
             ),
             parse_mode="HTML",
@@ -759,6 +775,8 @@ async def ads_item_input_callback(update: Update, context: ContextTypes.DEFAULT_
             build_datetime_prompt_text(
                 title="🎠 轮播消息 | 编辑结束时间",
                 sample_time_text=sample_label,
+                sample_time_unix=int(sample_time.timestamp()),
+                show_copy_hint=False,
                 input_hint="👉🏻 现在输入定时结束时间:",
             ),
             parse_mode="HTML",

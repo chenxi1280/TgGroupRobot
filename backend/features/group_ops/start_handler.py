@@ -25,6 +25,7 @@ from backend.features.group_ops.services.chat_group_service import (
 from backend.shared.services.chat_service import ensure_chat, get_chat_settings
 from backend.shared.services.command_config_service import ensure_command_enabled
 from backend.platform.state.state_service import clear_user_state, get_user_state
+from backend.shared.async_tasks import spawn_background_task
 from backend.shared.services.user_service import ensure_user
 
 
@@ -73,10 +74,12 @@ async def _send_guide_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         try:
             await asyncio.sleep(delete_delay)
             await msg.delete()
+        except asyncio.CancelledError:
+            raise
         except Exception as e:
             log.warning("delete_bot_message_failed", error=str(e))
 
-    asyncio.create_task(delete_later())
+    spawn_background_task(context, delete_later(), name="start_handler.delete_guide_message")
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

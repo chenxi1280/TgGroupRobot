@@ -7,6 +7,7 @@ import pytest
 
 from backend.features.invite import invite_link_handler
 from backend.features.invite import invite_admin_config_callbacks
+from backend.features.invite.invite_shared import _invite_link_handler
 from backend.features.invite.ui.invite_link import invite_link_menu_keyboard
 
 
@@ -18,13 +19,64 @@ def test_invite_link_menu_keyboard_matches_basic_mode_layout():
         ["🔔 邀请提醒：", "✅ 启动", "关闭"],
         ["➕ 创建邀请链接", "📋 链接列表"],
         ["中转模式", "✅ 直达模式"],
-        ["🖼️ 设置封面", "📝 修改文本"],
-        ["⌨️ 按钮设置", "👀 预览效果"],
+        ["设置封面", "设置文本"],
+        ["设置按钮", "👀 预览效果"],
         ["🧹 清零统计", "♻️ 清空链接"],
         ["📤 导出数据"],
         ["📊 统计"],
         ["🔙 返回"],
     ]
+
+
+@pytest.mark.asyncio
+async def test_invite_link_show_menu_uses_shared_message_panel(monkeypatch):
+    rendered: dict[str, object] = {}
+
+    async def fake_get_chat_settings(session, chat_id: int):
+        return SimpleNamespace(
+            invite_link_enabled=True,
+            invite_link_notify=False,
+            invite_link_mode="relay",
+            invite_link_cover_file_id="photo-file-id",
+            invite_link_cover_media_type="photo",
+            invite_link_text_template="🔗 邀请好友加入 {group}",
+            invite_link_buttons=[[{"text": "加入频道", "url": "https://t.me/demo"}]],
+        )
+
+    async def fake_safe_edit(update, text, reply_markup):
+        rendered["text"] = text
+        rendered["keyboard"] = reply_markup.inline_keyboard
+
+    class _Session:
+        async def commit(self):
+            return None
+
+    class _SessionContext:
+        async def __aenter__(self):
+            return _Session()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class _Db:
+        def session_factory(self):
+            return _SessionContext()
+
+    monkeypatch.setattr("backend.features.invite.invite_shared.get_chat_settings", fake_get_chat_settings)
+    monkeypatch.setattr(_invite_link_handler.message_helper, "safe_edit", fake_safe_edit)
+
+    update = SimpleNamespace()
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}))
+
+    await _invite_link_handler.show_menu(update, context, -1001, "测试群")
+
+    rows = [[button.text for button in row] for row in rendered["keyboard"]]
+    assert "🏞️ 封面设置: 已设置 photo" in rendered["text"]
+    assert "📄 文本模板: 🔗 邀请好友加入 {group}" in rendered["text"]
+    assert "⭕ 设置按钮: 已设置 1 个" in rendered["text"]
+    assert "🧭 模式: 🧭 中转模式" in rendered["text"]
+    assert rows[4] == ["✅ 设置封面", "✅ 设置文本"]
+    assert rows[5] == ["✅ 设置按钮", "👀 预览效果"]
 
 
 def test_parse_invite_buttons_supports_multi_row_layout():

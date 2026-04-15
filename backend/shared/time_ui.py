@@ -25,19 +25,30 @@ def build_datetime_prompt_text(
     sample_time_text: str,
     input_hint: str,
     extra_tips: list[str] | None = None,
+    sample_time_unix: int | None = None,
+    show_copy_hint: bool = True,
 ) -> str:
     tips = extra_tips or []
     tip_lines = "\n".join(tips)
     if tip_lines:
         tip_lines = f"{tip_lines}\n\n"
+    sample_text = html.escape(sample_time_text)
+    sample_markup = f'<tg-time unix="{int(sample_time_unix)}" format="wDT">{sample_text}</tg-time>' if sample_time_unix is not None else f"<b>{sample_text}</b>"
+    copy_hint = "点击下方蓝色按钮可直接复制\n\n" if show_copy_hint else ""
     return (
         f"{title}\n\n"
         "格式:年-月-日 时:分\n"
-        f"例如:<b>{html.escape(sample_time_text)}</b>\n\n"
-        f"最近整点示例：<b>{html.escape(sample_time_text)}</b>\n"
-        "点击下方蓝色按钮可直接复制\n\n"
+        f"例如:{sample_markup}\n\n"
+        f"最近整点示例：{sample_markup}\n"
+        f"{copy_hint}"
         f"{tip_lines}{input_hint}"
     )
+
+
+def build_back_keyboard(back_callback: str | None) -> InlineKeyboardMarkup:
+    if not back_callback:
+        return InlineKeyboardMarkup([])
+    return InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=back_callback)]])
 
 
 def build_copy_time_keyboard(back_callback: str | None, sample_time_text: str) -> InlineKeyboardMarkup:

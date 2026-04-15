@@ -483,7 +483,7 @@ async def test_scheduled_edit_field_keeps_target_chat_id_in_private_state(monkey
     assert started == {
         "chat_id": 9001,
         "user_id": 42,
-        "state_type": str(ConversationStateType.sm_edit_text),
+        "state_type": ConversationStateType.sm_edit_text.value,
         "state_data": {"task_id": "task-1", "target_chat_id": -1005566},
     }
     assert rendered and rendered[0][0].startswith("✏️ 编辑文本")
@@ -499,7 +499,7 @@ async def test_scheduled_button_fsm_accepts_line_format(monkeypatch):
 
     async def fake_get(session_obj, chat_id: int, user_id: int):
         return SimpleNamespace(
-            state_type=str(ConversationStateType.sm_edit_buttons),
+            state_type=ConversationStateType.sm_edit_buttons.value,
             state_data={"task_id": "task-1", "target_chat_id": -1005566},
         )
 

@@ -56,6 +56,16 @@ def sm_confirm_delete_keyboard(chat_id: int, task_id: str) -> InlineKeyboardMark
     ])
 
 
+def sm_time_range_keyboard(chat_id: int, task_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("开始时间", callback_data=f"sm:edit:{chat_id}:{task_id}:start_at"),
+            InlineKeyboardButton("结束时间", callback_data=f"sm:edit:{chat_id}:{task_id}:end_at"),
+        ],
+        [InlineKeyboardButton("🔙 返回", callback_data=f"sm:open:{chat_id}:{task_id}")],
+    ])
+
+
 def sm_edit_text_keyboard(chat_id: int, task_id: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"sm:open:{chat_id}:{task_id}")]])
 

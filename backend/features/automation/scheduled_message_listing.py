@@ -9,6 +9,14 @@ from backend.platform.db.runtime.session import Database
 from backend.platform.db.schema.models.scheduled_message import ScheduledMessageTask
 from backend.platform.telegram.errors import build_public_error_text
 from backend.shared.time_helper import format_timestamp, get_interval_description
+from backend.shared.ui.message_config_panel import (
+    WAITING_VALUE,
+    PanelField,
+    button_status,
+    format_panel,
+    media_status,
+    summarize_text,
+)
 
 
 class ScheduledMessageListMixin:
@@ -126,54 +134,34 @@ class ScheduledMessageListMixin:
             await self.message_helper.safe_reply(update, text=text, reply_markup=keyboard)
 
     def _format_task_detail(self, task: ScheduledMessageTask, toast: str | None = None) -> str:
-        lines = []
-        if toast:
-            lines.append(toast)
-            lines.append("")
-
-        lines.append(f"⚙️ {task.title}")
-        lines.append("")
-
-        status_icon = "🟢" if task.enabled else "🔴"
-        lines.append(f"{status_icon} 状态: {'启用' if task.enabled else '关闭'}")
-
-        interval_desc = get_interval_description(task.repeat_interval_min)
-        lines.append(f"⏰ 重复: {interval_desc}")
-
-        if task.day_start_hour == 0 and task.day_end_hour == 23:
-            lines.append("🕐 时段: 全天")
-        else:
-            lines.append(f"🕐 时段: {task.day_start_hour:02d}:00-{task.day_end_hour:02d}:00")
-
-        if task.start_at and task.end_at:
-            lines.append(f"📅 有效期: {format_timestamp(task.start_at)} ~ {format_timestamp(task.end_at)}")
-        elif task.start_at:
-            lines.append(f"📅 开始: {format_timestamp(task.start_at)}")
-        elif task.end_at:
-            lines.append(f"📅 终止: {format_timestamp(task.end_at)}")
-
+        title_value = str(task.title or "").strip()
+        if not title_value or title_value == "定时消息":
+            title_value = WAITING_VALUE
+        start_text = format_timestamp(task.start_at) if task.start_at else WAITING_VALUE
+        end_text = format_timestamp(task.end_at) if task.end_at else WAITING_VALUE
+        period_text = "全天" if task.day_start_hour == 0 and task.day_end_hour == 23 else (
+            f"{task.day_start_hour:02d}:00-{task.day_end_hour:02d}:00"
+        )
+        footer = [
+            f"⚙️ 状态: {'✅ 启用' if task.enabled else '❌ 关闭'}",
+            f"📌 置顶: {'✅ 启用' if task.pin_message else '❌ 关闭'}",
+            f"🧹 删除上条: {'✅ 启用' if task.delete_previous else '❌ 关闭'}",
+            f"🕐 时段: {period_text}",
+        ]
         if task.next_run_at:
-            lines.append(f"⏭️ 下次: {format_timestamp(task.next_run_at)}")
+            footer.append(f"⏭️ 下次: {format_timestamp(task.next_run_at)}")
 
-        lines.append("")
-        lines.append("📝 内容:")
-        if task.text:
-            text_preview = task.text[:200] + "..." if len(task.text) > 200 else task.text
-            lines.append(text_preview)
-        else:
-            lines.append("(无文本)")
-
-        if task.media_type != "none":
-            lines.append(f"🎬 媒体: {task.media_type}")
-        if task.buttons:
-            lines.append(f"🔗 按钮: {len(task.buttons)} 行")
-
-        lines.append("")
-        lines.append("⚙️ 选项:")
-        options = []
-        if task.delete_previous:
-            options.append("删除上条")
-        if task.pin_message:
-            options.append("置顶")
-        lines.append(" | ".join(options) if options else "无")
-        return "\n".join(lines)
+        return format_panel(
+            "⏱️ 定时消息",
+            [
+                PanelField("📮", "标题备注", title_value),
+                PanelField("🏞️", "封面设置", media_status(has_media=task.media_type != "none" and bool(task.media_file_id), media_type=task.media_type)),
+                PanelField("📄", "文本内容", summarize_text(task.text, limit=180)),
+                PanelField("⭕", "设置按钮", button_status(task.buttons)),
+                PanelField("⏰", "开始时间", start_text),
+                PanelField("⏰", "结束时间", end_text),
+                PanelField("⌛", "重复间隔", get_interval_description(task.repeat_interval_min)),
+            ],
+            footer=footer,
+            toast=toast,
+        )

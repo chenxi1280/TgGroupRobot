@@ -18,6 +18,7 @@ from backend.platform.db.runtime.session import Database
 from backend.platform.state.state_service import get_user_state
 from backend.shared.handlers.base.chat_resolver import ChatResolver
 from backend.platform.telegram.group_pipeline import GroupMessageHandler
+from backend.platform.telegram.message_actor import resolve_message_actor
 from backend.platform.telegram.private_config_handler import PrivateConfigHandler
 from backend.features.group_ops.start_handler import private_message_handler as private_default_handler
 
@@ -43,12 +44,12 @@ class MessageDispatcher:
             context: Bot 上下文
         """
         # 基础检查
-        if update.effective_chat is None or update.effective_user is None or update.effective_message is None:
+        if update.effective_chat is None or update.effective_message is None:
             return
 
         chat = update.effective_chat
-        user = update.effective_user
         message = update.effective_message
+        user = resolve_message_actor(update)
 
         # 文本消息（媒体消息通常没有 text，但可能有 caption）
         message_text = message.text or message.caption or ""
@@ -56,15 +57,21 @@ class MessageDispatcher:
         log.info(
             "message_dispatcher_entry",
             chat_id=chat.id,
-            user_id=user.id,
+            user_id=user.id if user is not None else None,
+            sender_chat_id=getattr(getattr(message, "sender_chat", None), "id", None),
             chat_type=chat.type,
+            message_text_preview=message_text[:50],
         )
 
         # 根据聊天类型分发
         if chat.type == "private":
+            if user is None:
+                return
             await self._dispatch_private(update, context, chat, user, message_text)
         else:
             # 群聊消息统一进入处理链，非文本消息也要经过强制订阅/防护等规则。
+            if user is None:
+                return
             await self._group_message_handler.handle(update, context, chat, user, message_text)
 
     async def _dispatch_private(

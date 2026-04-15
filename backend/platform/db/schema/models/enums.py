@@ -111,6 +111,7 @@ class ConversationStateType(str, enum.Enum):
     welcome_text_input = "welcome_text_input"  # 欢迎文本
     welcome_cover_input = "welcome_cover_input"  # 欢迎封面
     welcome_buttons_input = "welcome_buttons_input"  # 欢迎按钮
+    sm_edit_title = "sm_edit_title"  # 编辑定时消息标题备注
     sm_edit_text = "sm_edit_text"  # 编辑定时消息文本
     sm_edit_media = "sm_edit_media"  # 编辑定时消息媒体
     sm_edit_buttons = "sm_edit_buttons"  # 编辑定时消息按钮

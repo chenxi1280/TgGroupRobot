@@ -63,11 +63,15 @@ async def test_welcome_detail_keyboard_matches_doc_style(monkeypatch):
 
     rows = [[button.text for button in row] for row in rendered["keyboard"]]
     assert rows == [
-        ["状态：", "✅ 启用", "关闭"],
-        ["模式：", "✅ 验证后欢迎", "进群欢迎"],
-        ["标题备注", "修改封面"],
-        ["修改文本", "修改按钮"],
-        ["🏖️ 预览效果", "⏱️ 延迟删除"],
+        ["⚙️ 状态:", "✅ 启用", "关闭"],
+        ["🪩 模式:", "✅ 验证后欢迎", "进群欢迎"],
+        ["✅ 标题备注", "设置封面"],
+        ["✅ 设置文本", "设置按钮"],
+        ["🏖️ 预览效果", "✅ 🕘 延迟删除"],
         ["❌ 删除配置", "🔙 返回"],
     ]
     assert rendered["keyboard"][3][1].callback_data == "btned:open:welcome:-1001:9"
+    assert "📮 标题备注: 欢迎词 1" in rendered["text"]
+    assert "🏞️ 封面设置: 【等待设置】" in rendered["text"]
+    assert "📄 文本内容: 你好 {member}" in rendered["text"]
+    assert "⚙️ 状态: ✅ 启用" in rendered["text"]

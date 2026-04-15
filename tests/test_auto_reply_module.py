@@ -3,6 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+from telegram.error import BadRequest
 
 from backend.features.moderation import auto_reply_handler
 from backend.features.moderation.auto_reply_handler import (
@@ -10,7 +11,13 @@ from backend.features.moderation.auto_reply_handler import (
     _format_auto_reply_rule_detail,
     _parse_auto_reply_buttons_input,
 )
-from backend.features.moderation.ui.auto_reply import auto_reply_detail_keyboard, auto_reply_list_keyboard, auto_reply_menu_keyboard
+from backend.features.moderation.auto_reply_payloads import send_auto_reply_payload
+from backend.features.moderation.ui.auto_reply import (
+    auto_reply_delay_keyboard,
+    auto_reply_detail_keyboard,
+    auto_reply_list_keyboard,
+    auto_reply_menu_keyboard,
+)
 from backend.features.moderation.services import auto_reply_service
 
 
@@ -60,6 +67,25 @@ class _FakeCallbackQuery:
 
     async def edit_message_text(self, text: str, reply_markup=None, parse_mode=None) -> None:
         self.edits.append(text)
+
+
+class _FakeAutoReplyBot:
+    def __init__(self, *, fail_photo: bool = False, fail_message_with_reply: bool = False) -> None:
+        self.fail_photo = fail_photo
+        self.fail_message_with_reply = fail_message_with_reply
+        self.calls: list[tuple[str, dict]] = []
+
+    async def send_photo(self, **kwargs):
+        self.calls.append(("send_photo", kwargs))
+        if self.fail_photo:
+            raise BadRequest("wrong file identifier")
+        return SimpleNamespace(message_id=100)
+
+    async def send_message(self, **kwargs):
+        self.calls.append(("send_message", kwargs))
+        if self.fail_message_with_reply and kwargs.get("reply_to_message_id"):
+            raise BadRequest("reply message not found")
+        return SimpleNamespace(message_id=101)
 
 
 @pytest.mark.asyncio
@@ -244,6 +270,20 @@ async def test_auto_reply_delete_do_callback_answers_once(monkeypatch) -> None:
     assert render_calls == [(-100456, 0)]
 
 
+@pytest.mark.asyncio
+async def test_auto_reply_edit_callback_passes_state_writer(monkeypatch) -> None:
+    captured = {}
+
+    async def fake_edit_action(update, context, **kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(auto_reply_handler, "auto_reply_edit_action", fake_edit_action)
+
+    await auto_reply_handler.auto_reply_edit_callback(SimpleNamespace(), SimpleNamespace())
+
+    assert captured["set_user_state_func"] is auto_reply_handler.set_user_state
+
+
 def test_auto_reply_list_keyboard_contains_management_callbacks() -> None:
     rules = [
         SimpleNamespace(id=9, sort_order=2, is_active=True),
@@ -251,28 +291,36 @@ def test_auto_reply_list_keyboard_contains_management_callbacks() -> None:
 
     keyboard = auto_reply_list_keyboard(rules, chat_id=-100456)
 
-    assert keyboard.inline_keyboard[0][0].callback_data == "auto_reply:detail:-100456:9"
-    assert keyboard.inline_keyboard[1][0].callback_data == "auto_reply:move:-100456:9:up"
-    assert keyboard.inline_keyboard[1][2].callback_data == "auto_reply:preview:-100456:9"
-    assert keyboard.inline_keyboard[1][3].callback_data == "auto_reply:toggle:-100456:9"
-    assert keyboard.inline_keyboard[1][4].callback_data == "auto_reply:delete:-100456:9:confirm"
+    row = keyboard.inline_keyboard[0]
+    assert row[0].text == "顺序 2"
+    assert row[0].callback_data == "auto_reply:detail:-100456:9"
+    assert row[1].text == "✅ 启用"
+    assert row[1].callback_data == "auto_reply:set:-100456:9:active:0"
+    assert row[2].callback_data == "auto_reply:detail:-100456:9"
+    assert row[3].callback_data == "auto_reply:delete:-100456:9:confirm"
+    assert keyboard.inline_keyboard[1][0].text == "➕ 添加一条"
 
 
 def test_auto_reply_detail_keyboard_contains_edit_callbacks() -> None:
     rule = SimpleNamespace(id=9)
     keyboard = auto_reply_detail_keyboard(rule, chat_id=-100456)
 
-    assert keyboard.inline_keyboard[1][0].callback_data == "auto_reply:edit:-100456:9:keywords"
-    assert keyboard.inline_keyboard[2][0].callback_data == "auto_reply:edit:-100456:9:cover"
-    assert keyboard.inline_keyboard[3][0].callback_data == "auto_reply:cycle:-100456:9:match"
-    assert keyboard.inline_keyboard[4][1].callback_data == "auto_reply:cycle:-100456:9:delay"
-    assert keyboard.inline_keyboard[5][0].callback_data == "auto_reply:togglecfg:-100456:9:stop"
+    assert keyboard.inline_keyboard[0][1].callback_data == "auto_reply:set:-100456:9:active:1"
+    assert keyboard.inline_keyboard[0][2].text == "✅ 关闭"
+    assert keyboard.inline_keyboard[1][1].text == "✅ 等于"
+    assert keyboard.inline_keyboard[1][2].callback_data == "auto_reply:set:-100456:9:match:contains"
+    assert keyboard.inline_keyboard[2][2].callback_data == "auto_reply:set:-100456:9:source:0"
+    assert keyboard.inline_keyboard[3][0].callback_data == "auto_reply:edit:-100456:9:keywords"
+    assert keyboard.inline_keyboard[3][1].callback_data == "auto_reply:edit:-100456:9:cover"
+    assert keyboard.inline_keyboard[4][0].callback_data == "auto_reply:edit:-100456:9:content"
+    assert keyboard.inline_keyboard[4][1].callback_data == "btned:open:auto_reply:-100456:9"
+    assert keyboard.inline_keyboard[5][1].callback_data == "auto_reply:delay:-100456:9"
 
 
 def test_auto_reply_menu_keyboard_uses_short_labels() -> None:
     keyboard = auto_reply_menu_keyboard(chat_id=-100456)
 
-    assert keyboard.inline_keyboard[0][0].text == "➕ 创建自动回复"
+    assert keyboard.inline_keyboard[0][0].text == "➕ 添加一条"
     assert keyboard.inline_keyboard[1][0].text == "📋 规则列表"
 
 
@@ -296,13 +344,15 @@ def test_format_auto_reply_rule_detail_has_new_fields() -> None:
 
     text = _format_auto_reply_rule_detail(rule)
 
-    assert "💬 自动回复规则 #3" in text
-    assert "删除触发源: 删除" in text
-    assert "回复延迟删除: 45 秒" in text
-    assert "命中后停止继续匹配: 否" in text
-    assert "封面: 已设置（photo）" in text
-    assert "按钮: 1 个" in text
-    assert "关键词: hello, world" in text
+    assert "💬 自动回复" in text
+    assert "📸 关键词: 【hello、world】" in text
+    assert "🏞️ 封面设置: 已设置" in text
+    assert "📄 文本内容: test reply" in text
+    assert "⭕ 设置按钮: 已设置 1 个" in text
+    assert "⚙️ 状态: ✅ 启用" in text
+    assert "🎯 匹配: 包含" in text
+    assert "🧹 删除来源: 删除" in text
+    assert "🕘 延迟删除: 45秒后删除" in text
 
 
 def test_parse_auto_reply_buttons_input_accepts_line_format() -> None:
@@ -312,6 +362,62 @@ def test_parse_auto_reply_buttons_input_accepts_line_format() -> None:
         [{"text": "官网", "url": "https://example.com"}],
         [{"text": "帮助", "url": "https://help.example.com"}],
     ]
+
+
+@pytest.mark.asyncio
+async def test_send_auto_reply_payload_falls_back_to_text_when_cover_fails() -> None:
+    bot = _FakeAutoReplyBot(fail_photo=True)
+    context = SimpleNamespace(bot=bot)
+    rule = SimpleNamespace(
+        cover_media_type="photo",
+        cover_media_file_id="bad-file-id",
+        buttons=[],
+    )
+
+    sent = await send_auto_reply_payload(
+        context,
+        chat_id=-100123,
+        text="123",
+        rule=rule,
+        reply_to_message_id=55,
+    )
+
+    assert sent.message_id == 101
+    assert [name for name, _ in bot.calls] == ["send_photo", "send_message"]
+    assert bot.calls[1][1] == {
+        "chat_id": -100123,
+        "text": "123",
+        "reply_markup": None,
+        "reply_to_message_id": 55,
+        "allow_sending_without_reply": True,
+    }
+
+
+@pytest.mark.asyncio
+async def test_send_auto_reply_payload_retries_text_without_broken_reply_reference() -> None:
+    bot = _FakeAutoReplyBot(fail_message_with_reply=True)
+    context = SimpleNamespace(bot=bot)
+    rule = SimpleNamespace(
+        cover_media_type=None,
+        cover_media_file_id=None,
+        buttons=[],
+    )
+
+    sent = await send_auto_reply_payload(
+        context,
+        chat_id=-100123,
+        text="123",
+        rule=rule,
+        reply_to_message_id=55,
+        message_thread_id=9,
+    )
+
+    assert sent.message_id == 101
+    assert [name for name, _ in bot.calls] == ["send_message", "send_message"]
+    assert bot.calls[0][1]["reply_to_message_id"] == 55
+    assert bot.calls[0][1]["message_thread_id"] == 9
+    assert bot.calls[1][1]["reply_to_message_id"] is None
+    assert bot.calls[1][1]["message_thread_id"] == 9
 
 
 def test_auto_reply_list_keyboard_adds_pagination_when_needed() -> None:
@@ -328,8 +434,73 @@ def test_auto_reply_list_keyboard_adds_pagination_when_needed() -> None:
         total_count=len(rules),
     )
 
-    assert keyboard.inline_keyboard[-2][0].text == "📄 1/2"
-    assert keyboard.inline_keyboard[-2][1].callback_data == "auto_reply:list:-100456:1"
+    assert keyboard.inline_keyboard[-3][0].text == "📄 1/2"
+    assert keyboard.inline_keyboard[-3][1].callback_data == "auto_reply:list:-100456:1"
+
+
+def test_auto_reply_delay_keyboard_marks_current_delay() -> None:
+    rule = SimpleNamespace(id=9, delete_reply_delay_seconds=30)
+
+    keyboard = auto_reply_delay_keyboard(rule, chat_id=-100456)
+
+    assert keyboard.inline_keyboard[0][1].text == "✅ 30秒"
+    assert keyboard.inline_keyboard[0][1].callback_data == "auto_reply:delay:set:-100456:9:30"
+    assert keyboard.inline_keyboard[1][0].callback_data == "auto_reply:delay:set:-100456:9:0"
+
+
+@pytest.mark.asyncio
+async def test_create_auto_reply_draft_is_disabled_and_empty(monkeypatch) -> None:
+    session = _FakeSession()
+
+    async def fake_get_next_sort_order(session, chat_id: int) -> int:
+        return 4
+
+    monkeypatch.setattr(auto_reply_service, "get_next_sort_order", fake_get_next_sort_order)
+
+    rule = await auto_reply_service.create_auto_reply_draft(
+        session,
+        chat_id=-100123,
+        created_by_user_id=42,
+    )
+
+    assert rule.keywords == []
+    assert rule.reply_content == ""
+    assert rule.match_type == "exact"
+    assert rule.delete_source is False
+    assert rule.delete_reply_delay_seconds == 0
+    assert rule.is_active is False
+    assert rule.sort_order == 4
+    assert session.flush_count == 1
+
+
+@pytest.mark.asyncio
+async def test_auto_reply_set_callback_rejects_incomplete_enable(monkeypatch) -> None:
+    session = _FakeSession()
+    q = _FakeCallbackQuery("auto_reply:set:-100456:9:active:1")
+    update = SimpleNamespace(
+        callback_query=q,
+        effective_chat=SimpleNamespace(id=10001, type="private"),
+        effective_user=SimpleNamespace(id=42),
+    )
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(session)}))
+    rule = SimpleNamespace(id=9, chat_id=-100456, keywords=[], reply_content="", is_active=False)
+
+    async def fake_resolve_target_chat_id(update, context, chat_index: int = 2):
+        return -100456
+
+    async def fake_get_rule(session, chat_id: int, rule_id: int):
+        return rule
+
+    async def fake_update_rule(*args, **kwargs):
+        raise AssertionError("incomplete rule should not be enabled")
+
+    monkeypatch.setattr(auto_reply_handler, "_resolve_auto_reply_target_chat_id", fake_resolve_target_chat_id)
+    monkeypatch.setattr(auto_reply_handler, "get_auto_reply_rule_in_chat", fake_get_rule)
+    monkeypatch.setattr(auto_reply_handler, "update_auto_reply_rule", fake_update_rule)
+
+    await auto_reply_handler.auto_reply_set_callback(update, context)
+
+    assert q.answers == [("请先配置关键词", True)]
 
 
 def test_extract_auto_reply_list_page_only_reads_real_list_callback() -> None:

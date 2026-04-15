@@ -5,6 +5,7 @@ import asyncio
 from telegram.ext import ContextTypes
 
 from backend.platform.db.schema.models.enums import WelcomeDeleteMode
+from backend.shared.async_tasks import spawn_background_task
 
 
 async def send_rendered_payload(context: ContextTypes.DEFAULT_TYPE, chat_id: int, *, payload):
@@ -55,12 +56,19 @@ async def apply_welcome_delete_strategy(session, welcome, message_id: int, conte
         await session.flush()
         delay = int(welcome.delete_delay_seconds or 0)
         if delay > 0:
-            asyncio.create_task(delete_welcome_later(context, chat_id, message_id, delay))
+            spawn_background_task(
+                context,
+                delete_welcome_later(context, chat_id, message_id, delay),
+                name="welcome_delivery.delete_later",
+            )
 
 
 async def delete_welcome_later(context: ContextTypes.DEFAULT_TYPE, chat_id: int, message_id: int, delay: int) -> None:
     try:
-        await asyncio.sleep(delay)
+        await asyncio.sleep(max(delay, 1))
+    except asyncio.CancelledError:
+        raise
+    try:
         await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
     except Exception:
         return

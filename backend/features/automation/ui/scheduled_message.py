@@ -10,5 +10,6 @@ from backend.features.automation.ui.scheduled_message_edit import (
     sm_edit_media_keyboard,
     sm_edit_text_keyboard,
     sm_repeat_keyboard,
+    sm_time_range_keyboard,
 )
 from backend.features.automation.ui.scheduled_message_list import sm_list_keyboard
