@@ -448,6 +448,38 @@ async def test_admin_callback_handles_teacher_search_attendance_prefix_in_privat
 
 
 @pytest.mark.asyncio
+async def test_admin_callback_handles_teacher_search_delegate_prefix_in_private(monkeypatch):
+    called: dict[str, int] = {}
+
+    async def fake_process(update, context, target_chat_id: int):
+        called["target_chat_id"] = target_chat_id
+
+    monkeypatch.setattr(admin_handler._admin_handler, "process", fake_process)
+
+    async def fake_require_manage(*args, **kwargs):
+        return True, None
+
+    monkeypatch.setattr(admin_handler.PermissionPolicyService, "require_manage", fake_require_manage)
+
+    class _Q:
+        data = "tsearch:delegate:start:-1009900"
+
+        async def answer(self, *args, **kwargs):
+            return None
+
+    update = SimpleNamespace(
+        callback_query=_Q(),
+        effective_chat=SimpleNamespace(type="private"),
+        effective_user=SimpleNamespace(id=12345),
+    )
+    context = SimpleNamespace()
+
+    await admin_handler.admin_callback(update, context)
+
+    assert called == {"target_chat_id": -1009900}
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "callback_data",
     [
@@ -457,6 +489,69 @@ async def test_admin_callback_handles_teacher_search_attendance_prefix_in_privat
     ],
 )
 async def test_admin_callback_handles_teacher_search_footer_prefix_in_private(monkeypatch, callback_data):
+    called: dict[str, int] = {}
+
+    async def fake_process(update, context, target_chat_id: int):
+        called["target_chat_id"] = target_chat_id
+
+    monkeypatch.setattr(admin_handler._admin_handler, "process", fake_process)
+
+    async def fake_require_manage(*args, **kwargs):
+        return True, None
+
+    monkeypatch.setattr(admin_handler.PermissionPolicyService, "require_manage", fake_require_manage)
+
+    class _Q:
+        data = callback_data
+
+        async def answer(self, *args, **kwargs):
+            return None
+
+    update = SimpleNamespace(
+        callback_query=_Q(),
+        effective_chat=SimpleNamespace(type="private"),
+        effective_user=SimpleNamespace(id=12345),
+    )
+    context = SimpleNamespace()
+
+    await admin_handler.admin_callback(update, context)
+
+    assert called == {"target_chat_id": -1009900}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "callback_data",
+    [
+        "ali:jointban:toggle:-1009900:1",
+        "ali:jointban:toggle:-1009900:0",
+        "ali:invite:show:-1009900",
+        "ali:invite:denied:-1009900",
+        "gfw:btn_toggle:-1009900:1",
+        "gfw:btn_toggle:-1009900:0",
+        "gfw:buttons:input:-1009900",
+        "gfw:buttons:apply:-1009900",
+        "grg:limit:toggle:-1009900:1",
+        "grg:limit:toggle:-1009900:0",
+        "grg:limit:mode:-1009900:image",
+        "grg:limit:mode:-1009900:image_text",
+        "grg:limit:mode:-1009900:none",
+        "grg:summary:menu:-1009900",
+        "grg:summary:partition:-1009900:region",
+        "grg:summary:partition:-1009900:price",
+        "grg:summary:open:-1009900:1",
+        "grg:summary:open:-1009900:0",
+        "grg:summary:gen:-1009900",
+        "crv:submit_cmd:edit:-1009900",
+        "crv:rank_cmd:edit:-1009900",
+        "crv:approver:set:-1009900",
+        "crv:template:edit:-1009900",
+        "qpub:home:-1009900",
+        "qpub:clear:-1009900",
+        "qpub:send:-1009900",
+    ],
+)
+async def test_admin_callback_handles_nested_private_callback_chat_ids(monkeypatch, callback_data):
     called: dict[str, int] = {}
 
     async def fake_process(update, context, target_chat_id: int):

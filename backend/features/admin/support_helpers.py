@@ -57,9 +57,9 @@ def _resolve_private_scoped_target_chat_id(cb: CallbackParser) -> int | None:
     if prefix == "ali":
         action = cb.get(1)
         if action in {"members", "invite"}:
-            return cb.get_int_optional(2)
+            return cb.get_int_optional(3) if cb.length() >= 4 else cb.get_int_optional(2)
         if action in {"jointban", "leave"}:
-            return cb.get_int_optional(2)
+            return cb.get_int_optional(3) if cb.get(2) == "toggle" else cb.get_int_optional(2)
         if action in {"create", "join"}:
             return cb.get_int_optional(3)
         if action == "home":
@@ -68,20 +68,22 @@ def _resolve_private_scoped_target_chat_id(cb: CallbackParser) -> int | None:
 
     if prefix == "gfw":
         action = cb.get(1)
-        if action in {"home", "audit", "toggle", "mode"}:
+        if action in {"home", "audit", "toggle", "mode", "btn_toggle"}:
             return cb.get_int_optional(2)
-        if action in {"keywords", "source"}:
+        if action in {"keywords", "source", "buttons"}:
             return cb.get_int_optional(3)
         return None
 
     if prefix == "grg":
         action = cb.get(1)
-        if action in {"home", "toggle", "badge", "summary"}:
+        if action in {"home", "toggle", "badge"}:
             return cb.get_int_optional(2)
+        if action == "summary":
+            return cb.get_int_optional(3) if cb.length() >= 4 else cb.get_int_optional(2)
         if action in {"teacher", "wl"}:
             return cb.get_int_optional(3)
         if action == "limit":
-            return cb.get_int_optional(3) if cb.get(2) in {"interval", "max"} else cb.get_int_optional(2)
+            return cb.get_int_optional(3) if cb.get(2) in {"toggle", "mode", "interval", "max"} else cb.get_int_optional(2)
         return None
 
     if prefix == "tsearch":
@@ -90,8 +92,10 @@ def _resolve_private_scoped_target_chat_id(cb: CallbackParser) -> int | None:
             return cb.get_int_optional(2)
         if action in {"toggle", "attendance"}:
             return cb.get_int_optional(3)
-        if action in {"delete_mode", "delegate"}:
+        if action == "delete_mode":
             return cb.get_int_optional(2)
+        if action == "delegate":
+            return cb.get_int_optional(3) if cb.get(2) == "start" else cb.get_int_optional(2)
         if action == "footer":
             return cb.get_int_optional(3)
         if action == "open_course":
@@ -102,16 +106,14 @@ def _resolve_private_scoped_target_chat_id(cb: CallbackParser) -> int | None:
         action = cb.get(1)
         if action == "home":
             return cb.get_int_optional(2)
+        if action in {"submit_cmd", "rank_cmd", "approver", "template"}:
+            return cb.get_int_optional(3) if cb.length() >= 4 else cb.get_int_optional(2)
         if action in {
             "toggle",
             "mode",
             "lookup",
             "publish_target",
-            "approver",
-            "template",
             "reward",
-            "submit_cmd",
-            "rank_cmd",
             "fields",
             "reports",
             "report",
@@ -146,6 +148,12 @@ def _resolve_private_scoped_target_chat_id(cb: CallbackParser) -> int | None:
     if prefix == "act":
         action = cb.get(1)
         if action in {"home", "egg", "chat"}:
+            return cb.get_int_optional(2)
+        return None
+
+    if prefix == "qpub":
+        action = cb.get(1)
+        if action in {"home", "input", "clear", "send"}:
             return cb.get_int_optional(2)
         return None
 
