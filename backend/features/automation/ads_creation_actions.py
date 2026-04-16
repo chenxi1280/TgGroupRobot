@@ -215,7 +215,7 @@ async def ads_create_config_message_action(
             keyboard = InlineKeyboardMarkup(
                 [
                     [InlineKeyboardButton("🔙 返回轮播广告", callback_data=f"ads:menu:{target_chat_id}")],
-                    [InlineKeyboardButton("🏠 返回主菜单", callback_data=f"adm:menu:{target_chat_id}")],
+                    [InlineKeyboardButton("🏠 返回主菜单", callback_data=f"adm:menu:main:{target_chat_id}")],
                 ]
             )
             await PublishService.reply(

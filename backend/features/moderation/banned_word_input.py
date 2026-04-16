@@ -100,8 +100,8 @@ async def _parse_banned_word_config(update: Update, session, state: object, text
 
         # 显示多级返回按钮：返回违禁词管理 / 返回主菜单
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔙 返回违禁词管理", callback_data=f"keywords:menu:{target_chat_id}")],
-            [InlineKeyboardButton("🏠 返回主菜单", callback_data=f"adm:menu:{target_chat_id}")]
+            [InlineKeyboardButton("🔙 返回违禁词管理", callback_data=f"adm:menu:keywords:{target_chat_id}")],
+            [InlineKeyboardButton("🏠 返回主菜单", callback_data=f"adm:menu:main:{target_chat_id}")]
         ])
 
         await update.effective_message.reply_text(reply_text, reply_markup=keyboard)

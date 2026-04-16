@@ -195,7 +195,7 @@ async def parse_lottery_config_message(update: Update, context: ContextTypes.DEF
         keyboard = InlineKeyboardMarkup(
             [
                 [InlineKeyboardButton("🔙 返回抽奖管理", callback_data=f"adm:menu:lottery:{target_chat_id}")],
-                [InlineKeyboardButton("🏠 返回主菜单", callback_data=f"adm:menu:{target_chat_id}")],
+                [InlineKeyboardButton("🏠 返回主菜单", callback_data=f"adm:menu:main:{target_chat_id}")],
             ]
         )
         await update.effective_message.reply_text(reply_text, reply_markup=keyboard)

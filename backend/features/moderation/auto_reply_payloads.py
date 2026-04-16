@@ -1,51 +1,21 @@
 from __future__ import annotations
 
-import json
-
 import structlog
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
-from backend.features.automation.services.scheduled_message_service import ScheduledMessageService
+from backend.shared.services.base import ValidationError
+from backend.shared.ui.button_input import normalize_button_rows, parse_button_rows
 
 log = structlog.get_logger(__name__)
-MAX_AUTO_REPLY_BUTTON_COLS = 4
-
-
-def _split_button_rows(rows: list[list[dict[str, str]]]) -> list[list[dict[str, str]]]:
-    normalized_rows: list[list[dict[str, str]]] = []
-    for row in rows:
-        for index in range(0, len(row), MAX_AUTO_REPLY_BUTTON_COLS):
-            chunk = row[index:index + MAX_AUTO_REPLY_BUTTON_COLS]
-            if chunk:
-                normalized_rows.append(chunk)
-    return normalized_rows
 
 
 def parse_auto_reply_buttons_input(raw_text: str) -> list[list[dict[str, str]]]:
-    raw = raw_text.strip()
-    if not raw:
-        raise ValueError("按钮配置不能为空。")
-
-    if raw.startswith("["):
-        try:
-            parsed = json.loads(raw)
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"按钮 JSON 格式错误：{exc.msg}") from exc
-        return _split_button_rows(ScheduledMessageService.normalize_buttons_config(parsed))
-
-    rows: list[list[dict[str, str]]] = []
-    for line in [item.strip() for item in raw.splitlines() if item.strip()]:
-        if "|" not in line:
-            raise ValueError("文本格式错误：每行必须包含“按钮文案|URL”。")
-        button_text, button_url = [part.strip() for part in line.split("|", 1)]
-        if not button_text or not button_url:
-            raise ValueError("按钮文案和 URL 不能为空。")
-        rows.append([{"text": button_text[:32], "url": button_url}])
-    if not rows:
-        raise ValueError("未解析到有效按钮。")
-    return _split_button_rows(ScheduledMessageService.normalize_buttons_config(rows))
+    try:
+        return parse_button_rows(raw_text, allow_empty=False)
+    except ValidationError as exc:
+        raise ValueError(str(exc)) from exc
 
 
 def build_auto_reply_markup(rule) -> InlineKeyboardMarkup | None:
@@ -53,7 +23,7 @@ def build_auto_reply_markup(rule) -> InlineKeyboardMarkup | None:
     if not raw_buttons:
         return None
     try:
-        normalized = _split_button_rows(ScheduledMessageService.normalize_buttons_config(raw_buttons))
+        normalized = normalize_button_rows(raw_buttons)
     except Exception:
         return None
 

@@ -168,16 +168,29 @@ async def show_user_invite_menu(update: Update, context: ContextTypes.DEFAULT_TY
         await update.effective_message.reply_text(text, reply_markup=keyboard)
 
 
+async def user_invite_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
+        return
+    q = update.callback_query
+    user = update.effective_user
+    cb = CallbackParser.parse(q.data or "")
+    chat_id = cb.get_int_optional(3)
+    if chat_id is None:
+        await answer_callback_query_safely(update, "无效的群组ID", show_alert=True)
+        return
+    await q.answer()
+    mark_callback_query_answered(update)
+    await show_user_invite_menu(update, context, chat_id, user.id)
+
+
 async def user_invite_create_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
         return
     q = update.callback_query
     user = update.effective_user
     cb = CallbackParser.parse(q.data or "")
-    if cb.length() < 3:
-        return
-    chat_id = cb.get_int(2)
-    if chat_id == 0:
+    chat_id = cb.get_int_optional(3)
+    if chat_id is None or chat_id == 0:
         await answer_callback_query_safely(update, "无效的群组ID", show_alert=True)
         return
 
@@ -219,10 +232,8 @@ async def user_invite_list_callback(update: Update, context: ContextTypes.DEFAUL
     q = update.callback_query
     user = update.effective_user
     cb = CallbackParser.parse(q.data or "")
-    if cb.length() < 3:
-        return
-    chat_id = cb.get_int(2)
-    if chat_id == 0:
+    chat_id = cb.get_int_optional(3)
+    if chat_id is None or chat_id == 0:
         await answer_callback_query_safely(update, "无效的群组ID", show_alert=True)
         return
 
@@ -263,10 +274,8 @@ async def user_invite_rank_callback(update: Update, context: ContextTypes.DEFAUL
     q = update.callback_query
     user = update.effective_user
     cb = CallbackParser.parse(q.data or "")
-    if cb.length() < 3:
-        return
-    chat_id = cb.get_int(2)
-    if chat_id == 0:
+    chat_id = cb.get_int_optional(3)
+    if chat_id is None or chat_id == 0:
         await answer_callback_query_safely(update, "无效的群组ID", show_alert=True)
         return
 

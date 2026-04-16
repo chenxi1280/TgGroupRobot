@@ -44,6 +44,7 @@ from backend.features.invite.invite_user_callbacks import (
     show_user_invite_menu as _show_user_invite_menu,
     user_invite_create_callback,
     user_invite_list_callback,
+    user_invite_menu_callback,
     user_invite_rank_callback,
 )
 from backend.features.invite.services.invite_service import create_invite_link

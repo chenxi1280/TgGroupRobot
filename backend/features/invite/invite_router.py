@@ -27,6 +27,7 @@ from backend.features.invite.invite_link_handler import (
     link_stat_command,
     user_invite_create_callback,
     user_invite_list_callback,
+    user_invite_menu_callback,
     user_invite_rank_callback,
     WAIT_NAME, WAIT_LIMIT, WAIT_EXPIRE,
 )
@@ -69,6 +70,7 @@ class InviteRouter(BaseRouter):
         app.add_handler(CallbackQueryHandler(invite_link_delete_callback, pattern=r"^inv:delete:\d+(?::-?\d+)?$"))
         
         # 用户邀请链接回调
+        app.add_handler(CallbackQueryHandler(user_invite_menu_callback, pattern=r"^inv:user:menu:\-?\d+$"))
         app.add_handler(CallbackQueryHandler(user_invite_create_callback, pattern=r"^inv:user:create:\-?\d+$"))
         app.add_handler(CallbackQueryHandler(user_invite_list_callback, pattern=r"^inv:user:list:\-?\d+$"))
         app.add_handler(CallbackQueryHandler(user_invite_rank_callback, pattern=r"^inv:user:rank:\-?\d+$"))

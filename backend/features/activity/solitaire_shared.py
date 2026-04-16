@@ -53,7 +53,7 @@ class SolitaireHandler(BaseHandler):
         chat_title: str | None = None,
     ) -> None:
         text = f"📋 [{chat_title or target_chat_id}] 接龙管理\n\n管理群内接龙活动"
-        await self.message_helper.safe_edit(update, text=text, reply_markup=solitaire_menu_keyboard())
+        await self.message_helper.safe_edit(update, text=text, reply_markup=solitaire_menu_keyboard(target_chat_id))
 
     async def show_list(
         self,

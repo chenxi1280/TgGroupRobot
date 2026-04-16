@@ -138,8 +138,8 @@ async def _publish_created_solitaire(
 
     keyboard = InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("🔙 返回接龙管理", callback_data=f"solitaire:menu:{target_chat_id}")],
-            [InlineKeyboardButton("🏠 返回主菜单", callback_data=f"adm:menu:{target_chat_id}")],
+            [InlineKeyboardButton("🔙 返回接龙管理", callback_data=f"adm:menu:solitaire:{target_chat_id}")],
+            [InlineKeyboardButton("🏠 返回主菜单", callback_data=f"adm:menu:main:{target_chat_id}")],
         ]
     )
     await update.effective_message.reply_text(

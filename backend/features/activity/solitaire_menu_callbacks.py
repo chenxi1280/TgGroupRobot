@@ -19,18 +19,19 @@ async def solitaire_menu_callback(update: Update, context: ContextTypes.DEFAULT_
 
     chat = update.effective_chat
     user = update.effective_user
+    cb = CallbackParser.parse(q.data or "")
+    legacy_target_chat_id = cb.get_int_optional(2) if cb.get(0) == "solitaire" else None
     if chat.type == "private":
         db: Database = context.application.bot_data["db"]
-        target_chat_id = await ChatResolver.get_current_chat(db, user.id)
+        target_chat_id = legacy_target_chat_id or await ChatResolver.get_current_chat(db, user.id)
         if target_chat_id is None:
             await _solitaire_handler.message_helper.safe_edit(update, "请先选择一个群组")
             return
         if not await is_user_admin(context, target_chat_id, user.id):
             await _solitaire_handler.message_helper.safe_edit(update, "你没有该群组的管理权限")
             return
-        from backend.features.admin.admin_handler import _show_private_admin_menu
 
-        await _show_private_admin_menu(update, context, target_chat_id)
+        await _solitaire_handler.show_menu(update, context, target_chat_id)
         return
 
     if not await is_user_admin(context, chat.id, user.id):

@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from backend.shared.ui.button_input import is_clear_button_input
+
 ConfigHandler = Callable[
     [Update, ContextTypes.DEFAULT_TYPE, AsyncSession, Any, str],
     Awaitable[None],
@@ -107,11 +109,9 @@ async def handle_quick_publish_input(
             return
         draft["text"] = text_value
     elif field == "media":
-        if text_value.lower().startswith("/clear"):
+        if is_clear_button_input(text_value):
             draft["media_type"] = None
             draft["media_file_id"] = None
-            if text_value.strip() == "/clear":
-                draft["text"] = draft.get("text", "")
         else:
             msg = update.effective_message
             if msg.photo:
@@ -132,7 +132,7 @@ async def handle_quick_publish_input(
             if text_value:
                 draft["text"] = text_value
     elif field == "buttons":
-        if text_value.lower().startswith("/clear"):
+        if is_clear_button_input(text_value):
             draft["buttons"] = []
         else:
             try:

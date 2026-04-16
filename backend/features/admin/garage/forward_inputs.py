@@ -10,6 +10,7 @@ from backend.features.admin.garage.input_runtime import (
     target_chat_id_from_state,
 )
 from backend.shared.services.base import ValidationError
+from backend.shared.ui.button_input import is_clear_button_input
 
 
 async def handle_garage_forward_input(
@@ -99,7 +100,7 @@ async def _handle_buttons_input(
         return
 
     raw_value = (message_text or "").strip()
-    if raw_value.lower().startswith("/clear"):
+    if is_clear_button_input(raw_value):
         await GarageForwardService.update_setting(
             session,
             target_chat_id,

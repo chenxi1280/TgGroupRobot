@@ -53,6 +53,8 @@ class SolitaireRouter(BaseRouter):
         app.add_handler(CallbackQueryHandler(solitaire_close_callback, pattern=r"^sol:close:"))
         app.add_handler(CallbackQueryHandler(solitaire_delete_callback, pattern=r"^sol:delete:"))
         app.add_handler(CallbackQueryHandler(join_solitaire_callback, pattern=r"^join_solitaire:"))
+        app.add_handler(CallbackQueryHandler(solitaire_menu_callback, pattern=r"^solitaire:menu:\-?\d+$"))
+        app.add_handler(CallbackQueryHandler(solitaire_cancel_callback, pattern=r"^solitaire:cancel:\-?\d+$"))
 
         # 接龙创建流程对话
         solitaire_conv = ConversationHandler(
@@ -67,7 +69,7 @@ class SolitaireRouter(BaseRouter):
             },
             fallbacks=[
                 CommandHandler("cancel", solitaire_cancel_callback),
-                CallbackQueryHandler(solitaire_cancel_callback, pattern=r"^sol:cancel$"),
+                CallbackQueryHandler(solitaire_cancel_callback, pattern=r"^(?:sol:cancel|solitaire:cancel:\-?\d+)$"),
             ],
             per_chat=True,
         )

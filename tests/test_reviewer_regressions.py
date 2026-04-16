@@ -36,6 +36,22 @@ async def test_group_dispatcher_short_circuits_business_handlers_when_core_stops
     assert calls == ["core"]
 
 
+def test_group_dispatcher_exposes_expected_business_handler_matrix():
+    dispatcher = GroupMessageHandler()
+
+    assert [name for name, _ in dispatcher._get_business_handlers()] == [
+        "auction",
+        "engagement",
+        "game",
+        "guess",
+        "verification",
+        "lottery",
+        "solitaire",
+        "moderation",
+        "points",
+    ]
+
+
 @pytest.mark.asyncio
 async def test_group_lock_schedule_disabled_does_not_apply_permissions():
     calls: list[bool] = []

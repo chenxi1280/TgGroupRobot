@@ -4,10 +4,12 @@ import datetime as dt
 from types import SimpleNamespace
 
 import pytest
+from telegram.ext import CallbackQueryHandler, CommandHandler, MessageHandler
 
 from backend.features.invite import invite_link_handler
 from backend.features.invite import invite_admin_config_callbacks
 from backend.features.invite import invite_user_callbacks
+from backend.features.invite.invite_router import InviteRouter
 from backend.features.invite.invite_shared import _invite_link_handler
 from backend.features.invite.ui.invite_link import invite_link_menu_keyboard
 
@@ -206,6 +208,40 @@ def test_parse_invite_buttons_supports_multi_row_layout():
         ],
         [{"text": "官网", "url": "https://example.com"}],
     ]
+
+
+def test_invite_router_registers_group_text_commands_and_user_menu_callback():
+    class _App:
+        def __init__(self) -> None:
+            self.handlers: list[object] = []
+
+        def add_handler(self, handler, *args, **kwargs) -> None:
+            self.handlers.append(handler)
+
+    app = _App()
+    InviteRouter().register(app)
+
+    commands = {
+        command
+        for handler in app.handlers
+        if isinstance(handler, CommandHandler)
+        for command in handler.commands
+    }
+    message_filters = [
+        str(handler.filters)
+        for handler in app.handlers
+        if isinstance(handler, MessageHandler)
+    ]
+    callback_patterns = [
+        handler.pattern.pattern
+        for handler in app.handlers
+        if isinstance(handler, CallbackQueryHandler) and handler.pattern is not None
+    ]
+
+    assert {"link", "link_stat"} <= commands
+    assert any("^邀请$" in item for item in message_filters)
+    assert any("^邀请统计$" in item for item in message_filters)
+    assert r"^inv:user:menu:\-?\d+$" in callback_patterns
 
 
 @pytest.mark.asyncio
@@ -538,3 +574,29 @@ async def test_link_stat_command_replies_personal_stats(monkeypatch):
         "活跃链接：1\n"
         "当前排名：第 3 名"
     ]
+
+
+@pytest.mark.asyncio
+async def test_user_invite_menu_callback_returns_to_user_invite_menu(monkeypatch):
+    calls: list[tuple[int, int]] = []
+    answered: list[bool] = []
+
+    async def fake_show_user_invite_menu(update, context, chat_id: int, user_id: int):
+        calls.append((chat_id, user_id))
+
+    async def fake_answer():
+        answered.append(True)
+
+    monkeypatch.setattr(invite_user_callbacks, "show_user_invite_menu", fake_show_user_invite_menu)
+
+    update = SimpleNamespace(
+        callback_query=SimpleNamespace(data="inv:user:menu:-100123", answer=fake_answer),
+        effective_chat=SimpleNamespace(id=9001, type="private"),
+        effective_user=SimpleNamespace(id=42),
+    )
+    context = SimpleNamespace()
+
+    await invite_user_callbacks.user_invite_menu_callback(update, context)
+
+    assert answered == [True]
+    assert calls == [(-100123, 42)]

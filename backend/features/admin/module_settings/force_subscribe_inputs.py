@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from urllib.parse import parse_qs, urlparse
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -16,29 +15,11 @@ from backend.features.admin.module_settings.input_runtime import (
 from backend.features.automation.services.scheduled_message_service import ScheduledMessageService
 from backend.features.group_ops.group_hooks.control_force_subscribe import _normalize_force_subscribe_target
 from backend.shared.services.base import ValidationError
+from backend.shared.ui.button_input import is_clear_button_input, parse_button_rows
 
 
 def parse_force_subscribe_buttons_input(raw_text: str) -> list[list[dict]]:
-    text = (raw_text or "").strip()
-    if not text:
-        raise ValidationError("按钮配置不能为空。")
-    if text.startswith("["):
-        return json.loads(text)
-
-    rows: list[list[dict]] = []
-    for line in text.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        if "|" not in line:
-            raise ValidationError("文本格式错误：每行必须包含“按钮文案|URL”。")
-        button_text, button_url = [part.strip() for part in line.split("|", 1)]
-        if not button_text or not button_url:
-            raise ValidationError("按钮文案和 URL 不能为空。")
-        rows.append([{"text": button_text[:32], "url": button_url}])
-    if not rows:
-        raise ValidationError("未解析到有效按钮。")
-    return rows
+    return parse_button_rows(raw_text, allow_empty=False)
 
 
 def _build_force_subscribe_channel_button_preview(value: str | None) -> InlineKeyboardButton | None:
@@ -193,7 +174,7 @@ async def _validate_force_subscribe_target(update: Update, context: ContextTypes
 async def _apply_force_subscribe_buttons(update: Update, settings, message_text: str) -> bool:
     if update.effective_message is None:
         return False
-    if message_text.strip() == "清空":
+    if is_clear_button_input(message_text):
         settings.force_subscribe_buttons = []
         settings.force_subscribe_custom_buttons_enabled = False
         return True
@@ -202,7 +183,7 @@ async def _apply_force_subscribe_buttons(update: Update, settings, message_text:
         settings.force_subscribe_buttons = ScheduledMessageService.normalize_buttons_config(buttons)
         settings.force_subscribe_custom_buttons_enabled = True
         return True
-    except (json.JSONDecodeError, ValidationError) as exc:
+    except ValidationError as exc:
         await update.effective_message.reply_text(f"按钮格式错误：{exc}")
         return False
 

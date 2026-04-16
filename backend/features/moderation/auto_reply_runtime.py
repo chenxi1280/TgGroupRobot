@@ -13,6 +13,7 @@ from backend.platform.db.runtime.session import Database
 from backend.platform.db.schema.models.enums import AutoReplyMatchType, ConversationStateType
 from backend.platform.state.state_service import clear_user_state, get_user_state
 from backend.shared.async_tasks import spawn_background_task
+from backend.shared.ui.button_input import is_clear_button_input
 
 log = structlog.get_logger(__name__)
 
@@ -298,7 +299,7 @@ async def _apply_auto_reply_edit(update: Update, session, state_type: str, targe
         await session.commit()
         return None
     if state_type == ConversationStateType.auto_reply_edit_buttons.value:
-        buttons = [] if text.strip() == "清空" else parse_auto_reply_buttons_input(text)
+        buttons = [] if is_clear_button_input(text) else parse_auto_reply_buttons_input(text)
         return await update_auto_reply_rule(session, rule_id, chat_id=target_chat_id, buttons=buttons)
     return None
 

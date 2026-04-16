@@ -13,6 +13,7 @@ from backend.platform.telegram.errors import answer_callback_query_safely
 from backend.shared.callback_parser import CallbackParser
 from backend.shared.services.base import ValidationError
 from backend.shared.services.permission_service import PermissionPolicyService
+from backend.shared.ui.button_input import is_clear_button_input
 
 MAX_BUTTON_COLS = 4
 TEXT_INPUT_STATE = "button_editor_text_input"
@@ -777,7 +778,7 @@ async def handle_button_layout_editor_input(
 
         normalized_text = (message_text or "").strip()
         if state.state_type == TEXT_INPUT_STATE:
-            value = "" if normalized_text in {"清空", "/clear"} else ButtonLayoutEditorService.sanitize_button_text(normalized_text)
+            value = "" if is_clear_button_input(normalized_text) else ButtonLayoutEditorService.sanitize_button_text(normalized_text)
             next_grid = ButtonLayoutEditorService.update_button(
                 draft,
                 int(editor_ctx.row_index or 0),
@@ -785,7 +786,7 @@ async def handle_button_layout_editor_input(
                 text=value,
             )
         elif state.state_type == URL_INPUT_STATE:
-            value = "" if normalized_text in {"清空", "/clear"} else ButtonLayoutEditorService.normalize_button_url(normalized_text)
+            value = "" if is_clear_button_input(normalized_text) else ButtonLayoutEditorService.normalize_button_url(normalized_text)
             next_grid = ButtonLayoutEditorService.update_button(
                 draft,
                 int(editor_ctx.row_index or 0),

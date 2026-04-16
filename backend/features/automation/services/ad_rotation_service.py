@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
-import json
 
 import structlog
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
@@ -16,6 +15,7 @@ from backend.shared.async_tasks import spawn_background_task
 from backend.shared.services.base import ValidationError
 from backend.shared.services.publish_service import PublishService
 from backend.shared.time_helper import LOCAL_TIMEZONE, parse_date_time_string
+from backend.shared.ui.button_input import parse_button_rows
 
 DEFAULT_ROTATION_INTERVAL_SECONDS = 2 * 3600
 DEFAULT_DELETE_DELAY_SECONDS = 60
@@ -99,28 +99,7 @@ def parse_delay_seconds_text(value: str) -> int:
 
 
 def parse_buttons_text(raw_text: str) -> list[list[dict[str, str]]]:
-    raw = raw_text.strip()
-    if not raw:
-        raise ValidationError("按钮配置不能为空")
-    if raw == "清空":
-        return []
-
-    if raw.startswith("["):
-        try:
-            parsed = json.loads(raw)
-        except json.JSONDecodeError as exc:
-            raise ValidationError(f"按钮 JSON 格式错误：{exc.msg}") from exc
-        return ScheduledMessageService.normalize_buttons_config(parsed)
-
-    rows: list[list[dict[str, str]]] = []
-    for line in [item.strip() for item in raw.splitlines() if item.strip()]:
-        if "|" not in line:
-            raise ValidationError("每行必须是 按钮文案|URL")
-        text, url = [part.strip() for part in line.split("|", 1)]
-        if not text or not url:
-            raise ValidationError("按钮文案和 URL 不能为空")
-        rows.append([{"text": text[:32], "url": url}])
-    return ScheduledMessageService.normalize_buttons_config(rows)
+    return parse_button_rows(raw_text, allow_empty=False)
 
 
 def build_item_markup(item: AdCampaign) -> InlineKeyboardMarkup | None:

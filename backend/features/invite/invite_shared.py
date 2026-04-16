@@ -12,14 +12,15 @@ from backend.features.invite.services.invite_service import (
     get_chat_invite_links,
     get_link_stats,
 )
-from backend.shared.button_layout_editor import ButtonLayoutEditorService
 from backend.features.invite.ui.invite_link import (
     invite_link_list_keyboard,
     invite_link_menu_keyboard,
 )
 from backend.platform.db.runtime.session import Database
 from backend.shared.handlers.base.base_handler import BaseHandler
+from backend.shared.services.base import ValidationError
 from backend.shared.services.chat_service import get_chat_settings
+from backend.shared.ui.button_input import parse_button_rows
 from backend.platform.state.state_service import clear_user_state
 
 WAIT_NAME = 1
@@ -165,23 +166,10 @@ def format_invite_link_admin_text(settings, stats: dict[str, int]) -> str:
 
 
 def parse_invite_buttons(raw: str) -> list[list[dict]]:
-    rows: list[list[dict]] = []
-    for line in [item.strip() for item in raw.splitlines() if item.strip()]:
-        row: list[dict] = []
-        for part in [item.strip() for item in line.split(";") if item.strip()]:
-            if "|" not in part:
-                raise ValueError("按钮格式错误，请使用 `文案|链接`，同行按钮用 `;` 分隔。")
-            text, url = [item.strip() for item in part.split("|", 1)]
-            if not text or not url:
-                raise ValueError("按钮文案和链接都不能为空。")
-            row.append({
-                "text": ButtonLayoutEditorService.sanitize_button_text(text),
-                "url": ButtonLayoutEditorService.normalize_button_url(url[:512]),
-            })
-        if len(row) > 3:
-            raise ValueError("每行最多 3 个按钮。")
-        rows.append(row)
-    return rows
+    try:
+        return parse_button_rows(raw, allow_empty=True)
+    except ValidationError as exc:
+        raise ValueError(str(exc)) from exc
 
 
 def format_invite_preview(settings, chat_title: str) -> tuple[str, InlineKeyboardMarkup | None]:
