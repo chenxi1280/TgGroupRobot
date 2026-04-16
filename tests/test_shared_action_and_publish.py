@@ -21,6 +21,9 @@ class FakeBot:
     async def ban_chat_member(self, **kwargs):
         self.calls.append(("ban_chat_member", kwargs))
 
+    async def unban_chat_member(self, **kwargs):
+        self.calls.append(("unban_chat_member", kwargs))
+
     async def send_message(self, **kwargs):
         self.calls.append(("send_message", kwargs))
         return SimpleNamespace(message_id=321)
@@ -81,6 +84,20 @@ async def test_action_executor_ban() -> None:
     )
     assert result.applied is True
     assert bot.calls[0][0] == "ban_chat_member"
+
+
+@pytest.mark.asyncio
+async def test_action_executor_kick_unbans_after_ban() -> None:
+    bot = FakeBot()
+    result = await ActionExecutor.execute(
+        _context(bot),
+        action="kick",
+        chat_id=-1001,
+        user_id=1,
+    )
+    assert result.applied is True
+    assert [call[0] for call in bot.calls] == ["ban_chat_member", "unban_chat_member"]
+    assert bot.calls[1][1]["only_if_banned"] is True
 
 
 @pytest.mark.asyncio

@@ -10,7 +10,15 @@ from backend.features.garage.services.alliance_service import AllianceService
 from backend.features.moderation.auto_reply_handler import _send_auto_reply_payload
 from backend.features.moderation.services.auto_reply_service import match_auto_reply
 from backend.features.moderation.services.banned_word_service import match_banned_words
+from backend.features.moderation.services.garbage_guard_rules import (
+    get_rule_config,
+    has_explicit_garbage_config,
+    is_global_whitelisted,
+)
+from backend.features.moderation.services.garbage_guard_service import apply_garbage_punishment
 from backend.shared.services.action_executor import ActionExecutor
+from backend.shared.services.chat_service import ensure_chat
+from backend.shared.services.user_service import ensure_user
 
 from .common import _schedule_message_delete
 
@@ -128,6 +136,7 @@ async def _process_banned_word_check(
     user,
     message,
     message_text: str,
+    settings=None,
 ) -> bool:
     log.info(
         "unified_handler_banned_word_check_start",
@@ -136,9 +145,46 @@ async def _process_banned_word_check(
         message_text_preview=message_text[:50],
     )
 
+    explicit_garbage = settings is not None and has_explicit_garbage_config(settings)
+    if explicit_garbage:
+        rule_config = get_rule_config(settings, "banned_words")
+        if not bool(rule_config.get("enabled")):
+            return False
+        if is_global_whitelisted(settings, user.id):
+            log.info("banned_word_skip_global_whitelist", chat_id=chat.id, user_id=user.id)
+            return False
+
     async with db.session_factory() as session:
         matched_words = await match_banned_words(session, chat.id, message_text)
-        await session.commit()
+        if not matched_words:
+            await session.commit()
+            return False
+
+        if explicit_garbage:
+            word = matched_words[0]
+            await ensure_chat(session, chat_id=chat.id, chat_type=chat.type, title=chat.title)
+            await ensure_user(
+                session,
+                user_id=user.id,
+                username=user.username,
+                first_name=user.first_name,
+                last_name=user.last_name,
+                language_code=user.language_code,
+            )
+            result = await apply_garbage_punishment(
+                context,
+                session,
+                settings=settings,
+                chat_id=chat.id,
+                target_user_id=user.id,
+                target_label=user.mention_html(),
+                rule_id="banned_words",
+                detail=f"word={word.word}",
+                message_ids=[message.message_id],
+                record_message_id=message.message_id,
+            )
+            await session.commit()
+            return result.applied
 
     log.info(
         "unified_handler_banned_word_check_result",
@@ -146,9 +192,6 @@ async def _process_banned_word_check(
         user_id=user.id,
         matched_count=len(matched_words),
     )
-
-    if not matched_words:
-        return False
 
     word = matched_words[0]
     log.info(

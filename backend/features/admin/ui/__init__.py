@@ -13,7 +13,14 @@ from backend.features.admin.ui.admin_main import (
     verification_mode_menu,
 )
 from backend.features.admin.ui.auto_delete import auto_delete_config_keyboard
-from backend.features.admin.ui.antispam import anti_flood_config_keyboard, anti_spam_config_keyboard
+from backend.features.admin.ui.antispam import (
+    anti_flood_config_keyboard,
+    anti_spam_config_keyboard,
+    format_garbage_guard_home_text,
+    format_garbage_rule_text,
+    garbage_guard_home_keyboard,
+    garbage_guard_rule_keyboard,
+)
 from backend.features.admin.ui.renewal import renewal_entry_keyboard
 from backend.features.admin.ui.points import back_button as points_back_button
 from backend.features.admin.ui.points import points_config_keyboard
@@ -38,4 +45,8 @@ __all__ = [
     # Anti flood / anti spam
     "anti_flood_config_keyboard",
     "anti_spam_config_keyboard",
+    "format_garbage_guard_home_text",
+    "format_garbage_rule_text",
+    "garbage_guard_home_keyboard",
+    "garbage_guard_rule_keyboard",
 ]

@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from backend.features.admin import admin_handler
+from backend.features.admin.ui.antispam import garbage_guard_home_keyboard, garbage_guard_rule_keyboard
 from backend.features.moderation.anti_spam_config_handler import format_anti_spam_menu_text
 
 
@@ -187,10 +188,61 @@ def test_anti_spam_text_marks_basic_mode() -> None:
 
     text = format_anti_spam_menu_text("测试群", settings)
 
-    assert "反垃圾" in text
-    assert "集中配置页，可统一管理常见广告、链接、转发、超长内容和黑名单规则" in text
-    assert "已启用规则: 4 项" in text
-    assert "可用按钮快速切换，也可点“文本配置”一次性设置" in text
+    assert "垃圾防护功能" in text
+    assert "拦截违禁词 - 匹配到违禁词时进行处罚" in text
+    assert "禁止发言刷屏 - 短时间大量发言进行处罚" in text
+    assert "以上规则对管理员和白名单用户无效" in text
+
+
+def test_garbage_guard_home_keyboard_uses_screenshot_order() -> None:
+    settings = SimpleNamespace(anti_spam_rules={}, anti_flood_enabled=False)
+    keyboard = garbage_guard_home_keyboard(settings, -100123)
+    rows = [[button.text for button in row] for row in keyboard.inline_keyboard]
+
+    assert rows[0] == ["❌ 拦截违禁词", "❌ 禁止长内容"]
+    assert rows[1] == ["❌ 禁止长昵称", "❌ 禁止发链接"]
+    assert rows[2] == ["❌ 禁止发送按钮", "❌ 禁止垃圾用户"]
+    assert rows[3] == ["❌ 禁止转发引用", "❌ 禁止发言刷屏"]
+    assert rows[4] == ["❌ 人工警告", "❌ 离群封禁"]
+    assert rows[5][0].startswith("📄 总白名单管理")
+
+
+def test_garbage_rule_keyboard_hides_dependent_rows_until_enabled() -> None:
+    settings = SimpleNamespace(anti_spam_rules={}, anti_flood_enabled=False)
+    keyboard = garbage_guard_rule_keyboard(settings, -100123, "block_links")
+    labels = [button.text for row in keyboard.inline_keyboard for button in row]
+
+    assert "⚙️ 警告次数:" not in labels
+    assert "⚙️ 禁言时长:" not in labels
+    assert "⚙️ 提示删除:" not in labels
+
+    settings = SimpleNamespace(
+        anti_flood_enabled=False,
+        anti_spam_rules={
+            "garbage_guard": {
+                "global_whitelist_user_ids": [],
+                "rules": {
+                    "block_links": {
+                        "enabled": True,
+                        "delete_message": True,
+                        "warn_enabled": True,
+                        "warn_threshold": 3,
+                        "mute_enabled": True,
+                        "mute_seconds": 600,
+                        "kick_enabled": False,
+                        "notice_enabled": True,
+                        "notice_delete_seconds": 10,
+                    }
+                },
+            }
+        },
+    )
+    keyboard = garbage_guard_rule_keyboard(settings, -100123, "block_links")
+    labels = [button.text for row in keyboard.inline_keyboard for button in row]
+
+    assert "⚙️ 警告次数:" in labels
+    assert "⚙️ 禁言时长:" in labels
+    assert "⚙️ 提示删除:" in labels
 
 
 @pytest.mark.asyncio
@@ -383,8 +435,8 @@ async def test_health_menu_surfaces_conflicts_and_shortcuts(monkeypatch):
     assert "• 定时消息：2 条（启用 1 条）" in text
     assert "⚠️ 强制订阅已开启但尚未绑定频道" in text
     assert "⚠️ 定时关群已开启但开群/关群时间未完整配置" in text
-    assert "⚠️ 当前验证、反垃圾、防刷屏均关闭，新成员保护较弱" in text
+    assert "⚠️ 当前验证、垃圾防护均关闭，新成员保护较弱" in text
 
     row_texts = [[button.text for button in row] for row in keyboard.inline_keyboard]
-    assert ["🛡️ 新人验证", "☂️ 反垃圾", "🌊 防刷屏"] in row_texts
+    assert ["🛡️ 新人验证", "☂️ 垃圾防护"] in row_texts
     assert ["📣 强制订阅", "🧨 关群设置", "⏰ 定时消息"] in row_texts

@@ -45,6 +45,16 @@ class GarageReviewActionsMixin:
                 await session.commit()
             await self._show_car_review_menu(update, context, chat_id)
             return
+        if action == "board":
+            enabled = callback_data.get_int_optional(3)
+            if enabled not in {0, 1}:
+                await answer_callback_query_safely(update, "无效更新榜单开关值", show_alert=True)
+                return
+            async with db.session_factory() as session:
+                await CarReviewService.update_setting(session, chat_id, auto_refresh_board_enabled=bool(enabled))
+                await session.commit()
+            await self._show_car_review_menu(update, context, chat_id)
+            return
         if action == "lookup":
             mode = callback_data.get(3)
             if mode not in {"exact", "contains", "off"}:
@@ -96,6 +106,50 @@ class GarageReviewActionsMixin:
             await self.message_helper.safe_edit(update, "💯 车评系统 | 积分奖励\n\n👉 请输入奖励积分：", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"crv:home:{chat_id}")]]))
             return
         if action == "fields":
+            await self._show_car_review_fields_menu(update, context, chat_id)
+            return
+        if action == "field_add":
+            await self._start_text_input_state(
+                context,
+                update.effective_user.id,
+                chat_id,
+                ConversationStateType.car_review_field_add_input.value,
+                {"target_chat_id": chat_id},
+            )
+            await self.message_helper.safe_edit(
+                update,
+                "💯 车评系统 | 新增自定义项\n\n👉 请输入“字段键 字段名称”，例如：safe_score 安全感\n新增后请到报告模版添加 {字段键}。",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"crv:fields:{chat_id}")]]),
+            )
+            return
+        if action == "field_edit":
+            field_id = callback_data.get_int_optional(3)
+            if field_id is None:
+                await answer_callback_query_safely(update, "字段参数无效", show_alert=True)
+                return
+            await self._start_text_input_state(
+                context,
+                update.effective_user.id,
+                chat_id,
+                ConversationStateType.car_review_field_label_input.value,
+                {"target_chat_id": chat_id, "field_id": field_id},
+            )
+            await self.message_helper.safe_edit(
+                update,
+                "💯 车评系统 | 修改自定义项名称\n\n👉 请输入新的字段名称：",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"crv:fields:{chat_id}")]]),
+            )
+            return
+        if action == "field_tog":
+            field_id = callback_data.get_int_optional(3)
+            if field_id is None:
+                await answer_callback_query_safely(update, "字段参数无效", show_alert=True)
+                return
+            async with db.session_factory() as session:
+                item = await CarReviewService.toggle_custom_field(session, chat_id, field_id)
+                await session.commit()
+            if item is None:
+                await answer_callback_query_safely(update, "字段不存在", show_alert=True)
             await self._show_car_review_fields_menu(update, context, chat_id)
             return
         if action == "reports":
@@ -185,10 +239,28 @@ class GarageReviewActionsMixin:
                                     payload={"message_id": published_message_id},
                                 )
                             message = "报告已通过审核并发布"
+                        if getattr(setting, "auto_refresh_board_enabled", False) and report.teacher_user_id:
+                            stats = await CarReviewService.refresh_teacher_board_info(
+                                session,
+                                chat_id=chat_id,
+                                teacher_user_id=report.teacher_user_id,
+                            )
+                            if not await CarReviewService.has_audit_action(
+                                session,
+                                chat_id=chat_id,
+                                report_id=report.report_id,
+                                action="board_refreshed",
+                            ):
+                                await CarReviewService.append_audit(
+                                    session,
+                                    chat_id=chat_id,
+                                    report_id=report.report_id,
+                                    action="board_refreshed",
+                                    operator_user_id=update.effective_user.id,
+                                    payload=stats,
+                                )
                         if (
-                            published_message_id is not None
-                            and report.report_status == "published"
-                            and report.author_user_id
+                            report.author_user_id
                             and setting.reward_points > 0
                             and not await CarReviewService.has_audit_action(
                                 session,

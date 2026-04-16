@@ -13,7 +13,7 @@ async def handle_car_review_feature_input(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session,
-    state_type: str,
+    state,
     target_chat_id: int,
     message_text: str,
 ) -> bool:
@@ -23,6 +23,8 @@ async def handle_car_review_feature_input(
         return True
 
     text_value = message_text.strip()
+    state_type = state.state_type
+    state_data = getattr(state, "state_data", {}) or {}
 
     if state_type == "car_review_reward_points_input":
         if not re.fullmatch(r"\d+", text_value):
@@ -62,6 +64,40 @@ async def handle_car_review_feature_input(
         await _finish_review_input(update, context, session, target_chat_id)
         return True
 
+    if state_type == "car_review_field_add_input":
+        parts = text_value.split(maxsplit=1)
+        if len(parts) != 2:
+            await update.effective_message.reply_text("请输入“字段键 字段名称”，例如：safe_score 安全感。")
+            return True
+        try:
+            await CarReviewService.add_custom_field(
+                session,
+                target_chat_id,
+                field_key=parts[0],
+                field_label=parts[1],
+            )
+        except ValidationError as exc:
+            await update.effective_message.reply_text(str(exc))
+            return True
+        await _finish_review_input(update, context, session, target_chat_id, show_fields=True)
+        return True
+
+    if state_type == "car_review_field_label_input":
+        field_id = state_data.get("field_id")
+        if not isinstance(field_id, int):
+            await update.effective_message.reply_text("字段状态异常，请重新进入自定义项页面。")
+            return True
+        try:
+            item = await CarReviewService.update_custom_field_label(session, target_chat_id, field_id, text_value)
+        except ValidationError as exc:
+            await update.effective_message.reply_text(str(exc))
+            return True
+        if item is None:
+            await update.effective_message.reply_text("字段不存在。")
+            return True
+        await _finish_review_input(update, context, session, target_chat_id, show_fields=True)
+        return True
+
     return False
 
 
@@ -70,9 +106,14 @@ async def _finish_review_input(
     context: ContextTypes.DEFAULT_TYPE,
     session,
     target_chat_id: int,
+    *,
+    show_fields: bool = False,
 ) -> None:
     if update.effective_user is None:
         return
     await clear_admin_input_state(session, target_chat_id=target_chat_id, user_id=update.effective_user.id)
     await session.commit()
-    await admin_handler_instance()._show_car_review_menu(update, context, target_chat_id)
+    if show_fields:
+        await admin_handler_instance()._show_car_review_fields_menu(update, context, target_chat_id)
+    else:
+        await admin_handler_instance()._show_car_review_menu(update, context, target_chat_id)

@@ -96,6 +96,7 @@ class ConversationStateType(str, enum.Enum):
     verification_math_prompt_text_input = "vfy_math_prompt_text_input"  # 简单加减法文案
     anti_flood_config = "anti_flood_config"  # 防刷屏配置流程
     anti_spam_config = "anti_spam_config"  # 反垃圾配置流程
+    garbage_guard_whitelist = "garbage_guard_whitelist"  # 垃圾防护总白名单
     renewal_card_input = "renewal_card_input"  # 续费卡密输入流程
     force_subscribe_channel_1_input = "force_subscribe_channel_1_input"  # 强制订阅频道1
     force_subscribe_channel_2_input = "force_subscribe_channel_2_input"  # 强制订阅频道2
@@ -154,6 +155,8 @@ class ConversationStateType(str, enum.Enum):
     car_review_approver_input = "car_review_approver_input"  # 车评审核人
     car_review_template_input = "car_review_template_input"  # 车评模板
     car_review_reward_points_input = "car_review_reward_points_input"  # 车评奖励积分
+    car_review_field_add_input = "car_review_field_add_input"  # 车评新增自定义项
+    car_review_field_label_input = "car_review_field_label_input"  # 车评自定义项名称
     auction_wait_title = "auction_wait_title"  # 拍卖标题输入
     auction_wait_start_price = "auction_wait_start_price"  # 拍卖起拍价输入
     auction_wait_end_at = "auction_wait_end_at"  # 拍卖截止时间输入

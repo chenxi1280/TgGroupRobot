@@ -32,9 +32,10 @@ class GarageReviewViewsMixin:
             "群友可以对榜上的老师进行评价，审核通过可以自动发布，并给提交者奖励积分。\n\n"
             f"开关：{'✅ 启动' if setting.enabled else '❌ 关闭'}\n"
             f"模式：{mode_label}\n"
+            f"更新榜单：{'✅ 启动' if getattr(setting, 'auto_refresh_board_enabled', False) else '❌ 关闭'}\n"
             f"查车评：{lookup_label}\n"
             f"提交评价指令：{setting.submit_command}\n"
-            f"查询排行指令：{setting.rank_command}\n"
+            f"查询排行指令：{setting.rank_command} / 本周{setting.rank_command} / 本月{setting.rank_command}\n"
             f"报告发布：主群={'✅' if setting.publish_to_main_group else '❌'} / 评论区={'✅' if setting.publish_to_comment_group else '❌'} / 频道={'✅' if setting.publish_to_bound_channel else '❌'}\n"
             f"积分奖励：加 {setting.reward_points} 积分\n"
             f"审核人员：{approver_label}\n"
@@ -51,6 +52,11 @@ class GarageReviewViewsMixin:
                 InlineKeyboardButton("⚙️ 模式：", callback_data=f"crv:home:{chat_id}"),
                 InlineKeyboardButton("✅ 默认" if setting.review_mode == "default" else "默认", callback_data=f"crv:mode:{chat_id}:default"),
                 InlineKeyboardButton("✅ 简易" if setting.review_mode == "simple" else "简易", callback_data=f"crv:mode:{chat_id}:simple"),
+            ],
+            [
+                InlineKeyboardButton("⚙️ 更新榜单：", callback_data=f"crv:home:{chat_id}"),
+                InlineKeyboardButton("✅ 启动" if getattr(setting, "auto_refresh_board_enabled", False) else "启动", callback_data=f"crv:board:{chat_id}:1"),
+                InlineKeyboardButton("关闭" if getattr(setting, "auto_refresh_board_enabled", False) else "✅ 关闭", callback_data=f"crv:board:{chat_id}:0"),
             ],
             [
                 InlineKeyboardButton("⚙️ 查车评：", callback_data=f"crv:home:{chat_id}"),
@@ -87,20 +93,35 @@ class GarageReviewViewsMixin:
         lines = [
             "💯 车评系统 | 自定义项",
             "",
-            "当前展示字段启用状态与排序顺序，可用于核对出分项配置。",
+            "当前展示字段会参与默认模式校验，也可在报告模板里用 {字段键} 引用。",
+            "新增自定义项后，请到“报告模版”补上对应占位符。",
             "",
         ]
+        keyboard_rows: list[list[InlineKeyboardButton]] = []
         for index, item in enumerate(fields, start=1):
             sort_order = getattr(item, "sort_order", index)
+            field_id = getattr(item, "id", index)
             lines.append(
                 f"{item.field_label}（键：{item.field_key}｜排序：{sort_order}｜{'✅ 启用' if item.enabled else '❌ 关闭'}）"
             )
+            keyboard_rows.append(
+                [
+                    InlineKeyboardButton(
+                        f"{'✅' if item.enabled else '❌'} {item.field_label}",
+                        callback_data=f"crv:field_tog:{chat_id}:{field_id}",
+                    ),
+                    InlineKeyboardButton("改名", callback_data=f"crv:field_edit:{chat_id}:{field_id}"),
+                ]
+            )
         if not fields:
             lines.append("暂无自定义项")
+        keyboard_rows.append([InlineKeyboardButton("➕ 新增自定义项", callback_data=f"crv:field_add:{chat_id}")])
+        keyboard_rows.append([InlineKeyboardButton("📝 修改报告模版", callback_data=f"crv:template:edit:{chat_id}")])
+        keyboard_rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"crv:home:{chat_id}")])
         await self.message_helper.safe_edit(
             update,
             "\n".join(lines),
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"crv:home:{chat_id}")]]),
+            reply_markup=InlineKeyboardMarkup(keyboard_rows),
         )
 
     async def _show_car_review_reports_menu(

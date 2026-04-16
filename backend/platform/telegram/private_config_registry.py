@@ -54,6 +54,11 @@ def build_private_config_handlers() -> dict[str, ConfigHandler]:
     )
     _register_states(
         handlers,
+        ["garbage_guard_whitelist"],
+        full_args_handler("backend.features.moderation.garbage_guard_config_handler", "garbage_guard_whitelist_message_handler"),
+    )
+    _register_states(
+        handlers,
         [
             "auto_reply_create",
             "auto_reply_edit_keywords",
@@ -199,6 +204,8 @@ def build_private_config_handlers() -> dict[str, ConfigHandler]:
             "car_review_approver_input",
             "car_review_template_input",
             "car_review_reward_points_input",
+            "car_review_field_add_input",
+            "car_review_field_label_input",
         ],
         full_args_handler("backend.features.admin.garage", "handle_garage_features_input"),
     )

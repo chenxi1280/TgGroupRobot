@@ -80,6 +80,7 @@ async def test_car_review_menu_uses_dynamic_labels_and_real_subpages(monkeypatch
             enabled=True,
             review_mode="simple",
             teacher_lookup_mode="contains",
+            auto_refresh_board_enabled=False,
             submit_command="提交报告",
             rank_command="出击排行",
             publish_to_main_group=True,
@@ -119,11 +120,13 @@ async def test_car_review_menu_uses_dynamic_labels_and_real_subpages(monkeypatch
 
     text, keyboard = rendered[0]
     assert "最近报告：2 条（待审核 1 条）" in text
+    assert "本周出击排行" in text
     assert keyboard.inline_keyboard[0][1].text == "✅ 启动"
     assert keyboard.inline_keyboard[1][2].text == "✅ 简易"
-    assert keyboard.inline_keyboard[2][2].text == "✅ 包含"
-    assert keyboard.inline_keyboard[9][0].callback_data == "crv:fields:-100123"
-    assert keyboard.inline_keyboard[11][0].callback_data == "crv:reports:-100123"
+    assert keyboard.inline_keyboard[2][2].text == "✅ 关闭"
+    assert keyboard.inline_keyboard[3][2].text == "✅ 包含"
+    assert keyboard.inline_keyboard[10][0].callback_data == "crv:fields:-100123"
+    assert keyboard.inline_keyboard[12][0].callback_data == "crv:reports:-100123"
 
 
 @pytest.mark.asyncio

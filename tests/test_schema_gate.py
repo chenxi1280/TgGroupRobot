@@ -180,6 +180,13 @@ def _full_tables() -> dict[str, dict]:
             "indexes": [{"name": "ix_points_mall_order_logs_created_at", "column_names": ["created_at"], "unique": False}],
         },
         "moderation_violations": {"columns": {"id", "chat_id", "user_id", "message_id", "rule", "detail", "action", "created_at"}},
+        "moderation_warnings": {
+            "columns": {
+                "id", "chat_id", "user_id", "warning_count", "last_rule",
+                "expires_at", "created_at", "updated_at",
+            },
+            "uniques": [{"name": "uq_moderation_warnings_chat_user", "column_names": ["chat_id", "user_id"]}],
+        },
         "verification_challenges": {"columns": {"id", "chat_id", "user_id", "token", "expires_at", "solved", "verification_type", "question", "answer", "timeout_handled", "created_at"}},
         "subscription_plans": {"columns": {"id", "code", "name", "price_cents", "duration_days", "feature_flags", "created_at"}},
         "chat_subscriptions": {"columns": {"id", "chat_id", "plan_id", "status", "start_at", "end_at", "created_at"}},
@@ -347,7 +354,7 @@ def _full_tables() -> dict[str, dict]:
         },
         "car_review_settings": {
             "columns": {
-                "chat_id", "enabled", "review_mode", "teacher_lookup_mode",
+                "chat_id", "enabled", "review_mode", "teacher_lookup_mode", "auto_refresh_board_enabled",
                 "submit_command", "rank_command", "publish_to_main_group",
                 "publish_to_comment_group", "publish_to_bound_channel", "approver_user_id",
                 "reward_points", "template_text", "created_at", "updated_at",

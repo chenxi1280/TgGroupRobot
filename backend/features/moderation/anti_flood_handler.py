@@ -9,6 +9,12 @@ from backend.shared.services.user_service import ensure_user
 from backend.features.moderation.services.anti_flood_service import (
     get_tracker,
 )
+from backend.features.moderation.services.garbage_guard_rules import (
+    get_rule_config,
+    has_explicit_garbage_config,
+    is_global_whitelisted,
+)
+from backend.features.moderation.services.garbage_guard_service import apply_garbage_punishment
 from backend.features.moderation.services.moderation_service import (
     build_moderation_action_label,
     build_moderation_notice,
@@ -110,13 +116,25 @@ async def anti_flood_message_handler(update: Update, context: ContextTypes.DEFAU
         settings = await get_chat_settings(session, chat.id)
         await session.commit()
 
+    explicit_garbage = has_explicit_garbage_config(settings)
+    flood_config = get_rule_config(settings, "flood")
+
     # 检查是否启用反刷屏
-    if not settings.anti_flood_enabled:
+    if not (settings.anti_flood_enabled or bool(flood_config.get("enabled"))):
         return
 
-    # 管理员豁免（可配置）
-    if await should_exempt_admin(context, chat.id, user.id if user is not None else None, settings.anti_flood_exempt_admin):
+    # 新垃圾防护规则固定豁免管理员；旧配置仍兼容原管理员豁免开关。
+    if await should_exempt_admin(
+        context,
+        chat.id,
+        user.id if user is not None else None,
+        True if explicit_garbage else settings.anti_flood_exempt_admin,
+    ):
         log.info("flood_skip_admin_exempt", chat_id=chat.id, user_id=user.id if user is not None else None)
+        return
+
+    if explicit_garbage and user is not None and is_global_whitelisted(settings, user.id):
+        log.info("flood_skip_global_whitelist", chat_id=chat.id, user_id=user.id)
         return
 
     tracker = get_tracker()
@@ -133,6 +151,45 @@ async def anti_flood_message_handler(update: Update, context: ContextTypes.DEFAU
     )
 
     if flood_result.is_flooding:
+        if explicit_garbage and user is not None and user.id > 0:
+            if hasattr(tracker, "get_and_clear_messages"):
+                message_ids = await tracker.get_and_clear_messages(chat.id, actor_id)
+            else:
+                message_ids = [message.message_id]
+            async with db.session_factory() as session:
+                await ensure_chat(session, chat_id=chat.id, chat_type=chat.type, title=chat.title)
+                await ensure_user(
+                    session,
+                    user_id=user.id,
+                    username=user.username,
+                    first_name=user.first_name,
+                    last_name=user.last_name,
+                    language_code=user.language_code,
+                )
+                result = await apply_garbage_punishment(
+                    context,
+                    session,
+                    settings=settings,
+                    chat_id=chat.id,
+                    target_user_id=user.id,
+                    target_label=user.mention_html(),
+                    rule_id="flood",
+                    detail=f"count={flood_result.message_count},span={flood_result.time_span:.3f}",
+                    message_ids=message_ids,
+                    sender_chat_id=sender_chat.id if sender_chat is not None else None,
+                    record_message_id=message.message_id,
+                )
+                await session.commit()
+            if result.applied:
+                log.info(
+                    "flood_garbage_guard_executed",
+                    chat_id=chat.id,
+                    user_id=actor_id,
+                    action=result.action_label,
+                )
+                raise ApplicationHandlerStop
+            return
+
         resolution = await resolve_effective_action(
             context,
             chat.id,

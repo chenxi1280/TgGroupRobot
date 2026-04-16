@@ -121,7 +121,7 @@ async def unified_group_message_handler(update: Update, context: ContextTypes.DE
 
     if message_text:
         if real_user_id is not None and not is_admin:
-            deleted = await _process_banned_word_check(context, db, chat, user, message, message_text)
+            deleted = await _process_banned_word_check(context, db, chat, user, message, message_text, settings)
             if deleted:
                 return True
         elif is_admin:

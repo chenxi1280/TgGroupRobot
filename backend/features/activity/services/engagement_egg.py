@@ -119,6 +119,11 @@ async def update_egg_event_from_template(
     return event
 
 
+def get_clue_reward_points(egg: EngagementEgg | EngagementEggEvent, clue_index: int) -> int:
+    rewards = egg.clue_rewards or []
+    return int(rewards[clue_index] or 0) if clue_index < len(rewards) else 0
+
+
 async def try_claim_egg(session: AsyncSession, chat_id: int, user_id: int, answer: str) -> int | None:
     stmt = (
         select(EngagementEggEvent)
@@ -141,7 +146,7 @@ async def try_claim_egg(session: AsyncSession, chat_id: int, user_id: int, answe
         event.status = "finished"
         published = max(event.published_clue_count, 1)
         reward_index = min(published - 1, max(len(event.clue_rewards) - 1, 0))
-        reward_points = event.clue_rewards[reward_index] if event.clue_rewards else 0
+        reward_points = get_clue_reward_points(event, reward_index)
         if reward_points > 0:
             ok, _ = await change_points(
                 session,
@@ -185,7 +190,7 @@ async def publish_next_clue(
     session: AsyncSession,
     chat_id: int,
     event_id: int | None = None,
-) -> tuple[EngagementEggEvent, int, str, int] | None:
+) -> tuple[EngagementEggEvent, int, str, str] | None:
     event = await get_egg_event(session, chat_id, event_id) if event_id else None
     if event is None:
         stmt = (
@@ -205,9 +210,9 @@ async def publish_next_clue(
     if next_index >= len(event.clues):
         return None
     clue_text = event.clues[next_index]
-    reward_points = event.clue_rewards[next_index] if next_index < len(event.clue_rewards) else 0
+    reward_summary = f"{get_clue_reward_points(event, next_index)}积分"
     await mark_clue_published(session, event, next_index)
-    return event, next_index, clue_text, reward_points
+    return event, next_index, clue_text, reward_summary
 
 
 async def archive_egg_snapshot(

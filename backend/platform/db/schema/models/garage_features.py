@@ -152,6 +152,7 @@ class CarReviewSetting(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     review_mode: Mapped[str] = mapped_column(String(16), default="default")
     teacher_lookup_mode: Mapped[str] = mapped_column(String(16), default="off")
+    auto_refresh_board_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     submit_command: Mapped[str] = mapped_column(String(32), default="提交报告")
     rank_command: Mapped[str] = mapped_column(String(32), default="出击排行")
     publish_to_main_group: Mapped[bool] = mapped_column(Boolean, default=True)

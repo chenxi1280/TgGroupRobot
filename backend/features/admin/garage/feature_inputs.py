@@ -30,7 +30,7 @@ async def handle_garage_features_input(
         return
     if await handle_teacher_search_feature_input(update, context, session, state, target_chat_id, text_value):
         return
-    if await handle_car_review_feature_input(update, context, session, state_type, target_chat_id, message_text):
+    if await handle_car_review_feature_input(update, context, session, state, target_chat_id, message_text):
         return
 
     await update.effective_message.reply_text("配置状态异常，请重新进入页面。")

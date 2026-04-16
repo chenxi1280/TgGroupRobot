@@ -78,6 +78,9 @@ class SubscriptionAdminControllerMixin:
         group_lock_enabled = bool(getattr(settings, "group_lock_phrase_enabled", False) or getattr(settings, "group_lock_schedule_enabled", False))
         new_member_limit_enabled = bool(getattr(settings, "new_member_limit_enabled", False))
         new_member_limit_window = int(getattr(settings, "new_member_limit_window_seconds", 3600) or 3600)
+        from backend.features.moderation.services.garbage_guard_rules import any_garbage_rule_enabled
+
+        garbage_guard_enabled = any_garbage_rule_enabled(settings)
 
         lines = [
             f"🩺 [{chat_title}] 群组健康检查",
@@ -88,8 +91,7 @@ class SubscriptionAdminControllerMixin:
             f"• 新人验证：{'✅ 开启' if settings.verification_enabled else '❌ 关闭'}（{settings.verification_mode} / {settings.verification_timeout_seconds}秒）",
             f"• 新成员限制：{'✅ 开启' if new_member_limit_enabled else '❌ 关闭'}（{_format_duration_label(new_member_limit_window)}）",
             f"• 强制订阅：{'✅ 开启' if getattr(settings, 'force_subscribe_enabled', False) else '❌ 关闭'}",
-            f"• 防刷屏：{'✅ 开启' if getattr(settings, 'anti_flood_enabled', False) else '❌ 关闭'}（{getattr(settings, 'anti_flood_action', 'mute')}）",
-            f"• 反垃圾：{'✅ 开启' if getattr(settings, 'anti_spam_enabled', False) else '❌ 关闭'}（{getattr(settings, 'anti_spam_action', 'mute')}）",
+            f"• 垃圾防护：{'✅ 开启' if garbage_guard_enabled else '❌ 关闭'}",
             f"• 关群设置：{'✅ 开启' if group_lock_enabled else '❌ 关闭'}",
             f"• 自动删除：{auto_delete_count}/6 项",
             f"• 定时消息：{len(tasks)} 条（启用 {enabled_tasks} 条）",
@@ -110,11 +112,10 @@ class SubscriptionAdminControllerMixin:
                 warnings.append("⚠️ 定时关群已开启但开群/关群时间未完整配置")
         if (
             not settings.verification_enabled
-            and not getattr(settings, "anti_spam_enabled", False)
-            and not getattr(settings, "anti_flood_enabled", False)
+            and not garbage_guard_enabled
             and not new_member_limit_enabled
         ):
-            warnings.append("⚠️ 当前验证、反垃圾、防刷屏均关闭，新成员保护较弱")
+            warnings.append("⚠️ 当前验证、垃圾防护均关闭，新成员保护较弱")
         if getattr(settings, "force_subscribe_enabled", False) and not settings.verification_enabled:
             warnings.append("ℹ️ 当前会先检查订阅状态，建议同时开启新人验证以减少误伤")
 
@@ -126,8 +127,7 @@ class SubscriptionAdminControllerMixin:
         keyboard = InlineKeyboardMarkup([
             [
                 InlineKeyboardButton("🛡️ 新人验证", callback_data=f"adm:menu:verification:{chat_id}"),
-                InlineKeyboardButton("☂️ 反垃圾", callback_data=f"adm:menu:antispam:{chat_id}"),
-                InlineKeyboardButton("🌊 防刷屏", callback_data=f"adm:menu:flood:{chat_id}"),
+                InlineKeyboardButton("☂️ 垃圾防护", callback_data=f"adm:menu:antispam:{chat_id}"),
             ],
             [
                 InlineKeyboardButton("🧑‍🍼 新成员限制", callback_data=f"adm:menu:newmem:{chat_id}"),
@@ -156,4 +156,3 @@ class SubscriptionAdminControllerMixin:
         from backend.features.subscription.renewal_handler import show_renewal_menu
 
         await show_renewal_menu(update, context, chat_id)
-

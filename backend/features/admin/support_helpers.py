@@ -119,10 +119,14 @@ def _resolve_private_scoped_target_chat_id(cb: CallbackParser) -> int | None:
         if action in {
             "toggle",
             "mode",
+            "board",
             "lookup",
             "publish_target",
             "reward",
             "fields",
+            "field_add",
+            "field_edit",
+            "field_tog",
             "reports",
             "report",
         }:

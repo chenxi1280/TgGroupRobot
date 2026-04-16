@@ -17,7 +17,7 @@ from backend.shared.services.publish_service import PublishService
 log = structlog.get_logger(__name__)
 
 
-ModerationActionType = Literal["delete", "mute", "ban"]
+ModerationActionType = Literal["delete", "mute", "ban", "kick"]
 
 
 def _has_link(text: str) -> bool:
@@ -52,6 +52,8 @@ def build_moderation_action_label(action: str, mute_duration: int | None = None)
         return f"禁言 {max(mute_duration or 0, 1)} 秒"
     if action == "ban":
         return "封禁用户"
+    if action == "kick":
+        return "踢出用户"
     return action or "已处理"
 
 
@@ -110,13 +112,13 @@ async def resolve_effective_action(
 ) -> ModerationActionResolution:
     """把配置里的处罚动作收敛成机器人能实际执行的动作。"""
     action = (requested_action or "delete").strip()
-    if action not in {"delete", "mute", "ban"}:
+    if action not in {"delete", "mute", "ban", "kick"}:
         action = "delete"
 
-    if sender_chat_id is not None and action in {"mute", "ban"}:
+    if sender_chat_id is not None and action in {"mute", "ban", "kick"}:
         return ModerationActionResolution(action="delete", fallback_reason="频道身份发言仅支持删除")
 
-    if action in {"mute", "ban"} and user_id > 0:
+    if action in {"mute", "ban", "kick"} and user_id > 0:
         try:
             member: ChatMember = await context.bot.get_chat_member(chat_id=chat_id, user_id=user_id)
             if member.status in {"creator", "administrator"}:
@@ -133,7 +135,7 @@ async def resolve_effective_action(
                 error=str(exc),
             )
 
-    if user_id <= 0 and action in {"mute", "ban"}:
+    if user_id <= 0 and action in {"mute", "ban", "kick"}:
         return ModerationActionResolution(action="delete", fallback_reason="目标无法禁言或封禁，已改为删除")
 
     return ModerationActionResolution(action=action)

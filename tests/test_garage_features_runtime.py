@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 import backend.features.group_ops.group_message_handler as group_message_handler
+import backend.features.group_ops.group_hooks.car_review as car_review_hook
 from backend.features.group_ops.group_message_handler import _process_garage_features
 from backend.platform.db.schema.models.core import TgUser
 from backend.platform.db.schema.models.garage_features import CarReviewAuditLog, CarReviewReport, TeacherProfile, TeacherSearchSetting
@@ -328,6 +329,155 @@ async def test_list_rankings_aggregates_average_total_score():
     assert rankings[0]["avg_score"] == 95.0
     assert rankings[1]["teacher_user_id"] == 11
     assert rankings[1]["avg_score"] == 90.0
+
+
+def test_parse_car_review_body_requires_enabled_default_fields():
+    fields = [
+        SimpleNamespace(field_key="photo_score", field_label="人照", enabled=True),
+        SimpleNamespace(field_key="process", field_label="过程", enabled=True),
+    ]
+
+    parsed = car_review_hook._parse_review_body("人照：9\n过程：体验很好", fields, require_fields=True)
+    missing = car_review_hook._parse_review_body("人照：9", fields, require_fields=True)
+
+    assert parsed.missing_labels == []
+    assert parsed.invalid_labels == []
+    assert parsed.scores["photo_score"] == 9
+    assert parsed.scores["total_score"] == 9
+    assert parsed.process_text == "体验很好"
+    assert missing.missing_labels == ["过程"]
+
+
+@pytest.mark.asyncio
+async def test_process_garage_features_handles_weekly_car_review_rank(monkeypatch):
+    session = _FakeSession()
+    db = _FakeDb(session)
+    captured: dict[str, object] = {"replies": []}
+
+    async def fake_get_teacher_setting(*args, **kwargs):
+        return SimpleNamespace(
+            nearby_search_enabled=False,
+            attendance_enabled=False,
+            force_location_enabled=False,
+            footer_button_label=None,
+        )
+
+    async def fake_get_car_review_setting(*args, **kwargs):
+        return SimpleNamespace(
+            enabled=True,
+            rank_command="出击排行",
+            submit_command="提交报告",
+            teacher_lookup_mode="off",
+        )
+
+    async def fake_list_rankings(session, chat_id: int, *, limit: int = 10, since=None):
+        captured["since"] = since
+        return [{"display_name": "@teacher_a", "avg_score": 9.5, "count": 2}]
+
+    async def fake_reply(context, *, chat_id, text, reply_to_message_id=None, **kwargs):
+        captured["replies"].append(text)
+
+    async def fake_is_teacher(*args, **kwargs):
+        return False
+
+    async def fake_is_whitelisted(*args, **kwargs):
+        return False
+
+    monkeypatch.setattr(TeacherSearchService, "get_setting", fake_get_teacher_setting)
+    monkeypatch.setattr(CarReviewService, "get_setting", fake_get_car_review_setting)
+    monkeypatch.setattr(CarReviewService, "list_rankings", fake_list_rankings)
+    monkeypatch.setattr(GarageAuthService, "is_certified_teacher", fake_is_teacher)
+    monkeypatch.setattr(GarageAuthService, "is_whitelisted", fake_is_whitelisted)
+    monkeypatch.setattr(group_message_handler.PublishService, "reply", fake_reply)
+
+    handled = await _process_garage_features(
+        SimpleNamespace(application=SimpleNamespace(bot_data={})),
+        db,
+        SimpleNamespace(id=-1001, title="测试群"),
+        SimpleNamespace(id=42),
+        SimpleNamespace(message_id=9, location=None, reply_to_message=None),
+        "本周出击排行",
+        SimpleNamespace(garage_limit_enabled=False),
+        False,
+    )
+
+    assert handled is True
+    assert captured["since"] is not None
+    assert captured["replies"] == ["本周出击排行：\n1. @teacher_a · 均分 9.5 · 2 条"]
+
+
+@pytest.mark.asyncio
+async def test_process_garage_features_exact_lookup_replies_teacher_reviews(monkeypatch):
+    session = _FakeSession()
+    db = _FakeDb(session)
+    replies: list[str] = []
+    teacher = SimpleNamespace(id=77, username="teacher77", first_name="T")
+    report = SimpleNamespace(
+        report_id=5,
+        author_user_id=42,
+        created_at=dt.datetime(2026, 1, 2, tzinfo=dt.UTC),
+        scores={"total_score": 9},
+        review_text="体验很好",
+    )
+
+    async def fake_get_teacher_setting(*args, **kwargs):
+        return SimpleNamespace(
+            nearby_search_enabled=False,
+            attendance_enabled=False,
+            force_location_enabled=False,
+            footer_button_label=None,
+        )
+
+    async def fake_get_car_review_setting(*args, **kwargs):
+        return SimpleNamespace(
+            enabled=True,
+            rank_command="出击排行",
+            submit_command="提交报告",
+            teacher_lookup_mode="exact",
+        )
+
+    async def fake_find_teacher(session, chat_id: int, username: str):
+        return teacher if username == "teacher77" else None
+
+    async def fake_list_reports(session, chat_id: int, teacher_user_id: int, *, limit: int = 5):
+        return [(report, SimpleNamespace(id=42, username="author42", first_name="A"))]
+
+    async def fake_stats(session, chat_id: int, teacher_user_id: int):
+        return {"count": 1, "avg_score": 9}
+
+    async def fake_reply(context, *, chat_id, text, reply_to_message_id=None, **kwargs):
+        replies.append(text)
+
+    async def fake_is_teacher(*args, **kwargs):
+        return False
+
+    async def fake_is_whitelisted(*args, **kwargs):
+        return False
+
+    monkeypatch.setattr(TeacherSearchService, "get_setting", fake_get_teacher_setting)
+    monkeypatch.setattr(CarReviewService, "get_setting", fake_get_car_review_setting)
+    monkeypatch.setattr(CarReviewService, "find_lookup_teacher_by_username", fake_find_teacher)
+    monkeypatch.setattr(CarReviewService, "list_reports_for_teacher", fake_list_reports)
+    monkeypatch.setattr(CarReviewService, "get_teacher_review_stats", fake_stats)
+    monkeypatch.setattr(GarageAuthService, "is_certified_teacher", fake_is_teacher)
+    monkeypatch.setattr(GarageAuthService, "is_whitelisted", fake_is_whitelisted)
+    monkeypatch.setattr(group_message_handler.PublishService, "reply", fake_reply)
+
+    handled = await _process_garage_features(
+        SimpleNamespace(application=SimpleNamespace(bot_data={})),
+        db,
+        SimpleNamespace(id=-1001, title="测试群"),
+        SimpleNamespace(id=42),
+        SimpleNamespace(message_id=9, location=None, reply_to_message=None),
+        "@teacher77",
+        SimpleNamespace(garage_limit_enabled=False),
+        False,
+    )
+
+    assert handled is True
+    assert replies
+    assert "@teacher77 的车评：" in replies[0]
+    assert "体验很好" in replies[0]
 
 
 @pytest.mark.asyncio

@@ -190,8 +190,7 @@ class ModerationConfigMenusMixin:
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
     ) -> None:
-        from backend.features.moderation.anti_flood_config_handler import format_anti_flood_menu_text
-        from backend.features.admin.ui.antispam import anti_flood_config_keyboard
+        from backend.features.admin.ui.antispam import format_garbage_rule_text, garbage_guard_rule_keyboard
 
         db: Database = context.application.bot_data["db"]
         await self._set_current_chat(db, update.effective_user.id, chat_id)
@@ -201,8 +200,8 @@ class ModerationConfigMenusMixin:
             await session.commit()
 
         chat_title = await self._get_chat_title(db, chat_id)
-        text = format_anti_flood_menu_text(chat_title, settings)
-        keyboard = anti_flood_config_keyboard(settings, chat_id)
+        text = format_garbage_rule_text(chat_title, settings, "flood")
+        keyboard = garbage_guard_rule_keyboard(settings, chat_id, "flood")
         await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
 
     async def _show_antispam_menu(
@@ -211,8 +210,7 @@ class ModerationConfigMenusMixin:
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
     ) -> None:
-        from backend.features.moderation.anti_spam_config_handler import format_anti_spam_menu_text
-        from backend.features.admin.ui.antispam import anti_spam_config_keyboard
+        from backend.features.admin.ui.antispam import format_garbage_guard_home_text, garbage_guard_home_keyboard
 
         db: Database = context.application.bot_data["db"]
         await self._set_current_chat(db, update.effective_user.id, chat_id)
@@ -222,6 +220,6 @@ class ModerationConfigMenusMixin:
             await session.commit()
 
         chat_title = await self._get_chat_title(db, chat_id)
-        text = format_anti_spam_menu_text(chat_title, settings)
-        keyboard = anti_spam_config_keyboard(settings, chat_id)
+        text = format_garbage_guard_home_text(chat_title, settings)
+        keyboard = garbage_guard_home_keyboard(settings, chat_id)
         await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)

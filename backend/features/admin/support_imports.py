@@ -22,6 +22,7 @@ from backend.features.activity.services.engagement_service import (
     archive_egg_snapshot,
     create_egg_event,
     get_chat_reward_top_users,
+    get_clue_reward_points,
     get_egg_event,
     get_egg_event_counts,
     get_latest_running_egg_event,

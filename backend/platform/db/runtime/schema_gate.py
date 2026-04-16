@@ -155,6 +155,12 @@ REQUIRED_INDEXES: tuple[RequiredIndex, ...] = (
         unique=True,
     ),
     RequiredIndex(
+        table_name="moderation_warnings",
+        index_name="uq_moderation_warnings_chat_user",
+        columns=("chat_id", "user_id"),
+        unique=True,
+    ),
+    RequiredIndex(
         table_name="engagement_chat_stats",
         index_name="uq_engagement_chat_stats_daily",
         columns=("chat_id", "user_id", "biz_date"),

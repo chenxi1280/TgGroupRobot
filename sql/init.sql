@@ -960,6 +960,35 @@ CREATE INDEX IF NOT EXISTS ix_moderation_violations_chat_id ON bot.moderation_vi
 CREATE INDEX IF NOT EXISTS ix_moderation_violations_user_id ON bot.moderation_violations(user_id);
 
 -- ============================================
+-- 8.1. 审核警告计数表 (moderation_warnings)
+-- 存储群内用户警告次数，默认 7 天滚动清零
+-- ============================================
+CREATE TABLE IF NOT EXISTS bot.moderation_warnings (
+    id SERIAL PRIMARY KEY,
+    chat_id BIGINT NOT NULL,
+    user_id BIGINT NOT NULL,
+    warning_count INTEGER NOT NULL DEFAULT 0,
+    last_rule VARCHAR(64),
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT fk_moderation_warnings_chat_id FOREIGN KEY (chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE CASCADE,
+    CONSTRAINT fk_moderation_warnings_user_id FOREIGN KEY (user_id)
+        REFERENCES bot.tg_users(id) ON DELETE CASCADE,
+    CONSTRAINT uq_moderation_warnings_chat_user UNIQUE (chat_id, user_id)
+);
+
+COMMENT ON TABLE bot.moderation_warnings IS '审核警告计数表，按群和用户记录警告次数';
+COMMENT ON COLUMN bot.moderation_warnings.warning_count IS '当前有效警告次数';
+COMMENT ON COLUMN bot.moderation_warnings.last_rule IS '最后一次触发警告的规则';
+COMMENT ON COLUMN bot.moderation_warnings.expires_at IS '警告次数过期时间';
+
+CREATE INDEX IF NOT EXISTS ix_moderation_warnings_chat_id ON bot.moderation_warnings(chat_id);
+CREATE INDEX IF NOT EXISTS ix_moderation_warnings_user_id ON bot.moderation_warnings(user_id);
+CREATE INDEX IF NOT EXISTS ix_moderation_warnings_expires_at ON bot.moderation_warnings(expires_at);
+
+-- ============================================
 -- 9. 验证挑战表 (verification_challenges)
 -- 存储新人入群验证的挑战信息
 -- ============================================
@@ -2115,6 +2144,7 @@ CREATE TABLE IF NOT EXISTS bot.car_review_settings (
     enabled BOOLEAN NOT NULL DEFAULT FALSE,
     review_mode VARCHAR(16) NOT NULL DEFAULT 'default',
     teacher_lookup_mode VARCHAR(16) NOT NULL DEFAULT 'off',
+    auto_refresh_board_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     submit_command VARCHAR(64) NOT NULL DEFAULT '提交报告',
     rank_command VARCHAR(64) NOT NULL DEFAULT '出击排行',
     publish_to_main_group BOOLEAN NOT NULL DEFAULT TRUE,

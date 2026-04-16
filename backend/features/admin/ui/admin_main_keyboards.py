@@ -50,9 +50,8 @@ def admin_main_menu(chat_id: int | None = None) -> InlineKeyboardMarkup:
             ],
             [InlineKeyboardButton("🧑‍🍼新成员限制", callback_data=f"adm:menu:newmem:{chat_id}")],
             [
-                InlineKeyboardButton("🌊防刷屏", callback_data=f"adm:menu:flood:{chat_id}"),
+                InlineKeyboardButton("☂️垃圾防护", callback_data=f"adm:menu:antispam:{chat_id}"),
                 InlineKeyboardButton("✨促活工具", callback_data=f"adm:menu:engagement:{chat_id}"),
-                InlineKeyboardButton("☂️反垃圾", callback_data=f"adm:menu:antispam:{chat_id}"),
                 InlineKeyboardButton("🧨关群设置", callback_data=f"adm:menu:closegroup:{chat_id}"),
             ],
             [InlineKeyboardButton("⚖️惩罚策略", callback_data=f"adm:menu:punish:{chat_id}")],
@@ -101,7 +100,7 @@ def admin_main_menu(chat_id: int | None = None) -> InlineKeyboardMarkup:
                 InlineKeyboardButton("⏰定时消息", callback_data="adm:menu:scheduled"),
             ],
             [
-                InlineKeyboardButton("🚫反垃圾", callback_data="adm:menu:antispam"),
+                InlineKeyboardButton("☂️垃圾防护", callback_data="adm:menu:antispam"),
                 InlineKeyboardButton("🔇违禁词", callback_data="adm:menu:keywords"),
             ],
             [InlineKeyboardButton("⚖️惩罚策略", callback_data="adm:menu:punish")],

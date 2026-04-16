@@ -16,19 +16,19 @@ def _build_egg_quick_template(chat_id: int, bot_username: str | None) -> str:
             "【答案】爱情买卖",
             "",
             "【线索1】猜一首歌",
-            "【线索1奖励】50口令+300积分",
+            "【线索1奖励】300积分",
             f"【线索1时间】{today} 09:00",
             "",
             "【线索2】火遍大江南北",
-            "【线索2奖励】30口令+200积分",
+            "【线索2奖励】200积分",
             f"【线索2时间】{today} 11:00",
             "",
             "【线索3】演唱是两个人",
-            "【线索3奖励】20口令+100积分",
+            "【线索3奖励】100积分",
             f"【线索3时间】{today} 14:00",
             "",
             "【线索4】凤凰传奇唱的",
-            "【线索4奖励】10口令+50积分",
+            "【线索4奖励】50积分",
             f"【线索4时间】{today} 16:00",
             "",
             "【颁奖人】@UserName",
@@ -47,7 +47,7 @@ def _format_egg_template_prompt(template_text: str, *, editing: bool = False) ->
             title,
             "",
             "点击下方“复制彩蛋模板”，把答案、线索、奖励和时间改好后，直接发给我即可创建。",
-            "支持你截图里的【字段】格式；奖励里写“50口令+300积分”时，系统会按 300 积分发放。",
+            "支持你截图里的【字段】格式；奖励只按主积分发放，请填写 300 或 300积分。",
             "",
             "可复制模板：",
             template_text,
@@ -161,7 +161,7 @@ class EngagementAdminEggActionsMixin:
                 f"🏷 活动标题：{event.title}",
                 f"🔐 答案：{event.answer or '未配置'}",
                 f"🧩 线索：{event.clues or []}",
-                f"🎁 奖励：{event.clue_rewards or []}",
+                f"🎁 奖励：{[f'{get_clue_reward_points(event, idx)}积分' for idx in range(len(event.clues or []))]}",
                 f"⏰ 时间：{event.clue_times or []}",
             ]
             await self.message_helper.safe_edit(
@@ -181,13 +181,13 @@ class EngagementAdminEggActionsMixin:
                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"act:egg:{chat_id}:detail:{event_id}" if event_id else f"act:egg:{chat_id}:list:all")]]),
                 )
                 return
-            event, clue_index, clue_text, reward_points = published
+            event, clue_index, clue_text, reward_summary = published
             await context.bot.send_message(
                 chat_id=chat_id,
                 text=(
                     f"🥚 有奖彩蛋【{event.title}】| 第 {clue_index + 1} 条线索\n"
                     f"🧩 线索：{clue_text}\n"
-                    f"🎁 当前命中奖励：{reward_points} 积分"
+                    f"🎁 当前命中奖励：{reward_summary}"
                 ),
             )
             await self._show_engagement_egg(update, context, chat_id, event.id)

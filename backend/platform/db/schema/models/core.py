@@ -23,6 +23,7 @@ from backend.platform.db.schema.models.chat import (  # noqa: F401
 from backend.platform.db.schema.models.moderation import (  # noqa: F401
     AutoReplyRule,
     BannedWord,
+    ModerationWarning,
     ModerationViolation,
     VerificationChallenge,
 )

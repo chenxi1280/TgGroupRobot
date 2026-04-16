@@ -142,7 +142,7 @@ class EngagementAdminViewsMixin:
         rewards = event.clue_rewards or []
         clue_times = event.clue_times or []
         status_icon = {"idle": "⚪", "running": "🟢", "finished": "✅"}.get(event.status, "⚪")
-        reward_preview = " / ".join(str(item) for item in rewards) if rewards else "未配置"
+        reward_preview = " / ".join(f"{item}积分" for item in rewards) if rewards else "未配置"
         time_preview = " / ".join(clue_times) if clue_times else "未配置"
         answer_preview = event.answer or "未配置"
         winner_preview = str(event.winner_user_id) if event.winner_user_id else "暂无"

@@ -124,15 +124,12 @@ def _parse_egg_template_line(line: str) -> tuple[str, str] | None:
 
 def _parse_reward_points(raw: str, reward_key: str) -> int:
     value = raw.strip()
-    point_matches = re.findall(r"(\d+)\s*积分", value)
-    if point_matches:
-        return int(point_matches[-1])
     if re.fullmatch(r"\d+", value):
         return int(value)
-    number_matches = re.findall(r"\d+", value)
-    if number_matches:
-        return int(number_matches[-1])
-    raise ValidationError(f"{reward_key} 必须包含积分数字，例如 300积分 或 50口令+300积分。")
+    match = re.fullmatch(r"(\d+)\s*(?:积分|主积分)", value)
+    if match:
+        return int(match.group(1))
+    raise ValidationError(f"{reward_key} 只支持积分奖励，请填写 300 或 300积分。")
 
 
 def _parse_clue_time(raw: str, time_key: str) -> str:

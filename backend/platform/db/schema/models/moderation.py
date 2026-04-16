@@ -29,6 +29,27 @@ class ModerationViolation(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC))
 
 
+class ModerationWarning(Base):
+    __tablename__ = "moderation_warnings"
+    __table_args__ = (
+        UniqueConstraint("chat_id", "user_id", name="uq_moderation_warnings_chat_user"),
+        {"schema": "bot"},
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("bot.tg_chats.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("bot.tg_users.id", ondelete="CASCADE"), index=True)
+    warning_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_rule: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    expires_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC))
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: dt.datetime.now(dt.UTC),
+        onupdate=lambda: dt.datetime.now(dt.UTC),
+    )
+
+
 class VerificationChallenge(Base):
     __tablename__ = "verification_challenges"
     __table_args__ = (

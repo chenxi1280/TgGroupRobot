@@ -47,6 +47,7 @@ DEFAULT_RULES: dict[str, object] = {
     "blocked_forward_user_ids": [],
     "blocked_mention_ids": [],
     "link_blacklist": [],
+    "garbage_guard": {},
 }
 
 

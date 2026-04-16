@@ -80,7 +80,12 @@ class ActionExecutor:
             )
             return ActionExecutionResult(action="mute", applied=True, detail=detail)
 
-        if normalized in {"ban", "kick"}:
+        if normalized == "kick":
+            await context.bot.ban_chat_member(chat_id=chat_id, user_id=user_id)
+            await context.bot.unban_chat_member(chat_id=chat_id, user_id=user_id, only_if_banned=True)
+            return ActionExecutionResult(action="kick", applied=True, detail=detail)
+
+        if normalized == "ban":
             await context.bot.ban_chat_member(chat_id=chat_id, user_id=user_id)
             return ActionExecutionResult(action=normalized, applied=True, detail=detail)
 

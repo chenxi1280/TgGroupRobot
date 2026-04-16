@@ -21,6 +21,7 @@ from backend.features.moderation.anti_flood_handler import anti_flood_message_ha
 from backend.features.moderation.anti_flood_config_handler import anti_flood_config_callback
 from backend.features.moderation.anti_spam_config_handler import anti_spam_config_callback
 from backend.features.moderation.anti_spam_handler import anti_spam_message_handler
+from backend.features.moderation.garbage_guard_config_handler import garbage_guard_config_callback
 from backend.features.group_ops.auto_delete_config_handler import auto_delete_config_callback
 from backend.features.group_ops.auto_delete_handler import auto_delete_handler
 from backend.features.group_ops.command_alias_handler import command_alias_handler
@@ -209,6 +210,7 @@ def _register_common_handlers(app: Application) -> None:
     app.add_handler(CallbackQueryHandler(auto_delete_config_callback, pattern=r"^autodel:"))
     app.add_handler(CallbackQueryHandler(anti_flood_config_callback, pattern=r"^afcfg:"))
     app.add_handler(CallbackQueryHandler(anti_spam_config_callback, pattern=r"^ascfg:"))
+    app.add_handler(CallbackQueryHandler(garbage_guard_config_callback, pattern=r"^gg:"))
 
     # ==================== 新成员加入事件 ====================
     app.add_handler(ChatMemberHandler(invite_link_join_hint_handler, ChatMemberHandler.CHAT_MEMBER))
