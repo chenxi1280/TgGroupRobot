@@ -16,6 +16,11 @@ class GameSetting(Base):
     chat_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("bot.tg_chats.id", ondelete="CASCADE"), primary_key=True)
     k3_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     blackjack_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    points_source_chat_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("bot.tg_chats.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     rake_ratio: Mapped[str | None] = mapped_column(String(16), nullable=True)
     rake_owner_user_id: Mapped[int | None] = mapped_column(
         BigInteger,

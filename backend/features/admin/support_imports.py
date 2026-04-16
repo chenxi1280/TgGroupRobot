@@ -40,6 +40,7 @@ from backend.features.activity.services.engagement_service import (
 from backend.features.activity.services.game_service import (
     format_game_menu_text,
     get_or_create_setting as get_game_setting,
+    get_game_points_chat_label,
     get_rake_owner_label as get_game_rake_owner_label,
     get_round_participants as get_game_round_participants,
     list_recent_rounds as list_recent_game_rounds,

@@ -5,8 +5,10 @@ from types import SimpleNamespace
 import pytest
 
 from backend.features.admin import admin_handler
+from backend.features.admin.activity import game as game_admin_module
 from backend.features.admin.ui.antispam import garbage_guard_home_keyboard, garbage_guard_rule_keyboard
 from backend.features.moderation.anti_spam_config_handler import format_anti_spam_menu_text
+from backend.shared.callback_parser import CallbackParser
 
 
 class _Session:
@@ -368,6 +370,39 @@ async def test_game_menu_exposes_rounds_and_help(monkeypatch):
     keyboard = rendered[0]
     row_texts = [[button.text for button in row] for row in keyboard.inline_keyboard]
     assert ["📋 最近牌局", "📘 指令帮助"] in row_texts
+    assert ["🔗 关联积分", "本群分"] in row_texts
+
+
+@pytest.mark.asyncio
+async def test_game_toggle_start_publishes_runtime_panel(monkeypatch):
+    captured: dict[str, object] = {}
+
+    async def fake_update_setting(session, chat_id: int, **updates):
+        captured["updates"] = (chat_id, updates)
+
+    async def fake_show_k3_panel(context, db, chat_id: int, *, create_if_missing: bool = True):
+        captured["panel"] = (chat_id, create_if_missing)
+
+    async def fake_show_game_menu(update, context, chat_id: int):
+        captured["menu"] = chat_id
+
+    monkeypatch.setattr(game_admin_module, "update_game_setting", fake_update_setting)
+    monkeypatch.setattr(game_admin_module, "show_k3_panel", fake_show_k3_panel)
+    monkeypatch.setattr(admin_handler._admin_handler, "_show_game_menu", fake_show_game_menu)
+
+    update = SimpleNamespace(effective_user=SimpleNamespace(id=1))
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}))
+
+    await admin_handler._admin_handler._handle_game(
+        update,
+        context,
+        -100123,
+        CallbackParser.parse("gm:toggle:-100123:k3:1"),
+    )
+
+    assert captured["updates"] == (-100123, {"k3_enabled": True})
+    assert captured["panel"] == (-100123, True)
+    assert captured["menu"] == -100123
 
 
 @pytest.mark.asyncio

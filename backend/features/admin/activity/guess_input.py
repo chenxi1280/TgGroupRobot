@@ -9,7 +9,7 @@ from backend.features.activity.services.guess_service import (
     resolve_user_id as resolve_guess_user_id,
     update_setting as update_guess_setting,
 )
-from backend.features.admin.activity.runtime import admin_handler_instance
+from backend.features.admin.activity.runtime import admin_handler_instance, clear_private_admin_state
 from backend.platform.state.state_service import clear_user_state, set_user_state
 from backend.shared.services.base import ValidationError
 
@@ -35,7 +35,7 @@ async def handle_guess_admin_input(
     value = message_text.strip()
 
     async def _save_draft(next_type: str = "guess_wait_title") -> None:
-        await clear_user_state(session, chat_id=target_chat_id, user_id=user_id)
+        await clear_private_admin_state(session, target_chat_id=target_chat_id, user_id=user_id)
         await set_user_state(
             session,
             chat_id=user_id,
@@ -73,10 +73,13 @@ async def handle_guess_admin_input(
                 return True
             draft["title"] = value[:128]
         elif state_type == "guess_wait_cover":
+            message = update.effective_message
             if value == "清空":
                 draft["cover_file_id"] = None
-            elif update.effective_message.photo:
-                draft["cover_file_id"] = update.effective_message.photo[-1].file_id
+            elif getattr(message, "photo", None):
+                draft["cover_file_id"] = message.photo[-1].file_id
+            elif _is_image_document(getattr(message, "document", None)):
+                draft["cover_file_id"] = message.document.file_id
             else:
                 await update.effective_message.reply_text("请发送图片，或发送“清空”。")
                 return True
@@ -111,3 +114,10 @@ async def handle_guess_admin_input(
     await session.commit()
     await admin_handler_instance()._show_guess_create_menu(update, context, target_chat_id, draft)
     return True
+
+
+def _is_image_document(document) -> bool:
+    if document is None:
+        return False
+    mime_type = str(getattr(document, "mime_type", "") or "")
+    return mime_type.startswith("image/")

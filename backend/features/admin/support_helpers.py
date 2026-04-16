@@ -147,7 +147,7 @@ def _resolve_private_scoped_target_chat_id(cb: CallbackParser) -> int | None:
 
     if prefix == "gm":
         action = cb.get(1)
-        if action in {"home", "toggle", "rake", "auto", "delete_mode", "rounds", "help", "detail"}:
+        if action in {"home", "toggle", "rake", "auto", "delete_mode", "rounds", "help", "detail", "points"}:
             return cb.get_int_optional(2)
         return None
 

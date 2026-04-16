@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from decimal import Decimal, ROUND_DOWN
+from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation, ROUND_DOWN
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,7 +16,19 @@ from backend.platform.db.schema.models.enums import PointsTxnType
 from backend.platform.db.schema.models.expansion import GuessBet, GuessEvent
 from backend.shared.services.base import ValidationError
 from backend.shared.services.module_settings_service import ModuleSettingsService
+from backend.shared.ui.message_config_panel import WAITING_VALUE, summarize_text
 from backend.shared.services.user_service import ensure_user
+
+
+@dataclass(frozen=True)
+class GuessSettlementPlan:
+    winner_payouts: dict[int, int]
+    rake_payouts: dict[int, int]
+    banker_delta: int
+    loser_total: int
+    winner_count: int
+    participant_count: int
+    system_subsidy: int = 0
 
 
 async def resolve_user_id(session: AsyncSession, raw: str) -> int | None:
@@ -30,18 +43,22 @@ async def resolve_user_id(session: AsyncSession, raw: str) -> int | None:
 async def create_event(session: AsyncSession, chat_id: int, creator_user_id: int, draft: dict) -> GuessEvent:
     await ModuleSettingsService.ensure(session, chat_id=chat_id, user_id=creator_user_id)
     await ensure_user(session, creator_user_id, None, None, None, None)
+    banker_user_id = draft.get("banker_user_id")
+    deadline_at = parse_deadline(str(draft.get("deadline_at")))
+    if deadline_at <= now():
+        raise ValidationError("截止时间必须晚于当前时间。")
     event = GuessEvent(
         chat_id=chat_id,
         creator_user_id=creator_user_id,
         title=str(draft.get("title") or "竞猜活动")[:128],
         cover_file_id=draft.get("cover_file_id"),
         description=draft.get("description"),
-        mode=str(draft.get("mode") or "no_banker"),
-        banker_user_id=draft.get("banker_user_id"),
+        mode="banker" if banker_user_id else "no_banker",
+        banker_user_id=banker_user_id,
         public_pool=int(draft.get("public_pool") or 0),
         options_json=list(draft.get("options") or []),
         command_keyword=str(draft.get("command_keyword") or "竞猜")[:32],
-        deadline_at=parse_deadline(str(draft.get("deadline_at"))),
+        deadline_at=deadline_at,
         allow_repeat_bet=bool(draft.get("allow_repeat_bet", False)),
         status="running",
     )
@@ -52,21 +69,32 @@ async def create_event(session: AsyncSession, chat_id: int, creator_user_id: int
 
 def format_event_preview(draft: dict) -> str:
     options = draft.get("options") or []
-    option_text = "\n".join(f"- {item['key']}：{item['label']}" for item in options) if options else "未设置"
+    option_text = f"已设置 {len(options)} 项" if options else WAITING_VALUE
+    banker_text = f"庄家 {draft['banker_user_id']}" if draft.get("banker_user_id") else "无庄"
+    cover_text = "已设置" if draft.get("cover_file_id") else WAITING_VALUE
+    command_text = summarize_text(draft.get("command_keyword"), limit=32)
+    deadline_text = summarize_text(draft.get("deadline_at"), limit=32)
     return "\n".join(
         [
-            "⚽ 竞猜 | 预览效果",
+            "⚽ 竞猜活动",
             "",
-            f"活动名字：{draft.get('title') or '未设置'}",
-            f"活动说明：{draft.get('description') or '未设置'}",
-            f"庄家模式：{'👑 庄家模式' if draft.get('mode') == 'banker' else '🌍 无庄模式'}",
-            f"本局庄家：{draft.get('banker_user_id') or '未设置'}",
-            f"公共奖池：{draft.get('public_pool') or 0}",
-            f"群内指令：{draft.get('command_keyword') or '竞猜'}",
-            f"截止时间：{draft.get('deadline_at') or '未设置'}",
-            f"下注限制：{'✅ 允许重复下注' if draft.get('allow_repeat_bet') else '❌ 单用户单次下注'}",
-            "竞猜选项：",
-            option_text,
+            f"📮 活动名字: {summarize_text(draft.get('title'), limit=48)}",
+            "",
+            f"🏞️ 封面设置: {cover_text}",
+            "",
+            f"📋 活动说明: {summarize_text(draft.get('description'), limit=80)}",
+            "",
+            f"👾 本局庄家: {banker_text}",
+            "",
+            f"🧧 公共奖池: {int(draft.get('public_pool') or 0)}",
+            "",
+            f"📻 竞猜选项: {option_text}",
+            "",
+            f"🔎 群内指令: {command_text}",
+            "",
+            f"⏰ 截止时间: {deadline_text}",
+            "",
+            f"🔗 重复下注: {'允许' if draft.get('allow_repeat_bet') else '禁止'}",
         ]
     )
 
@@ -79,6 +107,7 @@ def format_event_runtime(event: GuessEvent) -> str:
         "",
         f"状态：{status_map.get(event.status, event.status)}",
         f"模式：{'👑 庄家模式' if event.mode == 'banker' else '🌍 无庄模式'}",
+        f"公共奖池：{event.public_pool or 0}",
         f"截止时间：{event.deadline_at.astimezone().strftime('%Y-%m-%d %H:%M:%S')}",
         f"口令：{event.command_keyword}",
         "选项：",
@@ -88,6 +117,10 @@ def format_event_runtime(event: GuessEvent) -> str:
         lines.extend(["", event.description])
     if event.status == "running":
         lines.extend(["", f"发送 `{event.command_keyword}` 查看规则，发送 `{event.command_keyword} 选项 金额` 参与。"])
+        if event.mode == "banker":
+            lines.append("庄家模式：输家积分给庄家，庄家按 1:1 赔付赢家。")
+        else:
+            lines.append("无庄模式：赢家平分输家积分，非整除时向上取整。")
     if event.status == "opened" and event.winner_option:
         lines.extend(["", f"🏁 开奖结果：{event.winner_option}"])
     return "\n".join(lines)
@@ -126,51 +159,186 @@ async def settle_event(session: AsyncSession, *, event: GuessEvent, winner_optio
         raise ValidationError("开奖选项不存在。")
     result = await session.execute(select(GuessBet).where(GuessBet.event_id == event.id))
     bets = list(result.scalars().all())
-    winners = [bet for bet in bets if bet.option_key == winner_option]
-    losers = [bet for bet in bets if bet.option_key != winner_option]
     setting = await get_or_create_setting(session, event.chat_id)
-    rake_ratio = Decimal(setting.rake_ratio or "0")
-    rake_owner = setting.rake_owner_user_id
+    rake_ratio = _safe_rake_ratio(setting.rake_ratio)
+    banker_user_id = event.banker_user_id if event.mode == "banker" else None
+    plan = build_settlement_plan(
+        bets,
+        winner_option=winner_option,
+        mode=event.mode,
+        banker_user_id=banker_user_id,
+        public_pool=int(event.public_pool or 0),
+        rake_ratio=rake_ratio,
+        rake_owner_user_id=setting.rake_owner_user_id,
+    )
 
-    winner_total = sum(item.bet_points for item in winners)
-    loser_total = sum(item.bet_points for item in losers)
-    public_pool = int(event.public_pool or 0)
-    notes: list[str] = []
-
-    if winners:
-        if event.mode == "banker" and event.banker_user_id:
-            banker_delta = loser_total
-            for bet in winners:
-                gross = bet.bet_points * 2 + (public_pool * bet.bet_points // winner_total if winner_total else 0)
-                rake = int((Decimal(gross) * rake_ratio).quantize(Decimal("1"), rounding=ROUND_DOWN))
-                payout = gross - rake
-                await change_points(session, event.chat_id, bet.user_id, payout, PointsTxnType.reward.value, reason=f"竞猜中奖 #{event.id}")
-                banker_delta -= payout
-                if rake_owner:
-                    await change_points(session, event.chat_id, rake_owner, rake, PointsTxnType.reward.value, reason=f"竞猜抽水 #{event.id}")
-            await _apply_points_delta_allow_negative(session, event.chat_id, event.banker_user_id, banker_delta, f"竞猜庄家结算 #{event.id}")
-        else:
-            total_pool = loser_total + public_pool
-            for bet in winners:
-                share = total_pool * bet.bet_points // winner_total if winner_total else 0
-                gross = bet.bet_points + share
-                rake = int((Decimal(gross) * rake_ratio).quantize(Decimal("1"), rounding=ROUND_DOWN))
-                payout = gross - rake
-                await change_points(session, event.chat_id, bet.user_id, payout, PointsTxnType.reward.value, reason=f"竞猜中奖 #{event.id}")
-                if rake_owner:
-                    await change_points(session, event.chat_id, rake_owner, rake, PointsTxnType.reward.value, reason=f"竞猜抽水 #{event.id}")
-    else:
-        if event.mode == "banker" and event.banker_user_id:
-            await _apply_points_delta_allow_negative(session, event.chat_id, event.banker_user_id, loser_total + public_pool, f"竞猜庄家流局 #{event.id}")
-        notes.append("😔 本局无人猜中。")
+    for user_id, payout in plan.winner_payouts.items():
+        if payout > 0:
+            await change_points(session, event.chat_id, user_id, payout, PointsTxnType.reward.value, reason=f"竞猜中奖 #{event.id}")
+    for user_id, rake_amount in plan.rake_payouts.items():
+        if rake_amount > 0:
+            await change_points(session, event.chat_id, user_id, rake_amount, PointsTxnType.reward.value, reason=f"竞猜抽水 #{event.id}")
+    if banker_user_id is not None and plan.banker_delta != 0:
+        await _apply_points_delta_allow_negative(session, event.chat_id, banker_user_id, plan.banker_delta, f"竞猜庄家结算 #{event.id}")
 
     event.status = "opened"
     event.winner_option = winner_option
     event.updated_at = now()
     await session.flush()
-    notes.insert(0, f"🏁 开奖结果：{winner_option}")
-    notes.append(f"参与人数：{len({bet.user_id for bet in bets})}")
+    notes = _format_settlement_notes(winner_option=winner_option, plan=plan, banker_user_id=banker_user_id)
     return "\n".join(notes)
+
+
+def build_settlement_plan(
+    bets: list[GuessBet],
+    *,
+    winner_option: str,
+    mode: str,
+    banker_user_id: int | None,
+    public_pool: int,
+    rake_ratio: Decimal,
+    rake_owner_user_id: int | None,
+) -> GuessSettlementPlan:
+    winning_stakes = _stakes_by_user(bet for bet in bets if bet.option_key == winner_option)
+    loser_total = sum(bet.bet_points for bet in bets if bet.option_key != winner_option)
+    participant_count = len({bet.user_id for bet in bets})
+    winner_count = len(winning_stakes)
+    if winner_count == 0:
+        return GuessSettlementPlan(
+            winner_payouts={},
+            rake_payouts={},
+            banker_delta=loser_total if banker_user_id is not None else 0,
+            loser_total=loser_total,
+            winner_count=0,
+            participant_count=participant_count,
+        )
+
+    if mode == "banker" and banker_user_id is not None:
+        return _build_banker_settlement_plan(
+            winning_stakes=winning_stakes,
+            loser_total=loser_total,
+            participant_count=participant_count,
+            public_pool=public_pool,
+            rake_ratio=rake_ratio,
+        )
+
+    return _build_no_banker_settlement_plan(
+        winning_stakes=winning_stakes,
+        loser_total=loser_total,
+        participant_count=participant_count,
+        public_pool=public_pool,
+        rake_ratio=rake_ratio,
+        rake_owner_user_id=rake_owner_user_id,
+    )
+
+
+def _build_no_banker_settlement_plan(
+    *,
+    winning_stakes: dict[int, int],
+    loser_total: int,
+    participant_count: int,
+    public_pool: int,
+    rake_ratio: Decimal,
+    rake_owner_user_id: int | None,
+) -> GuessSettlementPlan:
+    winner_count = len(winning_stakes)
+    split_pool = loser_total + max(public_pool, 0)
+    share = _ceil_div(split_pool, winner_count)
+    system_subsidy = max(share * winner_count - split_pool, 0)
+    winner_payouts: dict[int, int] = {}
+    rake_payouts: dict[int, int] = defaultdict(int)
+    for user_id, stake in winning_stakes.items():
+        rake = _rake_amount(share, rake_ratio)
+        winner_payouts[user_id] = stake + share - rake
+        if rake > 0 and rake_owner_user_id is not None:
+            rake_payouts[rake_owner_user_id] += rake
+    return GuessSettlementPlan(
+        winner_payouts=winner_payouts,
+        rake_payouts=dict(rake_payouts),
+        banker_delta=0,
+        loser_total=loser_total,
+        winner_count=winner_count,
+        participant_count=participant_count,
+        system_subsidy=system_subsidy,
+    )
+
+
+def _build_banker_settlement_plan(
+    *,
+    winning_stakes: dict[int, int],
+    loser_total: int,
+    participant_count: int,
+    public_pool: int,
+    rake_ratio: Decimal,
+) -> GuessSettlementPlan:
+    winner_count = len(winning_stakes)
+    public_share = _ceil_div(max(public_pool, 0), winner_count)
+    winner_payouts: dict[int, int] = {}
+    banker_delta = loser_total
+    for user_id, stake in winning_stakes.items():
+        winner_profit = stake + public_share
+        rake = _rake_amount(winner_profit, rake_ratio)
+        winner_payouts[user_id] = stake + winner_profit - rake
+        banker_delta -= winner_profit - rake
+    return GuessSettlementPlan(
+        winner_payouts=winner_payouts,
+        rake_payouts={},
+        banker_delta=banker_delta,
+        loser_total=loser_total,
+        winner_count=winner_count,
+        participant_count=participant_count,
+        system_subsidy=0,
+    )
+
+
+def _stakes_by_user(bets) -> dict[int, int]:
+    totals: dict[int, int] = defaultdict(int)
+    for bet in bets:
+        totals[int(bet.user_id)] += int(bet.bet_points)
+    return dict(totals)
+
+
+def _ceil_div(value: int, divisor: int) -> int:
+    if value <= 0 or divisor <= 0:
+        return 0
+    return (value + divisor - 1) // divisor
+
+
+def _rake_amount(amount: int, rake_ratio: Decimal) -> int:
+    if amount <= 0 or rake_ratio <= 0:
+        return 0
+    return int((Decimal(amount) * rake_ratio).quantize(Decimal("1"), rounding=ROUND_DOWN))
+
+
+def _safe_rake_ratio(value: str | None) -> Decimal:
+    try:
+        ratio = Decimal(value or "0")
+    except (InvalidOperation, TypeError):
+        return Decimal("0")
+    if ratio < 0:
+        return Decimal("0")
+    if ratio > 1:
+        return Decimal("1")
+    return ratio
+
+
+def _format_settlement_notes(*, winner_option: str, plan: GuessSettlementPlan, banker_user_id: int | None) -> list[str]:
+    notes = [
+        f"🏁 开奖结果：{winner_option}",
+        f"参与人数：{plan.participant_count}",
+        f"赢家人数：{plan.winner_count}",
+        f"输方积分：{plan.loser_total}",
+    ]
+    if plan.winner_count == 0:
+        notes.append("😔 本局无人猜中。")
+    if plan.system_subsidy > 0:
+        notes.append(f"系统兜底：{plan.system_subsidy}")
+    rake_total = sum(plan.rake_payouts.values())
+    if rake_total > 0:
+        notes.append(f"抽水入账：{rake_total}")
+    if banker_user_id is not None:
+        notes.append(f"庄家结算：{plan.banker_delta:+d}")
+    return notes
 
 
 async def cancel_event(session: AsyncSession, *, event: GuessEvent) -> None:

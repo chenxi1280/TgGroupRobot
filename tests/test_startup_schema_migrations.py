@@ -50,6 +50,7 @@ async def test_run_startup_schema_migrations_executes_known_compat_patches(monke
         "teacher_search_settings",
         "scheduled_message_tasks",
         "ad_campaigns",
+        "game_settings",
     })
     engine = FakeEngine(inspector)
 
@@ -72,6 +73,7 @@ async def test_run_startup_schema_migrations_executes_known_compat_patches(monke
     assert any("ALTER TABLE bot.teacher_daily_attendance ADD COLUMN IF NOT EXISTS status" in sql for sql in executed_sql)
     assert any("CREATE UNIQUE INDEX IF NOT EXISTS uq_smt_short_id ON bot.scheduled_message_tasks(short_id)" in sql for sql in executed_sql)
     assert any("ALTER TABLE bot.ad_campaigns ADD COLUMN IF NOT EXISTS sort_order" in sql for sql in executed_sql)
+    assert any("ALTER TABLE bot.game_settings ADD COLUMN IF NOT EXISTS points_source_chat_id" in sql for sql in executed_sql)
 
 
 @pytest.mark.asyncio

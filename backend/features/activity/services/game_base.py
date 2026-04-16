@@ -13,6 +13,8 @@ from backend.platform.db.schema.models.expansion import GameSetting
 from backend.shared.services.base import ValidationError
 from backend.shared.services.module_settings_service import ModuleSettingsService
 
+MAX_GAME_BET_POINTS = 500
+
 
 def now_utc() -> dt.datetime:
     return dt.datetime.now(dt.UTC)
@@ -80,6 +82,28 @@ async def get_rake_owner_label(session: AsyncSession, user_id: int | None) -> st
     return user.first_name or str(user_id)
 
 
+def resolve_points_chat_id(setting: GameSetting, fallback_chat_id: int | None = None) -> int:
+    return int(setting.points_source_chat_id or fallback_chat_id or setting.chat_id)
+
+
+def get_round_points_chat_id(round_obj, default_chat_id: int) -> int:
+    data = getattr(round_obj, "result_data", None) or {}
+    try:
+        return int(data.get("points_chat_id") or default_chat_id)
+    except (TypeError, ValueError):
+        return int(default_chat_id)
+
+
+async def get_game_points_chat_label(session: AsyncSession, chat_id: int, points_source_chat_id: int | None) -> str:
+    if points_source_chat_id is None or int(points_source_chat_id) == int(chat_id):
+        return "本群分"
+    from backend.platform.db.schema.models.core import TgChat
+
+    chat = await session.get(TgChat, int(points_source_chat_id))
+    title = chat.title if chat and chat.title else str(points_source_chat_id)
+    return f"主群分：{title}"
+
+
 async def apply_auto_schedule(session: AsyncSession, now_local: dt.datetime) -> list[int]:
     stmt = select(GameSetting).where(GameSetting.auto_schedule_enabled.is_(True))
     result = await session.execute(stmt)
@@ -116,13 +140,15 @@ def format_game_menu_text(
     auto_start_time: str | None,
     auto_stop_time: str | None,
     delete_mode: str,
+    points_chat_label: str = "本群分",
 ) -> str:
     return "\n".join(
         [
             f"🎮 游戏 | {chat_title}",
             "",
-            f"🎲 快3：{'✅ 启动' if k3_enabled else '❌ 关闭'}",
+            f"🎲 快三：{'✅ 启动' if k3_enabled else '❌ 关闭'}",
             f"🃏 黑杰克：{'✅ 启动' if blackjack_enabled else '❌ 关闭'}",
+            f"🔗 关联积分：{points_chat_label}",
             f"💧 抽水比例：{format_ratio(rake_ratio)}",
             f"👤 抽水归属：{rake_owner}",
             f"⏰ 定时启停：{'✅ 启动' if auto_schedule_enabled else '❌ 关闭'}",
@@ -140,11 +166,13 @@ def parse_positive_int(raw: str, field_name: str) -> int:
         raise ValidationError(f"{field_name}必须是正整数。")
     if value <= 0:
         raise ValidationError(f"{field_name}必须大于 0。")
+    if value > MAX_GAME_BET_POINTS:
+        raise ValidationError(f"{field_name}不能超过 {MAX_GAME_BET_POINTS}。")
     return value
 
 
 def parse_k3_command(text: str) -> tuple[str, int] | None:
-    match = re.fullmatch(r"快3\s+(大|小|单|双|豹子)\s+(\d+)", text.strip())
+    match = re.fullmatch(r"快(?:3|三)\s+(大|小|单|双|豹子|豹子通杀|对子|对子号|半顺|半顺号|三连|三连号|杂六|杂六号)\s+(\d+)", text.strip())
     if not match:
         return None
     return match.group(1), parse_positive_int(match.group(2), "下注积分")

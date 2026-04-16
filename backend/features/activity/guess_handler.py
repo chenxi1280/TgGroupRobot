@@ -6,11 +6,27 @@ from telegram.ext import ContextTypes
 from backend.platform.db.runtime.session import Database
 from backend.features.activity.services.guess_service import (
     format_event_runtime,
+    get_or_create_setting,
     get_running_event_by_keyword,
     place_bet,
 )
 from backend.shared.services.base import ValidationError
 from backend.shared.services.publish_service import PublishService
+from backend.shared.services.user_service import ensure_user
+
+
+async def _delete_source_if_needed(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+    message_id: int,
+    delete_mode: str,
+) -> None:
+    if delete_mode != "delete":
+        return
+    try:
+        await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
+    except Exception:
+        return
 
 
 async def guess_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
@@ -25,30 +41,35 @@ async def guess_message_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
     parts = text.split()
     keyword = parts[0]
+    chat_id = update.effective_chat.id
+    message_id = update.effective_message.message_id
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
-        event = await get_running_event_by_keyword(session, update.effective_chat.id, keyword)
+        event = await get_running_event_by_keyword(session, chat_id, keyword)
         if event is None:
             await session.commit()
             return False
+        setting = await get_or_create_setting(session, chat_id)
         if len(parts) == 1:
             await session.commit()
             await PublishService.reply(
                 context,
-                chat_id=update.effective_chat.id,
+                chat_id=chat_id,
                 text=format_event_runtime(event),
-                reply_to_message_id=update.effective_message.message_id,
+                reply_to_message_id=message_id,
                 parse_mode="Markdown",
             )
+            await _delete_source_if_needed(context, chat_id, message_id, setting.delete_message_mode)
             return True
         if len(parts) < 3:
             await session.commit()
             await PublishService.reply(
                 context,
-                chat_id=update.effective_chat.id,
+                chat_id=chat_id,
                 text=f"格式错误，请发送：{event.command_keyword} 选项 积分",
-                reply_to_message_id=update.effective_message.message_id,
+                reply_to_message_id=message_id,
             )
+            await _delete_source_if_needed(context, chat_id, message_id, setting.delete_message_mode)
             return True
         option_key = parts[1]
         try:
@@ -57,12 +78,21 @@ async def guess_message_handler(update: Update, context: ContextTypes.DEFAULT_TY
             await session.commit()
             await PublishService.reply(
                 context,
-                chat_id=update.effective_chat.id,
+                chat_id=chat_id,
                 text="下注积分必须是整数。",
-                reply_to_message_id=update.effective_message.message_id,
+                reply_to_message_id=message_id,
             )
+            await _delete_source_if_needed(context, chat_id, message_id, setting.delete_message_mode)
             return True
         try:
+            await ensure_user(
+                session,
+                user_id=update.effective_user.id,
+                username=update.effective_user.username,
+                first_name=update.effective_user.first_name,
+                last_name=update.effective_user.last_name,
+                language_code=update.effective_user.language_code,
+            )
             await place_bet(
                 session,
                 event=event,
@@ -74,16 +104,18 @@ async def guess_message_handler(update: Update, context: ContextTypes.DEFAULT_TY
             await session.commit()
             await PublishService.reply(
                 context,
-                chat_id=update.effective_chat.id,
+                chat_id=chat_id,
                 text=f"❌ {exc}",
-                reply_to_message_id=update.effective_message.message_id,
+                reply_to_message_id=message_id,
             )
+            await _delete_source_if_needed(context, chat_id, message_id, setting.delete_message_mode)
             return True
         await session.commit()
         await PublishService.reply(
             context,
-            chat_id=update.effective_chat.id,
+            chat_id=chat_id,
             text=f"✅ 已下注：{option_key} / {amount} 积分",
-            reply_to_message_id=update.effective_message.message_id,
+            reply_to_message_id=message_id,
         )
+        await _delete_source_if_needed(context, chat_id, message_id, setting.delete_message_mode)
         return True

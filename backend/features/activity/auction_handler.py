@@ -28,6 +28,17 @@ from backend.shared.time_ui import build_copy_options_keyboard, build_minutes_or
 log = structlog.get_logger(__name__)
 
 
+def _is_auction_create_trigger(text: str) -> bool:
+    normalized = "".join(
+        char
+        for char in text
+        if not char.isspace() and char not in {"\u200b", "\u200c", "\u200d", "\ufeff"}
+    )
+    if normalized.startswith("💰"):
+        normalized = normalized[1:]
+    return normalized == "拍卖"
+
+
 async def _reply(update: Update, text: str, *, parse_mode: str = "Markdown", reply_markup: InlineKeyboardMarkup | None = None) -> None:
     if update.effective_message is not None:
         await update.effective_message.reply_text(text, parse_mode=parse_mode, reply_markup=reply_markup)
@@ -162,9 +173,16 @@ async def auction_group_message_handler(update: Update, context: ContextTypes.DE
                 await session.commit()
                 return True
 
-        if message.reply_to_message is not None and text == "拍卖":
+        is_create_trigger = _is_auction_create_trigger(text)
+
+        if is_create_trigger and message.reply_to_message is None:
+            await _reply(update, "💰 请先回复要拍卖的消息，再发送 `拍卖` 进入创建流程。")
+            return True
+
+        if message.reply_to_message is not None and is_create_trigger:
             if not setting.enabled:
-                return False
+                await _reply(update, "❌ 拍卖功能未开启，请先在后台开启后再创建。")
+                return True
             if setting.create_permission == "admin" and not await is_user_admin(context, chat.id, user.id):
                 await _reply(update, "❌ 当前仅管理员可以创建拍卖。")
                 return True

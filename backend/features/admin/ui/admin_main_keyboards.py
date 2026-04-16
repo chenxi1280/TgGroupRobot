@@ -38,48 +38,54 @@ def admin_main_menu(chat_id: int | None = None) -> InlineKeyboardMarkup:
                 InlineKeyboardButton("🧑‍🎓积分等级", callback_data=f"adm:menu:points_level:{chat_id}"),
             ],
             [
-                InlineKeyboardButton("💰拍卖", callback_data=f"adm:menu:auction:{chat_id}"),
-                InlineKeyboardButton("🎁抽奖", callback_data=f"adm:menu:lottery:{chat_id}"),
-                InlineKeyboardButton("🎮游戏", callback_data=f"adm:menu:game:{chat_id}"),
-                InlineKeyboardButton("⚽竞猜", callback_data=f"adm:menu:guess:{chat_id}"),
-            ],
-            [
-                InlineKeyboardButton("🔗邀请链接", callback_data=f"adm:menu:invite:{chat_id}"),
-                InlineKeyboardButton("🎉进群欢迎", callback_data=f"adm:menu:welcome:{chat_id}"),
-                InlineKeyboardButton("🛡️进群验证", callback_data=f"adm:menu:verification:{chat_id}"),
-            ],
-            [InlineKeyboardButton("🧑‍🍼新成员限制", callback_data=f"adm:menu:newmem:{chat_id}")],
-            [
-                InlineKeyboardButton("☂️垃圾防护", callback_data=f"adm:menu:antispam:{chat_id}"),
-                InlineKeyboardButton("✨促活工具", callback_data=f"adm:menu:engagement:{chat_id}"),
-                InlineKeyboardButton("🧨关群设置", callback_data=f"adm:menu:closegroup:{chat_id}"),
-            ],
-            [InlineKeyboardButton("⚖️惩罚策略", callback_data=f"adm:menu:punish:{chat_id}")],
-            [
-                InlineKeyboardButton("🕵️改名监控", callback_data=f"adm:menu:renamewatch:{chat_id}"),
-                InlineKeyboardButton("💥炸号继承", callback_data=f"adm:menu:inherit:{chat_id}"),
-                InlineKeyboardButton("🛡️联盟功能", callback_data=f"adm:menu:alliance:{chat_id}"),
-            ],
-            [InlineKeyboardButton("🌙夜间模式", callback_data=f"adm:menu:night:{chat_id}")],
-            [
                 InlineKeyboardButton("🛒积分商城", callback_data=f"adm:menu:points_mall:{chat_id}"),
                 InlineKeyboardButton("💯车评系统", callback_data=f"adm:menu:car_review:{chat_id}"),
                 InlineKeyboardButton("⌨️底部按钮", callback_data=f"adm:menu:bottom_button:{chat_id}"),
             ],
             [
-                InlineKeyboardButton("📣强制关注", callback_data=f"adm:menu:forcesub:{chat_id}"),
+                InlineKeyboardButton("💰拍卖", callback_data=f"adm:menu:auction:{chat_id}"),
+                InlineKeyboardButton("🎁抽奖", callback_data=f"adm:menu:lottery:{chat_id}"),
+                InlineKeyboardButton("✨促活工具", callback_data=f"adm:menu:engagement:{chat_id}"),
+            ],
+            [
+                InlineKeyboardButton("🎮游戏", callback_data=f"adm:menu:game:{chat_id}"),
+                InlineKeyboardButton("⚽竞猜", callback_data=f"adm:menu:guess:{chat_id}"),
+                InlineKeyboardButton("🔗邀请链接", callback_data=f"adm:menu:invite:{chat_id}"),
+            ],
+            [
+                InlineKeyboardButton("🎉进群欢迎", callback_data=f"adm:menu:welcome:{chat_id}"),
+                InlineKeyboardButton("🛡️进群验证", callback_data=f"adm:menu:verification:{chat_id}"),
+                InlineKeyboardButton("🧑‍🍼新成员限制", callback_data=f"adm:menu:newmem:{chat_id}"),
+            ],
+            [
+                InlineKeyboardButton("☂️垃圾防护", callback_data=f"adm:menu:antispam:{chat_id}"),
+                InlineKeyboardButton("⚖️惩罚策略", callback_data=f"adm:menu:punish:{chat_id}"),
                 InlineKeyboardButton("🧹删除提示", callback_data=f"adm:menu:autodel:{chat_id}"),
-                InlineKeyboardButton("⚙️控制权限", callback_data=f"adm:menu:control:{chat_id}"),
             ],
-            [InlineKeyboardButton("⌨️命令配置", callback_data=f"adm:menu:gcmd:{chat_id}")],
             [
+                InlineKeyboardButton("🧨关群设置", callback_data=f"adm:menu:closegroup:{chat_id}"),
+                InlineKeyboardButton("🕵️改名监控", callback_data=f"adm:menu:renamewatch:{chat_id}"),
+                InlineKeyboardButton("🌙夜间模式", callback_data=f"adm:menu:night:{chat_id}"),
+            ],
+            [
+                InlineKeyboardButton("💥炸号继承", callback_data=f"adm:menu:inherit:{chat_id}"),
+                InlineKeyboardButton("🛡️联盟功能", callback_data=f"adm:menu:alliance:{chat_id}"),
+                InlineKeyboardButton("📣强制关注", callback_data=f"adm:menu:forcesub:{chat_id}"),
+            ],
+            [
+                InlineKeyboardButton("⌨️命令配置", callback_data=f"adm:menu:gcmd:{chat_id}"),
                 InlineKeyboardButton("🩺健康检查", callback_data=f"adm:menu:health:{chat_id}"),
-                InlineKeyboardButton("🔄切换群", callback_data="adm:switch_group"),
+                InlineKeyboardButton("📊群组统计", callback_data=f"adm:menu:stats:{chat_id}"),
             ],
-            [InlineKeyboardButton("⚡快捷发布", callback_data=f"adm:menu:qpub:{chat_id}")],
             [
+                InlineKeyboardButton("⚡快捷发布", callback_data=f"adm:menu:qpub:{chat_id}"),
                 InlineKeyboardButton("📥导入设置", callback_data=f"adm:menu:import:{chat_id}"),
                 InlineKeyboardButton("📋克隆", callback_data=f"adm:menu:clone:{chat_id}"),
+            ],
+            [
+                InlineKeyboardButton("🔄切换群", callback_data="adm:switch_group"),
+                InlineKeyboardButton("💳续费订阅", callback_data=f"adm:menu:renewal:{chat_id}"),
+                InlineKeyboardButton("⚙️管理权限", callback_data=f"adm:menu:control:{chat_id}"),
             ],
         ]
         return InlineKeyboardMarkup(buttons)

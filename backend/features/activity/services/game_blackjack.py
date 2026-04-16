@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 import random
+import datetime as dt
 from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.features.activity.services.game_base import get_or_create_setting, get_rake_ratio_value
+from backend.features.activity.services.game_base import get_or_create_setting, get_rake_ratio_value, get_round_points_chat_id, now_utc
 from backend.features.points.services.points_service import change_points
 from backend.platform.db.schema.models.enums import PointsTxnType
 from backend.platform.db.schema.models.expansion import GameParticipant, GameRound
 from backend.shared.services.base import ValidationError
+
+BLACKJACK_TURN_SECONDS = 120
 
 
 def build_blackjack_deck() -> list[int]:
@@ -34,7 +37,8 @@ def format_blackjack_help(enabled: bool, rake_ratio: str | None) -> str:
     return (
         "🎮 黑杰克已开启\n"
         f"💧 抽水比例：{rake_ratio or '0'}\n"
-        "玩法：发送 `黑杰克 100` 开局，之后发送 `要牌` 或 `停牌`。"
+        "玩法：发送 `黑杰克 100` 开局，之后发送 `要牌` 或 `停牌`。\n"
+        "单局 1-2 分钟内操作，超时会自动停牌结算。"
     )
 
 
@@ -63,6 +67,8 @@ async def start_blackjack_round(
     chat_id: int,
     user_id: int,
     bet_points: int,
+    *,
+    points_chat_id: int | None = None,
 ) -> tuple[GameRound, GameParticipant]:
     existing_round, existing_participant = await get_active_blackjack_round(session, chat_id, user_id)
     if existing_round is not None and existing_participant is not None:
@@ -76,7 +82,13 @@ async def start_blackjack_round(
         game_type="blackjack",
         creator_user_id=user_id,
         status="player_turn",
-        result_data={"deck": deck, "player_cards": player_cards, "dealer_cards": dealer_cards},
+        settle_at=now_utc() + dt.timedelta(seconds=BLACKJACK_TURN_SECONDS),
+        result_data={
+            "deck": deck,
+            "player_cards": player_cards,
+            "dealer_cards": dealer_cards,
+            "points_chat_id": int(points_chat_id or chat_id),
+        },
     )
     session.add(round_obj)
     await session.flush()
@@ -85,7 +97,11 @@ async def start_blackjack_round(
         chat_id=chat_id,
         user_id=user_id,
         bet_points=bet_points,
-        choice_data={"player_cards": player_cards, "dealer_cards": dealer_cards},
+        choice_data={
+            "player_cards": player_cards,
+            "dealer_cards": dealer_cards,
+            "points_chat_id": int(points_chat_id or chat_id),
+        },
     )
     session.add(participant)
     await session.flush()
@@ -115,7 +131,7 @@ async def blackjack_hit(
     round_obj: GameRound,
     participant: GameParticipant,
 ) -> tuple[GameRound, GameParticipant, str | None]:
-    data = round_obj.result_data or {}
+    data = dict(round_obj.result_data or {})
     deck = list(data.get("deck") or [])
     if not deck:
         deck = build_blackjack_deck()
@@ -125,6 +141,7 @@ async def blackjack_hit(
     data["player_cards"] = player_cards
     participant.choice_data = {**(participant.choice_data or {}), "player_cards": player_cards, "dealer_cards": data.get("dealer_cards") or []}
     round_obj.result_data = data
+    round_obj.settle_at = now_utc() + dt.timedelta(seconds=BLACKJACK_TURN_SECONDS)
     player_total = blackjack_total(player_cards)
     outcome = None
     if player_total > 21:
@@ -160,11 +177,13 @@ async def finalize_blackjack_round(
             dealer_cards.append(deck.pop())
     dealer_total = blackjack_total(dealer_cards)
     round_obj.status = "finished"
+    round_obj.settle_at = None
     round_obj.result_data = {**data, "deck": deck, "player_cards": player_cards, "dealer_cards": dealer_cards}
     participant.choice_data = {**(participant.choice_data or {}), "player_cards": player_cards, "dealer_cards": dealer_cards}
 
     setting = await get_or_create_setting(session, round_obj.chat_id)
     rake_ratio = get_rake_ratio_value(setting)
+    points_chat_id = get_round_points_chat_id(round_obj, round_obj.chat_id)
     payout = 0
     outcome_label = "❌ 本局失败"
     if mode == "bust":
@@ -172,21 +191,22 @@ async def finalize_blackjack_round(
     elif dealer_total > 21 or player_total > dealer_total:
         participant.status = "won"
         multiplier = Decimal("2.5") if len(player_cards) == 2 and player_total == 21 else Decimal("2")
-        payout = int((Decimal(participant.bet_points) * multiplier * (Decimal("1") - rake_ratio)).quantize(Decimal("1")))
+        gross_payout = int((Decimal(participant.bet_points) * multiplier).quantize(Decimal("1")))
+        rake_amount = int((Decimal(gross_payout) * rake_ratio).quantize(Decimal("1")))
+        payout = max(0, gross_payout - rake_amount)
         participant.payout_points = payout
         await change_points(
             session,
-            round_obj.chat_id,
+            points_chat_id,
             participant.user_id,
             payout,
             PointsTxnType.reward.value,
             reason="黑杰克获胜",
         )
-        rake_amount = int((Decimal(participant.bet_points) * multiplier * rake_ratio).quantize(Decimal("1")))
         if rake_amount > 0 and setting.rake_owner_user_id:
             await change_points(
                 session,
-                round_obj.chat_id,
+                points_chat_id,
                 setting.rake_owner_user_id,
                 rake_amount,
                 PointsTxnType.reward.value,
@@ -199,7 +219,7 @@ async def finalize_blackjack_round(
         participant.payout_points = payout
         await change_points(
             session,
-            round_obj.chat_id,
+            points_chat_id,
             participant.user_id,
             payout,
             PointsTxnType.reward.value,
@@ -211,3 +231,24 @@ async def finalize_blackjack_round(
 
     await session.flush()
     return outcome_label
+
+
+async def settle_due_blackjack_rounds(session: AsyncSession) -> list[dict]:
+    stmt = (
+        select(GameRound, GameParticipant)
+        .join(GameParticipant, GameParticipant.round_id == GameRound.id)
+        .where(
+            GameRound.game_type == "blackjack",
+            GameRound.status == "player_turn",
+            GameRound.settle_at.is_not(None),
+            GameRound.settle_at <= now_utc(),
+            GameParticipant.status == "active",
+        )
+    )
+    result = await session.execute(stmt)
+    summaries: list[dict] = []
+    for round_obj, participant in result.all():
+        outcome = await finalize_blackjack_round(session, round_obj, participant, "stand")
+        summaries.append({"round": round_obj, "participant": participant, "outcome": f"⏰ 超时自动停牌\n{outcome}"})
+    await session.flush()
+    return summaries

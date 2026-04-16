@@ -1,7 +1,30 @@
 from __future__ import annotations
 
+from backend.features.admin.activity.runtime import clear_private_admin_state
 from backend.features.admin.support import *
 from backend.shared.time_ui import build_copy_options_keyboard, build_minutes_or_hhmm_prompt_text, next_top_of_hour_hhmm
+
+
+async def _get_guess_draft_state(session, user_id: int, chat_id: int):
+    state = await get_user_state(session, user_id, user_id)
+    if state is not None and str(state.state_type).startswith("guess_wait_"):
+        return state
+    state = await get_user_state(session, chat_id, user_id)
+    if state is not None and str(state.state_type).startswith("guess_wait_"):
+        return state
+    return None
+
+
+async def _start_guess_input_state(session, *, user_id: int, chat_id: int, state_type: str, draft: dict) -> None:
+    await clear_private_admin_state(session, target_chat_id=chat_id, user_id=user_id)
+    await set_user_state(
+        session,
+        chat_id=user_id,
+        user_id=user_id,
+        state_type=state_type,
+        state_data={"target_chat_id": chat_id, **draft},
+    )
+
 
 class GuessAdminControllerMixin:
     async def _show_guess_home(
@@ -64,15 +87,15 @@ class GuessAdminControllerMixin:
             [
                 InlineKeyboardButton("⌨️ 群内指令", callback_data=f"guess:create:{chat_id}:command"),
                 InlineKeyboardButton("⏰ 截止时间", callback_data=f"guess:create:{chat_id}:deadline"),
-                InlineKeyboardButton(("✅ " if draft.get("allow_repeat_bet") else "❌ ") + "下注限制", callback_data=f"guess:create:{chat_id}:repeat"),
+                InlineKeyboardButton("下注限制", callback_data=f"guess:create:{chat_id}:repeat"),
             ],
             [
-                InlineKeyboardButton("👀 预览效果", callback_data=f"guess:create:{chat_id}:preview"),
+                InlineKeyboardButton("🏖️ 预览效果", callback_data=f"guess:create:{chat_id}:preview"),
                 InlineKeyboardButton("✅ 发布活动", callback_data=f"guess:create:{chat_id}:publish"),
             ],
             [
-                InlineKeyboardButton("♻️ 清空配置", callback_data=f"guess:create:{chat_id}:clear"),
-                InlineKeyboardButton("🔙 返回", callback_data=f"guess:home:{chat_id}"),
+                InlineKeyboardButton("❌ 清空配置", callback_data=f"guess:create:{chat_id}:clear"),
+                InlineKeyboardButton("⬅️ 返回", callback_data=f"guess:home:{chat_id}"),
             ],
         ])
         await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
@@ -172,10 +195,10 @@ class GuessAdminControllerMixin:
         async with db.session_factory() as session:
             if action == "create":
                 sub = callback_data.get(3)
-                state = await get_user_state(session, update.effective_user.id, update.effective_user.id)
-                draft = dict((state.state_data or {}) if state and state.state_type.startswith("guess_wait_") else {})
+                state = await _get_guess_draft_state(session, update.effective_user.id, chat_id)
+                draft = dict(state.state_data or {}) if state else {}
                 if sub == "start":
-                    await self._start_text_input_state(context, update.effective_user.id, update.effective_user.id, "guess_wait_title", {"target_chat_id": chat_id})
+                    await _start_guess_input_state(session, user_id=update.effective_user.id, chat_id=chat_id, state_type="guess_wait_title", draft={})
                     await session.commit()
                     await self.message_helper.safe_edit(update, "⚽ 竞猜 | 活动名字\n\n👉 请输入活动名字：", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"guess:home:{chat_id}")]]))
                     return
@@ -199,7 +222,7 @@ class GuessAdminControllerMixin:
                         "options": "⚽ 竞猜 | 竞猜选项\n\n每行一个选项，支持 `编号:文案`。",
                         "command": "⚽ 竞猜 | 群内指令\n\n👉 请输入群内指令，例如：竞猜",
                     }
-                    await self._start_text_input_state(context, update.effective_user.id, update.effective_user.id, state_map[sub], {"target_chat_id": chat_id, **draft})
+                    await _start_guess_input_state(session, user_id=update.effective_user.id, chat_id=chat_id, state_type=state_map[sub], draft=draft)
                     await session.commit()
                     if sub == "deadline":
                         hhmm_sample = next_top_of_hour_hhmm(hours_offset=1)
@@ -222,12 +245,12 @@ class GuessAdminControllerMixin:
                     return
                 if sub == "repeat":
                     draft["allow_repeat_bet"] = not bool(draft.get("allow_repeat_bet", False))
-                    await set_user_state(session, update.effective_user.id, update.effective_user.id, "guess_wait_title", {"target_chat_id": chat_id, **draft})
+                    await _start_guess_input_state(session, user_id=update.effective_user.id, chat_id=chat_id, state_type="guess_wait_title", draft=draft)
                     await session.commit()
                     await self._show_guess_create_menu(update, context, chat_id, draft)
                     return
                 if sub == "clear":
-                    await clear_user_state(session, update.effective_user.id, update.effective_user.id)
+                    await clear_private_admin_state(session, target_chat_id=chat_id, user_id=update.effective_user.id)
                     await session.commit()
                     await self._show_guess_create_menu(update, context, chat_id, {})
                     return
@@ -241,10 +264,15 @@ class GuessAdminControllerMixin:
                         await session.commit()
                         await answer_callback_query_safely(update, "❌ 请先补齐活动名字、竞猜选项、群内指令和截止时间。", show_alert=True)
                         return
-                    event = await create_guess_event(session, chat_id, update.effective_user.id, draft)
+                    try:
+                        event = await create_guess_event(session, chat_id, update.effective_user.id, draft)
+                    except ValidationError as exc:
+                        await session.rollback()
+                        await answer_callback_query_safely(update, f"❌ {exc}", show_alert=True)
+                        return
                     sent = await context.bot.send_message(chat_id=chat_id, text=format_event_runtime(event), parse_mode="Markdown")
                     event.announcement_message_id = sent.message_id
-                    await clear_user_state(session, update.effective_user.id, update.effective_user.id)
+                    await clear_private_admin_state(session, target_chat_id=chat_id, user_id=update.effective_user.id)
                     await session.commit()
                     await self._show_guess_event_detail(update, context, chat_id, event.id)
                     return
@@ -255,12 +283,12 @@ class GuessAdminControllerMixin:
                     await self._show_guess_settings(update, context, chat_id)
                     return
                 if sub == "rake_ratio":
-                    await self._start_text_input_state(context, update.effective_user.id, update.effective_user.id, "guess_wait_rake_ratio", {"target_chat_id": chat_id})
+                    await _start_guess_input_state(session, user_id=update.effective_user.id, chat_id=chat_id, state_type="guess_wait_rake_ratio", draft={})
                     await session.commit()
                     await self.message_helper.safe_edit(update, "⚽ 竞猜 | 抽水比例\n\n请输入 0 到 1 之间的小数，例如 0.1。", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"guess:settings:{chat_id}:home")]]))
                     return
                 if sub == "rake_owner":
-                    await self._start_text_input_state(context, update.effective_user.id, update.effective_user.id, "guess_wait_rake_owner", {"target_chat_id": chat_id})
+                    await _start_guess_input_state(session, user_id=update.effective_user.id, chat_id=chat_id, state_type="guess_wait_rake_owner", draft={})
                     await session.commit()
                     await self.message_helper.safe_edit(update, "⚽ 竞猜 | 抽水归属\n\n请输入用户名或用户ID，发送“清空”清除。", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"guess:settings:{chat_id}:home")]]))
                     return

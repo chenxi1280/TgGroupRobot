@@ -5,6 +5,9 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
 from backend.features.activity.services.game_service import (
+    K3_OPTION_LABELS,
+    K3_OPTION_MULTIPLIERS,
+    get_game_points_chat_label,
     get_active_k3_round,
     get_or_create_setting,
     update_setting,
@@ -15,12 +18,24 @@ from backend.platform.db.schema.models.expansion import GameParticipant
 
 def k3_panel_keyboard(chat_id: int) -> InlineKeyboardMarkup:
     buttons = []
-    for guess, icon in [("大", "⬆️"), ("小", "⬇️"), ("单", "1️⃣"), ("双", "2️⃣"), ("豹子", "🐆")]:
+    for guess, icon in [
+        ("small", "⬇️"),
+        ("big", "⬆️"),
+        ("odd", "1️⃣"),
+        ("even", "2️⃣"),
+        ("triple", "🐆"),
+        ("pair", "🎯"),
+        ("half_straight", "↗️"),
+        ("straight", "⏫"),
+        ("misc_six", "🎲"),
+    ]:
+        label = K3_OPTION_LABELS[guess]
+        multiplier = K3_OPTION_MULTIPLIERS[guess]
         buttons.append(
             [
-                InlineKeyboardButton(f"{icon}{guess}10", callback_data=f"gmrun:k3:bet:{chat_id}:{guess}:10"),
-                InlineKeyboardButton(f"{icon}{guess}50", callback_data=f"gmrun:k3:bet:{chat_id}:{guess}:50"),
-                InlineKeyboardButton(f"{icon}{guess}100", callback_data=f"gmrun:k3:bet:{chat_id}:{guess}:100"),
+                InlineKeyboardButton(f"{icon}{label}({multiplier})10", callback_data=f"gmrun:k3:bet:{chat_id}:{guess}:10"),
+                InlineKeyboardButton("50积分", callback_data=f"gmrun:k3:bet:{chat_id}:{guess}:50"),
+                InlineKeyboardButton("100积分", callback_data=f"gmrun:k3:bet:{chat_id}:{guess}:100"),
             ]
         )
     buttons.append([InlineKeyboardButton("🔄 刷新面板", callback_data=f"gmrun:k3:refresh:{chat_id}")])
@@ -55,6 +70,7 @@ def blackjack_round_keyboard(chat_id: int) -> InlineKeyboardMarkup:
 async def build_k3_panel_text(db: Database, chat_id: int) -> str:
     async with db.session_factory() as session:
         setting = await get_or_create_setting(session, chat_id)
+        points_label = await get_game_points_chat_label(session, chat_id, setting.points_source_chat_id)
         round_obj = await get_active_k3_round(session, chat_id)
         participant_count = 0
         if round_obj is not None:
@@ -64,8 +80,9 @@ async def build_k3_panel_text(db: Database, chat_id: int) -> str:
             participant_count = int(count_result.scalar() or 0)
         await session.commit()
     lines = [
-        "🎲 快3实时面板",
+        "🎲 快三实时面板",
         f"📌 状态：{'✅ 开启' if setting.k3_enabled else '❌ 关闭'}",
+        f"🔗 关联积分：{points_label}",
         f"💧 抽水比例：{setting.rake_ratio or '0'}",
     ]
     if round_obj is None:
@@ -78,7 +95,7 @@ async def build_k3_panel_text(db: Database, chat_id: int) -> str:
                 "⏳ 本局会在 60 秒后自动开奖。",
             ]
         )
-    lines.append("🎯 直接点击按钮即可完成下注。")
+    lines.append("🎯 直接点击按钮即可完成下注，单人单局上限 500 积分。")
     return "\n".join(lines)
 
 
@@ -87,6 +104,7 @@ async def build_blackjack_panel_text(db: Database, chat_id: int) -> str:
 
     async with db.session_factory() as session:
         setting = await get_or_create_setting(session, chat_id)
+        points_label = await get_game_points_chat_label(session, chat_id, setting.points_source_chat_id)
         result = await session.execute(
             select(func.count(GameRound.id)).where(
                 GameRound.chat_id == chat_id,
@@ -99,9 +117,10 @@ async def build_blackjack_panel_text(db: Database, chat_id: int) -> str:
     lines = [
         "🃏 黑杰克实时面板",
         f"📌 状态：{'✅ 开启' if setting.blackjack_enabled else '❌ 关闭'}",
+        f"🔗 关联积分：{points_label}",
         f"💧 抽水比例：{setting.rake_ratio or '0'}",
         f"🧾 进行中对局：{active_count}",
-        "🎯 点击下方按钮即可按固定积分开局。",
+        "🎯 点击下方按钮即可按固定积分开局，超时会自动停牌。",
     ]
     return "\n".join(lines)
 
@@ -112,6 +131,8 @@ async def render_panel_message(
     text: str,
     reply_markup: InlineKeyboardMarkup,
     message_id: int | None,
+    *,
+    create_if_missing: bool = True,
 ) -> int:
     if message_id:
         try:
@@ -124,24 +145,35 @@ async def render_panel_message(
             return message_id
         except Exception:
             pass
+    if not create_if_missing:
+        return message_id or 0
     sent = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
     return sent.message_id
 
 
-async def show_k3_panel(context: ContextTypes.DEFAULT_TYPE, db: Database, chat_id: int) -> int:
+async def show_k3_panel(context: ContextTypes.DEFAULT_TYPE, db: Database, chat_id: int, *, create_if_missing: bool = True) -> int | None:
     async with db.session_factory() as session:
         setting = await get_or_create_setting(session, chat_id)
         existing_message_id = setting.k3_panel_message_id
         await session.commit()
     text = await build_k3_panel_text(db, chat_id)
-    message_id = await render_panel_message(context, chat_id, text, k3_panel_keyboard(chat_id), existing_message_id)
+    message_id = await render_panel_message(
+        context,
+        chat_id,
+        text,
+        k3_panel_keyboard(chat_id),
+        existing_message_id,
+        create_if_missing=create_if_missing,
+    )
+    if not message_id:
+        return None
     async with db.session_factory() as session:
         await update_setting(session, chat_id, k3_panel_message_id=message_id)
         await session.commit()
     return message_id
 
 
-async def show_blackjack_panel(context: ContextTypes.DEFAULT_TYPE, db: Database, chat_id: int) -> int:
+async def show_blackjack_panel(context: ContextTypes.DEFAULT_TYPE, db: Database, chat_id: int, *, create_if_missing: bool = True) -> int | None:
     async with db.session_factory() as session:
         setting = await get_or_create_setting(session, chat_id)
         existing_message_id = setting.blackjack_panel_message_id
@@ -153,7 +185,10 @@ async def show_blackjack_panel(context: ContextTypes.DEFAULT_TYPE, db: Database,
         text,
         blackjack_panel_keyboard(chat_id),
         existing_message_id,
+        create_if_missing=create_if_missing,
     )
+    if not message_id:
+        return None
     async with db.session_factory() as session:
         await update_setting(session, chat_id, blackjack_panel_message_id=message_id)
         await session.commit()

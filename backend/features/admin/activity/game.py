@@ -1,9 +1,26 @@
 from __future__ import annotations
 
+from backend.features.activity.game_panels import show_blackjack_panel, show_k3_panel
 from backend.features.admin.support import *
 from backend.shared.time_ui import build_copy_time_keyboard, build_hhmm_prompt_text, next_top_of_hour_hhmm
 
 class GameAdminControllerMixin:
+    async def _sync_game_panel_after_toggle(
+        self,
+        context: ContextTypes.DEFAULT_TYPE,
+        db: Database,
+        chat_id: int,
+        field: str | None,
+        enabled: bool,
+    ) -> None:
+        try:
+            if field == "k3":
+                await show_k3_panel(context, db, chat_id, create_if_missing=enabled)
+            elif field == "blackjack":
+                await show_blackjack_panel(context, db, chat_id, create_if_missing=enabled)
+        except Exception as exc:
+            log.warning("game_panel_sync_failed", chat_id=chat_id, field=field, enabled=enabled, error=str(exc))
+
     async def _show_game_menu(
         self,
         update: Update,
@@ -15,12 +32,14 @@ class GameAdminControllerMixin:
         async with db.session_factory() as session:
             setting = await get_game_setting(session, chat_id)
             rake_owner = await get_game_rake_owner_label(session, setting.rake_owner_user_id)
+            points_chat_label = await get_game_points_chat_label(session, chat_id, getattr(setting, "points_source_chat_id", None))
             await session.commit()
         chat_title = await self._get_chat_title(db, chat_id)
         text = format_game_menu_text(
             chat_title,
             k3_enabled=setting.k3_enabled,
             blackjack_enabled=setting.blackjack_enabled,
+            points_chat_label=points_chat_label,
             rake_ratio=setting.rake_ratio,
             rake_owner=rake_owner,
             auto_schedule_enabled=setting.auto_schedule_enabled,
@@ -30,7 +49,7 @@ class GameAdminControllerMixin:
         )
         keyboard = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("🎲 快3", callback_data=f"gm:home:{chat_id}"),
+                InlineKeyboardButton("🎲 快三", callback_data=f"gm:home:{chat_id}"),
                 InlineKeyboardButton("✅ 启动" if setting.k3_enabled else "启动", callback_data=f"gm:toggle:{chat_id}:k3:1"),
                 InlineKeyboardButton("✅ 关闭" if not setting.k3_enabled else "关闭", callback_data=f"gm:toggle:{chat_id}:k3:0"),
             ],
@@ -38,6 +57,10 @@ class GameAdminControllerMixin:
                 InlineKeyboardButton("🃏 黑杰克", callback_data=f"gm:home:{chat_id}"),
                 InlineKeyboardButton("✅ 启动" if setting.blackjack_enabled else "启动", callback_data=f"gm:toggle:{chat_id}:blackjack:1"),
                 InlineKeyboardButton("✅ 关闭" if not setting.blackjack_enabled else "关闭", callback_data=f"gm:toggle:{chat_id}:blackjack:0"),
+            ],
+            [
+                InlineKeyboardButton("🔗 关联积分", callback_data=f"gm:points:{chat_id}:menu"),
+                InlineKeyboardButton(points_chat_label, callback_data=f"gm:points:{chat_id}:menu"),
             ],
             [
                 InlineKeyboardButton("💧 抽水比例", callback_data=f"gm:rake:{chat_id}:ratio"),
@@ -64,6 +87,53 @@ class GameAdminControllerMixin:
             [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
         ])
         await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
+
+    async def _show_game_points_menu(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+    ) -> None:
+        db: Database = context.application.bot_data["db"]
+        await self._set_current_chat(db, update.effective_user.id, chat_id)
+        async with db.session_factory() as session:
+            setting = await get_game_setting(session, chat_id)
+            current_source = getattr(setting, "points_source_chat_id", None)
+            current_label = await get_game_points_chat_label(session, chat_id, current_source)
+            await session.commit()
+
+        rows: list[list[InlineKeyboardButton]] = [
+            [
+                InlineKeyboardButton(
+                    ("✅ " if current_source is None or int(current_source) == int(chat_id) else "") + "本群分",
+                    callback_data=f"gm:points:{chat_id}:self",
+                )
+            ]
+        ]
+        managed_chats = await get_user_managed_chats(db, update.effective_user.id, context.bot)
+        for source_chat_id, title, _ in managed_chats:
+            if int(source_chat_id) == int(chat_id):
+                continue
+            prefix = "✅ " if current_source is not None and int(current_source) == int(source_chat_id) else ""
+            rows.append([
+                InlineKeyboardButton(
+                    f"{prefix}主群分：{title}"[:60],
+                    callback_data=f"gm:points:{chat_id}:set:{source_chat_id}",
+                )
+            ])
+        rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"gm:home:{chat_id}")])
+        text = "\n".join(
+            [
+                "🔗 游戏 | 关联积分",
+                "",
+                f"当前使用：{current_label}",
+                "",
+                "如果小群/内部群/工兵群需要使用大群积分进行游戏，请选择主群分。",
+            ]
+        )
+        if len(rows) == 2:
+            text += "\n\n暂无可关联的其他管理群。"
+        await self.message_helper.safe_edit(update, text, reply_markup=InlineKeyboardMarkup(rows))
 
     async def _show_game_rounds(
         self,
@@ -149,9 +219,9 @@ class GameAdminControllerMixin:
             [
                 "📘 游戏指令帮助",
                 "",
-                "🎲 快3：",
-                "• 发送 `快3` 查看玩法",
-                "• 发送 `快3 大 100` / `快3 小 100` / `快3 单 100` / `快3 双 100` / `快3 豹子 100` 下注",
+                "🎲 快三：",
+                "• 发送 `快三` 查看玩法",
+                "• 发送 `快三 大 100` / `快三 小 100` / `快三 对子 100` / `快三 半顺 100` / `快三 三连 100` / `快三 杂六 100` 下注",
                 "",
                 "🃏 黑杰克：",
                 "• 发送 `黑杰克` 查看玩法",
@@ -186,12 +256,55 @@ class GameAdminControllerMixin:
         if action == "help":
             await self._show_game_help(update, context, chat_id)
             return
+        if action == "points":
+            sub = callback_data.get(3)
+            if sub == "menu":
+                await self._show_game_points_menu(update, context, chat_id)
+                return
+            if sub == "self":
+                async with db.session_factory() as session:
+                    await update_game_setting(session, chat_id, points_source_chat_id=None)
+                    await session.commit()
+                await self._show_game_points_menu(update, context, chat_id)
+                return
+            if sub == "set":
+                source_chat_id = callback_data.get_int_optional(4)
+                if source_chat_id is None:
+                    await self.message_helper.safe_edit(
+                        update,
+                        "关联积分参数无效，请返回重试。",
+                        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"gm:points:{chat_id}:menu")]]),
+                    )
+                    return
+                allowed, error_text = await PermissionPolicyService.require_manage(
+                    context,
+                    source_chat_id,
+                    update.effective_user.id,
+                    capability="manage",
+                )
+                if not allowed:
+                    await self.message_helper.safe_edit(
+                        update,
+                        error_text or "你没有该主群的管理权限。",
+                        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"gm:points:{chat_id}:menu")]]),
+                    )
+                    return
+                async with db.session_factory() as session:
+                    await update_game_setting(
+                        session,
+                        chat_id,
+                        points_source_chat_id=None if int(source_chat_id) == int(chat_id) else source_chat_id,
+                    )
+                    await session.commit()
+                await self._show_game_points_menu(update, context, chat_id)
+                return
         async with db.session_factory() as session:
             if action == "toggle":
                 field = callback_data.get(3)
                 enabled = callback_data.get(4) == "1"
                 await update_game_setting(session, chat_id, **{f"{field}_enabled": enabled})
                 await session.commit()
+                await self._sync_game_panel_after_toggle(context, db, chat_id, field, enabled)
                 await self._show_game_menu(update, context, chat_id)
                 return
             if action == "rake":

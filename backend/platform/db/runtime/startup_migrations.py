@@ -166,6 +166,10 @@ AD_CAMPAIGNS_COMPAT_SQL: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS ix_ad_campaigns_sort_order ON bot.ad_campaigns(sort_order)",
 )
 
+GAME_SETTINGS_COMPAT_SQL: tuple[str, ...] = (
+    "ALTER TABLE bot.game_settings ADD COLUMN IF NOT EXISTS points_source_chat_id BIGINT",
+)
+
 COMPATIBILITY_MIGRATIONS: dict[str, tuple[str, ...]] = {
     "chat_settings": CHAT_SETTINGS_COMPAT_SQL,
     "garage_forward_settings": GARAGE_FORWARD_SETTINGS_COMPAT_SQL,
@@ -173,6 +177,7 @@ COMPATIBILITY_MIGRATIONS: dict[str, tuple[str, ...]] = {
     "teacher_search_settings": TEACHER_SEARCH_SETTINGS_COMPAT_SQL,
     "scheduled_message_tasks": SCHEDULED_MESSAGE_COMPAT_SQL,
     "ad_campaigns": AD_CAMPAIGNS_COMPAT_SQL,
+    "game_settings": GAME_SETTINGS_COMPAT_SQL,
 }
 
 

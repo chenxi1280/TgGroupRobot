@@ -1,12 +1,46 @@
 from __future__ import annotations
 
 import datetime as dt
+from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 
 from backend.shared.services.base import ValidationError
-from backend.features.activity.services.game_service import parse_ratio as parse_game_ratio, validate_hhmm, format_game_menu_text
+from backend.features.activity.services.game_service import (
+    classify_k3_result,
+    k3_guess_label,
+    parse_blackjack_bet,
+    parse_k3_command,
+    parse_ratio as parse_game_ratio,
+    validate_hhmm,
+    format_game_menu_text,
+)
 from backend.features.activity.services.guess_service import format_event_preview, parse_deadline, parse_options, parse_ratio as parse_guess_ratio
+from backend.features.activity.services.guess_service_runtime import build_settlement_plan
+from backend.features.admin.activity.guess_input import handle_guess_admin_input
+
+
+def _guess_bet(user_id: int, option_key: str, bet_points: int):
+    return SimpleNamespace(user_id=user_id, option_key=option_key, bet_points=bet_points)
+
+
+class _GuessInputSession:
+    def __init__(self) -> None:
+        self.commits = 0
+
+    async def commit(self) -> None:
+        self.commits += 1
+
+
+class _GuessInputMessage:
+    def __init__(self, *, photo=None, document=None) -> None:
+        self.photo = photo or []
+        self.document = document
+        self.replies: list[str] = []
+
+    async def reply_text(self, text: str) -> None:
+        self.replies.append(text)
 
 
 def test_game_ratio_parsing():
@@ -19,6 +53,23 @@ def test_game_time_validation():
     assert validate_hhmm("23:05") == "23:05"
     with pytest.raises(ValidationError):
         validate_hhmm("25:00")
+
+
+def test_k3_parser_accepts_chinese_alias_and_extended_options():
+    assert parse_k3_command("快三 对子 100") == ("对子", 100)
+    assert parse_k3_command("快3 半顺号 50") == ("半顺号", 50)
+    assert k3_guess_label("豹子") == "豹子通杀"
+    with pytest.raises(ValidationError):
+        parse_k3_command("快三 大 501")
+    with pytest.raises(ValidationError):
+        parse_blackjack_bet("黑杰克 501")
+
+
+def test_k3_result_classifies_extended_plays():
+    assert set(classify_k3_result([1, 1, 2])["winning_keys"]) == {"small", "even", "pair"}
+    assert set(classify_k3_result([1, 2, 3])["winning_keys"]) == {"small", "even", "straight"}
+    assert set(classify_k3_result([1, 3, 5])["winning_keys"]) == {"small", "odd", "misc_six"}
+    assert classify_k3_result([6, 6, 6])["winning_keys"] == ["triple"]
 
 
 def test_guess_options_parser_accepts_lines():
@@ -35,6 +86,162 @@ def test_guess_ratio_parser_rejects_invalid():
     assert parse_guess_ratio("0.2") == "0.2"
     with pytest.raises(ValidationError):
         parse_guess_ratio("-0.1")
+
+
+def test_guess_no_banker_split_rounds_up_per_winner():
+    bets = [_guess_bet(user_id, "A", 1) for user_id in range(1, 11)]
+    bets.append(_guess_bet(99, "B", 1))
+
+    plan = build_settlement_plan(
+        bets,
+        winner_option="A",
+        mode="no_banker",
+        banker_user_id=None,
+        public_pool=0,
+        rake_ratio=Decimal("0"),
+        rake_owner_user_id=None,
+    )
+
+    assert plan.loser_total == 1
+    assert plan.winner_count == 10
+    assert plan.system_subsidy == 9
+    assert set(plan.winner_payouts.values()) == {2}
+
+
+def test_guess_banker_mode_balances_losers_winners_and_rake_to_banker():
+    bets = [_guess_bet(1, "A", 100), _guess_bet(2, "B", 100)]
+
+    plan = build_settlement_plan(
+        bets,
+        winner_option="A",
+        mode="banker",
+        banker_user_id=9,
+        public_pool=0,
+        rake_ratio=Decimal("0.1"),
+        rake_owner_user_id=88,
+    )
+
+    assert plan.winner_payouts == {1: 190}
+    assert plan.rake_payouts == {}
+    assert plan.banker_delta == 10
+
+
+def test_guess_banker_mode_can_charge_banker_negative_for_winner_rights():
+    bets = [_guess_bet(1, "A", 50)]
+
+    plan = build_settlement_plan(
+        bets,
+        winner_option="A",
+        mode="banker",
+        banker_user_id=9,
+        public_pool=20,
+        rake_ratio=Decimal("0"),
+        rake_owner_user_id=None,
+    )
+
+    assert plan.winner_payouts == {1: 120}
+    assert plan.banker_delta == -70
+
+
+def test_guess_banker_no_winner_does_not_credit_public_pool_to_banker():
+    bets = [_guess_bet(2, "B", 30)]
+
+    plan = build_settlement_plan(
+        bets,
+        winner_option="A",
+        mode="banker",
+        banker_user_id=9,
+        public_pool=100,
+        rake_ratio=Decimal("0"),
+        rake_owner_user_id=None,
+    )
+
+    assert plan.winner_payouts == {}
+    assert plan.banker_delta == 30
+
+
+@pytest.mark.asyncio
+async def test_guess_admin_title_input_saves_draft_and_refreshes_menu(monkeypatch):
+    saved: list[tuple[int, int, str, dict]] = []
+    cleared: list[tuple[int, int]] = []
+    shown: list[dict] = []
+
+    async def fake_clear_private_admin_state(session, *, target_chat_id: int, user_id: int) -> None:
+        cleared.append((target_chat_id, user_id))
+
+    async def fake_set_user_state(session, chat_id: int, user_id: int, state_type: str, state_data: dict):
+        saved.append((chat_id, user_id, state_type, state_data))
+
+    class _Admin:
+        async def _show_guess_create_menu(self, update, context, target_chat_id: int, draft: dict) -> None:
+            shown.append(dict(draft))
+
+    monkeypatch.setattr("backend.features.admin.activity.guess_input.clear_private_admin_state", fake_clear_private_admin_state)
+    monkeypatch.setattr("backend.features.admin.activity.guess_input.set_user_state", fake_set_user_state)
+    monkeypatch.setattr("backend.features.admin.activity.guess_input.admin_handler_instance", lambda: _Admin())
+
+    message = _GuessInputMessage()
+    update = SimpleNamespace(effective_user=SimpleNamespace(id=42), effective_message=message)
+    session = _GuessInputSession()
+    state = SimpleNamespace(state_type="guess_wait_title", state_data={"target_chat_id": -1001})
+
+    handled = await handle_guess_admin_input(update, SimpleNamespace(), session, state, "世界杯决赛", target_chat_id=-1001)
+
+    assert handled is True
+    assert cleared == [(-1001, 42)]
+    assert saved == [(42, 42, "guess_wait_title", {"target_chat_id": -1001, "title": "世界杯决赛"})]
+    assert shown == [{"target_chat_id": -1001, "title": "世界杯决赛"}]
+    assert session.commits == 1
+    assert message.replies == []
+
+
+@pytest.mark.asyncio
+async def test_guess_admin_cover_input_accepts_photo_and_image_document(monkeypatch):
+    saved: list[dict] = []
+
+    async def fake_clear_private_admin_state(session, *, target_chat_id: int, user_id: int) -> None:
+        return None
+
+    async def fake_set_user_state(session, chat_id: int, user_id: int, state_type: str, state_data: dict):
+        saved.append(dict(state_data))
+
+    class _Admin:
+        async def _show_guess_create_menu(self, update, context, target_chat_id: int, draft: dict) -> None:
+            return None
+
+    monkeypatch.setattr("backend.features.admin.activity.guess_input.clear_private_admin_state", fake_clear_private_admin_state)
+    monkeypatch.setattr("backend.features.admin.activity.guess_input.set_user_state", fake_set_user_state)
+    monkeypatch.setattr("backend.features.admin.activity.guess_input.admin_handler_instance", lambda: _Admin())
+
+    state = SimpleNamespace(state_type="guess_wait_cover", state_data={"target_chat_id": -1001, "title": "比赛"})
+
+    photo_message = _GuessInputMessage(photo=[SimpleNamespace(file_id="small"), SimpleNamespace(file_id="large")])
+    photo_update = SimpleNamespace(effective_user=SimpleNamespace(id=42), effective_message=photo_message)
+    await handle_guess_admin_input(photo_update, SimpleNamespace(), _GuessInputSession(), state, "", target_chat_id=-1001)
+
+    document_message = _GuessInputMessage(document=SimpleNamespace(file_id="doc-image", mime_type="image/png"))
+    document_update = SimpleNamespace(effective_user=SimpleNamespace(id=42), effective_message=document_message)
+    await handle_guess_admin_input(document_update, SimpleNamespace(), _GuessInputSession(), state, "", target_chat_id=-1001)
+
+    assert saved[0]["cover_file_id"] == "large"
+    assert saved[1]["cover_file_id"] == "doc-image"
+    assert photo_message.replies == []
+    assert document_message.replies == []
+
+
+def test_guess_preview_uses_waiting_placeholders():
+    text = format_event_preview({})
+
+    assert "⚽ 竞猜活动" in text
+    assert "📮 活动名字: 【等待设置】" in text
+    assert "🏞️ 封面设置: 【等待设置】" in text
+    assert "📋 活动说明: 【等待设置】" in text
+    assert "👾 本局庄家: 无庄" in text
+    assert "🧧 公共奖池: 0" in text
+    assert "📻 竞猜选项: 【等待设置】" in text
+    assert "🔎 群内指令: 【等待设置】" in text
+    assert "⏰ 截止时间: 【等待设置】" in text
+    assert "🔗 重复下注: 禁止" in text
 
 
 def test_formatters_include_icons():

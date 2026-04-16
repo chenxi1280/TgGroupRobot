@@ -2310,6 +2310,7 @@ CREATE TABLE IF NOT EXISTS bot.game_settings (
     chat_id BIGINT PRIMARY KEY,
     k3_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     blackjack_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    points_source_chat_id BIGINT,
     rake_ratio VARCHAR(16),
     rake_owner_user_id BIGINT,
     auto_schedule_enabled BOOLEAN NOT NULL DEFAULT FALSE,
@@ -2321,6 +2322,8 @@ CREATE TABLE IF NOT EXISTS bot.game_settings (
     updated_at TIMESTAMPTZ NOT NULL,
     CONSTRAINT fk_game_settings_chat_id FOREIGN KEY (chat_id)
         REFERENCES bot.tg_chats(id) ON DELETE CASCADE,
+    CONSTRAINT fk_game_settings_points_source_chat_id FOREIGN KEY (points_source_chat_id)
+        REFERENCES bot.tg_chats(id) ON DELETE SET NULL,
     CONSTRAINT fk_game_settings_rake_owner_user_id FOREIGN KEY (rake_owner_user_id)
         REFERENCES bot.tg_users(id) ON DELETE SET NULL
 );

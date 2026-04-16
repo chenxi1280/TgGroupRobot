@@ -36,14 +36,14 @@ async def test_guess_deadline_prompt_uses_unified_copy_ui(monkeypatch):
     async def fake_get_user_state(session, chat_id: int, user_id: int):
         return None
 
-    async def fake_start_text_input_state(context, user_id: int, chat_id: int, state_type: str, state_data: dict):
-        started.append((state_type, state_data))
+    async def fake_start_guess_input_state(session, *, user_id: int, chat_id: int, state_type: str, draft: dict):
+        started.append((state_type, {"target_chat_id": chat_id, **draft}))
 
     async def fake_safe_edit(update, text: str, reply_markup=None, parse_mode=None):
         rendered.append((text, reply_markup, parse_mode))
 
     monkeypatch.setattr("backend.features.admin.activity.guess.get_user_state", fake_get_user_state)
-    monkeypatch.setattr(admin_handler._admin_handler, "_start_text_input_state", fake_start_text_input_state)
+    monkeypatch.setattr("backend.features.admin.activity.guess._start_guess_input_state", fake_start_guess_input_state)
     monkeypatch.setattr(admin_handler._admin_handler.message_helper, "safe_edit", fake_safe_edit)
 
     update = SimpleNamespace(effective_user=SimpleNamespace(id=42))

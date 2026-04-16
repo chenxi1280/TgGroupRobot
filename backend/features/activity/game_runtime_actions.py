@@ -15,11 +15,16 @@ from backend.features.activity.services.game_service import (
     create_or_join_k3_round,
     finalize_blackjack_round,
     format_blackjack_round_text,
+    get_active_k3_round,
     get_active_blackjack_round,
     get_or_create_setting,
+    get_round_points_chat_id,
+    k3_guess_label,
+    MAX_GAME_BET_POINTS,
+    resolve_points_chat_id,
     start_blackjack_round,
 )
-from backend.features.points.services.points_service import change_points, get_balance
+from backend.features.points.services.points_service import change_points
 from backend.platform.db.runtime.session import Database
 from backend.platform.db.schema.models.enums import PointsTxnType
 from backend.platform.db.schema.models.expansion import GameParticipant, GameRound
@@ -47,7 +52,7 @@ async def handle_game_runtime_callback(update: Update, context: ContextTypes.DEF
 
     if game == "k3" and action == "refresh":
         await show_k3_panel(context, db, chat_id)
-        await answer_callback_query_safely(update, "已刷新快3面板")
+        await answer_callback_query_safely(update, "已刷新快三面板")
         return
     if game == "bj" and action == "refresh":
         await show_blackjack_panel(context, db, chat_id)
@@ -74,21 +79,36 @@ async def handle_game_runtime_callback(update: Update, context: ContextTypes.DEF
         except ValueError:
             await answer_callback_query_safely(update, "下注参数无效", show_alert=True)
             return
+        if bet_points <= 0 or bet_points > MAX_GAME_BET_POINTS:
+            await answer_callback_query_safely(update, f"下注积分必须在 1 到 {MAX_GAME_BET_POINTS} 之间", show_alert=True)
+            return
         async with db.session_factory() as session:
             await ensure_user(session, user.id, user.username, user.first_name, user.last_name, user.language_code)
             setting = await get_or_create_setting(session, chat_id)
             if not setting.k3_enabled:
                 await session.commit()
-                await answer_callback_query_safely(update, "快3当前未开启", show_alert=True)
+                await answer_callback_query_safely(update, "快三当前未开启", show_alert=True)
                 return
-            balance = await get_balance(session, chat_id, user.id)
-            if balance < bet_points:
+            active_round = await get_active_k3_round(session, chat_id)
+            points_chat_id = (
+                get_round_points_chat_id(active_round, resolve_points_chat_id(setting, chat_id))
+                if active_round is not None
+                else resolve_points_chat_id(setting, chat_id)
+            )
+            ok, balance = await change_points(session, points_chat_id, user.id, -bet_points, PointsTxnType.penalty.value, reason="快三下注")
+            if not ok:
                 await session.commit()
                 await answer_callback_query_safely(update, f"积分不足，当前余额 {balance}", show_alert=True)
                 return
             try:
-                await change_points(session, chat_id, user.id, -bet_points, PointsTxnType.penalty.value, reason="快3下注")
-                round_obj, _participant = await create_or_join_k3_round(session, chat_id, user.id, guess, bet_points)
+                round_obj, _participant = await create_or_join_k3_round(
+                    session,
+                    chat_id,
+                    user.id,
+                    guess,
+                    bet_points,
+                    points_chat_id=points_chat_id,
+                )
             except ValidationError as exc:
                 await session.rollback()
                 await answer_callback_query_safely(update, str(exc), show_alert=True)
@@ -99,7 +119,7 @@ async def handle_game_runtime_callback(update: Update, context: ContextTypes.DEF
             participant_count = int(count_result.scalar() or 0)
             await session.commit()
         await show_k3_panel(context, db, chat_id)
-        await answer_callback_query_safely(update, f"下注成功：{guess} {bet_points}，本局 {participant_count} 人")
+        await answer_callback_query_safely(update, f"下注成功：{k3_guess_label(guess)} {bet_points}，本局 {participant_count} 人")
         return
 
     if game == "bj" and action == "start":
@@ -108,6 +128,9 @@ async def handle_game_runtime_callback(update: Update, context: ContextTypes.DEF
         except ValueError:
             await answer_callback_query_safely(update, "下注参数无效", show_alert=True)
             return
+        if bet_points <= 0 or bet_points > MAX_GAME_BET_POINTS:
+            await answer_callback_query_safely(update, f"下注积分必须在 1 到 {MAX_GAME_BET_POINTS} 之间", show_alert=True)
+            return
         async with db.session_factory() as session:
             await ensure_user(session, user.id, user.username, user.first_name, user.last_name, user.language_code)
             setting = await get_or_create_setting(session, chat_id)
@@ -115,14 +138,20 @@ async def handle_game_runtime_callback(update: Update, context: ContextTypes.DEF
                 await session.commit()
                 await answer_callback_query_safely(update, "黑杰克当前未开启", show_alert=True)
                 return
-            balance = await get_balance(session, chat_id, user.id)
-            if balance < bet_points:
+            points_chat_id = resolve_points_chat_id(setting, chat_id)
+            ok, balance = await change_points(session, points_chat_id, user.id, -bet_points, PointsTxnType.penalty.value, reason="黑杰克下注")
+            if not ok:
                 await session.commit()
                 await answer_callback_query_safely(update, f"积分不足，当前余额 {balance}", show_alert=True)
                 return
-            await change_points(session, chat_id, user.id, -bet_points, PointsTxnType.penalty.value, reason="黑杰克下注")
             try:
-                round_obj, participant = await start_blackjack_round(session, chat_id, user.id, bet_points)
+                round_obj, participant = await start_blackjack_round(
+                    session,
+                    chat_id,
+                    user.id,
+                    bet_points,
+                    points_chat_id=points_chat_id,
+                )
             except ValidationError as exc:
                 await session.rollback()
                 await answer_callback_query_safely(update, str(exc), show_alert=True)

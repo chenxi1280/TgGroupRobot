@@ -414,7 +414,7 @@ def _full_tables() -> dict[str, dict]:
         "game_settings": {
             "columns": {
                 "chat_id", "k3_enabled", "blackjack_enabled", "rake_ratio", "rake_owner_user_id",
-                "auto_schedule_enabled", "auto_start_time", "auto_stop_time",
+                "points_source_chat_id", "auto_schedule_enabled", "auto_start_time", "auto_stop_time",
                 "delete_game_message_mode", "k3_panel_message_id", "blackjack_panel_message_id", "updated_at",
             },
         },
