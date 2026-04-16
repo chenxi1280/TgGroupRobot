@@ -166,6 +166,7 @@ async def test_start_text_input_state_preserves_private_selected_chat(monkeypatc
     assert calls == [
         ("clear", -1001, 42),
         ("clear_private_input", 42),
+        ("set", 42, 42, "selected_chat", {"managed_chat_id": -1001}),
         ("set", -1001, 42, "teacher_delegate_target_input", {"target_chat_id": -1001}),
         ("commit",),
     ]

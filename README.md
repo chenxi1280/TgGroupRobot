@@ -220,6 +220,20 @@ python -m backend.platform.db.init_db
 python main.py
 ```
 
+开发时如需热加载，使用：
+
+```bash
+python main.py --reload
+```
+
+如果当前 shell 没有激活虚拟环境，也可以直接使用项目里的 Python：
+
+```bash
+.venv/bin/python main.py --reload
+```
+
+它会监听 `backend/`、`config/`、`main.py`、`.env` / `env` 和 `requirements.txt`，文件变化后自动优雅重启机器人进程；停止开发时按 `Ctrl+C` 即可。
+
 ## 指令参考
 
 ### 用户指令

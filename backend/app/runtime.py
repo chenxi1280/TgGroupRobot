@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import signal
 import sys
 
 from telegram import Update
@@ -29,6 +30,31 @@ from backend.platform.scheduler.tasks import (
     TeacherSearchTask,
     VerificationTimeoutTask,
 )
+
+
+async def _wait_for_shutdown_signal() -> None:
+    """Wait until the process receives a shutdown signal."""
+    stop_event = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    handled_signals: list[signal.Signals] = []
+
+    def _request_shutdown(received_signal: signal.Signals) -> None:
+        log.info("shutdown_signal_received", signal=received_signal.name)
+        stop_event.set()
+
+    if sys.platform != "win32":
+        for shutdown_signal in (signal.SIGINT, signal.SIGTERM):
+            try:
+                loop.add_signal_handler(shutdown_signal, _request_shutdown, shutdown_signal)
+                handled_signals.append(shutdown_signal)
+            except (NotImplementedError, RuntimeError, ValueError):
+                log.warning("shutdown_signal_handler_unavailable", signal=shutdown_signal.name)
+
+    try:
+        await stop_event.wait()
+    finally:
+        for shutdown_signal in handled_signals:
+            loop.remove_signal_handler(shutdown_signal)
 
 
 async def run_bot_with_scheduler() -> None:
@@ -66,7 +92,7 @@ async def run_bot_with_scheduler() -> None:
         await app.updater.start_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
         polling_started = True
         log.info("polling_started", allowed_updates="ALL_TYPES")
-        await asyncio.Event().wait()
+        await _wait_for_shutdown_signal()
     finally:
         await scheduler.stop()
         if polling_started and app.updater is not None:

@@ -125,8 +125,11 @@ async def test_car_review_menu_uses_dynamic_labels_and_real_subpages(monkeypatch
     assert keyboard.inline_keyboard[1][2].text == "✅ 简易"
     assert keyboard.inline_keyboard[2][2].text == "✅ 关闭"
     assert keyboard.inline_keyboard[3][2].text == "✅ 包含"
-    assert keyboard.inline_keyboard[10][0].callback_data == "crv:fields:-100123"
-    assert keyboard.inline_keyboard[12][0].callback_data == "crv:reports:-100123"
+    assert keyboard.inline_keyboard[4][1].callback_data == "crv:submit_cmd:edit:-100123"
+    assert keyboard.inline_keyboard[7][0].callback_data == "crv:fields:-100123"
+    assert keyboard.inline_keyboard[8][0].callback_data == "crv:reports:-100123"
+    assert len(keyboard.inline_keyboard[4]) == 2
+    assert len(keyboard.inline_keyboard[8]) == 2
 
 
 @pytest.mark.asyncio

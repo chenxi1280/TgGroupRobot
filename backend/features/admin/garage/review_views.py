@@ -63,16 +63,26 @@ class GarageReviewViewsMixin:
                 InlineKeyboardButton("✅ 精准" if setting.teacher_lookup_mode == "exact" else "精准", callback_data=f"crv:lookup:{chat_id}:exact"),
                 InlineKeyboardButton("✅ 包含" if setting.teacher_lookup_mode == "contains" else "包含", callback_data=f"crv:lookup:{chat_id}:contains"),
             ],
-            [InlineKeyboardButton("✅ 关闭查车评" if setting.teacher_lookup_mode == "off" else "🚫 关闭查车评", callback_data=f"crv:lookup:{chat_id}:off")],
-            [InlineKeyboardButton("💬 提交评价指令", callback_data=f"crv:submit_cmd:edit:{chat_id}")],
-            [InlineKeyboardButton("🥇 查询排行指令", callback_data=f"crv:rank_cmd:edit:{chat_id}")],
-            [InlineKeyboardButton("📤 报告发布", callback_data=f"crv:publish_target:{chat_id}:menu")],
-            [InlineKeyboardButton(f"🪙 积分奖励：加 {setting.reward_points} 积分", callback_data=f"crv:reward:{chat_id}")],
-            [InlineKeyboardButton(f"🕵️ 审核人员：{approver_label}", callback_data=f"crv:approver:set:{chat_id}")],
-            [InlineKeyboardButton(f"✏️ 自定义项（{enabled_fields_count}/{len(fields)}）", callback_data=f"crv:fields:{chat_id}")],
-            [InlineKeyboardButton("📝 报告模版", callback_data=f"crv:template:edit:{chat_id}")],
-            [InlineKeyboardButton(f"📂 评价管理（待审核 {pending_count}）", callback_data=f"crv:reports:{chat_id}")],
-            [InlineKeyboardButton("👩 在榜老师", callback_data=f"tsearch:open_course:list:{chat_id}:0")],
+            [
+                InlineKeyboardButton("✅ 关闭查车评" if setting.teacher_lookup_mode == "off" else "🚫 关闭查车评", callback_data=f"crv:lookup:{chat_id}:off"),
+                InlineKeyboardButton("💬 提交指令", callback_data=f"crv:submit_cmd:edit:{chat_id}"),
+            ],
+            [
+                InlineKeyboardButton("🥇 排行指令", callback_data=f"crv:rank_cmd:edit:{chat_id}"),
+                InlineKeyboardButton("📤 报告发布", callback_data=f"crv:publish_target:{chat_id}:menu"),
+            ],
+            [
+                InlineKeyboardButton(f"🪙 奖励 {setting.reward_points} 分", callback_data=f"crv:reward:{chat_id}"),
+                InlineKeyboardButton(f"🕵️ 审核：{approver_label}", callback_data=f"crv:approver:set:{chat_id}"),
+            ],
+            [
+                InlineKeyboardButton(f"✏️ 自定义项 {enabled_fields_count}/{len(fields)}", callback_data=f"crv:fields:{chat_id}"),
+                InlineKeyboardButton("📝 报告模版", callback_data=f"crv:template:edit:{chat_id}"),
+            ],
+            [
+                InlineKeyboardButton(f"📂 评价管理 {pending_count}", callback_data=f"crv:reports:{chat_id}"),
+                InlineKeyboardButton("👩 在榜老师", callback_data=f"tsearch:open_course:list:{chat_id}:0"),
+            ],
             [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
         ])
         await self.message_helper.safe_edit(update, text, reply_markup=keyboard)
