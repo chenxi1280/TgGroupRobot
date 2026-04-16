@@ -45,7 +45,7 @@ class ModerationMemberActionsMixin:
             }
             state_type = state_map.get(arg)
             if state_type is None:
-                await answer_callback_query_safely(update, "未识别的强制订阅配置项，请返回后重试", show_alert=True)
+                await answer_callback_query_safely(update, "未识别的强制关注配置项，请返回后重试", show_alert=True)
                 return
             await self._start_text_input_state(
                 context,
@@ -78,7 +78,7 @@ class ModerationMemberActionsMixin:
             async with db.session_factory() as session:
                 settings = await get_chat_settings(session, chat_id)
                 await session.commit()
-            text = "👀 强制订阅 | 预览效果\n\n这是用户未订阅时会收到的提示样式预览。"
+            text = "👀 强制关注 | 预览效果\n\n这是用户未关注频道/群组时会收到的提示样式预览。"
             reply_markup = _build_force_subscribe_preview_markup(settings, chat_id)
             await self.message_helper.safe_edit(update, text, reply_markup=reply_markup)
             return

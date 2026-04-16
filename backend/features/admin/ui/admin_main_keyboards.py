@@ -67,7 +67,7 @@ def admin_main_menu(chat_id: int | None = None) -> InlineKeyboardMarkup:
                 InlineKeyboardButton("⌨️底部按钮", callback_data=f"adm:menu:bottom_button:{chat_id}"),
             ],
             [
-                InlineKeyboardButton("📣强制订阅", callback_data=f"adm:menu:forcesub:{chat_id}"),
+                InlineKeyboardButton("📣强制关注", callback_data=f"adm:menu:forcesub:{chat_id}"),
                 InlineKeyboardButton("🧹删除提示", callback_data=f"adm:menu:autodel:{chat_id}"),
                 InlineKeyboardButton("⚙️控制权限", callback_data=f"adm:menu:control:{chat_id}"),
             ],

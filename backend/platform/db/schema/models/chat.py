@@ -195,7 +195,7 @@ class ChatSettings(Base):
     force_subscribe_cover_file_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
     force_subscribe_guide_text: Mapped[str] = mapped_column(
         Text,
-        default="{member}，您需要关注我们的频道才能发言。",
+        default="{member}，您需要关注指定频道/群组后才能发言。",
     )
     force_subscribe_custom_buttons_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     force_subscribe_check_mode: Mapped[str] = mapped_column(String(8), default=ForceSubscribeCheckMode.all.value)

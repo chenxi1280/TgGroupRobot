@@ -84,27 +84,13 @@ async def auto_reply_preview_action(
         return
 
     await q.answer()
-    if getattr(rule, "cover_media_file_id", None):
-        await send_auto_reply_payload_func(
-            context,
-            chat_id=update.effective_chat.id,
-            text=rule.reply_content,
-            rule=rule,
-        )
-        await q.edit_message_text(
-            "👁️ 预览已发送到当前会话，请查看最新一条机器人消息。",
-            reply_markup=auto_reply_preview_keyboard(rule.id, target_chat_id),
-        )
-        return
-
-    preview_lines = [
-        "👁️ 自动回复预览",
-        "",
-        "以下为命中后机器人的回复效果预览：",
-        "",
-        rule.reply_content,
-    ]
+    await send_auto_reply_payload_func(
+        context,
+        chat_id=update.effective_chat.id,
+        text=rule.reply_content,
+        rule=rule,
+    )
     await q.edit_message_text(
-        "\n".join(preview_lines),
+        "👁️ 预览已发送到当前会话，请查看最新一条机器人消息。",
         reply_markup=auto_reply_preview_keyboard(rule.id, target_chat_id),
     )

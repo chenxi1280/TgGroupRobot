@@ -10,6 +10,17 @@ from telegram.ext import ContextTypes
 from backend.features.automation.services.scheduled_message_service import ScheduledMessageService
 
 log = structlog.get_logger(__name__)
+MAX_AUTO_REPLY_BUTTON_COLS = 4
+
+
+def _split_button_rows(rows: list[list[dict[str, str]]]) -> list[list[dict[str, str]]]:
+    normalized_rows: list[list[dict[str, str]]] = []
+    for row in rows:
+        for index in range(0, len(row), MAX_AUTO_REPLY_BUTTON_COLS):
+            chunk = row[index:index + MAX_AUTO_REPLY_BUTTON_COLS]
+            if chunk:
+                normalized_rows.append(chunk)
+    return normalized_rows
 
 
 def parse_auto_reply_buttons_input(raw_text: str) -> list[list[dict[str, str]]]:
@@ -22,7 +33,7 @@ def parse_auto_reply_buttons_input(raw_text: str) -> list[list[dict[str, str]]]:
             parsed = json.loads(raw)
         except json.JSONDecodeError as exc:
             raise ValueError(f"按钮 JSON 格式错误：{exc.msg}") from exc
-        return ScheduledMessageService.normalize_buttons_config(parsed)
+        return _split_button_rows(ScheduledMessageService.normalize_buttons_config(parsed))
 
     rows: list[list[dict[str, str]]] = []
     for line in [item.strip() for item in raw.splitlines() if item.strip()]:
@@ -34,7 +45,7 @@ def parse_auto_reply_buttons_input(raw_text: str) -> list[list[dict[str, str]]]:
         rows.append([{"text": button_text[:32], "url": button_url}])
     if not rows:
         raise ValueError("未解析到有效按钮。")
-    return ScheduledMessageService.normalize_buttons_config(rows)
+    return _split_button_rows(ScheduledMessageService.normalize_buttons_config(rows))
 
 
 def build_auto_reply_markup(rule) -> InlineKeyboardMarkup | None:
@@ -42,7 +53,7 @@ def build_auto_reply_markup(rule) -> InlineKeyboardMarkup | None:
     if not raw_buttons:
         return None
     try:
-        normalized = ScheduledMessageService.normalize_buttons_config(raw_buttons)
+        normalized = _split_button_rows(ScheduledMessageService.normalize_buttons_config(raw_buttons))
     except Exception:
         return None
 

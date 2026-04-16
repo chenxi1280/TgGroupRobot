@@ -592,7 +592,7 @@ async def test_force_subscribe_unknown_input_uses_specific_message(monkeypatch):
         CallbackParser.parse("adm:forcesub:-100123:input:unknown"),
     )
 
-    assert answered == [("未识别的强制订阅配置项，请返回后重试", True)]
+    assert answered == [("未识别的强制关注配置项，请返回后重试", True)]
 
 
 @pytest.mark.asyncio

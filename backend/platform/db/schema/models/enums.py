@@ -56,13 +56,13 @@ class GroupLockDeleteNoticeMode(str, enum.Enum):
 
 
 class ForceSubscribeCheckMode(str, enum.Enum):
-    """强制订阅校验策略"""
+    """强制关注校验策略"""
     all = "all"
     any = "any"
 
 
 class ForceSubscribeAction(str, enum.Enum):
-    """未订阅时处理动作"""
+    """未关注时处理动作"""
     delete_and_warn = "delete_and_warn"
     delete_only = "delete_only"
     warn_only = "warn_only"
@@ -98,11 +98,11 @@ class ConversationStateType(str, enum.Enum):
     anti_spam_config = "anti_spam_config"  # 反垃圾配置流程
     garbage_guard_whitelist = "garbage_guard_whitelist"  # 垃圾防护总白名单
     renewal_card_input = "renewal_card_input"  # 续费卡密输入流程
-    force_subscribe_channel_1_input = "force_subscribe_channel_1_input"  # 强制订阅频道1
-    force_subscribe_channel_2_input = "force_subscribe_channel_2_input"  # 强制订阅频道2
-    force_subscribe_text_input = "force_subscribe_text_input"  # 强制订阅文案
-    force_subscribe_cover_input = "force_subscribe_cover_input"  # 强制订阅封面
-    force_subscribe_buttons_input = "force_subscribe_buttons_input"  # 强制订阅按钮
+    force_subscribe_channel_1_input = "force_subscribe_channel_1_input"  # 强制关注频道/群组1
+    force_subscribe_channel_2_input = "force_subscribe_channel_2_input"  # 强制关注频道/群组2
+    force_subscribe_text_input = "force_subscribe_text_input"  # 强制关注文案
+    force_subscribe_cover_input = "force_subscribe_cover_input"  # 强制关注封面
+    force_subscribe_buttons_input = "force_subscribe_buttons_input"  # 强制关注按钮
     new_member_limit_text_input = "new_member_limit_text_input"  # 新成员限制提示文案
     night_mode_text_input = "night_mode_text_input"  # 夜间模式配置输入
     command_config_alias_input = "command_config_alias_input"  # 命令配置别名输入
@@ -130,7 +130,7 @@ class ConversationStateType(str, enum.Enum):
     control_permission_config = "control_permission_config"  # 控制权限配置流程
     group_lock_config = "group_lock_config"  # 关群设置配置流程
     name_change_monitor_config = "name_change_monitor_config"  # 改名监控配置流程
-    force_subscribe_config = "force_subscribe_config"  # 强制订阅配置流程
+    force_subscribe_config = "force_subscribe_config"  # 强制关注配置流程
     alliance_create_name_input = "alliance_create_name_input"  # 联盟名称输入
     alliance_join_code_input = "alliance_join_code_input"  # 联盟邀请码输入
     garage_forward_source_input = "garage_forward_source_input"  # 车库转发来源频道输入

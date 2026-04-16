@@ -13,7 +13,7 @@ MODULE_DEFINITIONS: list[dict[str, Any]] = [
     {"key": "base", "label": "基础开关", "detail": "语言、广告、自动删除等"},
     {"key": "points", "label": "积分配置", "detail": "签到/发言/邀请规则"},
     {"key": "verification", "label": "入群验证", "detail": "验证/刷号/自助审核"},
-    {"key": "force_subscribe", "label": "强制订阅", "detail": "订阅校验与提示"},
+    {"key": "force_subscribe", "label": "强制关注", "detail": "发言前关注校验与提示"},
     {"key": "new_member_limit", "label": "新成员限制", "detail": "入群窗口限制"},
     {"key": "night_mode", "label": "夜间模式", "detail": "时段限制与提示"},
     {"key": "anti_spam", "label": "反垃圾配置", "detail": "规则/动作/白名单"},

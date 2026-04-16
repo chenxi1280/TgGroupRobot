@@ -8,12 +8,40 @@ from backend.shared import button_layout_editor
 from backend.shared.button_layout_editor import (
     ButtonEditorContext,
     ButtonLayoutEditorService,
+    button_layout_editor_callback,
     build_layout_keyboard,
     handle_button_layout_editor_input,
 )
 
 
-def test_button_layout_editor_round_trip_and_compact_holes() -> None:
+class _Session:
+    async def commit(self):
+        return None
+
+
+class _SessionContext:
+    async def __aenter__(self):
+        return _Session()
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return None
+
+
+class _Db:
+    def session_factory(self):
+        return _SessionContext()
+
+
+class _CallbackQuery:
+    def __init__(self, data: str) -> None:
+        self.data = data
+        self.answers: list[tuple[str, bool]] = []
+
+    async def answer(self, text: str = "", show_alert: bool = False):
+        self.answers.append((text, show_alert))
+
+
+def test_button_layout_editor_round_trip_preserves_rows() -> None:
     grid = ButtonLayoutEditorService.to_grid([
         [{"text": "A", "url": "https://a.com"}, {"text": "B", "url": "https://b.com"}],
         [{"text": "C", "url": "https://c.com"}],
@@ -22,10 +50,10 @@ def test_button_layout_editor_round_trip_and_compact_holes() -> None:
     grid = ButtonLayoutEditorService.delete_button(grid, 0, 1)
     exported = ButtonLayoutEditorService.export_complete_buttons(grid)
 
-    assert exported == [[
-        {"text": "A", "url": "https://a.com"},
-        {"text": "C", "url": "https://c.com"},
-    ]]
+    assert exported == [
+        [{"text": "A", "url": "https://a.com"}],
+        [{"text": "C", "url": "https://c.com"}],
+    ]
 
 
 def test_button_layout_editor_add_button_uses_first_empty_slot() -> None:
@@ -38,6 +66,30 @@ def test_button_layout_editor_add_button_uses_first_empty_slot() -> None:
 
     assert (row_index, col_index) == (0, 0)
     assert ButtonLayoutEditorService.get_cell(next_grid, 0, 0) == {"text": "", "url": ""}
+
+
+def test_button_layout_editor_add_button_supports_specific_empty_slot() -> None:
+    grid = ButtonLayoutEditorService.to_grid([
+        [{"text": "A", "url": "https://a.com"}, {"text": "B", "url": "https://b.com"}],
+    ])
+
+    next_grid, row_index, col_index = ButtonLayoutEditorService.add_button(grid, row_index=0, col_index=3)
+
+    assert (row_index, col_index) == (0, 3)
+    assert ButtonLayoutEditorService.get_cell(next_grid, 0, 3) == {"text": "", "url": ""}
+
+
+def test_button_layout_editor_wraps_existing_rows_to_four_buttons() -> None:
+    grid = ButtonLayoutEditorService.to_grid([[
+        {"text": "A", "url": "https://a.com"},
+        {"text": "B", "url": "https://b.com"},
+        {"text": "C", "url": "https://c.com"},
+        {"text": "D", "url": "https://d.com"},
+        {"text": "E", "url": "https://e.com"},
+    ]])
+
+    assert ButtonLayoutEditorService.get_cell(grid, 0, 3) == {"text": "D", "url": "https://d.com"}
+    assert ButtonLayoutEditorService.get_cell(grid, 1, 0) == {"text": "E", "url": "https://e.com"}
 
 
 def test_button_layout_editor_move_supports_horizontal_and_vertical() -> None:
@@ -75,6 +127,71 @@ def test_build_layout_keyboard_shows_add_and_existing_buttons() -> None:
     first_row = keyboard.inline_keyboard[0]
     assert first_row[0].text == "关注"
     assert first_row[1].text == "➕ 按钮"
+    assert first_row[1].callback_data == "btned:add:ads:-1001:9:0:1"
+    assert keyboard.inline_keyboard[-1][0].text == "♻️ 清空按钮"
+    assert keyboard.inline_keyboard[-1][1].text == "🔙 返回"
+
+
+def test_build_layout_keyboard_uses_four_columns_and_clickable_holes() -> None:
+    grid = ButtonLayoutEditorService.to_grid([[
+        {"text": "A", "url": "https://a.com"},
+        {"text": "B", "url": "https://b.com"},
+        {"text": "C", "url": "https://c.com"},
+    ]])
+    grid = ButtonLayoutEditorService.delete_button(grid, 0, 1)
+
+    keyboard = build_layout_keyboard(ButtonEditorContext("auto_reply", -1001, 10), grid)
+    first_row = keyboard.inline_keyboard[0]
+
+    assert [button.text for button in first_row] == ["A", "⚠️ 空", "C", "➕ 按钮"]
+    assert first_row[1].callback_data == "btned:add:auto_reply:-1001:10:0:1"
+    assert first_row[3].callback_data == "btned:add:auto_reply:-1001:10:0:3"
+
+
+def test_button_layout_editor_clear_buttons_exports_empty() -> None:
+    grid = ButtonLayoutEditorService.clear_buttons()
+
+    assert grid == [[]]
+    assert ButtonLayoutEditorService.export_complete_buttons(grid) == []
+
+
+@pytest.mark.asyncio
+async def test_button_layout_editor_clear_callback_persists_empty_buttons(monkeypatch) -> None:
+    saved: list[list[dict[str, str]]] | None = None
+    shown: list[ButtonEditorContext] = []
+
+    async def fake_save_buttons(session, editor_ctx, buttons):
+        nonlocal saved
+        saved = buttons
+
+    async def fake_show_layout_menu(update, context, editor_ctx, *, session=None):
+        shown.append(editor_ctx)
+
+    async def fake_require_manage(_context, chat_id: int, user_id: int, capability: str = "manage"):
+        return True, None
+
+    monkeypatch.setattr(button_layout_editor, "_save_buttons_for_module", fake_save_buttons)
+    monkeypatch.setattr(button_layout_editor, "show_layout_menu", fake_show_layout_menu)
+    monkeypatch.setattr(button_layout_editor.PermissionPolicyService, "require_manage", fake_require_manage)
+
+    context = SimpleNamespace(
+        application=SimpleNamespace(bot_data={"db": _Db()}),
+        user_data={
+            "button_editor_drafts": {
+                "auto_reply:-1001:10": [[{"text": "A", "url": "https://a.com"}]],
+            }
+        },
+    )
+    update = SimpleNamespace(
+        callback_query=_CallbackQuery("btned:clear:auto_reply:-1001:10"),
+        effective_user=SimpleNamespace(id=42),
+    )
+
+    await button_layout_editor_callback(update, context)
+
+    assert saved == []
+    assert context.user_data["button_editor_drafts"]["auto_reply:-1001:10"] == [[]]
+    assert shown and shown[0].module_type == "auto_reply"
 
 
 @pytest.mark.asyncio

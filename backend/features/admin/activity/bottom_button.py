@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from backend.features.admin.support import *
+from backend.features.group_ops.services.bottom_button_service import MAX_BUTTON_COLS, MAX_LAYOUT_ROWS
 
 class BottomButtonAdminControllerMixin:
     async def _show_bottom_button_menu(
@@ -53,18 +54,27 @@ class BottomButtonAdminControllerMixin:
     ) -> None:
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
-            layouts = await compact_bottom_button_layouts(session, chat_id)
+            layouts = await list_bottom_button_layouts(session, chat_id)
             await session.commit()
 
-        grid: list[list[InlineKeyboardButton]] = []
         position_map = {(item.row_no, item.col_no): item for item in layouts}
-        max_row = max([item.row_no for item in layouts], default=1)
-        for row_no in range(1, min(max_row + 1, 3) + 1):
+        max_row = max([item.row_no for item in layouts], default=0)
+        display_rows = min(max(max_row + 1, 1), MAX_LAYOUT_ROWS)
+        grid: list[list[InlineKeyboardButton]] = []
+        for row_no in range(1, display_rows + 1):
             row: list[InlineKeyboardButton] = []
-            for col_no in range(1, 5):
+            row_items = [item for item in layouts if item.row_no == row_no]
+            if row_items:
+                last_col = min(max(item.col_no for item in row_items), MAX_BUTTON_COLS)
+                show_until = min(last_col + 1, MAX_BUTTON_COLS)
+            else:
+                show_until = 1
+            for col_no in range(1, show_until + 1):
                 item = position_map.get((row_no, col_no))
                 if item is None:
-                    row.append(InlineKeyboardButton("➕ 按钮", callback_data=f"btm:layout:{chat_id}:add"))
+                    has_later_button = any(existing.row_no == row_no and existing.col_no > col_no for existing in row_items)
+                    label = "⚠️ 空" if has_later_button else "➕ 按钮"
+                    row.append(InlineKeyboardButton(label, callback_data=f"btm:layout:{chat_id}:add:{row_no}:{col_no}"))
                 else:
                     row.append(InlineKeyboardButton(item.button_text, callback_data=f"btm:button:{chat_id}:detail:{item.id}"))
             grid.append(row)
@@ -77,9 +87,9 @@ class BottomButtonAdminControllerMixin:
         ]
         text = "\n".join(
             [
-                "⌨️ 底部按钮 | 按钮设置",
+                "⌨️ 底部按钮｜按钮设置",
                 "",
-                "先配置按钮布局（每行最多4个按钮）再点击按钮配置文案。",
+                "先配置按钮布局（每行最多4个按钮） 再点击按钮配置文案",
                 "",
                 build_management_layout_preview(layouts),
             ]
@@ -170,7 +180,15 @@ class BottomButtonAdminControllerMixin:
                     await self._show_bottom_button_layout_menu(update, context, chat_id)
                     return
                 if sub == "add":
-                    await add_layout_button(session, chat_id)
+                    row_no = callback_data.get_int_optional(4)
+                    col_no = callback_data.get_int_optional(5)
+                    try:
+                        await add_layout_button(session, chat_id, row_no=row_no, col_no=col_no)
+                    except ValidationError as exc:
+                        await session.commit()
+                        await answer_callback_query_safely(update, str(exc), show_alert=True)
+                        await self._show_bottom_button_layout_menu(update, context, chat_id)
+                        return
                     await session.commit()
                     await self._show_bottom_button_layout_menu(update, context, chat_id)
                     return

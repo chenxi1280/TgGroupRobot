@@ -149,3 +149,50 @@ async def test_unified_group_handler_sender_chat_skips_user_checks_but_runs_auto
     assert session.get_calls == []
     assert ensure_calls[0]["user_id"] is None
     assert auto_reply_calls == [(-1001, "你好")]
+
+
+@pytest.mark.asyncio
+async def test_unified_group_handler_skips_force_subscribe_for_admin(monkeypatch):
+    session = _FakeSession()
+    auto_reply_calls: list[tuple[int, str]] = []
+
+    async def fake_ensure(session, chat_id: int, **kwargs):
+        return _settings()
+
+    async def fake_is_admin(context, chat_id: int, user_id: int):
+        return True
+
+    async def forbidden_force_subscribe(*args, **kwargs):
+        raise AssertionError("admins should be exempt from force subscribe checks")
+
+    async def fake_auto_reply(context, db, chat, message, message_text: str):
+        auto_reply_calls.append((chat.id, message_text))
+
+    monkeypatch.setattr(core_hooks.ModuleSettingsService, "ensure", fake_ensure)
+    monkeypatch.setattr(core_hooks, "is_user_admin", fake_is_admin)
+    monkeypatch.setattr(core_hooks, "_process_rename_monitor", _false)
+    monkeypatch.setattr(core_hooks, "_process_group_lock_controls", _false)
+    monkeypatch.setattr(core_hooks, "_process_night_mode", _false)
+    monkeypatch.setattr(core_hooks, "_process_alliance_reply_ban", _false)
+    monkeypatch.setattr(core_hooks, "_check_force_subscribe", forbidden_force_subscribe)
+    monkeypatch.setattr(core_hooks, "_process_new_member_limit", forbidden_force_subscribe)
+    monkeypatch.setattr(core_hooks, "_process_garage_features", _false)
+    monkeypatch.setattr(core_hooks, "_process_banned_word_check", forbidden_force_subscribe)
+    monkeypatch.setattr(core_hooks, "_process_auto_reply", fake_auto_reply)
+
+    update = SimpleNamespace(
+        effective_chat=SimpleNamespace(id=-1001, type="supergroup", title="Test Group"),
+        effective_user=SimpleNamespace(
+            id=42,
+            username="alice",
+            first_name="Alice",
+            last_name=None,
+            language_code="zh-CN",
+        ),
+        effective_message=SimpleNamespace(text="管理员发言", caption=None, message_id=10, sender_chat=None),
+    )
+
+    handled = await core_hooks.unified_group_message_handler(update, _context(session))
+
+    assert handled is False
+    assert auto_reply_calls == [(-1001, "管理员发言")]

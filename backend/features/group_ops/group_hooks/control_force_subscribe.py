@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 import html
+from urllib.parse import urlparse
 
 import structlog
 from telegram import ChatPermissions, InlineKeyboardButton, InlineKeyboardMarkup
@@ -13,18 +14,51 @@ from backend.features.group_ops.group_hooks.common import _schedule_message_dele
 log = structlog.get_logger(__name__)
 
 
+def _normalize_force_subscribe_target(value: str | int | None) -> str | int | None:
+    if value is None:
+        return None
+    raw = str(value).strip()
+    if not raw:
+        return None
+    if (raw.startswith("-") and raw[1:].isdigit()) or raw.isdigit():
+        return int(raw)
+    if raw.startswith("@") and len(raw) > 1 and "/" not in raw and "?" not in raw:
+        return raw
+
+    parsed = urlparse(raw)
+    if parsed.scheme not in {"http", "https"} or parsed.netloc.lower() not in {"t.me", "www.t.me"}:
+        return None
+    if parsed.query or parsed.fragment:
+        return None
+    path = parsed.path.strip("/")
+    if not path or "/" in path or path.startswith("+") or path == "joinchat":
+        return None
+    return f"@{path}"
+
+
 def _build_force_subscribe_channel_button(value: str | None) -> InlineKeyboardButton | None:
     if not value:
         return None
-    label = value
+    label = value.strip()
     url: str | None = None
-    if value.startswith("@"):
-        url = f"https://t.me/{value[1:]}"
-    elif value.startswith("https://t.me/") or value.startswith("http://t.me/"):
-        url = value
+    if label.startswith("@"):
+        url = f"https://t.me/{label[1:]}"
+    elif label.startswith("https://t.me/") or label.startswith("http://t.me/"):
+        parsed = urlparse(label)
+        if not parsed.query and not parsed.fragment:
+            url = label
     if url is None:
         return None
     return InlineKeyboardButton(label, url=url)
+
+
+def _is_force_subscribe_member(member) -> bool:
+    status = getattr(member, "status", None)
+    if status in {"left", "kicked"}:
+        return False
+    if status == "restricted" and hasattr(member, "is_member"):
+        return bool(getattr(member, "is_member"))
+    return True
 
 
 def _build_force_subscribe_markup(settings) -> InlineKeyboardMarkup | None:
@@ -63,21 +97,39 @@ async def _check_force_subscribe(
     if not bool(getattr(settings, "force_subscribe_enabled", False)):
         return True
 
-    channels = [
+    configured_targets = [
         getattr(settings, "force_subscribe_bound_channel_1", None),
         getattr(settings, "force_subscribe_bound_channel_2", None),
     ]
-    channels = [channel for channel in channels if channel]
-    if not channels:
+    configured_targets = [target for target in configured_targets if target]
+    if not configured_targets:
         return True
 
     subscribed_results: list[bool] = []
-    for channel in channels:
-        try:
-            member = await context.bot.get_chat_member(channel, user.id)
-            subscribed_results.append(member.status not in {"left", "kicked"})
-        except Exception:
+    for configured_target in configured_targets:
+        target = _normalize_force_subscribe_target(configured_target)
+        if target is None:
             subscribed_results.append(False)
+            log.warning(
+                "force_subscribe_target_invalid",
+                chat_id=chat.id,
+                user_id=user.id,
+                target=configured_target,
+            )
+            continue
+        try:
+            member = await context.bot.get_chat_member(chat_id=target, user_id=user.id)
+            subscribed_results.append(_is_force_subscribe_member(member))
+        except Exception as exc:
+            subscribed_results.append(False)
+            log.warning(
+                "force_subscribe_check_failed",
+                chat_id=chat.id,
+                user_id=user.id,
+                target=configured_target,
+                normalized_target=target,
+                error=str(exc),
+            )
 
     check_mode = getattr(settings, "force_subscribe_check_mode", "all")
     subscribed = all(subscribed_results) if check_mode == "all" else any(subscribed_results)
@@ -102,7 +154,7 @@ async def _check_force_subscribe(
             log.warning("force_subscribe_mute_failed", chat_id=chat.id, user_id=user.id, error=str(exc))
 
     if action in {"delete_and_warn", "warn_only", "mute"}:
-        guide_text = getattr(settings, "force_subscribe_guide_text", None) or "{member}，您需要关注我们的频道才能发言。"
+        guide_text = getattr(settings, "force_subscribe_guide_text", None) or "{member}，您需要关注指定频道/群组后才能发言。"
         text = (
             guide_text
             .replace("{member}", html.escape(user.full_name))

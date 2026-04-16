@@ -85,9 +85,27 @@ def _next_empty_slot(layouts: list[BottomButtonLayout]) -> tuple[int, int]:
     raise ValidationError("按钮布局已满，最多支持 6 行，每行 4 个按钮。")
 
 
-async def add_layout_button(session: AsyncSession, chat_id: int) -> BottomButtonLayout:
+def _validate_layout_position(row_no: int, col_no: int) -> None:
+    if row_no < 1 or row_no > MAX_LAYOUT_ROWS:
+        raise ValidationError(f"按钮行数无效，最多支持 {MAX_LAYOUT_ROWS} 行。")
+    if col_no < 1 or col_no > MAX_BUTTON_COLS:
+        raise ValidationError(f"按钮列数无效，每行最多 {MAX_BUTTON_COLS} 个按钮。")
+
+
+async def add_layout_button(
+    session: AsyncSession,
+    chat_id: int,
+    *,
+    row_no: int | None = None,
+    col_no: int | None = None,
+) -> BottomButtonLayout:
     layouts = await list_layouts(session, chat_id)
-    row_no, col_no = _next_empty_slot(layouts)
+    if row_no is None or col_no is None:
+        row_no, col_no = _next_empty_slot(layouts)
+    else:
+        _validate_layout_position(row_no, col_no)
+        if any(item.row_no == row_no and item.col_no == col_no for item in layouts):
+            raise ValidationError("该位置已经有按钮。")
     layout = BottomButtonLayout(
         chat_id=chat_id,
         row_no=row_no,
@@ -112,7 +130,6 @@ async def delete_layout_button(session: AsyncSession, chat_id: int, layout_id: i
         raise ValidationError("按钮不存在。")
     await session.delete(layout)
     await session.flush()
-    await compact_layouts(session, chat_id)
 
 
 async def compact_layouts(session: AsyncSession, chat_id: int) -> list[BottomButtonLayout]:

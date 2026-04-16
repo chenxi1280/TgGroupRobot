@@ -88,7 +88,7 @@ CHAT_SETTINGS_COMPAT_SQL: tuple[str, ...] = (
     "ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS force_subscribe_bound_channel_2 TEXT",
     "ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS force_subscribe_cover_media_type VARCHAR(16)",
     "ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS force_subscribe_cover_file_id VARCHAR(256)",
-    "ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS force_subscribe_guide_text TEXT NOT NULL DEFAULT '{member}，您需要关注我们的频道才能发言。'",
+    "ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS force_subscribe_guide_text TEXT NOT NULL DEFAULT '{member}，您需要关注指定频道/群组后才能发言。'",
     "ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS force_subscribe_custom_buttons_enabled BOOLEAN NOT NULL DEFAULT FALSE",
     "ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS force_subscribe_check_mode VARCHAR(8) NOT NULL DEFAULT 'all'",
     "ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS force_subscribe_not_subscribed_action VARCHAR(32) NOT NULL DEFAULT 'delete_and_warn'",

@@ -5,6 +5,8 @@ from types import SimpleNamespace
 import pytest
 
 from backend.features.admin import admin_handler
+from backend.features.admin.activity import bottom_button as bottom_button_admin
+from backend.platform.db.schema.models.expansion import BottomButtonLayout
 from backend.shared.callback_parser import CallbackParser
 
 
@@ -93,6 +95,73 @@ async def test_show_auction_list_uses_one_page_when_empty(monkeypatch):
 
     assert rendered
     assert "0 条数据，第 1 页/共 1 页" in rendered[0]
+
+
+@pytest.mark.asyncio
+async def test_bottom_button_layout_menu_renders_position_controls(monkeypatch):
+    captured: dict[str, object] = {}
+
+    async def fake_list_layouts(session, chat_id: int):
+        return [
+            BottomButtonLayout(
+                id=1,
+                chat_id=chat_id,
+                row_no=1,
+                col_no=1,
+                button_text="报销加分必看",
+                payload_text="报销加分必看",
+                action_mode="send",
+                sort_key=11,
+            ),
+            BottomButtonLayout(
+                id=2,
+                chat_id=chat_id,
+                row_no=1,
+                col_no=2,
+                button_text="精品榜榜单",
+                payload_text="精品榜榜单",
+                action_mode="send",
+                sort_key=12,
+            ),
+            BottomButtonLayout(
+                id=3,
+                chat_id=chat_id,
+                row_no=2,
+                col_no=2,
+                button_text="按钮",
+                payload_text="按钮",
+                action_mode="send",
+                sort_key=22,
+            ),
+        ]
+
+    async def fake_safe_edit(update, *, text, reply_markup):
+        captured["text"] = text
+        captured["keyboard"] = reply_markup.inline_keyboard
+
+    monkeypatch.setattr(bottom_button_admin, "list_bottom_button_layouts", fake_list_layouts)
+    monkeypatch.setattr(bottom_button_admin, "build_management_layout_preview", lambda layouts: "预览")
+    monkeypatch.setattr(admin_handler._admin_handler.message_helper, "safe_edit", fake_safe_edit)
+
+    update = SimpleNamespace(effective_user=SimpleNamespace(id=42))
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(_FakeSession())}))
+
+    await admin_handler._admin_handler._show_bottom_button_layout_menu(update, context, -1001)
+
+    text = captured["text"]
+    rows = [[button.text for button in row] for row in captured["keyboard"]]
+    callbacks = [[button.callback_data for button in row] for row in captured["keyboard"]]
+
+    assert "⌨️ 底部按钮｜按钮设置" in text
+    assert "每行最多4个按钮" in text
+    assert rows[0] == ["报销加分必看", "精品榜榜单", "➕ 按钮"]
+    assert callbacks[0][2] == "btm:layout:-1001:add:1:3"
+    assert rows[1] == ["⚠️ 空", "按钮", "➕ 按钮"]
+    assert callbacks[1][0] == "btm:layout:-1001:add:2:1"
+    assert callbacks[1][2] == "btm:layout:-1001:add:2:3"
+    assert rows[2] == ["➕ 按钮"]
+    assert callbacks[2][0] == "btm:layout:-1001:add:3:1"
+    assert rows[-1] == ["♻️ 清空按钮", "🔙 返回"]
 
 
 @pytest.mark.asyncio

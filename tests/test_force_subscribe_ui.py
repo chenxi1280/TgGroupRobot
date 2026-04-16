@@ -64,18 +64,18 @@ async def test_force_subscribe_menu_shows_action_row(monkeypatch):
 
     assert rendered
     text, keyboard = rendered[0]
-    assert "🚫 没订阅时处理: 仅提示订阅" in text
-    assert "🎯 订阅判定: ✅ 全部频道都订阅" in text
+    assert "🚫 未关注时处理: 仅提示关注" in text
+    assert "🎯 关注判定: ✅ 全部目标都关注" in text
     assert "📄 提示文案: 请先订阅" in text
-    assert "🧩 按钮来源: 跟随频道按钮" in text
+    assert "🧩 按钮来源: 跟随绑定目标按钮" in text
     assert keyboard.inline_keyboard[0][0].text == "⚙️ 状态:"
     assert keyboard.inline_keyboard[0][1].text == "✅ 启动"
     assert keyboard.inline_keyboard[3][0].text == "设置封面"
     assert keyboard.inline_keyboard[3][1].text == "✅ 设置文案"
     assert keyboard.inline_keyboard[4][0].text == "设置按钮"
-    assert keyboard.inline_keyboard[5][0].text == "⚙️ 订阅判定："
-    assert keyboard.inline_keyboard[6][0].text == "⚙️ 没订阅时处理："
-    assert keyboard.inline_keyboard[6][1].text == "仅提示订阅"
+    assert keyboard.inline_keyboard[5][0].text == "⚙️ 关注判定："
+    assert keyboard.inline_keyboard[6][0].text == "⚙️ 未关注时处理："
+    assert keyboard.inline_keyboard[6][1].text == "仅提示关注"
 
 
 @pytest.mark.asyncio
@@ -235,3 +235,128 @@ async def test_force_subscribe_buttons_input_accepts_line_format(monkeypatch):
     ]
     assert shown == [-100123]
     assert clear_calls == [(-100123, 9), (9, 9)]
+
+
+@pytest.mark.asyncio
+async def test_force_subscribe_target_input_validates_accessible_group(monkeypatch):
+    settings = SimpleNamespace(force_subscribe_bound_channel_1=None)
+    shown: list[int] = []
+    clear_calls: list[tuple[int, int]] = []
+    bot_calls: list[tuple[str, object]] = []
+
+    async def fake_require_manage(*args, **kwargs):
+        return True, None
+
+    async def fake_get_chat_settings(session, chat_id: int):
+        return settings
+
+    async def fake_clear_user_state(session, *, chat_id: int, user_id: int):
+        clear_calls.append((chat_id, user_id))
+
+    async def fake_clear_private_input_state(session, user_id: int):
+        clear_calls.append((user_id, user_id))
+
+    async def fake_show_force_subscribe_menu(update, context, chat_id: int):
+        shown.append(chat_id)
+
+    class _Bot:
+        id = 777
+
+        async def get_chat(self, *, chat_id):
+            bot_calls.append(("get_chat", chat_id))
+            return SimpleNamespace(type="supergroup")
+
+        async def get_chat_member(self, *, chat_id, user_id):
+            bot_calls.append(("get_chat_member", (chat_id, user_id)))
+            return SimpleNamespace(status="administrator")
+
+    monkeypatch.setattr(admin_handler.PermissionPolicyService, "require_manage", fake_require_manage)
+    monkeypatch.setattr(admin_handler, "get_chat_settings", fake_get_chat_settings)
+    from backend.platform.state import state_service
+    monkeypatch.setattr(state_service, "clear_user_state", fake_clear_user_state)
+    monkeypatch.setattr(state_service, "clear_private_input_state", fake_clear_private_input_state)
+    monkeypatch.setattr(admin_handler._admin_handler, "_show_force_subscribe_menu", fake_show_force_subscribe_menu)
+
+    async def _reply_text(*args, **kwargs):
+        raise AssertionError("valid target should not produce a validation reply")
+
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=9),
+        effective_message=SimpleNamespace(reply_text=_reply_text),
+    )
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}), bot=_Bot())
+    session = _Session()
+    state = SimpleNamespace(
+        state_type="force_subscribe_channel_1_input",
+        state_data={"target_chat_id": -100123},
+        chat_id=9,
+    )
+
+    await handle_force_subscribe_channel_input(
+        update,
+        context,
+        session,
+        state,
+        "https://t.me/group_a",
+    )
+
+    assert settings.force_subscribe_bound_channel_1 == "https://t.me/group_a"
+    assert bot_calls == [
+        ("get_chat", "@group_a"),
+        ("get_chat_member", ("@group_a", 777)),
+    ]
+    assert shown == [-100123]
+    assert clear_calls == [(-100123, 9), (9, 9)]
+
+
+@pytest.mark.asyncio
+async def test_force_subscribe_target_input_rejects_bot_deep_link(monkeypatch):
+    settings = SimpleNamespace(force_subscribe_bound_channel_1="@old_channel")
+    replies: list[str] = []
+    shown: list[int] = []
+
+    async def fake_require_manage(*args, **kwargs):
+        return True, None
+
+    async def fake_get_chat_settings(session, chat_id: int):
+        return settings
+
+    async def fake_show_force_subscribe_menu(update, context, chat_id: int):
+        shown.append(chat_id)
+
+    class _Bot:
+        id = 777
+
+        async def get_chat(self, *, chat_id):
+            raise AssertionError("bot deep links should be rejected before Telegram lookup")
+
+    monkeypatch.setattr(admin_handler.PermissionPolicyService, "require_manage", fake_require_manage)
+    monkeypatch.setattr(admin_handler, "get_chat_settings", fake_get_chat_settings)
+    monkeypatch.setattr(admin_handler._admin_handler, "_show_force_subscribe_menu", fake_show_force_subscribe_menu)
+
+    async def _reply_text(text: str, **kwargs):
+        replies.append(text)
+
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=9),
+        effective_message=SimpleNamespace(reply_text=_reply_text),
+    )
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}), bot=_Bot())
+    session = _Session()
+    state = SimpleNamespace(
+        state_type="force_subscribe_channel_1_input",
+        state_data={"target_chat_id": -100123},
+        chat_id=9,
+    )
+
+    await handle_force_subscribe_channel_input(
+        update,
+        context,
+        session,
+        state,
+        "https://t.me/demo_bot?start=abc",
+    )
+
+    assert settings.force_subscribe_bound_channel_1 == "@old_channel"
+    assert replies == ["本期不支持机器人目标，请填写频道或群组的 @用户名、t.me 链接或数字 ID。"]
+    assert shown == []

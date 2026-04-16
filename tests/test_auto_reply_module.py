@@ -6,12 +6,13 @@ import pytest
 from telegram.error import BadRequest
 
 from backend.features.moderation import auto_reply_handler
+from backend.features.moderation.auto_reply_detail_actions import auto_reply_preview_action
 from backend.features.moderation.auto_reply_handler import (
     _extract_auto_reply_list_page,
     _format_auto_reply_rule_detail,
     _parse_auto_reply_buttons_input,
 )
-from backend.features.moderation.auto_reply_payloads import send_auto_reply_payload
+from backend.features.moderation.auto_reply_payloads import build_auto_reply_markup, send_auto_reply_payload
 from backend.features.moderation.ui.auto_reply import (
     auto_reply_delay_keyboard,
     auto_reply_detail_keyboard,
@@ -362,6 +363,132 @@ def test_parse_auto_reply_buttons_input_accepts_line_format() -> None:
         [{"text": "官网", "url": "https://example.com"}],
         [{"text": "帮助", "url": "https://help.example.com"}],
     ]
+
+
+def test_parse_auto_reply_buttons_input_wraps_json_rows_to_four_buttons() -> None:
+    buttons = _parse_auto_reply_buttons_input(
+        '[['
+        '{"text":"A","url":"https://a.com"},'
+        '{"text":"B","url":"https://b.com"},'
+        '{"text":"C","url":"https://c.com"},'
+        '{"text":"D","url":"https://d.com"},'
+        '{"text":"E","url":"https://e.com"}'
+        ']]'
+    )
+
+    assert buttons == [
+        [
+            {"text": "A", "url": "https://a.com"},
+            {"text": "B", "url": "https://b.com"},
+            {"text": "C", "url": "https://c.com"},
+            {"text": "D", "url": "https://d.com"},
+        ],
+        [{"text": "E", "url": "https://e.com"}],
+    ]
+
+
+def test_build_auto_reply_markup_preserves_url_button_rows() -> None:
+    rule = SimpleNamespace(
+        buttons=[
+            [
+                {"text": "官网", "url": "https://example.com"},
+                {"text": "帮助", "url": "https://help.example.com"},
+            ],
+            [{"text": "联系", "url": "https://t.me/demo"}],
+        ]
+    )
+
+    markup = build_auto_reply_markup(rule)
+
+    assert markup is not None
+    assert [[button.text for button in row] for row in markup.inline_keyboard] == [["官网", "帮助"], ["联系"]]
+    assert markup.inline_keyboard[0][0].url == "https://example.com"
+    assert markup.inline_keyboard[1][0].url == "https://t.me/demo"
+
+
+def test_build_auto_reply_markup_wraps_legacy_rows_to_four_buttons() -> None:
+    rule = SimpleNamespace(
+        buttons=[[
+            {"text": "A", "url": "https://a.com"},
+            {"text": "B", "url": "https://b.com"},
+            {"text": "C", "url": "https://c.com"},
+            {"text": "D", "url": "https://d.com"},
+            {"text": "E", "url": "https://e.com"},
+        ]]
+    )
+
+    markup = build_auto_reply_markup(rule)
+
+    assert markup is not None
+    assert [[button.text for button in row] for row in markup.inline_keyboard] == [["A", "B", "C", "D"], ["E"]]
+
+
+@pytest.mark.asyncio
+async def test_send_auto_reply_payload_sends_url_buttons() -> None:
+    bot = _FakeAutoReplyBot()
+    context = SimpleNamespace(bot=bot)
+    rule = SimpleNamespace(
+        cover_media_type=None,
+        cover_media_file_id=None,
+        buttons=[[{"text": "官网", "url": "https://example.com"}]],
+    )
+
+    sent = await send_auto_reply_payload(context, chat_id=-100123, text="123", rule=rule)
+
+    assert sent.message_id == 101
+    assert [name for name, _ in bot.calls] == ["send_message"]
+    markup = bot.calls[0][1]["reply_markup"]
+    assert markup.inline_keyboard[0][0].text == "官网"
+    assert markup.inline_keyboard[0][0].url == "https://example.com"
+
+
+@pytest.mark.asyncio
+async def test_auto_reply_preview_sends_text_rule_with_buttons() -> None:
+    q = _FakeCallbackQuery("auto_reply:preview:-100123:9")
+    update = SimpleNamespace(
+        callback_query=q,
+        effective_chat=SimpleNamespace(id=10001, type="private"),
+        effective_user=SimpleNamespace(id=42),
+    )
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(_FakeSession())}))
+    rule = SimpleNamespace(
+        id=9,
+        chat_id=-100123,
+        reply_content="预览内容",
+        cover_media_type=None,
+        cover_media_file_id=None,
+        buttons=[[{"text": "官网", "url": "https://example.com"}]],
+    )
+    sent: list[dict] = []
+
+    async def fake_resolve_target_chat_id(update, context):
+        return -100123
+
+    async def fake_get_rule(session, chat_id: int, rule_id: int):
+        assert chat_id == -100123
+        assert rule_id == 9
+        return rule
+
+    async def fake_send_payload(context, **kwargs):
+        sent.append(kwargs)
+        return SimpleNamespace(message_id=88)
+
+    await auto_reply_preview_action(
+        update,
+        context,
+        ensure_callback_update_func=lambda update: True,
+        resolve_target_chat_id_func=fake_resolve_target_chat_id,
+        get_rule_in_chat_func=fake_get_rule,
+        send_auto_reply_payload_func=fake_send_payload,
+    )
+
+    assert q.answers == [("", False)]
+    assert q.edits == ["👁️ 预览已发送到当前会话，请查看最新一条机器人消息。"]
+    assert sent == [{
+        "chat_id": 10001,
+        "text": "预览内容",
+        "rule": rule,
+    }]
 
 
 @pytest.mark.asyncio

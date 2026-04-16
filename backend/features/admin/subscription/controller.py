@@ -90,7 +90,7 @@ class SubscriptionAdminControllerMixin:
             "关键功能",
             f"• 新人验证：{'✅ 开启' if settings.verification_enabled else '❌ 关闭'}（{settings.verification_mode} / {settings.verification_timeout_seconds}秒）",
             f"• 新成员限制：{'✅ 开启' if new_member_limit_enabled else '❌ 关闭'}（{_format_duration_label(new_member_limit_window)}）",
-            f"• 强制订阅：{'✅ 开启' if getattr(settings, 'force_subscribe_enabled', False) else '❌ 关闭'}",
+            f"• 强制关注：{'✅ 开启' if getattr(settings, 'force_subscribe_enabled', False) else '❌ 关闭'}",
             f"• 垃圾防护：{'✅ 开启' if garbage_guard_enabled else '❌ 关闭'}",
             f"• 关群设置：{'✅ 开启' if group_lock_enabled else '❌ 关闭'}",
             f"• 自动删除：{auto_delete_count}/6 项",
@@ -104,7 +104,7 @@ class SubscriptionAdminControllerMixin:
             ch1 = getattr(settings, "force_subscribe_bound_channel_1", None)
             ch2 = getattr(settings, "force_subscribe_bound_channel_2", None)
             if not ch1 and not ch2:
-                warnings.append("⚠️ 强制订阅已开启但尚未绑定频道")
+                warnings.append("⚠️ 强制关注已开启但尚未绑定频道/群组")
         if getattr(settings, "group_lock_schedule_enabled", False):
             open_time = getattr(settings, "group_lock_open_time", None)
             close_time = getattr(settings, "group_lock_close_time", None)
@@ -117,7 +117,7 @@ class SubscriptionAdminControllerMixin:
         ):
             warnings.append("⚠️ 当前验证、垃圾防护均关闭，新成员保护较弱")
         if getattr(settings, "force_subscribe_enabled", False) and not settings.verification_enabled:
-            warnings.append("ℹ️ 当前会先检查订阅状态，建议同时开启新人验证以减少误伤")
+            warnings.append("ℹ️ 当前会先检查关注状态，建议同时开启新人验证以减少误伤")
 
         if warnings:
             lines.extend(warnings)
@@ -133,7 +133,7 @@ class SubscriptionAdminControllerMixin:
                 InlineKeyboardButton("🧑‍🍼 新成员限制", callback_data=f"adm:menu:newmem:{chat_id}"),
             ],
             [
-                InlineKeyboardButton("📣 强制订阅", callback_data=f"adm:menu:forcesub:{chat_id}"),
+                InlineKeyboardButton("📣 强制关注", callback_data=f"adm:menu:forcesub:{chat_id}"),
                 InlineKeyboardButton("🧨 关群设置", callback_data=f"adm:menu:closegroup:{chat_id}"),
                 InlineKeyboardButton("⏰ 定时消息", callback_data=f"sm:list:{chat_id}:0"),
             ],

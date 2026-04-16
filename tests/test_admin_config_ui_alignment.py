@@ -433,10 +433,10 @@ async def test_health_menu_surfaces_conflicts_and_shortcuts(monkeypatch):
     text, keyboard = rendered[0]
     assert "🩺 [测试群] 群组健康检查" in text
     assert "• 定时消息：2 条（启用 1 条）" in text
-    assert "⚠️ 强制订阅已开启但尚未绑定频道" in text
+    assert "⚠️ 强制关注已开启但尚未绑定频道/群组" in text
     assert "⚠️ 定时关群已开启但开群/关群时间未完整配置" in text
     assert "⚠️ 当前验证、垃圾防护均关闭，新成员保护较弱" in text
 
     row_texts = [[button.text for button in row] for row in keyboard.inline_keyboard]
     assert ["🛡️ 新人验证", "☂️ 垃圾防护"] in row_texts
-    assert ["📣 强制订阅", "🧨 关群设置", "⏰ 定时消息"] in row_texts
+    assert ["📣 强制关注", "🧨 关群设置", "⏰ 定时消息"] in row_texts

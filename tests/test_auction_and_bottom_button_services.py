@@ -7,6 +7,7 @@ import pytest
 from backend.platform.db.schema.models.expansion import AuctionItem, BottomButtonLayout
 from backend.features.activity.services.auction_service import format_auction_announcement, parse_auction_end_at, parse_bid_amount
 from backend.shared.services.base import ValidationError
+from backend.features.group_ops.services import bottom_button_service
 from backend.features.group_ops.services.bottom_button_service import build_runtime_markup, sanitize_button_text
 
 
@@ -59,3 +60,107 @@ def test_bottom_button_runtime_markup_supports_send_and_fill():
 def test_sanitize_button_text_rejects_empty():
     with pytest.raises(ValidationError):
         sanitize_button_text("   ")
+
+
+@pytest.mark.asyncio
+async def test_bottom_button_add_layout_button_targets_specific_empty_slot(monkeypatch):
+    async def fake_list_layouts(session, chat_id: int):
+        return [
+            BottomButtonLayout(
+                id=1,
+                chat_id=chat_id,
+                row_no=1,
+                col_no=1,
+                button_text="已有",
+                payload_text="已有",
+                action_mode="send",
+                sort_key=11,
+            )
+        ]
+
+    class _Session:
+        def __init__(self):
+            self.added: list[BottomButtonLayout] = []
+
+        def add(self, layout):
+            self.added.append(layout)
+
+        async def flush(self):
+            return None
+
+    monkeypatch.setattr(bottom_button_service, "list_layouts", fake_list_layouts)
+    session = _Session()
+
+    layout = await bottom_button_service.add_layout_button(session, -1001, row_no=2, col_no=4)
+
+    assert layout.row_no == 2
+    assert layout.col_no == 4
+    assert layout.sort_key == 24
+    assert session.added == [layout]
+
+
+@pytest.mark.asyncio
+async def test_bottom_button_add_layout_button_rejects_occupied_position(monkeypatch):
+    async def fake_list_layouts(session, chat_id: int):
+        return [
+            BottomButtonLayout(
+                id=1,
+                chat_id=chat_id,
+                row_no=1,
+                col_no=1,
+                button_text="已有",
+                payload_text="已有",
+                action_mode="send",
+                sort_key=11,
+            )
+        ]
+
+    class _Session:
+        def add(self, layout):
+            raise AssertionError("occupied slots should not add a new layout")
+
+    monkeypatch.setattr(bottom_button_service, "list_layouts", fake_list_layouts)
+
+    with pytest.raises(ValidationError, match="该位置已经有按钮"):
+        await bottom_button_service.add_layout_button(_Session(), -1001, row_no=1, col_no=1)
+
+
+@pytest.mark.asyncio
+async def test_bottom_button_delete_preserves_manual_layout_holes(monkeypatch):
+    layout = BottomButtonLayout(
+        id=3,
+        chat_id=-1001,
+        row_no=1,
+        col_no=2,
+        button_text="删除",
+        payload_text="删除",
+        action_mode="send",
+        sort_key=12,
+    )
+    compact_called = False
+
+    async def fake_get_layout(session, chat_id: int, layout_id: int):
+        return layout
+
+    async def fake_compact_layouts(session, chat_id: int):
+        nonlocal compact_called
+        compact_called = True
+
+    class _Session:
+        def __init__(self):
+            self.deleted = None
+
+        async def delete(self, item):
+            self.deleted = item
+
+        async def flush(self):
+            return None
+
+    monkeypatch.setattr(bottom_button_service, "get_layout", fake_get_layout)
+    monkeypatch.setattr(bottom_button_service, "compact_layouts", fake_compact_layouts)
+    session = _Session()
+
+    await bottom_button_service.delete_layout_button(session, -1001, 3)
+
+    assert session.deleted is layout
+    assert compact_called is False

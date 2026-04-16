@@ -14,7 +14,7 @@ from backend.shared.callback_parser import CallbackParser
 from backend.shared.services.base import ValidationError
 from backend.shared.services.permission_service import PermissionPolicyService
 
-MAX_BUTTON_COLS = 3
+MAX_BUTTON_COLS = 4
 TEXT_INPUT_STATE = "button_editor_text_input"
 URL_INPUT_STATE = "button_editor_url_input"
 
@@ -56,11 +56,25 @@ class ButtonLayoutEditorService:
         return cls._trim_grid(grid)
 
     @classmethod
-    def add_button(cls, grid: ButtonGrid) -> tuple[ButtonGrid, int, int]:
+    def add_button(
+        cls,
+        grid: ButtonGrid,
+        row_index: int | None = None,
+        col_index: int | None = None,
+    ) -> tuple[ButtonGrid, int, int]:
         draft = cls._clone_grid(grid)
-        row_index, col_index = cls.first_empty_slot(draft)
+        if row_index is None or col_index is None:
+            row_index, col_index = cls.first_empty_slot(draft)
+        elif row_index < 0 or col_index < 0 or col_index >= MAX_BUTTON_COLS:
+            raise ValidationError(f"按钮位置无效，每行最多 {MAX_BUTTON_COLS} 个按钮。")
+        elif cls.get_cell(draft, row_index, col_index) is not None:
+            raise ValidationError("该位置已经有按钮。")
         cls._set_cell(draft, row_index, col_index, {"text": "", "url": ""})
         return cls._trim_grid(draft), row_index, col_index
+
+    @classmethod
+    def clear_buttons(cls) -> ButtonGrid:
+        return [[]]
 
     @classmethod
     def get_cell(cls, grid: ButtonGrid, row_index: int, col_index: int) -> dict[str, str] | None:
@@ -142,8 +156,9 @@ class ButtonLayoutEditorService:
 
     @classmethod
     def export_complete_buttons(cls, grid: ButtonGrid) -> list[list[dict[str, str]]]:
-        complete: list[dict[str, str]] = []
+        rows: list[list[dict[str, str]]] = []
         for row in grid:
+            exported_row: list[dict[str, str]] = []
             for cell in row:
                 if cell is None:
                     continue
@@ -151,13 +166,13 @@ class ButtonLayoutEditorService:
                 raw_url = str(cell.get("url", "")).strip()
                 if not text or not raw_url:
                     continue
-                complete.append({
+                exported_row.append({
                     "text": cls.sanitize_button_text(text),
                     "url": cls.normalize_button_url(raw_url),
                 })
-        rows: list[list[dict[str, str]]] = []
-        for index in range(0, len(complete), MAX_BUTTON_COLS):
-            rows.append(complete[index:index + MAX_BUTTON_COLS])
+            if exported_row:
+                for index in range(0, len(exported_row), MAX_BUTTON_COLS):
+                    rows.append(exported_row[index:index + MAX_BUTTON_COLS])
         return rows
 
     @classmethod
@@ -168,18 +183,35 @@ class ButtonLayoutEditorService:
         rows: list[list[dict[str, Any]]] = []
         for row_index in range(rows_to_render):
             row: list[dict[str, Any]] = []
-            for col_index in range(MAX_BUTTON_COLS):
+            row_cells = draft[row_index] if row_index < len(draft) else []
+            occupied_cols = [
+                col_index
+                for col_index in range(min(len(row_cells), MAX_BUTTON_COLS))
+                if cls.get_cell(draft, row_index, col_index) is not None
+            ]
+            if occupied_cols:
+                show_until = min(max(occupied_cols) + 2, MAX_BUTTON_COLS)
+            else:
+                show_until = 1
+            for col_index in range(show_until):
                 cell = cls.get_cell(draft, row_index, col_index)
                 if cell is not None:
                     label = str(cell.get("text", "")).strip() or "⚠️ 空"
                     row.append({"kind": "cell", "label": label, "row": row_index, "col": col_index})
-                elif row_index == add_row and col_index == add_col:
-                    row.append({"kind": "add", "label": "➕ 按钮"})
-                elif row_index < len(draft) or row_index == add_row:
-                    row.append({"kind": "empty", "label": "⚠️ 空"})
+                    continue
+                has_later_button = any(
+                    cls.get_cell(draft, row_index, later_col) is not None
+                    for later_col in range(col_index + 1, MAX_BUTTON_COLS)
+                )
+                row.append({
+                    "kind": "empty" if has_later_button else "add",
+                    "label": "⚠️ 空" if has_later_button else "➕ 按钮",
+                    "row": row_index,
+                    "col": col_index,
+                })
             if row:
                 rows.append(row)
-        return rows or [[{"kind": "add", "label": "➕ 按钮"}]]
+        return rows or [[{"kind": "add", "label": "➕ 按钮", "row": 0, "col": 0}]]
 
     @classmethod
     def first_empty_slot(cls, grid: ButtonGrid) -> tuple[int, int]:
@@ -212,8 +244,14 @@ class ButtonLayoutEditorService:
                     except ValidationError:
                         continue
                 if row:
-                    normalized.append(row[:MAX_BUTTON_COLS])
-        return [row[:MAX_BUTTON_COLS] for row in normalized]
+                    normalized.append(row)
+        normalized_rows: list[list[dict[str, str]]] = []
+        for row in normalized:
+            for index in range(0, len(row), MAX_BUTTON_COLS):
+                chunk = row[index:index + MAX_BUTTON_COLS]
+                if chunk:
+                    normalized_rows.append(chunk)
+        return normalized_rows
 
     @staticmethod
     def _clone_grid(grid: ButtonGrid) -> ButtonGrid:
@@ -431,13 +469,19 @@ def build_layout_keyboard(editor_ctx: ButtonEditorContext, grid: ButtonGrid) -> 
                     f"btned:detail:{editor_ctx.module_type}:{editor_ctx.target_chat_id}:{editor_ctx.entity_id}:"
                     f"{item['row']}:{item['col']}"
                 )
-            elif kind == "add":
-                callback_data = f"btned:add:{editor_ctx.module_type}:{editor_ctx.target_chat_id}:{editor_ctx.entity_id}"
+            elif kind in {"add", "empty"}:
+                callback_data = (
+                    f"btned:add:{editor_ctx.module_type}:{editor_ctx.target_chat_id}:{editor_ctx.entity_id}:"
+                    f"{item['row']}:{item['col']}"
+                )
             else:
                 callback_data = "btned:noop"
             keyboard_row.append(InlineKeyboardButton(str(item["label"]), callback_data=callback_data))
         rows.append(keyboard_row)
-    rows.append([InlineKeyboardButton("🔙 返回", callback_data=_module_return_callback(editor_ctx))])
+    rows.append([
+        InlineKeyboardButton("♻️ 清空按钮", callback_data=f"btned:clear:{editor_ctx.module_type}:{editor_ctx.target_chat_id}:{editor_ctx.entity_id}"),
+        InlineKeyboardButton("🔙 返回", callback_data=_module_return_callback(editor_ctx)),
+    ])
     return InlineKeyboardMarkup(rows)
 
 
@@ -485,8 +529,8 @@ async def show_layout_menu(
     try:
         draft = await _ensure_draft(session, context, editor_ctx)
         text = (
-            f"{_module_title(editor_ctx.module_type)} | 按钮布局\n\n"
-            "先配置按钮布局（每行最多 3 个按钮） 再点击按钮配置文案和链接"
+            f"{_module_title(editor_ctx.module_type)}｜按钮布局\n\n"
+            "先配置按钮布局（每行最多4个按钮） 再点击按钮配置文案"
         )
         keyboard = build_layout_keyboard(editor_ctx, draft)
         if update.callback_query is not None:
@@ -581,7 +625,11 @@ async def button_layout_editor_callback(update: Update, context: ContextTypes.DE
 
             if action == "add":
                 draft = await _ensure_draft(session, context, editor_ctx)
-                next_grid, row_index, col_index = ButtonLayoutEditorService.add_button(draft)
+                next_grid, row_index, col_index = ButtonLayoutEditorService.add_button(
+                    draft,
+                    row_index=editor_ctx.row_index,
+                    col_index=editor_ctx.col_index,
+                )
                 await _persist_draft(session, context, editor_ctx, next_grid)
                 await session.commit()
                 await show_button_detail(
@@ -596,6 +644,13 @@ async def button_layout_editor_callback(update: Update, context: ContextTypes.DE
                     ),
                     session=session,
                 )
+                return
+
+            if action == "clear":
+                next_grid = ButtonLayoutEditorService.clear_buttons()
+                await _persist_draft(session, context, editor_ctx, next_grid)
+                await session.commit()
+                await show_layout_menu(update, context, editor_ctx, session=session)
                 return
 
             if action == "detail":

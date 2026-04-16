@@ -69,7 +69,7 @@ class MessageDispatcher:
                 return
             await self._dispatch_private(update, context, chat, user, message_text)
         else:
-            # 群聊消息统一进入处理链，非文本消息也要经过强制订阅/防护等规则。
+            # 群聊消息统一进入处理链，非文本消息也要经过强制关注/防护等规则。
             if user is None:
                 return
             await self._group_message_handler.handle(update, context, chat, user, message_text)
