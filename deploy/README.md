@@ -21,7 +21,8 @@
 
 ## 维护约定
 
-1. 生产环境只发布 `tggrouprobot-bot` 容器。
+1. 生产环境发布 `tggrouprobot-bot` 和 `tggrouprobot-docs-site` 两个容器。
 2. 数据库由独立的 `infra-compose` 提供，不在本项目中创建 PostgreSQL。
 3. 服务器环境变量统一放在 `/data/tggrouprobot/shared/.env`。
 4. 数据库结构初始化与更新由本项目自己的 `sql/init.sql` 负责。
+5. 用户功能手册站点由 `docs-site` 构建，默认映射宿主机 `8080` 端口，可通过 `DOCS_SITE_HOST_PORT` 调整。

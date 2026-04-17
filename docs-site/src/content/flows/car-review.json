@@ -143,14 +143,14 @@
           },
           {
             "label": "投稿命令",
-            "callbackData": "crv:submit_command:{chat_id}",
+            "callbackData": "crv:submit_cmd:edit:{chat_id}",
             "action": "input",
             "target": "submit_command_input",
             "feedback": "请输入投稿命令。"
           },
           {
             "label": "排行命令",
-            "callbackData": "crv:rank_command:{chat_id}",
+            "callbackData": "crv:rank_cmd:edit:{chat_id}",
             "action": "input",
             "target": "rank_command_input",
             "feedback": "请输入排行命令。"
@@ -159,14 +159,14 @@
         [
           {
             "label": "审批人",
-            "callbackData": "crv:approver:{chat_id}",
+            "callbackData": "crv:approver:set:{chat_id}",
             "action": "input",
             "target": "approver_input",
             "feedback": "请输入审批人。"
           },
           {
             "label": "模板",
-            "callbackData": "crv:template:{chat_id}",
+            "callbackData": "crv:template:edit:{chat_id}",
             "action": "input",
             "target": "template_input",
             "feedback": "请输入模板。"

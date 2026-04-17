@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 
 from backend.features.admin.core.menu_dispatch import ADMIN_MENU_HANDLERS
-from backend.features.admin.runtime import admin_runtime
+from backend.features.admin.runtime import ADM_ACTION_HANDLERS, PREFIX_HANDLERS, admin_runtime
 from backend.features.admin.ui.admin_main import admin_main_menu
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -173,6 +173,22 @@ def test_admin_main_menu_actions_map_to_real_handlers() -> None:
         for action, handler_name in ADMIN_MENU_HANDLERS.items()
         if not hasattr(admin_runtime, handler_name)
     } == set()
+
+
+def test_admin_runtime_dispatch_tables_point_to_existing_methods() -> None:
+    missing_prefix_handlers = {
+        prefix: handler_name
+        for prefix, handler_name in PREFIX_HANDLERS.items()
+        if not hasattr(admin_runtime, handler_name)
+    }
+    missing_action_handlers = {
+        action: handler_name
+        for action, handler_name in ADM_ACTION_HANDLERS.items()
+        if not hasattr(admin_runtime, handler_name)
+    }
+
+    assert missing_prefix_handlers == {}
+    assert missing_action_handlers == {}
 
 
 def test_adm_menu_callbacks_use_explicit_menu_actions() -> None:

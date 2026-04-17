@@ -259,14 +259,14 @@
         [
           {
             "label": "每 60 分钟",
-            "callbackData": "sm:set:{chat_id}:{task_id}:interval_minutes:60",
+            "callbackData": "sm:set:{chat_id}:{task_id}:repeat:60",
             "action": "toggle",
             "target": "detail",
             "feedback": "发送频率已设为 60 分钟。"
           },
           {
             "label": "置顶",
-            "callbackData": "sm:set:{chat_id}:{task_id}:pin:1",
+            "callbackData": "sm:set:{chat_id}:{task_id}:pin_message:1",
             "action": "toggle",
             "target": "detail",
             "feedback": "置顶已开启。"

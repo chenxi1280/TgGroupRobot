@@ -12,6 +12,23 @@ from backend.shared.services.module_settings_service import ModuleSettingsServic
 from backend.platform.state.conversation_state_service import ConversationStateService, clear_private_input_state
 
 
+CLASSIFIED_NON_PRIVATE_STATES = {
+    ConversationStateType.auction_wait_title.value,
+    ConversationStateType.auction_wait_start_price.value,
+    ConversationStateType.auction_wait_end_at.value,
+    ConversationStateType.auction_wait_confirm.value,
+    ConversationStateType.control_permission_config.value,
+    ConversationStateType.force_subscribe_config.value,
+    ConversationStateType.group_lock_config.value,
+    ConversationStateType.invite_link_buttons_input.value,
+    ConversationStateType.name_change_monitor_config.value,
+    ConversationStateType.scheduled_create.value,
+    ConversationStateType.sm_edit_day_start.value,
+    ConversationStateType.sm_edit_day_end.value,
+    ConversationStateType.welcome_buttons_input.value,
+}
+
+
 class DummySession:
     def __init__(self) -> None:
         self.added: list[object] = []
@@ -80,29 +97,66 @@ def test_conversation_state_types_are_registered_or_classified() -> None:
     from backend.platform.telegram.private_config_registry import build_private_config_handlers
 
     handlers = build_private_config_handlers()
-    classified_non_private_states = {
-        ConversationStateType.auction_wait_title.value,
-        ConversationStateType.auction_wait_start_price.value,
-        ConversationStateType.auction_wait_end_at.value,
-        ConversationStateType.auction_wait_confirm.value,
-        ConversationStateType.control_permission_config.value,
-        ConversationStateType.force_subscribe_config.value,
-        ConversationStateType.group_lock_config.value,
-        ConversationStateType.invite_link_buttons_input.value,
-        ConversationStateType.name_change_monitor_config.value,
-        ConversationStateType.scheduled_create.value,
-        ConversationStateType.sm_edit_day_start.value,
-        ConversationStateType.sm_edit_day_end.value,
-        ConversationStateType.welcome_buttons_input.value,
-    }
 
     missing = {
         item.value
         for item in ConversationStateType
-        if item.value not in handlers and item.value not in classified_non_private_states
+        if item.value not in handlers and item.value not in CLASSIFIED_NON_PRIVATE_STATES
     }
 
     assert missing == set()
+
+
+def test_state_writes_are_registered_or_explicitly_classified() -> None:
+    from backend.platform.telegram.private_config_registry import build_private_config_handlers
+
+    enum_values = {item.name: item.value for item in ConversationStateType}
+    handlers = set(build_private_config_handlers())
+
+    def resolve_state_value(node: ast.AST) -> str | None:
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return node.value
+        if isinstance(node, ast.Attribute) and node.attr == "value":
+            enum_attr = node.value
+            if (
+                isinstance(enum_attr, ast.Attribute)
+                and isinstance(enum_attr.value, ast.Name)
+                and enum_attr.value.id == "ConversationStateType"
+            ):
+                return enum_values.get(enum_attr.attr)
+        return None
+
+    def call_name(node: ast.Call) -> str:
+        if isinstance(node.func, ast.Name):
+            return node.func.id
+        if isinstance(node.func, ast.Attribute):
+            return node.func.attr
+        return ""
+
+    state_writes: dict[str, set[str]] = {}
+    for path in Path("backend").rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or call_name(node) not in {"set_user_state", "start"}:
+                continue
+
+            candidates: list[ast.AST] = []
+            candidates.extend(keyword.value for keyword in node.keywords if keyword.arg == "state_type")
+            if len(node.args) >= 4:
+                candidates.append(node.args[3])
+
+            for candidate in candidates:
+                state_value = resolve_state_value(candidate)
+                if state_value is not None:
+                    state_writes.setdefault(state_value, set()).add(f"{path}:{node.lineno}")
+
+    missing = {
+        state_value: sorted(sources)
+        for state_value, sources in sorted(state_writes.items())
+        if state_value not in handlers and state_value not in CLASSIFIED_NON_PRIVATE_STATES
+    }
+
+    assert missing == {}
 
 
 @pytest.mark.asyncio

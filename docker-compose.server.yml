@@ -24,6 +24,23 @@ services:
     networks:
       - infra_default
 
+  docs-site:
+    build:
+      context: .
+      dockerfile: Dockerfile.docs-site
+    image: tggrouprobot-docs-site:latest
+    container_name: tggrouprobot-docs-site
+    restart: unless-stopped
+    ports:
+      - "${DOCS_SITE_HOST_PORT:-8080}:80"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - infra_default
+
 networks:
   infra_default:
     name: ${INFRA_NETWORK_NAME:-infra_default}

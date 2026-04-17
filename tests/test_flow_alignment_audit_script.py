@@ -30,10 +30,52 @@ def test_flow_alignment_audit_reports_reverse_mapping_stats_without_blocking() -
     assert payload["flows"] == len(list((ROOT / "docs-site/src/content/flows").glob("*.json")))
     assert payload["callbacks"] == payload["templateMatches"] + payload["routeOnlyMatches"]
     assert payload["broadRouteOnlyMatches"] == counts.get("P3", 0)
+    assert payload["broadRouteOnlyMatches"] == len(payload["p3BranchReview"])
+    assert payload["broadRouteOnlyMatches"] == 0
     assert "P1" not in counts
     assert "P2" not in counts
+    assert "P3" not in counts
+    assert len(payload["coverageMatrix"]) == payload["flows"]
+    assert payload["matrixCounts"] == {"low": payload["flows"]}
+    assert set(payload["duplicateSummary"]) == {"同一能力多入口", "旧入口兼容", "真实重复实现"}
     if payload["findings"]:
         assert payload["sample"]
+
+
+def test_flow_alignment_audit_builds_feature_coverage_matrix() -> None:
+    result = run_audit_script()
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    rows = {row["slug"]: row for row in payload["coverageMatrix"]}
+
+    invite_row = rows["invite-link-management"]
+    assert invite_row["entry"]["registeredMenuKeys"] == ["invite"]
+    assert "inv:home:" in invite_row["callbackRoutes"]["prefixes"]
+    assert "invite_link_create" in invite_row["privateInputStates"]
+    assert any(path.startswith("tests/") for path in invite_row["testFiles"])
+    assert invite_row["riskLevel"] in {"low", "medium"}
+
+    auction_row = rows["auction"]
+    assert any(listener["name"] == "auction" for listener in auction_row["groupListeners"])
+
+
+def test_flow_alignment_audit_reports_duplicate_candidates_by_category() -> None:
+    result = run_audit_script()
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    candidates = payload["duplicateCandidates"]
+
+    shared_invite = [
+        item
+        for item in candidates
+        if item["category"] == "同一能力多入口" and "invite-link-management" in item["slugs"]
+    ]
+    assert shared_invite
+    assert {"invite-attribution", "invite-link-management", "invite-rank", "user-invite-link"} <= set(shared_invite[0]["slugs"])
+    assert payload["duplicateSummary"]["同一能力多入口"] >= 1
+    assert payload["duplicateSummary"]["旧入口兼容"] >= 1
 
 
 def test_flow_alignment_audit_can_print_markdown_report() -> None:
@@ -42,4 +84,7 @@ def test_flow_alignment_audit_can_print_markdown_report() -> None:
     assert result.returncode == 0, result.stderr
     assert "# 用户手册键盘流程反向审计报告" in result.stdout
     assert "未发现 P1/P2 阻断项" in result.stdout
-    assert "仅宽路由兜底匹配" in result.stdout
+    assert "仅宽路由兜底匹配：0" in result.stdout
+    assert "## 功能覆盖矩阵" in result.stdout
+    assert "## 重复功能候选" in result.stdout
+    assert "## P3 分支复核清单" in result.stdout

@@ -93,11 +93,12 @@ class GroupMessageHandler:
         should_stop = await self._safe_execute(self._get_core_handler(), update, context, "core")
         if should_stop:
             log.info("group_message_handler_short_circuited", chat_id=chat.id, user_id=user.id)
-            return
+            return True
 
         # 业务功能（按顺序执行）
         for name, handler in self._get_business_handlers():
             await self._safe_execute(handler, update, context, name)
+        return False
 
     async def _safe_execute(
         self,

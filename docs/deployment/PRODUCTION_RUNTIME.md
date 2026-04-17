@@ -2,7 +2,7 @@
 
 更新时间：`2026-04-04`
 
-本文档记录 `TgGroupRobot` 当前线上真实部署方式、目录结构和数据库初始化流程。
+本文档记录 `TgGroupRobot` 当前线上真实部署方式、目录结构、用户功能手册站点和数据库初始化流程。
 
 ## 1. 当前发布方式
 
@@ -21,7 +21,7 @@
 4. 调用 `deploy/server-install-release.sh`
 5. 切换 `/data/tggrouprobot/current`
 6. 执行数据库检查与 `sql/init.sql`
-7. 启动 `tggrouprobot-bot`
+7. 启动 `tggrouprobot-bot` 和 `tggrouprobot-docs-site`
 
 ## 2. 当前线上目录
 
@@ -55,6 +55,7 @@
 BOT_TOKEN=...
 DATABASE_URL=postgresql+psycopg://<db_user>:<db_password>@postgres:5432/tggrouprobot
 INFRA_NETWORK_NAME=infra_default
+DOCS_SITE_HOST_PORT=8080
 ```
 
 数据库处理流程：
@@ -73,6 +74,12 @@ INFRA_NETWORK_NAME=infra_default
 
 - 日志默认留在容器标准输出
 - 日常检查依赖 `docker logs`
+
+用户功能手册站点由 `docs-site` 构建为静态文件，并通过 `tggrouprobot-docs-site` 容器提供 HTTP 服务。默认宿主机端口为 `8080`，如线上已有反向代理或端口冲突，可在 `/data/tggrouprobot/shared/.env` 中设置：
+
+```env
+DOCS_SITE_HOST_PORT=18080
+```
 
 ## 5. 当前实际 vs 目标架构
 
@@ -93,6 +100,8 @@ INFRA_NETWORK_NAME=infra_default
 ```bash
 docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 docker logs --tail 80 tggrouprobot-bot
+docker logs --tail 80 tggrouprobot-docs-site
+curl -fsS http://127.0.0.1:${DOCS_SITE_HOST_PORT:-8080}/healthz
 docker inspect tggrouprobot-bot --format '{{json .Mounts}}'
 readlink -f /data/tggrouprobot/current
 ```
@@ -100,6 +109,7 @@ readlink -f /data/tggrouprobot/current
 通过标准：
 
 - `tggrouprobot-bot` 处于 `Up`
+- `tggrouprobot-docs-site` 处于 `Up`，且 `/healthz` 返回 `ok`
 - 日志持续出现任务执行完成或 Telegram `HTTP/1.1 200 OK`
 - `current` 指向最新 release
 
@@ -117,6 +127,9 @@ ls -lah /data/tggrouprobot/incoming
 
 # 查看 bot 日志
 docker logs --tail 100 tggrouprobot-bot
+
+# 查看用户功能手册站点日志
+docker logs --tail 100 tggrouprobot-docs-site
 
 # 回滚
 bash /data/tggrouprobot/current/deploy/rollback.sh <release_id>

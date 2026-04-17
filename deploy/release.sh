@@ -8,7 +8,7 @@ BASE_DIR="${BASE_DIR:-/data/tggrouprobot}"
 REF_NAME="${REF_NAME:-HEAD}"
 ALLOW_DIRTY="${ALLOW_DIRTY:-0}"
 KEEP_ARCHIVE="${KEEP_ARCHIVE:-0}"
-EXPECTED_BRANCHES="${EXPECTED_BRANCHES:-main master}"
+EXPECTED_BRANCHES="${EXPECTED_BRANCHES:-release-tg}"
 SSH_OPTS=()
 
 usage() {
@@ -22,7 +22,7 @@ Options:
   --base-dir DIR        Remote base directory, default /data/tggrouprobot
   --ref REF             Git ref to release, default HEAD
   --allow-dirty         Allow releasing with local uncommitted changes
-  --branch-list "..."   Allowed release branches, default "main master"
+  --branch-list "..."   Allowed release branches, default "release-tg"
   --ssh-opt OPT         Extra ssh/scp option, can be repeated
   -h, --help            Show this help
 EOF

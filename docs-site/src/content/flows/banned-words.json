@@ -174,7 +174,7 @@
         [
           {
             "label": "返回主菜单",
-            "callbackData": "adm:back_to_menu:{chat_id}",
+            "callbackData": "adm:menu:main:{chat_id}",
             "action": "back",
             "target": "entry",
             "feedback": "已返回主菜单。"

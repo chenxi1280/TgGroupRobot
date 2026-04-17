@@ -163,6 +163,9 @@ DATABASE_CONNECT_TIMEOUT_SECONDS=10
 # 外部 Docker 网络
 INFRA_NETWORK_NAME=infra_default
 
+# 用户功能手册站点端口（可选，默认 8080）
+DOCS_SITE_HOST_PORT=8080
+
 # 日志级别（可选，默认 INFO；需要更安静可临时改为 WARNING）
 LOG_LEVEL=INFO
 LOG_FORMAT=console
@@ -184,6 +187,11 @@ WEBHOOK_URL=
 ```bash
 docker compose -f docker-compose.server.yml up --build
 ```
+
+启动后会同时拉起：
+
+- `tggrouprobot-bot`：Telegram 机器人主服务
+- `tggrouprobot-docs-site`：用户功能手册站点，默认访问 `http://服务器IP:8080/`
 
 线上 GitHub Actions 发版、服务器目录和数据库初始化流程，见：
 
