@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import re
 from pathlib import Path
 
 import pytest
@@ -99,14 +100,31 @@ async def test_validate_schema_or_exit_runs_migrations_before_schema_gate(monkey
     assert calls == [("migrate", engine), ("validate", engine)]
 
 
-def test_init_sql_adds_chat_settings_compat_columns_before_column_comments() -> None:
+def test_init_sql_adds_compat_columns_before_column_comments() -> None:
     init_sql = (PROJECT_ROOT / "sql" / "init.sql").read_text(encoding="utf-8")
 
-    add_column_index = init_sql.index(
-        "ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS verification_cover_media_type"
+    add_column_pattern = re.compile(
+        r"ALTER TABLE(?: IF EXISTS)? bot\.(?P<table>\w+) "
+        r"ADD COLUMN IF NOT EXISTS (?P<column>\w+)\b"
     )
-    comment_index = init_sql.index(
-        "COMMENT ON COLUMN bot.chat_settings.verification_cover_media_type"
+    comment_pattern = re.compile(
+        r"COMMENT ON COLUMN bot\.(?P<table>\w+)\.(?P<column>\w+) IS"
     )
 
-    assert add_column_index < comment_index
+    added_columns = {
+        (match.group("table"), match.group("column")): match.start()
+        for match in add_column_pattern.finditer(init_sql)
+    }
+
+    checked_columns: list[tuple[str, str]] = []
+    for match in comment_pattern.finditer(init_sql):
+        table_column = (match.group("table"), match.group("column"))
+        add_column_index = added_columns.get(table_column)
+        if add_column_index is None:
+            continue
+        checked_columns.append(table_column)
+        assert add_column_index < match.start(), table_column
+
+    assert ("chat_settings", "verification_cover_media_type") in checked_columns
+    assert ("ad_campaigns", "buttons") in checked_columns
+    assert ("scheduled_message_tasks", "short_id") in checked_columns
