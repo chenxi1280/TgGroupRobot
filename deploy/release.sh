@@ -160,6 +160,7 @@ short_sha="$(git rev-parse --short "$REF_NAME")"
 release_id="$(date '+%Y%m%d%H%M%S')_${short_sha}"
 archive_path="$(mktemp "/tmp/tggrouprobot-release-${release_id}.XXXXXX.tar.gz")"
 remote_archive="${BASE_DIR}/incoming/${release_id}.tar.gz"
+remote_tmp_archive="/tmp/tggrouprobot-release-${release_id}.tar.gz"
 remote_release_dir="${BASE_DIR}/releases/${release_id}"
 
 trap '[[ "$KEEP_ARCHIVE" == "1" ]] || rm -f "$archive_path"' EXIT
@@ -167,27 +168,26 @@ trap '[[ "$KEEP_ARCHIVE" == "1" ]] || rm -f "$archive_path"' EXIT
 echo "==> Creating release archive for ${REF_NAME} (${short_sha})"
 git archive --format=tar.gz --output "$archive_path" "$REF_NAME"
 
-echo "==> Uploading release archive to ${USER_NAME}@${HOST}:${remote_archive}"
-run_with_retries "Preparing remote release directories" \
-  ssh "${SSH_OPTS[@]}" "${USER_NAME}@${HOST}" "mkdir -p '${BASE_DIR}/incoming' '${BASE_DIR}/releases'"
+echo "==> Uploading release archive to ${USER_NAME}@${HOST}:${remote_tmp_archive}"
 run_with_retries "Uploading release archive" \
-  scp "${SSH_OPTS[@]}" "$archive_path" "${USER_NAME}@${HOST}:${remote_archive}"
+  scp "${SSH_OPTS[@]}" "$archive_path" "${USER_NAME}@${HOST}:${remote_tmp_archive}"
 
 echo "==> Installing release ${release_id} on ${HOST}"
 run_with_retries "Installing remote release" \
   ssh "${SSH_OPTS[@]}" "${USER_NAME}@${HOST}" "\
 set -euo pipefail && \
-rm -rf '${remote_release_dir}' && \
-mkdir -p '${remote_release_dir}' && \
-tar -xzf '${remote_archive}' -C '${remote_release_dir}' && \
+mkdir -p '${BASE_DIR}/incoming' '${BASE_DIR}/releases' && \
+if [[ -f '${remote_tmp_archive}' ]]; then mv -f '${remote_tmp_archive}' '${remote_archive}'; fi && \
+if [[ -f '${remote_archive}' ]]; then \
+  rm -rf '${remote_release_dir}' && \
+  mkdir -p '${remote_release_dir}' && \
+  tar -xzf '${remote_archive}' -C '${remote_release_dir}'; \
+fi && \
+test -d '${remote_release_dir}' && \
 bash '${remote_release_dir}/deploy/server-install-release.sh' \
   --base-dir '${BASE_DIR}' \
   --release-dir '${remote_release_dir}' \
-  --release-id '${release_id}'"
-
-if ! run_with_retries "Cleaning remote release archive" \
-  ssh "${SSH_OPTS[@]}" "${USER_NAME}@${HOST}" "rm -f '${remote_archive}'"; then
-  echo "Warning: release archive cleanup failed; leaving ${remote_archive} on ${HOST}" >&2
-fi
+  --release-id '${release_id}' && \
+rm -f '${remote_archive}' '${remote_tmp_archive}'"
 
 echo "✅ Release ${release_id} completed"

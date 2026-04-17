@@ -97,8 +97,12 @@ jobs:
             IdentityFile ~/.ssh/id_ed25519
             IdentitiesOnly yes
             StrictHostKeyChecking accept-new
+            ConnectTimeout 60
             ServerAliveInterval 15
-            ServerAliveCountMax 4
+            ServerAliveCountMax 8
+            ControlMaster auto
+            ControlPersist 10m
+            ControlPath ~/.ssh/control-%C
           EOF
           chmod 600 ~/.ssh/config
 
@@ -106,11 +110,13 @@ jobs:
         env:
           PRODUCTION_BASE_DIR: ${{ vars.PRODUCTION_BASE_DIR }}
           RELEASE_BRANCHES: ${{ vars.RELEASE_BRANCHES }}
+          DEPLOY_USER: ${{ secrets.PRODUCTION_USER }}
         run: |
           set -euo pipefail
           BASE_DIR="${PRODUCTION_BASE_DIR:-/data/tggrouprobot}"
           BRANCHES="${RELEASE_BRANCHES:-release-tg}"
           bash deploy/release.sh \
             --host production-server \
+            --user "${DEPLOY_USER}" \
             --base-dir "${BASE_DIR}" \
             --branch-list "${BRANCHES}"
