@@ -8,6 +8,9 @@ COPY docs-site/package.json docs-site/package-lock.json ./
 RUN npm ci
 
 COPY docs-site/ ./
+COPY backend/ /app/backend/
+COPY tests/ /app/tests/
+COPY docs/setup/ /app/docs/setup/
 RUN npm run build
 
 FROM nginx:1.27-alpine
