@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import pytest
 
 import backend.app.bootstrap as app_main
 from backend.platform.db.runtime.startup_migrations import run_startup_schema_migrations
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 @dataclass
@@ -94,3 +97,16 @@ async def test_validate_schema_or_exit_runs_migrations_before_schema_gate(monkey
     await app_main._validate_schema_or_exit(app)
 
     assert calls == [("migrate", engine), ("validate", engine)]
+
+
+def test_init_sql_adds_chat_settings_compat_columns_before_column_comments() -> None:
+    init_sql = (PROJECT_ROOT / "sql" / "init.sql").read_text(encoding="utf-8")
+
+    add_column_index = init_sql.index(
+        "ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS verification_cover_media_type"
+    )
+    comment_index = init_sql.index(
+        "COMMENT ON COLUMN bot.chat_settings.verification_cover_media_type"
+    )
+
+    assert add_column_index < comment_index
