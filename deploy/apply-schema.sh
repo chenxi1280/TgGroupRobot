@@ -49,7 +49,7 @@ docker exec -i \
   "$INFRA_POSTGRES_CONTAINER_NAME" \
   sh -lc '
     PGPASSWORD="$APP_DB_PASSWORD" \
-      psql -h 127.0.0.1 -U "$APP_DB_USER" -d "$APP_DB_NAME" -v ON_ERROR_STOP=1
+      psql -q -h 127.0.0.1 -U "$APP_DB_USER" -d "$APP_DB_NAME" -v ON_ERROR_STOP=1
   ' < "$SQL_FILE"
 
 echo "✅ Project SQL applied"

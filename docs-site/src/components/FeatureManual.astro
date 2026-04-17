@@ -1,7 +1,5 @@
 ---
 import { getEntry } from 'astro:content';
-import FeatureFlow from './FeatureFlow.astro';
-import LogicAudit from './LogicAudit.astro';
 import TelegramFlow from './TelegramFlow.astro';
 
 const { slug, flow } = Astro.props as {
@@ -64,8 +62,6 @@ const replayLabel = flow.coverage?.alignmentStatus === 'needsReview'
 
   <TelegramFlow flow={flow} />
 
-  <FeatureFlow feature={feature} flow={flow} />
-
   <section class="qa-section">
     <p class="eyebrow">常见问题</p>
     <h2 id="faq">常见问题</h2>
@@ -78,6 +74,4 @@ const replayLabel = flow.coverage?.alignmentStatus === 'needsReview'
       ))}
     </div>
   </section>
-
-  <LogicAudit feature={feature} />
 </article>

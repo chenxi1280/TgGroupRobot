@@ -1,18 +1,17 @@
 ---
 import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
-import AuditSummary from '../../components/AuditSummary.astro';
 
 const frontmatter = {
-  title: '流程审计',
-  description: '汇总功能文档、菜单入口和真值表覆盖状态。'
+  title: '文档说明',
+  description: '功能手册当前以配置步骤、操作图和常见问题为主。'
 };
 ---
 
 <StarlightPage frontmatter={frontmatter}>
   <header class="page-heading">
-    <p class="eyebrow">流程审计</p>
-    <h1>文档覆盖和逻辑检查</h1>
-    <p>这里汇总功能页数量、菜单入口覆盖、真值表映射和需要复核的流程。校验脚本会在构建前执行。</p>
+    <p class="eyebrow">文档说明</p>
+    <h1>功能手册</h1>
+    <p>功能页保留配置步骤、Telegram 风格操作图和常见问题，管理员可以从功能总览进入对应页面。</p>
   </header>
-  <AuditSummary />
+  <p><a href="/features/">查看全部功能</a></p>
 </StarlightPage>

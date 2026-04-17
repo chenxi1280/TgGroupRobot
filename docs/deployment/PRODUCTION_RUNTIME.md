@@ -2,7 +2,7 @@
 
 更新时间：`2026-04-04`
 
-本文档记录 `TgGroupRobot` 当前线上真实部署方式、目录结构、用户功能手册站点和数据库初始化流程。
+本文档记录 `TgGroupRobot` 当前线上真实部署方式、目录结构和数据库初始化流程。
 
 ## 1. 当前发布方式
 
@@ -11,7 +11,7 @@
 - GitHub Actions
 - SSH 发布到服务器
 - release 目录 + `current` 软链
-- `docker compose -f docker-compose.server.yml up -d --build --remove-orphans`
+- `deploy/compose-up.sh` 串行构建并启动 bot 服务
 
 发布链路：
 
@@ -21,7 +21,7 @@
 4. 调用 `deploy/server-install-release.sh`
 5. 切换 `/data/tggrouprobot/current`
 6. 执行数据库检查与 `sql/init.sql`
-7. 启动 `tggrouprobot-bot` 和 `tggrouprobot-docs-site`
+7. 启动 `tggrouprobot-bot`
 
 ## 2. 当前线上目录
 
@@ -55,8 +55,6 @@
 BOT_TOKEN=...
 DATABASE_URL=postgresql+psycopg://<db_user>:<db_password>@postgres:5432/tggrouprobot
 INFRA_NETWORK_NAME=infra_default
-DOCS_SITE_BIND_HOST=127.0.0.1
-DOCS_SITE_HOST_PORT=18081
 ```
 
 数据库处理流程：
@@ -76,12 +74,7 @@ DOCS_SITE_HOST_PORT=18081
 - 日志默认留在容器标准输出
 - 日常检查依赖 `docker logs`
 
-用户功能手册站点由 `docs-site` 构建为静态文件，并通过 `tggrouprobot-docs-site` 容器提供 HTTP 服务。容器默认只绑定本机端口 `127.0.0.1:18081`，公网访问由基础设施服务器宿主机 Nginx 按 `robot.telema.cn` 转发。如线上端口冲突，可在 `/data/tggrouprobot/shared/.env` 中设置：
-
-```env
-DOCS_SITE_BIND_HOST=127.0.0.1
-DOCS_SITE_HOST_PORT=18081
-```
+用户功能手册站点不随生产部署发布，生产 compose 只保留 bot 服务。
 
 ## 5. 当前实际 vs 目标架构
 
@@ -102,8 +95,6 @@ DOCS_SITE_HOST_PORT=18081
 ```bash
 docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 docker logs --tail 80 tggrouprobot-bot
-docker logs --tail 80 tggrouprobot-docs-site
-curl -fsS http://127.0.0.1:${DOCS_SITE_HOST_PORT:-18081}/healthz
 docker inspect tggrouprobot-bot --format '{{json .Mounts}}'
 readlink -f /data/tggrouprobot/current
 ```
@@ -111,7 +102,6 @@ readlink -f /data/tggrouprobot/current
 通过标准：
 
 - `tggrouprobot-bot` 处于 `Up`
-- `tggrouprobot-docs-site` 处于 `Up`，且 `/healthz` 返回 `ok`
 - 日志持续出现任务执行完成或 Telegram `HTTP/1.1 200 OK`
 - `current` 指向最新 release
 
@@ -129,9 +119,6 @@ ls -lah /data/tggrouprobot/incoming
 
 # 查看 bot 日志
 docker logs --tail 100 tggrouprobot-bot
-
-# 查看用户功能手册站点日志
-docker logs --tail 100 tggrouprobot-docs-site
 
 # 回滚
 bash /data/tggrouprobot/current/deploy/rollback.sh <release_id>

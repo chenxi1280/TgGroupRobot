@@ -36,7 +36,7 @@ export default defineConfig({
   integrations: [
     starlight({
       title: 'TgGroupRobot 功能手册',
-      description: 'Telegram 群组管理机器人功能介绍、配置步骤和流程审计。',
+      description: 'Telegram 群组管理机器人功能介绍、配置步骤和常见问题。',
       locales: {
         root: {
           label: '简体中文',
@@ -54,8 +54,7 @@ export default defineConfig({
           items: [
             { label: '功能手册首页', link: '/' },
             { label: '快速开始', link: '/quick-start/' },
-            { label: '功能总览', link: '/features/' },
-            { label: '流程审计', link: '/audit/' }
+            { label: '功能总览', link: '/features/' }
           ]
         },
         ...categoryGroups

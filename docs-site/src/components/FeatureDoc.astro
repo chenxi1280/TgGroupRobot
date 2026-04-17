@@ -1,7 +1,5 @@
 ---
 import StepTutorial from './StepTutorial.astro';
-import FeatureFlow from './FeatureFlow.astro';
-import LogicAudit from './LogicAudit.astro';
 
 const { feature } = Astro.props;
 const entryMeta = [
@@ -33,7 +31,6 @@ const entryMeta = [
   </section>
 
   <StepTutorial feature={feature} />
-  <FeatureFlow feature={feature} />
 
   <section>
     <p class="eyebrow">Q&A</p>
@@ -47,6 +44,4 @@ const entryMeta = [
       ))}
     </div>
   </section>
-
-  <LogicAudit feature={feature} />
 </article>
