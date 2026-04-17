@@ -1065,9 +1065,41 @@ def print_markdown_report(
         print(f"- {finding.severity} `{finding.slug}` / `{finding.screen}` / `{finding.button}`：{finding.message}")
 
 
+def print_summary_report(
+    findings: list[Finding],
+    stats: AuditStats,
+    matrix: list[dict],
+    duplicates: list[DuplicateCandidate],
+) -> None:
+    payload = build_payload(findings, stats, matrix, duplicates)
+    print("[docs-site] flow audit summary")
+    print(f"[docs-site] flows={payload['flows']} callbacks={payload['callbacks']} findings={payload['findings']}")
+    print(
+        "[docs-site] matches="
+        f"template:{payload['templateMatches']} "
+        f"route:{payload['routeOnlyMatches']} "
+        f"broad:{payload['broadRouteOnlyMatches']}"
+    )
+    print(
+        "[docs-site] buttons="
+        f"input:{payload['inputButtons']} "
+        f"toggle:{payload['toggleButtons']} "
+        f"confirm:{payload['confirmButtons']}"
+    )
+    print(f"[docs-site] risk={payload['matrixCounts']} duplicates={payload['duplicateSummary']}")
+    if findings:
+        print("[docs-site] findings sample:")
+        for finding in findings[:10]:
+            print(f"[docs-site] - {finding.severity} {finding.slug}/{finding.screen}/{finding.button}: {finding.message}")
+        if len(findings) > 10:
+            print(f"[docs-site] ... {len(findings) - 10} more findings hidden; rerun with --format json --all-findings")
+    else:
+        print("[docs-site] no P1/P2/P3 findings")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Audit docs-site flow callbacks against real backend routes.")
-    parser.add_argument("--format", choices=("json", "markdown"), default="json")
+    parser.add_argument("--format", choices=("json", "markdown", "summary"), default="json")
     parser.add_argument("--all-findings", action="store_true", help="Print all findings in JSON output instead of the first 80.")
     args = parser.parse_args()
 
@@ -1109,6 +1141,8 @@ def main() -> int:
 
     if args.format == "markdown":
         print_markdown_report(findings, stats, matrix, duplicates)
+    elif args.format == "summary":
+        print_summary_report(findings, stats, matrix, duplicates)
     else:
         payload = build_payload(findings, stats, matrix, duplicates)
         if args.all_findings:

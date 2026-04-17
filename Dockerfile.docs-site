@@ -2,6 +2,9 @@ FROM node:24-alpine AS build
 
 WORKDIR /app/docs-site
 
+ENV CI=1 \
+    ASTRO_TELEMETRY_DISABLED=1
+
 RUN apk add --no-cache python3
 
 COPY docs-site/package.json docs-site/package-lock.json ./
@@ -11,7 +14,7 @@ COPY docs-site/ ./
 COPY backend/ /app/backend/
 COPY tests/ /app/tests/
 COPY docs/setup/ /app/docs/setup/
-RUN npm run build
+RUN echo "==> Building docs-site" && npm run build && echo "==> docs-site build completed"
 
 FROM nginx:1.27-alpine
 

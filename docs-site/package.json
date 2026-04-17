@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "astro dev",
     "validate": "python3 scripts/validate_feature_docs.py",
-    "audit:flows": "python3 scripts/audit_flow_alignment.py",
+    "audit:flows": "python3 scripts/audit_flow_alignment.py --format summary",
     "check": "astro check && npm run validate && npm run audit:flows",
     "build": "npm run validate && npm run audit:flows && astro build",
     "preview": "astro preview"
