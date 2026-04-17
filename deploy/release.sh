@@ -9,7 +9,14 @@ REF_NAME="${REF_NAME:-HEAD}"
 ALLOW_DIRTY="${ALLOW_DIRTY:-0}"
 KEEP_ARCHIVE="${KEEP_ARCHIVE:-0}"
 EXPECTED_BRANCHES="${EXPECTED_BRANCHES:-release-tg}"
-SSH_OPTS=()
+RELEASE_SSH_ATTEMPTS="${RELEASE_SSH_ATTEMPTS:-3}"
+RELEASE_SSH_RETRY_DELAY="${RELEASE_SSH_RETRY_DELAY:-10}"
+SSH_OPTS=(
+  -o "ConnectTimeout=${SSH_CONNECT_TIMEOUT:-20}"
+  -o "ServerAliveInterval=${SSH_SERVER_ALIVE_INTERVAL:-30}"
+  -o "ServerAliveCountMax=${SSH_SERVER_ALIVE_COUNT_MAX:-10}"
+  -o "TCPKeepAlive=yes"
+)
 
 usage() {
   cat <<'EOF'
@@ -78,6 +85,40 @@ require_command() {
   fi
 }
 
+require_positive_integer() {
+  local name="$1"
+  local value="$2"
+  if [[ ! "$value" =~ ^[1-9][0-9]*$ ]]; then
+    echo "${name} must be a positive integer, got: ${value}" >&2
+    exit 1
+  fi
+}
+
+run_with_retries() {
+  local label="$1"
+  shift
+
+  local attempt status
+  for ((attempt = 1; attempt <= RELEASE_SSH_ATTEMPTS; attempt++)); do
+    if ((RELEASE_SSH_ATTEMPTS > 1)); then
+      echo "==> ${label} (attempt ${attempt}/${RELEASE_SSH_ATTEMPTS})"
+    fi
+
+    if "$@"; then
+      return 0
+    fi
+
+    status=$?
+    if ((attempt == RELEASE_SSH_ATTEMPTS)); then
+      echo "${label} failed after ${RELEASE_SSH_ATTEMPTS} attempt(s)" >&2
+      return "$status"
+    fi
+
+    echo "${label} failed with exit code ${status}; retrying in ${RELEASE_SSH_RETRY_DELAY}s" >&2
+    sleep "$RELEASE_SSH_RETRY_DELAY"
+  done
+}
+
 if [[ -z "$HOST" ]]; then
   usage >&2
   exit 1
@@ -87,6 +128,8 @@ require_command git
 require_command ssh
 require_command scp
 require_command mktemp
+require_positive_integer RELEASE_SSH_ATTEMPTS "$RELEASE_SSH_ATTEMPTS"
+require_positive_integer RELEASE_SSH_RETRY_DELAY "$RELEASE_SSH_RETRY_DELAY"
 
 current_branch="$(git branch --show-current)"
 if [[ -z "$current_branch" ]]; then
@@ -124,11 +167,14 @@ echo "==> Creating release archive for ${REF_NAME} (${short_sha})"
 git archive --format=tar.gz --output "$archive_path" "$REF_NAME"
 
 echo "==> Uploading release archive to ${USER_NAME}@${HOST}:${remote_archive}"
-ssh "${SSH_OPTS[@]}" "${USER_NAME}@${HOST}" "mkdir -p '${BASE_DIR}/incoming' '${BASE_DIR}/releases'"
-scp "${SSH_OPTS[@]}" "$archive_path" "${USER_NAME}@${HOST}:${remote_archive}"
+run_with_retries "Preparing remote release directories" \
+  ssh "${SSH_OPTS[@]}" "${USER_NAME}@${HOST}" "mkdir -p '${BASE_DIR}/incoming' '${BASE_DIR}/releases'"
+run_with_retries "Uploading release archive" \
+  scp "${SSH_OPTS[@]}" "$archive_path" "${USER_NAME}@${HOST}:${remote_archive}"
 
 echo "==> Installing release ${release_id} on ${HOST}"
-ssh "${SSH_OPTS[@]}" "${USER_NAME}@${HOST}" "\
+run_with_retries "Installing remote release" \
+  ssh "${SSH_OPTS[@]}" "${USER_NAME}@${HOST}" "\
 set -euo pipefail && \
 rm -rf '${remote_release_dir}' && \
 mkdir -p '${remote_release_dir}' && \
@@ -136,7 +182,11 @@ tar -xzf '${remote_archive}' -C '${remote_release_dir}' && \
 bash '${remote_release_dir}/deploy/server-install-release.sh' \
   --base-dir '${BASE_DIR}' \
   --release-dir '${remote_release_dir}' \
-  --release-id '${release_id}' && \
-rm -f '${remote_archive}'"
+  --release-id '${release_id}'"
+
+if ! run_with_retries "Cleaning remote release archive" \
+  ssh "${SSH_OPTS[@]}" "${USER_NAME}@${HOST}" "rm -f '${remote_archive}'"; then
+  echo "Warning: release archive cleanup failed; leaving ${remote_archive} on ${HOST}" >&2
+fi
 
 echo "✅ Release ${release_id} completed"
