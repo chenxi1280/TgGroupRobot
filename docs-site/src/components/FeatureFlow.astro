@@ -1,40 +1,138 @@
 ---
-const { feature } = Astro.props;
+interface FlowInputExample {
+  label: string;
+  target?: string;
+}
 
-const escapeLabel = (value: string) => value.replace(/"/g, "'");
-const generatedUserFlow = `flowchart LR
-  subgraph UserFlow["用户点击流程"]
-    U_A["${escapeLabel(feature.steps[0]?.title ?? '打开入口')}"] --> U_B["${escapeLabel(feature.steps[1]?.title ?? '完成配置')}"]
-    U_B --> U_C{"是否保存成功"}
-    U_C -->|"是"| U_D["${escapeLabel(feature.steps[2]?.title ?? '检查结果')}"]
-    U_C -->|"否"| U_E["按提示修正输入"]
-    U_D --> U_F["当前群组生效"]
-  end`;
+interface FlowButton {
+  label: string;
+  callbackData: string;
+  action: 'goto' | 'back' | 'input' | 'toggle' | 'toast' | 'noop' | 'confirm' | 'external';
+  target?: string;
+}
 
-const generatedRuntimeFlow = feature.runtimeFlow ? `
-  subgraph RuntimeFlow["后台处理流程"]
-    R_A["群内事件或成员操作"] --> R_B["读取当前群组配置"]
-    R_B --> R_C{"功能是否开启"}
-    R_C -->|"否"| R_D["跳过处理"]
-    R_C -->|"是"| R_E["执行规则判断"]
-    R_E --> R_F{"是否命中"}
-    R_F -->|"否"| R_G["允许继续"]
-    R_F -->|"是"| R_H["执行提示、删除、禁言或记录"]
-    R_H --> R_I{"机器人权限足够"}
-    R_I -->|"是"| R_J["完成动作"]
-    R_I -->|"否"| R_K["降级或提示检查权限"]
-  end` : '';
+interface FlowScreen {
+  id: string;
+  title: string;
+  input?: {
+    prompt: string;
+    examples?: FlowInputExample[];
+  };
+  keyboard: FlowButton[][];
+}
 
-const flow = typeof feature.flowchart === 'object'
-  ? feature.flowchart.mermaid
-  : `${generatedUserFlow}${generatedRuntimeFlow}`;
+interface FlowData {
+  title: string;
+  screens: FlowScreen[];
+}
+
+const { feature, flow } = Astro.props as { feature: any; flow: FlowData };
+
+const clean = (value: string) => value
+  .replace(/"/g, "'")
+  .replace(/\|/g, "/")
+  .replace(/\[/g, "(")
+  .replace(/\]/g, ")")
+  .replace(/\{/g, "(")
+  .replace(/\}/g, ")")
+  .replace(/\s+/g, " ")
+  .trim();
+
+const trimLabel = (value: string, max = 34) => {
+  const normalized = clean(value);
+  return normalized.length > max ? `${normalized.slice(0, max - 1)}...` : normalized;
+};
+
+const actionLabel: Record<string, string> = {
+  back: '返回',
+  confirm: '确认',
+  external: '外链',
+  goto: '进入',
+  input: '输入',
+  noop: '提示',
+  toast: '提示',
+  toggle: '切换',
+};
+
+const nodeByScreen = new Map<string, string>();
+flow.screens.forEach((screen, index) => nodeByScreen.set(screen.id, `S${index}`));
+
+const lines = ['flowchart LR', '  subgraph TG["Telegram 键盘流程"]'];
+
+for (const [index, screen] of flow.screens.entries()) {
+  const nodeId = nodeByScreen.get(screen.id) ?? `S${index}`;
+  const suffix = screen.input ? '（等待输入）' : '';
+  lines.push(`    ${nodeId}["${trimLabel(`${screen.title}${suffix}`, 42)}"]`);
+}
+
+let externalCount = 0;
+for (const screen of flow.screens) {
+  const source = nodeByScreen.get(screen.id);
+  if (!source) continue;
+
+  screen.keyboard.forEach((row, rowIndex) => {
+    row.forEach((button, buttonIndex) => {
+      const action = actionLabel[button.action] ?? button.action;
+      const edgeLabel = `${rowIndex + 1}-${buttonIndex + 1} ${trimLabel(button.label, 20)} / ${action}`;
+
+      if (button.action === 'toast' || button.action === 'noop') {
+        lines.push(`    ${source} -->|"${edgeLabel}"| ${source}`);
+        return;
+      }
+
+      if (button.action === 'external') {
+        const externalNode = `EXT${externalCount++}`;
+        lines.push(`    ${externalNode}["${trimLabel(button.label, 32)}"]`);
+        lines.push(`    ${source} -->|"${edgeLabel}"| ${externalNode}`);
+        return;
+      }
+
+      if (button.target && nodeByScreen.has(button.target)) {
+        lines.push(`    ${source} -->|"${edgeLabel}"| ${nodeByScreen.get(button.target)}`);
+      }
+    });
+  });
+
+  if (screen.input?.examples?.length) {
+    screen.input.examples.forEach((example, exampleIndex) => {
+      if (example.target && nodeByScreen.has(example.target)) {
+        lines.push(
+          `    ${source} -->|"输入 ${exampleIndex + 1}: ${trimLabel(example.label, 20)}"| ${nodeByScreen.get(example.target)}`
+        );
+      }
+    });
+  }
+}
+
+lines.push('  end');
+
+if (feature.runtimeFlow) {
+  lines.push('');
+  lines.push('  subgraph Runtime["后台运行路径"]');
+  lines.push('    R0["群内事件或成员操作"] --> R1["读取当前 chat_id 配置"]');
+  lines.push('    R1 --> R2{"功能是否开启"}');
+  lines.push('    R2 -->|"否"| R3["跳过处理"]');
+  lines.push('    R2 -->|"是"| R4["按配置执行判定"]');
+  lines.push('    R4 --> R5{"是否命中规则"}');
+  lines.push('    R5 -->|"否"| R6["允许继续"]');
+  lines.push('    R5 -->|"是"| R7["提示、删除、禁言、踢出或记录"]');
+  lines.push('    R7 --> R8{"机器人权限足够"}');
+  lines.push('    R8 -->|"是"| R9["完成动作"]');
+  lines.push('    R8 -->|"否"| R10["降级或提示检查权限"]');
+  lines.push('  end');
+}
+
+const mermaidFlow = lines.join('\n');
 ---
 
 <section class="feature-flow">
   <p class="eyebrow">流程图</p>
-  <h2 id="flow">功能流程</h2>
+  <h2 id="flow">Telegram 键盘流程</h2>
+  <p class="flow-note">
+    流程图由本页 Telegram 仿真键盘自动生成，节点和按钮顺序与上方操作流使用同一份 flow 数据。
+  </p>
   <div class="flow-card">
-    <pre class="mermaid">{flow}</pre>
+    <pre class="mermaid">{mermaidFlow}</pre>
   </div>
 </section>
 
@@ -50,7 +148,9 @@ const flow = typeof feature.flowchart === 'object'
     securityLevel: 'strict',
     flowchart: {
       curve: 'basis',
-      htmlLabels: false
+      htmlLabels: false,
+      nodeSpacing: 42,
+      rankSpacing: 58
     }
   });
 

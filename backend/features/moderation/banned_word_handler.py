@@ -72,10 +72,14 @@ async def banned_word_list_callback(update: Update, context: ContextTypes.DEFAUL
     q = update.callback_query
     await q.answer()
 
-    # 使用 PrivateChatContext 解析目标群组
-    target_chat_id = await PrivateChatContext.require_current_chat(update, context)
-    if target_chat_id is None:
-        return  # 错误消息已发送
+    cb = CallbackParser.parse(q.data or "")
+    if update.effective_chat.type == "private":
+        target_chat_id = cb.get_int_optional(2)
+        if target_chat_id is None:
+            await q.answer("❌ 群组参数无效，请返回重试", show_alert=True)
+            return
+    else:
+        target_chat_id = update.effective_chat.id
 
     # 获取违禁词列表
     db: Database = context.application.bot_data["db"]

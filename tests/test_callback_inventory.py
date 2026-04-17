@@ -189,3 +189,10 @@ def test_adm_menu_callbacks_use_explicit_menu_actions() -> None:
             malformed.append((path, line, callback_data))
 
     assert malformed == []
+
+
+def test_generated_keyboards_do_not_emit_legacy_admin_back_callbacks() -> None:
+    forbidden = {"adm:back_to_menu"}
+    for path, line, callback_data in _callback_samples():
+        assert not callback_data.startswith("adm:menu:back_to_menu"), (path, line, callback_data)
+        assert callback_data not in forbidden, (path, line, callback_data)

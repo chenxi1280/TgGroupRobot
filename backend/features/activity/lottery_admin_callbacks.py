@@ -33,9 +33,12 @@ async def lottery_create_menu_callback_impl(update: Update, context: ContextType
     q = update.callback_query
     await q.answer()
     cb = CallbackParser.parse(q.data or "")
-    target_chat_id = cb.get_int(2)
-    if target_chat_id is None:
+    target_chat_id = cb.get_int_optional(2)
+    if target_chat_id is None and update.effective_chat.type != "private":
         target_chat_id = update.effective_chat.id
+    if target_chat_id is None:
+        await q.answer("❌ 群组参数无效，请返回重试", show_alert=True)
+        return
     await handler.show_create_type_menu(update, context, target_chat_id)
 
 
@@ -45,7 +48,7 @@ async def lottery_mode_menu_callback_impl(update: Update, context: ContextTypes.
     q = update.callback_query
     await q.answer()
     cb = CallbackParser.parse(q.data or "")
-    target_chat_id = cb.get_int(2)
+    target_chat_id = cb.get_int_optional(2)
     lottery_type = cb.get(3, "invite") or "invite"
     if target_chat_id is None:
         return
@@ -58,7 +61,7 @@ async def lottery_list_callback_impl(update: Update, context: ContextTypes.DEFAU
     q = update.callback_query
     await q.answer()
     cb = CallbackParser.parse(q.data or "")
-    target_chat_id = cb.get_int(2)
+    target_chat_id = cb.get_int_optional(2)
     status = cb.get(3, "all") or "all"
     lottery_type = cb.get(4, "all") or "all"
     page = cb.get_int(5, default=0)
@@ -73,8 +76,8 @@ async def lottery_detail_callback_impl(update: Update, context: ContextTypes.DEF
     q = update.callback_query
     await q.answer()
     cb = CallbackParser.parse(q.data or "")
-    target_chat_id = cb.get_int(2)
-    lottery_id = cb.get_int(3)
+    target_chat_id = cb.get_int_optional(2)
+    lottery_id = cb.get_int_optional(3)
     if target_chat_id is None or lottery_id is None:
         return
     await handler.show_activity_detail(update, context, target_chat_id, lottery_id)
@@ -86,7 +89,7 @@ async def lottery_settings_callback_impl(update: Update, context: ContextTypes.D
     q = update.callback_query
     await q.answer()
     cb = CallbackParser.parse(q.data or "")
-    target_chat_id = cb.get_int(2)
+    target_chat_id = cb.get_int_optional(2)
     if target_chat_id is None:
         return
     await handler.show_settings_menu(update, context, target_chat_id)
@@ -104,7 +107,7 @@ async def lottery_setting_toggle_callback_impl(
     q = update.callback_query
     await q.answer()
     cb = CallbackParser.parse(q.data or "")
-    target_chat_id = cb.get_int(2)
+    target_chat_id = cb.get_int_optional(2)
     setting_key = cb.get(3)
     enabled = cb.get(4) == "1"
     if target_chat_id is None or not setting_key:
@@ -135,8 +138,8 @@ async def lottery_admin_draw_callback_impl(
     q = update.callback_query
     await q.answer()
     cb = CallbackParser.parse(q.data or "")
-    target_chat_id = cb.get_int(2)
-    lottery_id = cb.get_int(3)
+    target_chat_id = cb.get_int_optional(2)
+    lottery_id = cb.get_int_optional(3)
     if target_chat_id is None or lottery_id is None:
         return
     if not await is_user_admin_fn(context, target_chat_id, update.effective_user.id):

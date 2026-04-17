@@ -46,7 +46,12 @@ async def invite_link_home_callback(update: Update, context: ContextTypes.DEFAUL
     if update.callback_query is None or update.effective_user is None:
         return
     await update.callback_query.answer()
-    target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(update, context)
+    target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(
+        update,
+        context,
+        allow_fallback_to_current_chat=False,
+        error_message_select_chat="❌ 群组参数无效，请返回重试",
+    )
     if target_chat_id is None:
         return
     await _invite_link_handler.show_menu(update, context, target_chat_id)
@@ -57,7 +62,13 @@ async def invite_link_list_callback(update: Update, context: ContextTypes.DEFAUL
         return
     q = update.callback_query
     await q.answer()
-    target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(update, context, chat_index=3)
+    target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(
+        update,
+        context,
+        chat_index=3,
+        allow_fallback_to_current_chat=False,
+        error_message_select_chat="❌ 群组参数无效，请返回重试",
+    )
     if target_chat_id is None:
         return
     await _invite_link_handler.show_list(update, context, target_chat_id, CallbackParser.parse(q.data or "").get_int(2, default=0))
@@ -67,7 +78,12 @@ async def invite_link_stats_callback(update: Update, context: ContextTypes.DEFAU
     if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
         return
     await update.callback_query.answer()
-    target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(update, context)
+    target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(
+        update,
+        context,
+        allow_fallback_to_current_chat=False,
+        error_message_select_chat="❌ 群组参数无效，请返回重试",
+    )
     if target_chat_id is None:
         return
     await _invite_link_handler.show_stats(update, context, target_chat_id)
@@ -77,7 +93,13 @@ async def invite_link_toggle_callback(update: Update, context: ContextTypes.DEFA
     if update.callback_query is None or update.effective_user is None:
         return
     q = update.callback_query
-    target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(update, context, chat_index=3)
+    target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(
+        update,
+        context,
+        chat_index=3,
+        allow_fallback_to_current_chat=False,
+        error_message_select_chat="❌ 群组参数无效，请返回重试",
+    )
     if target_chat_id is None:
         return
 
@@ -109,7 +131,13 @@ async def invite_link_mode_callback(update: Update, context: ContextTypes.DEFAUL
     if update.callback_query is None:
         return
     q = update.callback_query
-    target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(update, context, chat_index=2)
+    target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(
+        update,
+        context,
+        chat_index=2,
+        allow_fallback_to_current_chat=False,
+        error_message_select_chat="❌ 群组参数无效，请返回重试",
+    )
     if target_chat_id is None:
         return
     mode = CallbackParser.parse(q.data or "").get(3)

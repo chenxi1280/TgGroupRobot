@@ -198,7 +198,7 @@ async def test_solitaire_deadline_prompt_uses_unified_copy_ui(monkeypatch):
 async def test_solitaire_batch_config_page_exposes_copyable_deadline(monkeypatch):
     started: list[tuple[int, int, str, dict]] = []
 
-    async def fake_resolve_target_chat_with_permission_check(update, context, chat_index=2):
+    async def fake_resolve_target_chat_with_permission_check(update, context, chat_index=2, **kwargs):
         return -1005566
 
     async def fake_set_user_state(session, chat_id: int, user_id: int, state_type: str, state_data: dict):

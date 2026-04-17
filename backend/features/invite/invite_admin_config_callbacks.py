@@ -18,12 +18,27 @@ from backend.shared.chat_context import PrivateChatContext
 from backend.shared.services.chat_service import get_chat_settings
 
 
+async def _resolve_invite_target_chat_id(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    chat_index: int,
+) -> int | None:
+    return await PrivateChatContext.resolve_target_chat_with_permission_check(
+        update,
+        context,
+        chat_index=chat_index,
+        allow_fallback_to_current_chat=False,
+        error_message_select_chat="❌ 群组参数无效，请返回重试",
+    )
+
+
 async def invite_link_cover_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.callback_query is None or update.effective_user is None:
         return
     q = update.callback_query
     await q.answer()
-    target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(update, context, chat_index=2)
+    target_chat_id = await _resolve_invite_target_chat_id(update, context, chat_index=2)
     if target_chat_id is None:
         return
     db: Database = context.application.bot_data["db"]
@@ -42,7 +57,7 @@ async def invite_link_text_callback(update: Update, context: ContextTypes.DEFAUL
         return
     q = update.callback_query
     await q.answer()
-    target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(update, context, chat_index=2)
+    target_chat_id = await _resolve_invite_target_chat_id(update, context, chat_index=2)
     if target_chat_id is None:
         return
     db: Database = context.application.bot_data["db"]
@@ -64,7 +79,7 @@ async def invite_link_buttons_callback(update: Update, context: ContextTypes.DEF
         return
     q = update.callback_query
     await q.answer()
-    target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(update, context, chat_index=2)
+    target_chat_id = await _resolve_invite_target_chat_id(update, context, chat_index=2)
     if target_chat_id is None:
         return
     db: Database = context.application.bot_data["db"]
@@ -84,7 +99,7 @@ async def invite_link_preview_callback(update: Update, context: ContextTypes.DEF
         return
     q = update.callback_query
     await q.answer()
-    target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(update, context, chat_index=2)
+    target_chat_id = await _resolve_invite_target_chat_id(update, context, chat_index=2)
     if target_chat_id is None:
         return
     db: Database = context.application.bot_data["db"]
@@ -105,7 +120,7 @@ async def invite_link_reset_callback(update: Update, context: ContextTypes.DEFAU
     if update.callback_query is None:
         return
     q = update.callback_query
-    target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(update, context, chat_index=3)
+    target_chat_id = await _resolve_invite_target_chat_id(update, context, chat_index=3)
     if target_chat_id is None:
         return
     reset_type = CallbackParser.parse(q.data or "").get(2)
@@ -131,7 +146,7 @@ async def invite_link_export_callback(update: Update, context: ContextTypes.DEFA
     if update.callback_query is None:
         return
     await update.callback_query.answer()
-    target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(update, context, chat_index=2)
+    target_chat_id = await _resolve_invite_target_chat_id(update, context, chat_index=2)
     if target_chat_id is None:
         return
     await export_invite_csv(context, chat_id=target_chat_id, reply_chat_id=update.effective_chat.id)

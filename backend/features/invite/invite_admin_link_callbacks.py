@@ -18,6 +18,19 @@ from backend.shared.callback_parser import CallbackParser
 from backend.shared.chat_context import PrivateChatContext
 
 
+async def _resolve_invite_link_target_chat_id(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> int | None:
+    return await PrivateChatContext.resolve_target_chat_with_permission_check(
+        update,
+        context,
+        chat_index=3,
+        allow_fallback_to_current_chat=False,
+        error_message_select_chat="❌ 群组参数无效，请返回重试",
+    )
+
+
 async def invite_link_detail_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.callback_query is None or update.effective_user is None:
         return
@@ -27,7 +40,7 @@ async def invite_link_detail_callback(update: Update, context: ContextTypes.DEFA
     if link_id is None:
         await answer_callback_query_safely(update, "无效的链接ID", show_alert=True)
         return
-    target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(update, context, chat_index=3)
+    target_chat_id = await _resolve_invite_link_target_chat_id(update, context)
     if target_chat_id is None:
         return
 
@@ -58,7 +71,7 @@ async def invite_link_refresh_callback(update: Update, context: ContextTypes.DEF
     if link_id is None:
         await answer_callback_query_safely(update, "无效的链接ID", show_alert=True)
         return
-    target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(update, context, chat_index=3)
+    target_chat_id = await _resolve_invite_link_target_chat_id(update, context)
     if target_chat_id is None:
         return
 
@@ -84,7 +97,7 @@ async def invite_link_revoke_callback(update: Update, context: ContextTypes.DEFA
     if link_id is None:
         await answer_callback_query_safely(update, "无效的链接ID", show_alert=True)
         return
-    target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(update, context, chat_index=3)
+    target_chat_id = await _resolve_invite_link_target_chat_id(update, context)
     if target_chat_id is None:
         return
     db: Database = context.application.bot_data["db"]
@@ -113,7 +126,7 @@ async def invite_link_delete_callback(update: Update, context: ContextTypes.DEFA
     if link_id is None:
         await answer_callback_query_safely(update, "无效的链接ID", show_alert=True)
         return
-    target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(update, context, chat_index=3)
+    target_chat_id = await _resolve_invite_link_target_chat_id(update, context)
     if target_chat_id is None:
         return
     db: Database = context.application.bot_data["db"]

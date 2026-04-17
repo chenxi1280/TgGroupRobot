@@ -83,7 +83,6 @@ async def build_k3_panel_text(db: Database, chat_id: int) -> str:
         "🎲 快三实时面板",
         f"📌 状态：{'✅ 开启' if setting.k3_enabled else '❌ 关闭'}",
         f"🔗 关联积分：{points_label}",
-        f"💧 抽水比例：{setting.rake_ratio or '0'}",
     ]
     if round_obj is None:
         lines.append("🧾 当前暂无进行中的牌局，点击下方按钮即可下注开局。")
@@ -95,7 +94,14 @@ async def build_k3_panel_text(db: Database, chat_id: int) -> str:
                 "⏳ 本局会在 60 秒后自动开奖。",
             ]
         )
-    lines.append("🎯 直接点击按钮即可完成下注，单人单局上限 500 积分。")
+    lines.extend(
+        [
+            "",
+            "选择对应的玩法按钮进行下注",
+            "└ 单局 60 秒，超时自动开奖",
+            "└ 指令：快三规则 快三统计",
+        ]
+    )
     return "\n".join(lines)
 
 
@@ -118,9 +124,11 @@ async def build_blackjack_panel_text(db: Database, chat_id: int) -> str:
         "🃏 黑杰克实时面板",
         f"📌 状态：{'✅ 开启' if setting.blackjack_enabled else '❌ 关闭'}",
         f"🔗 关联积分：{points_label}",
-        f"💧 抽水比例：{setting.rake_ratio or '0'}",
         f"🧾 进行中对局：{active_count}",
-        "🎯 点击下方按钮即可按固定积分开局，超时会自动停牌。",
+        "",
+        "选择对应的积分按钮进行下注",
+        "└ 单局 1～2 分钟，超时自动停牌",
+        "└ 指令：黑杰克规则 黑杰克统计",
     ]
     return "\n".join(lines)
 

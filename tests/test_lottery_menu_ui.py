@@ -32,6 +32,7 @@ def test_lottery_menu_keyboard_exposes_all_real_flows():
     assert callbacks["🚀 发起抽奖活动"] == "lot:create_menu:-1001"
     assert callbacks["📋 活动列表"] == "lot:list:-1001:all:all:0"
     assert callbacks["⚙️ 抽奖设置"] == "lot:settings:-1001"
+    assert callbacks["🔙 返回"] == "adm:menu:main:-1001"
 
 
 def test_lottery_type_keyboard_lists_four_types():

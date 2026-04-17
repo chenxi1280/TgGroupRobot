@@ -10,6 +10,7 @@ import backend.features.moderation.anti_flood_handler as anti_flood_handler
 import backend.features.moderation.anti_spam_handler as anti_spam_handler
 from backend.features.moderation.services import banned_word_service
 from backend.features.moderation.services.anti_spam_service import SpamViolation
+from backend.features.moderation.ui.banned_word import banned_word_list_keyboard, banned_word_menu_keyboard
 
 
 class _Session:
@@ -45,6 +46,17 @@ class _FakeUser:
 
     def mention_html(self) -> str:
         return "<a href='tg://user?id=123'>tester</a>"
+
+
+def test_banned_word_keyboards_use_explicit_admin_back_targets() -> None:
+    menu = banned_word_menu_keyboard(-100123)
+    words = [
+        SimpleNamespace(id=12, is_active=True),
+    ]
+    listing = banned_word_list_keyboard(words, -100123)
+
+    assert menu.inline_keyboard[-1][0].callback_data == "adm:menu:main:-100123"
+    assert listing.inline_keyboard[-1][0].callback_data == "adm:menu:keywords:-100123"
 
 
 def _build_update(chat_id: int = -100, message_id: int = 42):

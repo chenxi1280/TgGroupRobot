@@ -19,7 +19,13 @@ async def solitaire_create_start_callback(update: Update, context: ContextTypes.
     q = update.callback_query
     await q.answer()
 
-    target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(update, context, chat_index=2)
+    target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(
+        update,
+        context,
+        chat_index=2,
+        allow_fallback_to_current_chat=False,
+        error_message_select_chat="❌ 群组参数无效，请返回重试",
+    )
     if target_chat_id is None:
         return
 

@@ -16,6 +16,11 @@ from backend.features.invite.ui.invite_link import invite_link_menu_keyboard
 
 def test_invite_link_menu_keyboard_matches_basic_mode_layout():
     rows = [[button.text for button in row] for row in invite_link_menu_keyboard(-1001, enabled=False, remind_enabled=True).inline_keyboard]
+    callbacks = {
+        button.text: button.callback_data
+        for row in invite_link_menu_keyboard(-1001, enabled=False, remind_enabled=True).inline_keyboard
+        for button in row
+    }
 
     assert rows == [
         ["状态:", "启动", "❌ 关闭"],
@@ -27,6 +32,7 @@ def test_invite_link_menu_keyboard_matches_basic_mode_layout():
         ["📤 导出数据"],
         ["🔙 返回"],
     ]
+    assert callbacks["🔙 返回"] == "adm:menu:main:-1001"
 
 
 @pytest.mark.asyncio
@@ -411,7 +417,7 @@ async def test_invite_link_create_uses_target_chat_id_from_private_state(monkeyp
 async def test_invite_link_buttons_callback_opens_shared_editor(monkeypatch):
     opened: list[object] = []
 
-    async def fake_resolve_target_chat_with_permission_check(update, context, chat_index: int = 2):
+    async def fake_resolve_target_chat_with_permission_check(update, context, chat_index: int = 2, **kwargs):
         return -1005566
 
     async def fake_show_layout_menu(update, context, editor_ctx, *, session=None):

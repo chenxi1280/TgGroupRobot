@@ -31,6 +31,6 @@ def sm_list_keyboard(tasks: list, chat_id: int, page: int = 0, page_size: int = 
 
     buttons.extend([
         [InlineKeyboardButton("➕ 添加一条", callback_data=f"sm:add:{chat_id}")],
-        [create_back_button(chat_id, "back_to_menu")],
+        [create_back_button(chat_id, "main")],
     ])
     return InlineKeyboardMarkup(buttons)

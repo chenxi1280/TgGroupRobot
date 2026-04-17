@@ -6,9 +6,12 @@ from types import SimpleNamespace
 
 import pytest
 
+from backend.features.activity import game_panels
 from backend.shared.services.base import ValidationError
 from backend.features.activity.services.game_service import (
     classify_k3_result,
+    format_blackjack_help,
+    format_k3_help,
     k3_guess_label,
     parse_blackjack_bet,
     parse_k3_command,
@@ -43,6 +46,25 @@ class _GuessInputMessage:
         self.replies.append(text)
 
 
+class _PanelSession:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return None
+
+    async def commit(self) -> None:
+        return None
+
+    async def execute(self, stmt):
+        return SimpleNamespace(scalar=lambda: 0)
+
+
+class _PanelDb:
+    def __init__(self) -> None:
+        self.session_factory = lambda: _PanelSession()
+
+
 def test_game_ratio_parsing():
     assert parse_game_ratio("0.1") == "0.1"
     with pytest.raises(ValidationError):
@@ -70,6 +92,37 @@ def test_k3_result_classifies_extended_plays():
     assert set(classify_k3_result([1, 2, 3])["winning_keys"]) == {"small", "even", "straight"}
     assert set(classify_k3_result([1, 3, 5])["winning_keys"]) == {"small", "odd", "misc_six"}
     assert classify_k3_result([6, 6, 6])["winning_keys"] == ["triple"]
+
+
+def test_group_game_help_hides_admin_rake_ratio():
+    assert "抽水比例" not in format_k3_help(True, "0.1")
+    assert "抽水比例" not in format_blackjack_help(True, "0.1")
+
+
+@pytest.mark.asyncio
+async def test_group_game_panels_show_user_tips_without_admin_rake(monkeypatch):
+    async def fake_setting(session, chat_id: int):
+        return SimpleNamespace(k3_enabled=True, blackjack_enabled=True, points_source_chat_id=None)
+
+    async def fake_points_label(session, chat_id: int, points_source_chat_id):
+        return "本群分"
+
+    async def fake_active_k3_round(session, chat_id: int):
+        return None
+
+    monkeypatch.setattr(game_panels, "get_or_create_setting", fake_setting)
+    monkeypatch.setattr(game_panels, "get_game_points_chat_label", fake_points_label)
+    monkeypatch.setattr(game_panels, "get_active_k3_round", fake_active_k3_round)
+
+    k3_text = await game_panels.build_k3_panel_text(_PanelDb(), -1001)
+    blackjack_text = await game_panels.build_blackjack_panel_text(_PanelDb(), -1001)
+
+    assert "选择对应的玩法按钮进行下注" in k3_text
+    assert "└ 指令：快三规则 快三统计" in k3_text
+    assert "选择对应的积分按钮进行下注" in blackjack_text
+    assert "└ 指令：黑杰克规则 黑杰克统计" in blackjack_text
+    assert "抽水比例" not in k3_text
+    assert "抽水比例" not in blackjack_text
 
 
 def test_guess_options_parser_accepts_lines():

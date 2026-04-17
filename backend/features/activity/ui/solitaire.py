@@ -19,7 +19,7 @@ def solitaire_menu_keyboard(chat_id: int | None = None) -> InlineKeyboardMarkup:
     create_callback = f"sol:create:{chat_id}" if chat_id else "sol:create"
     list_callback = f"sol:list:{chat_id}:0" if chat_id else "sol:list"
     stats_callback = f"sol:stats:{chat_id}" if chat_id else "sol:stats"
-    back_button = create_back_button(chat_id, "back_to_menu")
+    back_button = create_back_button(chat_id, "main")
 
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("➕ 创建接龙", callback_data=create_callback)],
@@ -63,7 +63,7 @@ def solitaire_list_keyboard(
         label = f"{status_icon} {solitaire.title} {count}"
 
         # 在私聊场景下，包含 chat_id 参数
-        detail_callback = f"sol:detail:{solitaire.id}:{chat_id}" if chat_id else f"sol:detail:{solitaire.id}"
+        detail_callback = f"sol:detail:{chat_id}:{solitaire.id}" if chat_id else f"sol:detail:{solitaire.id}"
         buttons.append([InlineKeyboardButton(label, callback_data=detail_callback)])
 
     # 分页导航
@@ -78,7 +78,7 @@ def solitaire_list_keyboard(
     if nav_buttons:
         buttons.append(nav_buttons)
 
-    back_callback = f"adm:back_to_menu:{chat_id}" if chat_id else "sol:menu"
+    back_callback = f"adm:menu:solitaire:{chat_id}" if chat_id else "sol:menu"
     buttons.append([InlineKeyboardButton("🔙 返回", callback_data=back_callback)])
     return InlineKeyboardMarkup(buttons)
 
@@ -99,14 +99,14 @@ def solitaire_detail_keyboard(
 
     if is_active:
         # 在私聊场景下，包含 chat_id 参数
-        refresh_callback = f"sol:refresh:{solitaire_id}:{chat_id}" if chat_id else f"sol:refresh:{solitaire_id}"
-        close_callback = f"sol:close:{solitaire_id}:{chat_id}" if chat_id else f"sol:close:{solitaire_id}"
+        refresh_callback = f"sol:refresh:{chat_id}:{solitaire_id}" if chat_id else f"sol:refresh:{solitaire_id}"
+        close_callback = f"sol:close:{chat_id}:{solitaire_id}" if chat_id else f"sol:close:{solitaire_id}"
         buttons.append([
             InlineKeyboardButton("🔄 刷新", callback_data=refresh_callback),
             InlineKeyboardButton("🔚 结束", callback_data=close_callback),
         ])
 
-    delete_callback = f"sol:delete:{solitaire_id}:{chat_id}" if chat_id else f"sol:delete:{solitaire_id}"
+    delete_callback = f"sol:delete:{chat_id}:{solitaire_id}" if chat_id else f"sol:delete:{solitaire_id}"
     buttons.append([InlineKeyboardButton("🗑 删除", callback_data=delete_callback)])
 
     # 返回列表，在私聊场景下包含 chat_id 参数

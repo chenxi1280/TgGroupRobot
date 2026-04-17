@@ -19,6 +19,13 @@ from backend.shared.callback_parser import CallbackParser
 from backend.shared.chat_context import PrivateChatContext
 
 
+def _parse_scoped_solitaire_callback(cb: CallbackParser) -> tuple[int | None, int]:
+    """Return (solitaire_id, chat_index), accepting new and legacy orders."""
+    if cb.get_int_optional(2) is not None and cb.get_int(2) < 0:
+        return cb.get_int_optional(3), 2
+    return cb.get_int_optional(2), 3
+
+
 async def solitaire_refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
         return
@@ -26,13 +33,17 @@ async def solitaire_refresh_callback(update: Update, context: ContextTypes.DEFAU
     await q.answer()
 
     cb = CallbackParser.parse(q.data or "")
-    if cb.length() < 3:
-        return
-    solitaire_id = cb.get_int(2)
-    if solitaire_id == 0:
+    solitaire_id, chat_index = _parse_scoped_solitaire_callback(cb)
+    if solitaire_id in (None, 0):
         return
 
-    target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(update, context, chat_index=3)
+    target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(
+        update,
+        context,
+        chat_index=chat_index,
+        allow_fallback_to_current_chat=False,
+        error_message_select_chat="❌ 群组参数无效，请返回重试",
+    )
     if target_chat_id is None:
         return
 
@@ -80,13 +91,17 @@ async def solitaire_close_callback(update: Update, context: ContextTypes.DEFAULT
     chat = update.effective_chat
     user = update.effective_user
     cb = CallbackParser.parse(q.data or "")
-    if cb.length() < 3:
-        return
-    solitaire_id = cb.get_int(2)
-    if solitaire_id == 0:
+    solitaire_id, chat_index = _parse_scoped_solitaire_callback(cb)
+    if solitaire_id in (None, 0):
         return
 
-    target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(update, context, chat_index=3)
+    target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(
+        update,
+        context,
+        chat_index=chat_index,
+        allow_fallback_to_current_chat=False,
+        error_message_select_chat="❌ 群组参数无效，请返回重试",
+    )
     if target_chat_id is None:
         return
 
@@ -143,14 +158,18 @@ async def solitaire_delete_callback(update: Update, context: ContextTypes.DEFAUL
     await q.answer()
 
     cb = CallbackParser.parse(q.data or "")
-    if cb.length() < 3:
-        return
-    solitaire_id = cb.get_int(2)
-    if solitaire_id == 0:
+    solitaire_id, chat_index = _parse_scoped_solitaire_callback(cb)
+    if solitaire_id in (None, 0):
         return
 
     chat = update.effective_chat
-    target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(update, context, chat_index=3)
+    target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(
+        update,
+        context,
+        chat_index=chat_index,
+        allow_fallback_to_current_chat=False,
+        error_message_select_chat="❌ 群组参数无效，请返回重试",
+    )
     if target_chat_id is None:
         return
 

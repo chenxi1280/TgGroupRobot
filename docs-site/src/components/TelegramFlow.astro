@@ -122,7 +122,7 @@ const isNeedsReview = flow.coverage?.alignmentStatus === 'needsReview';
 
           <div class="telegram-keyboard">
             {screen.keyboard.map((row) => (
-              <div class="keyboard-row">
+              <div class="keyboard-row" style={`--keyboard-columns: ${row.length}`}>
                 {row.map((button) => (
                   <button
                     type="button"
@@ -133,7 +133,7 @@ const isNeedsReview = flow.coverage?.alignmentStatus === 'needsReview';
                     data-callback-data={button.callbackData}
                     title={button.callbackData}
                   >
-                    {button.label}
+                    <span class="keyboard-button__label">{button.label}</span>
                   </button>
                 ))}
               </div>

@@ -26,7 +26,7 @@ def banned_word_menu_keyboard(chat_id: int | None = None) -> InlineKeyboardMarku
         if chat_id
         else "banned_word:list"
     )
-    back_button = create_back_button(chat_id, "back_to_menu")
+    back_button = create_back_button(chat_id, "main")
 
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("➕ 添加违禁词", callback_data=add_callback)],
@@ -63,7 +63,7 @@ def banned_word_list_keyboard(
 
     # 返回按钮
     back_callback = (
-        f"adm:back_to_menu:{chat_id}"
+        f"adm:menu:keywords:{chat_id}"
         if chat_id
         else "banned_word:menu"
     )

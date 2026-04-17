@@ -26,7 +26,7 @@ def auto_reply_menu_keyboard(chat_id: int | None = None) -> InlineKeyboardMarkup
         if chat_id
         else "auto_reply:list"
     )
-    back_button = create_back_button(chat_id, "back_to_menu")
+    back_button = create_back_button(chat_id, "main")
 
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("➕ 添加一条", callback_data=create_callback)],

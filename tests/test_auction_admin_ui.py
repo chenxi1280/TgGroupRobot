@@ -162,6 +162,7 @@ async def test_bottom_button_layout_menu_renders_position_controls(monkeypatch):
     assert rows[2] == ["➕ 按钮"]
     assert callbacks[2][0] == "btm:layout:-1001:add:3:1"
     assert rows[-1] == ["♻️ 清空按钮", "🔙 返回"]
+    assert callbacks[-1][1] == "btm:home:-1001"
 
 
 @pytest.mark.asyncio

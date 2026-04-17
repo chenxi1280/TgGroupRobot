@@ -32,6 +32,8 @@ async def resolve_auto_reply_target_chat_id(
         update,
         context,
         chat_index=chat_index,
+        allow_fallback_to_current_chat=False,
+        error_message_select_chat="❌ 群组参数无效，请返回重试",
     )
 
 

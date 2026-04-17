@@ -36,7 +36,6 @@ def format_blackjack_help(enabled: bool, rake_ratio: str | None) -> str:
         return "🎮 黑杰克当前未开启。"
     return (
         "🎮 黑杰克已开启\n"
-        f"💧 抽水比例：{rake_ratio or '0'}\n"
         "玩法：发送 `黑杰克 100` 开局，之后发送 `要牌` 或 `停牌`。\n"
         "单局 1-2 分钟内操作，超时会自动停牌结算。"
     )

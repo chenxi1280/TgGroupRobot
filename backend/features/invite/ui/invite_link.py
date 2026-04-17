@@ -32,7 +32,7 @@ def invite_link_menu_keyboard(
     """
     enabled_on, enabled_off = _toggle_labels(enabled)
     remind_on, remind_off = _toggle_labels(remind_enabled)
-    back_button = create_back_button(chat_id, "back_to_menu")
+    back_button = create_back_button(chat_id, "main")
     relay_label = "✅ 中转" if mode == "relay" else "中转"
     direct_label = "✅ 直接" if mode == "direct" else "直接"
     return InlineKeyboardMarkup([

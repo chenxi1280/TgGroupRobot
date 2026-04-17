@@ -123,6 +123,7 @@ class PrivateChatContext:
         context: ContextTypes.DEFAULT_TYPE,
         target_chat_id: int | None = None,
         chat_index: int = 2,
+        allow_fallback_to_current_chat: bool = True,
         error_message_select_chat: str = "请先选择一个群组",
         error_message_no_permission: str = "你没有该群组的管理权限",
     ) -> int | None:
@@ -169,11 +170,14 @@ class PrivateChatContext:
             # 尝试从 callback_data 解析
             if update.callback_query:
                 target_chat_id = await PrivateChatContext.resolve_target_chat_from_callback(
-                    update, context, chat_index
+                    update,
+                    context,
+                    chat_index,
+                    allow_fallback_to_current_chat=allow_fallback_to_current_chat,
                 )
 
             # 如果 callback_data 中也没有，从数据库获取
-            if target_chat_id is None or target_chat_id == 0:
+            if (target_chat_id is None or target_chat_id == 0) and allow_fallback_to_current_chat:
                 db: Database = context.application.bot_data["db"]
                 target_chat_id = await get_user_current_chat(db, user.id)
 

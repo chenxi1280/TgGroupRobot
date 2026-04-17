@@ -21,6 +21,7 @@ def test_scheduled_message_list_keyboard_matches_document_layout() -> None:
     assert keyboard.inline_keyboard[0][2].text == "✏️ 修改"
     assert keyboard.inline_keyboard[0][3].text == "🗑 删除"
     assert keyboard.inline_keyboard[1][0].text == "➕ 添加一条"
+    assert keyboard.inline_keyboard[2][0].callback_data == "adm:menu:main:-100123"
 
 
 def test_format_task_list_uses_minimum_one_page_for_empty_list() -> None:

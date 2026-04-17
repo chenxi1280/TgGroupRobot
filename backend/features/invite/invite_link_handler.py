@@ -52,7 +52,6 @@ from backend.features.invite.ui.invite_link import invite_link_menu_keyboard
 from backend.platform.db.runtime.session import Database
 from backend.platform.state.state_service import clear_user_state, get_user_state, set_user_state
 from backend.shared.callback_parser import CallbackParser
-from backend.shared.handlers.base.chat_resolver import ChatResolver
 from backend.shared.services.permission_service import is_user_admin
 from backend.shared.time_ui import build_copy_options_keyboard, build_numeric_duration_prompt_text
 
@@ -71,11 +70,8 @@ async def invite_link_create_start_callback(update: Update, context: ContextType
         if data.startswith("inv:create:"):
             target_chat_id = CallbackParser.parse(data).get_int(2)
         if target_chat_id == 0:
-            db: Database = context.application.bot_data["db"]
-            target_chat_id = await ChatResolver.get_current_chat(db, user.id)
-            if target_chat_id is None:
-                await q.edit_message_text("请先选择一个群组")
-                return
+            await q.answer("❌ 群组参数无效，请返回重试", show_alert=True)
+            return
         if not await is_user_admin(context, target_chat_id, user.id):
             await q.edit_message_text("你没有该群组的管理权限")
             return

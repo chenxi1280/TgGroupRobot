@@ -9,7 +9,6 @@ from backend.platform.db.schema.models.core import TgChat
 from backend.platform.db.schema.models.enums import ConversationStateType
 from backend.platform.state.state_service import clear_user_state, get_user_state, set_user_state
 from backend.shared.callback_parser import CallbackParser
-from backend.shared.handlers.base.chat_resolver import ChatResolver
 from backend.shared.services.chat_service import ensure_chat
 from backend.shared.services.permission_service import is_user_admin
 from backend.shared.services.user_service import ensure_user
@@ -116,10 +115,8 @@ async def _resolve_banned_word_target(update: Update, context: ContextTypes.DEFA
     if data.startswith("banned_word:add:"):
         target_chat_id = CallbackParser.parse(data).get_int(2)
     if target_chat_id == 0:
-        target_chat_id = await ChatResolver.get_current_chat(db, user.id)
-        if target_chat_id is None:
-            await update.callback_query.edit_message_text("请先选择一个群组")
-            return None, None
+        await update.callback_query.answer("❌ 群组参数无效，请返回重试", show_alert=True)
+        return None, None
     if not await is_user_admin(context, target_chat_id, user.id):
         await update.callback_query.edit_message_text("你没有该群组的管理权限")
         return None, None

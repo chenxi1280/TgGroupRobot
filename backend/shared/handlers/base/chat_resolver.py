@@ -49,6 +49,10 @@ class ChatResolver:
             return chat.id
 
         # 如果是私聊消息，从用户状态中获取当前管理的群组
+        callback_chat_id = ChatResolver.resolve_chat_id_from_callback(update)
+        if callback_chat_id is not None:
+            return callback_chat_id
+
         db = context.application.bot_data["db"]
         target_chat_id = await get_user_current_chat(db, update.effective_user.id)
 
@@ -118,3 +122,20 @@ class ChatResolver:
         """
         from backend.features.group_ops.services.chat_group_service import get_user_current_chat
         return await get_user_current_chat(db, user_id)
+
+    @staticmethod
+    def resolve_chat_id_from_callback(update: Update) -> int | None:
+        """Best-effort extraction of an explicit chat id from callback_data."""
+        if update.callback_query is None:
+            return None
+        parts = (update.callback_query.data or "").split(":")
+        for index in (2, 3):
+            if index >= len(parts):
+                continue
+            try:
+                value = int(parts[index])
+            except ValueError:
+                continue
+            if value < 0:
+                return value
+        return None
