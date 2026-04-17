@@ -15,7 +15,7 @@
 - 共享环境变量：`/data/tggrouprobot/shared/.env`
 - 数据库由独立的 `infra-compose` 提供
 - 业务容器接入外部网络 `infra_default`
-- 用户功能手册站点默认映射宿主机 `8080` 端口，可用 `DOCS_SITE_HOST_PORT` 调整
+- 用户功能手册站点默认绑定宿主机 `127.0.0.1:18081`，公网由宿主机 Nginx 按 `robot.telema.cn` 转发
 
 ## GitHub Secrets
 
@@ -46,7 +46,8 @@ cp /data/tggrouprobot/.env /data/tggrouprobot/shared/.env
 BOT_TOKEN=...
 DATABASE_URL=postgresql+psycopg://app_user:<shared_password>@postgres:5432/tggrouprobot
 INFRA_NETWORK_NAME=infra_default
-DOCS_SITE_HOST_PORT=8080
+DOCS_SITE_BIND_HOST=127.0.0.1
+DOCS_SITE_HOST_PORT=18081
 ```
 
 ## Workflow 做了什么

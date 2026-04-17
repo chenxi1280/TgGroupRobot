@@ -55,7 +55,8 @@
 BOT_TOKEN=...
 DATABASE_URL=postgresql+psycopg://<db_user>:<db_password>@postgres:5432/tggrouprobot
 INFRA_NETWORK_NAME=infra_default
-DOCS_SITE_HOST_PORT=8080
+DOCS_SITE_BIND_HOST=127.0.0.1
+DOCS_SITE_HOST_PORT=18081
 ```
 
 数据库处理流程：
@@ -75,10 +76,11 @@ DOCS_SITE_HOST_PORT=8080
 - 日志默认留在容器标准输出
 - 日常检查依赖 `docker logs`
 
-用户功能手册站点由 `docs-site` 构建为静态文件，并通过 `tggrouprobot-docs-site` 容器提供 HTTP 服务。默认宿主机端口为 `8080`，如线上已有反向代理或端口冲突，可在 `/data/tggrouprobot/shared/.env` 中设置：
+用户功能手册站点由 `docs-site` 构建为静态文件，并通过 `tggrouprobot-docs-site` 容器提供 HTTP 服务。容器默认只绑定本机端口 `127.0.0.1:18081`，公网访问由基础设施服务器宿主机 Nginx 按 `robot.telema.cn` 转发。如线上端口冲突，可在 `/data/tggrouprobot/shared/.env` 中设置：
 
 ```env
-DOCS_SITE_HOST_PORT=18080
+DOCS_SITE_BIND_HOST=127.0.0.1
+DOCS_SITE_HOST_PORT=18081
 ```
 
 ## 5. 当前实际 vs 目标架构
@@ -101,7 +103,7 @@ DOCS_SITE_HOST_PORT=18080
 docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 docker logs --tail 80 tggrouprobot-bot
 docker logs --tail 80 tggrouprobot-docs-site
-curl -fsS http://127.0.0.1:${DOCS_SITE_HOST_PORT:-8080}/healthz
+curl -fsS http://127.0.0.1:${DOCS_SITE_HOST_PORT:-18081}/healthz
 docker inspect tggrouprobot-bot --format '{{json .Mounts}}'
 readlink -f /data/tggrouprobot/current
 ```

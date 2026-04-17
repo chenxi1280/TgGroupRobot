@@ -106,9 +106,10 @@ run_with_retries() {
 
     if "$@"; then
       return 0
+    else
+      status=$?
     fi
 
-    status=$?
     if ((attempt == RELEASE_SSH_ATTEMPTS)); then
       echo "${label} failed after ${RELEASE_SSH_ATTEMPTS} attempt(s)" >&2
       return "$status"
