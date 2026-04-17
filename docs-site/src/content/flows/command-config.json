@@ -1,0 +1,258 @@
+{
+  "slug": "command-config",
+  "title": "群组命令配置",
+  "status": "已闭环",
+  "category": "群组扩展",
+  "entryScreen": "entry",
+  "coverage": {
+    "mode": "complete",
+    "callbackPrefixes": [
+      "adm:menu:gcmd",
+      "adm:gcmd:"
+    ],
+    "inputStates": [
+      "command_config_alias_input"
+    ],
+    "sourceFiles": [
+      "backend/features/admin/core/menu_dispatch.py",
+      "backend/features/admin/module_settings/group_control_inputs.py",
+      "backend/features/admin/runtime.py",
+      "backend/features/admin/ui/admin_main_keyboards.py",
+      "backend/features/group_ops/command_alias_handler.py"
+    ],
+    "alignmentStatus": "ok",
+    "alignmentSummary": "真实回调审计通过。"
+  },
+  "screens": [
+    {
+      "id": "entry",
+      "title": "管理员主菜单",
+      "message": [
+        "发送 /admin 后选择当前群组。",
+        "点击「群组命令配置」进入配置页。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "群组命令配置",
+            "callbackData": "adm:menu:gcmd:{chat_id}",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「群组命令配置」。",
+            "highlight": true
+          }
+        ],
+        [
+          {
+            "label": "切换群",
+            "callbackData": "adm:switch_group",
+            "action": "goto",
+            "target": "select_group",
+            "feedback": "进入群组选择。"
+          },
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "goto",
+            "target": "main_menu",
+            "feedback": "已回到主菜单。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "当前群组：演示群"
+      ]
+    },
+    {
+      "id": "select_group",
+      "title": "选择配置群组",
+      "message": [
+        "私聊配置前先确认目标群组，后续按钮都会写入这个群。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "演示群",
+            "callbackData": "adm:select_group:-1001001",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到演示群。"
+          },
+          {
+            "label": "测试群",
+            "callbackData": "adm:select_group:-1001002",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到测试群。"
+          }
+        ],
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:menu:gcmd:{chat_id}",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "可管理群：演示群、测试群"
+      ]
+    },
+    {
+      "id": "main_menu",
+      "title": "主菜单",
+      "message": [
+        "这里展示机器人后台的真实功能入口。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "群组命令配置",
+            "callbackData": "adm:menu:gcmd:{chat_id}",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「群组命令配置」。",
+            "highlight": true
+          }
+        ]
+      ]
+    },
+    {
+      "id": "home",
+      "title": "群组命令配置",
+      "message": [
+        "开启或关闭群命令，并为命令设置别名。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "总开关",
+            "callbackData": "adm:gcmd:{chat_id}:toggle_enabled",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "群命令总开关已切换。"
+          },
+          {
+            "label": "命令详情",
+            "callbackData": "adm:gcmd:{chat_id}:detail:rank",
+            "action": "goto",
+            "target": "detail",
+            "feedback": "已打开命令详情。"
+          }
+        ],
+        [
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回主菜单。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "当前群组：演示群"
+      ]
+    },
+    {
+      "id": "detail",
+      "title": "命令详情",
+      "message": [
+        "详情页可开关单个命令或设置别名。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "开启命令",
+            "callbackData": "adm:gcmd:{chat_id}:toggle:rank",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "命令已切换。"
+          },
+          {
+            "label": "设置别名",
+            "callbackData": "adm:gcmd:{chat_id}:alias:rank",
+            "action": "input",
+            "target": "alias_input",
+            "feedback": "请输入别名。"
+          },
+          {
+            "label": "清空别名",
+            "callbackData": "adm:gcmd:{chat_id}:clear_alias:rank",
+            "action": "confirm",
+            "target": "result",
+            "feedback": "别名已清空。"
+          }
+        ],
+        [
+          {
+            "label": "返回命令配置",
+            "callbackData": "adm:menu:gcmd:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回命令配置。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "alias_input",
+      "title": "设置命令别名",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:gcmd:{chat_id}:detail:rank",
+            "action": "back",
+            "target": "detail",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "发送别名命令",
+        "placeholder": "/排行榜",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "别名",
+            "value": "/排行榜",
+            "target": "result",
+            "feedback": "已填入：别名。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "result",
+      "title": "设置结果",
+      "message": [
+        "Bot 保存配置后会重新渲染当前功能页。",
+        "请在群内用测试账号触发一次，确认权限和运行结果。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回设置页",
+            "callbackData": "adm:menu:gcmd:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回设置页。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "审计：回调来自后端真实路由"
+      ]
+    }
+  ]
+}

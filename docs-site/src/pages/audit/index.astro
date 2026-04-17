@@ -1,0 +1,18 @@
+---
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
+import AuditSummary from '../../components/AuditSummary.astro';
+
+const frontmatter = {
+  title: '流程审计',
+  description: '汇总功能文档、菜单入口和真值表覆盖状态。'
+};
+---
+
+<StarlightPage frontmatter={frontmatter}>
+  <header class="page-heading">
+    <p class="eyebrow">流程审计</p>
+    <h1>文档覆盖和逻辑检查</h1>
+    <p>这里汇总功能页数量、菜单入口覆盖、真值表映射和需要复核的流程。校验脚本会在构建前执行。</p>
+  </header>
+  <AuditSummary />
+</StarlightPage>

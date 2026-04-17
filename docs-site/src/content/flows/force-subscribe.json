@@ -1,0 +1,407 @@
+{
+  "slug": "force-subscribe",
+  "title": "强制订阅",
+  "status": "已闭环",
+  "category": "入群风控",
+  "entryScreen": "entry",
+  "coverage": {
+    "mode": "complete",
+    "callbackPrefixes": [
+      "adm:menu:forcesub",
+      "adm:fs:"
+    ],
+    "inputStates": [
+      "force_subscribe_channel_1_input",
+      "force_subscribe_channel_2_input",
+      "force_subscribe_text_input",
+      "force_subscribe_cover_input",
+      "force_subscribe_buttons_input"
+    ],
+    "sourceFiles": [
+      "backend/features/admin/core/menu_dispatch.py",
+      "backend/features/admin/moderation/member_actions.py",
+      "backend/features/admin/module_settings/force_subscribe_inputs.py",
+      "backend/features/admin/runtime.py",
+      "backend/features/admin/ui/admin_main_keyboards.py",
+      "backend/features/group_ops/group_hooks/control_force_subscribe.py"
+    ],
+    "alignmentStatus": "ok",
+    "alignmentSummary": "真实回调审计通过。"
+  },
+  "screens": [
+    {
+      "id": "entry",
+      "title": "管理员主菜单",
+      "message": [
+        "发送 /admin 后选择当前群组。",
+        "点击「强制关注」进入配置页。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "强制关注",
+            "callbackData": "adm:menu:forcesub:{chat_id}",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「强制关注」。",
+            "highlight": true
+          }
+        ],
+        [
+          {
+            "label": "切换群",
+            "callbackData": "adm:switch_group",
+            "action": "goto",
+            "target": "select_group",
+            "feedback": "进入群组选择。"
+          },
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "goto",
+            "target": "main_menu",
+            "feedback": "已回到主菜单。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "当前群组：演示群"
+      ]
+    },
+    {
+      "id": "select_group",
+      "title": "选择配置群组",
+      "message": [
+        "私聊配置前先确认目标群组，后续按钮都会写入这个群。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "演示群",
+            "callbackData": "adm:select_group:-1001001",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到演示群。"
+          },
+          {
+            "label": "测试群",
+            "callbackData": "adm:select_group:-1001002",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到测试群。"
+          }
+        ],
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:menu:forcesub:{chat_id}",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "可管理群：演示群、测试群"
+      ]
+    },
+    {
+      "id": "main_menu",
+      "title": "主菜单",
+      "message": [
+        "这里展示机器人后台的真实功能入口。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "强制关注",
+            "callbackData": "adm:menu:forcesub:{chat_id}",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「强制关注」。",
+            "highlight": true
+          }
+        ]
+      ]
+    },
+    {
+      "id": "home",
+      "title": "强制关注",
+      "message": [
+        "要求成员关注指定频道或群组后才能发言。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "开启",
+            "callbackData": "adm:fs:{chat_id}:toggle:enabled",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "强制关注已切换。"
+          },
+          {
+            "label": "频道 1",
+            "callbackData": "adm:fs:{chat_id}:input:channel1",
+            "action": "input",
+            "target": "channel_input",
+            "feedback": "请输入频道或群链接。"
+          },
+          {
+            "label": "频道 2",
+            "callbackData": "adm:fs:{chat_id}:input:channel2",
+            "action": "input",
+            "target": "channel_input",
+            "feedback": "请输入第二个目标。"
+          }
+        ],
+        [
+          {
+            "label": "设置封面",
+            "callbackData": "adm:fs:{chat_id}:input:cover",
+            "action": "input",
+            "target": "cover_input",
+            "feedback": "请发送封面媒体。"
+          },
+          {
+            "label": "设置文本",
+            "callbackData": "adm:fs:{chat_id}:input:text",
+            "action": "input",
+            "target": "text_input",
+            "feedback": "请输入提示文本。"
+          },
+          {
+            "label": "设置按钮",
+            "callbackData": "adm:fs:{chat_id}:input:buttons",
+            "action": "input",
+            "target": "buttons_input",
+            "feedback": "请输入按钮。"
+          }
+        ],
+        [
+          {
+            "label": "预览效果",
+            "callbackData": "adm:fs:{chat_id}:preview",
+            "action": "goto",
+            "target": "result",
+            "feedback": "已打开预览。"
+          },
+          {
+            "label": "判定模式",
+            "callbackData": "adm:fs:{chat_id}:cycle_check_mode",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "已切换判定模式。"
+          },
+          {
+            "label": "处理动作",
+            "callbackData": "adm:fs:{chat_id}:cycle_action",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "已切换处理动作。"
+          }
+        ],
+        [
+          {
+            "label": "删除延迟",
+            "callbackData": "adm:fs:{chat_id}:cycle_delete_after",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "已切换删除延迟。"
+          }
+        ],
+        [
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回主菜单。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "当前群组：演示群"
+      ]
+    },
+    {
+      "id": "channel_input",
+      "title": "设置关注目标",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:menu:forcesub:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "发送频道用户名或邀请链接",
+        "placeholder": "@example_channel",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "频道用户名",
+            "value": "@example_channel",
+            "target": "result",
+            "feedback": "已填入：频道用户名。"
+          },
+          {
+            "label": "邀请链接",
+            "value": "https://t.me/example",
+            "target": "result",
+            "feedback": "已填入：邀请链接。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "cover_input",
+      "title": "设置强制关注封面",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:menu:forcesub:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "media",
+        "prompt": "发送图片、视频或 /clear",
+        "placeholder": "image.jpg",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "图片",
+            "value": "image.jpg",
+            "target": "result",
+            "feedback": "已填入：图片。"
+          },
+          {
+            "label": "清空",
+            "value": "/clear",
+            "target": "result",
+            "feedback": "已填入：清空。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "text_input",
+      "title": "设置强制关注文本",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:menu:forcesub:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "发送未关注时展示的文本",
+        "placeholder": "请先关注频道后再发言。",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "提示",
+            "value": "请先关注频道后再发言。",
+            "target": "result",
+            "feedback": "已填入：提示。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "buttons_input",
+      "title": "设置强制关注按钮",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:menu:forcesub:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "buttons",
+        "prompt": "逐行输入按钮，支持分号同排",
+        "placeholder": "关注频道 - https://t.me/example",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "单按钮",
+            "value": "关注频道 - https://t.me/example",
+            "target": "result",
+            "feedback": "已填入：单按钮。"
+          },
+          {
+            "label": "同排",
+            "value": "频道 - https://t.me/a;客服 - https://t.me/b",
+            "target": "result",
+            "feedback": "已填入：同排。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "result",
+      "title": "设置结果",
+      "message": [
+        "Bot 保存配置后会重新渲染当前功能页。",
+        "请在群内用测试账号触发一次，确认权限和运行结果。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回设置页",
+            "callbackData": "adm:menu:forcesub:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回设置页。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "审计：回调来自后端真实路由"
+      ]
+    }
+  ]
+}

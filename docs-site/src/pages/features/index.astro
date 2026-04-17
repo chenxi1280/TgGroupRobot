@@ -1,0 +1,18 @@
+---
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
+import FeatureIndex from '../../components/FeatureIndex.astro';
+
+const frontmatter = {
+  title: '功能总览',
+  description: 'TgGroupRobot 当前已闭环和暂时关闭功能的完整说明入口。'
+};
+---
+
+<StarlightPage frontmatter={frontmatter}>
+  <header class="page-heading">
+    <p class="eyebrow">功能总览</p>
+    <h1>所有功能</h1>
+    <p>按产品模块浏览功能页。每一页都包含配置步骤、仿 Telegram 操作图、流程图、Q&A 和逻辑检查。</p>
+  </header>
+  <FeatureIndex />
+</StarlightPage>

@@ -1,0 +1,674 @@
+{
+  "slug": "points-mall",
+  "title": "积分商城",
+  "status": "已闭环",
+  "category": "积分运营",
+  "entryScreen": "entry",
+  "coverage": {
+    "mode": "complete",
+    "callbackPrefixes": [
+      "adm:menu:points_mall",
+      "adm:mall:"
+    ],
+    "inputStates": [
+      "points_mall_command_input",
+      "points_mall_cover_input",
+      "points_mall_product_name_input",
+      "points_mall_product_price_input",
+      "points_mall_product_limit_input",
+      "points_mall_product_stock_input",
+      "points_mall_fulfiller_input",
+      "points_mall_desc_input",
+      "points_mall_product_sort_input",
+      "points_mall_product_cover_input"
+    ],
+    "sourceFiles": [
+      "backend/features/admin/core/menu_dispatch.py",
+      "backend/features/admin/points_extended/mall_inputs.py",
+      "backend/features/admin/runtime.py",
+      "backend/features/admin/ui/admin_main_keyboards.py",
+      "backend/features/admin/ui/points_extended_mall.py",
+      "backend/features/points/points_mall_actions.py"
+    ],
+    "alignmentStatus": "ok",
+    "alignmentSummary": "真实回调审计通过。"
+  },
+  "screens": [
+    {
+      "id": "entry",
+      "title": "管理员主菜单",
+      "message": [
+        "发送 /admin 后选择当前群组。",
+        "点击「积分商城」进入配置页。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "积分商城",
+            "callbackData": "adm:menu:points_mall:{chat_id}",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「积分商城」。",
+            "highlight": true
+          }
+        ],
+        [
+          {
+            "label": "切换群",
+            "callbackData": "adm:switch_group",
+            "action": "goto",
+            "target": "select_group",
+            "feedback": "进入群组选择。"
+          },
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "goto",
+            "target": "main_menu",
+            "feedback": "已回到主菜单。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "当前群组：演示群"
+      ]
+    },
+    {
+      "id": "select_group",
+      "title": "选择配置群组",
+      "message": [
+        "私聊配置前先确认目标群组，后续按钮都会写入这个群。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "演示群",
+            "callbackData": "adm:select_group:-1001001",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到演示群。"
+          },
+          {
+            "label": "测试群",
+            "callbackData": "adm:select_group:-1001002",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到测试群。"
+          }
+        ],
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:menu:points_mall:{chat_id}",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "可管理群：演示群、测试群"
+      ]
+    },
+    {
+      "id": "main_menu",
+      "title": "主菜单",
+      "message": [
+        "这里展示机器人后台的真实功能入口。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "积分商城",
+            "callbackData": "adm:menu:points_mall:{chat_id}",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「积分商城」。",
+            "highlight": true
+          }
+        ]
+      ]
+    },
+    {
+      "id": "home",
+      "title": "积分商城",
+      "message": [
+        "配置商城开关、命令、封面、商品和订单处理。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "开启商城",
+            "callbackData": "adm:mall:{chat_id}:toggle:enabled:1",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "商城已开启。"
+          },
+          {
+            "label": "关闭商城",
+            "callbackData": "adm:mall:{chat_id}:toggle:enabled:0",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "商城已关闭。"
+          },
+          {
+            "label": "自动下架",
+            "callbackData": "adm:mall:{chat_id}:toggle:auto_unlist:1",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "自动下架已开启。"
+          }
+        ],
+        [
+          {
+            "label": "设置命令",
+            "callbackData": "adm:mall:{chat_id}:edit:command",
+            "action": "input",
+            "target": "command_input",
+            "feedback": "请输入商城命令。"
+          },
+          {
+            "label": "设置封面",
+            "callbackData": "adm:mall:{chat_id}:edit:cover",
+            "action": "input",
+            "target": "cover_input",
+            "feedback": "请发送封面。"
+          },
+          {
+            "label": "清空封面",
+            "callbackData": "adm:mall:{chat_id}:cover:clear",
+            "action": "confirm",
+            "target": "result",
+            "feedback": "封面已清空。"
+          }
+        ],
+        [
+          {
+            "label": "新增商品",
+            "callbackData": "adm:mall:{chat_id}:product:add",
+            "action": "input",
+            "target": "product_name_input",
+            "feedback": "请输入商品名称。",
+            "highlight": true
+          },
+          {
+            "label": "商品详情",
+            "callbackData": "adm:mall:{chat_id}:product:detail:{product_id}",
+            "action": "goto",
+            "target": "product_detail",
+            "feedback": "已打开商品详情。"
+          },
+          {
+            "label": "订单列表",
+            "callbackData": "adm:mall:{chat_id}:orders_status:a",
+            "action": "goto",
+            "target": "orders",
+            "feedback": "已打开订单列表。"
+          }
+        ],
+        [
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回主菜单。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "当前群组：演示群"
+      ]
+    },
+    {
+      "id": "product_detail",
+      "title": "商品详情",
+      "message": [
+        "商品详情页使用真实 adm:mall:product:* 回调。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "名称",
+            "callbackData": "adm:mall:{chat_id}:product:edit:{product_id}:name",
+            "action": "input",
+            "target": "product_name_input",
+            "feedback": "请输入商品名称。"
+          },
+          {
+            "label": "价格",
+            "callbackData": "adm:mall:{chat_id}:product:edit:{product_id}:price",
+            "action": "input",
+            "target": "product_price_input",
+            "feedback": "请输入价格。"
+          },
+          {
+            "label": "库存",
+            "callbackData": "adm:mall:{chat_id}:product:edit:{product_id}:stock",
+            "action": "input",
+            "target": "product_stock_input",
+            "feedback": "请输入库存。"
+          }
+        ],
+        [
+          {
+            "label": "封面",
+            "callbackData": "adm:mall:{chat_id}:product:edit:{product_id}:cover",
+            "action": "input",
+            "target": "product_cover_input",
+            "feedback": "请发送商品封面。"
+          },
+          {
+            "label": "描述",
+            "callbackData": "adm:mall:{chat_id}:product:edit:{product_id}:description",
+            "action": "input",
+            "target": "product_desc_input",
+            "feedback": "请输入描述。"
+          },
+          {
+            "label": "上架",
+            "callbackData": "adm:mall:{chat_id}:product:toggle:{product_id}:1",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "商品已上架。"
+          }
+        ],
+        [
+          {
+            "label": "预览",
+            "callbackData": "adm:mall:{chat_id}:product:preview:{product_id}",
+            "action": "goto",
+            "target": "result",
+            "feedback": "已打开商品预览。"
+          },
+          {
+            "label": "删除确认",
+            "callbackData": "adm:mall:{chat_id}:product:delete_confirm:{product_id}",
+            "action": "confirm",
+            "target": "delete_product",
+            "feedback": "请确认删除。"
+          }
+        ],
+        [
+          {
+            "label": "返回商城",
+            "callbackData": "adm:menu:points_mall:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回商城。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "orders",
+      "title": "订单列表",
+      "message": [
+        "订单详情支持发货、取消和退款。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "订单详情",
+            "callbackData": "adm:mall:{chat_id}:order:detail:{order_id}:a:0",
+            "action": "goto",
+            "target": "order_detail",
+            "feedback": "已打开订单详情。"
+          }
+        ],
+        [
+          {
+            "label": "返回商城",
+            "callbackData": "adm:menu:points_mall:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回商城。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "order_detail",
+      "title": "订单详情",
+      "message": [
+        "订单处理通过真实 order 回调完成。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "发货",
+            "callbackData": "adm:mall:{chat_id}:order:fulfill:{order_id}:a:0",
+            "action": "confirm",
+            "target": "result",
+            "feedback": "订单已标记发货。"
+          },
+          {
+            "label": "取消",
+            "callbackData": "adm:mall:{chat_id}:order:cancel:{order_id}:a:0",
+            "action": "confirm",
+            "target": "result",
+            "feedback": "订单已取消。"
+          },
+          {
+            "label": "退款",
+            "callbackData": "adm:mall:{chat_id}:order:refund:{order_id}:a:0",
+            "action": "confirm",
+            "target": "result",
+            "feedback": "订单已退款。"
+          }
+        ],
+        [
+          {
+            "label": "返回订单列表",
+            "callbackData": "adm:mall:{chat_id}:orders_status:a",
+            "action": "back",
+            "target": "orders",
+            "feedback": "已返回订单列表。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "command_input",
+      "title": "设置商城命令",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:menu:points_mall:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "发送命令",
+        "placeholder": "/shop",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "命令",
+            "value": "/shop",
+            "target": "result",
+            "feedback": "已填入：命令。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "cover_input",
+      "title": "设置商城封面",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:menu:points_mall:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "media",
+        "prompt": "发送图片或 /clear",
+        "placeholder": "image.jpg",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "图片",
+            "value": "image.jpg",
+            "target": "result",
+            "feedback": "已填入：图片。"
+          },
+          {
+            "label": "清空",
+            "value": "/clear",
+            "target": "result",
+            "feedback": "已填入：清空。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "product_name_input",
+      "title": "输入商品名称",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:menu:points_mall:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "发送商品名称",
+        "placeholder": "VIP 兑换",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "名称",
+            "value": "VIP 兑换",
+            "target": "result",
+            "feedback": "已填入：名称。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "product_price_input",
+      "title": "输入商品价格",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:mall:{chat_id}:product:detail:{product_id}",
+            "action": "back",
+            "target": "product_detail",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "number",
+        "prompt": "发送积分价格",
+        "placeholder": "100",
+        "examples": [
+          {
+            "label": "价格",
+            "value": "100",
+            "target": "result",
+            "feedback": "已填入：价格。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "product_stock_input",
+      "title": "输入商品库存",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:mall:{chat_id}:product:detail:{product_id}",
+            "action": "back",
+            "target": "product_detail",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "number",
+        "prompt": "发送库存数量",
+        "placeholder": "20",
+        "examples": [
+          {
+            "label": "库存",
+            "value": "20",
+            "target": "result",
+            "feedback": "已填入：库存。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "product_cover_input",
+      "title": "输入商品封面",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:mall:{chat_id}:product:detail:{product_id}",
+            "action": "back",
+            "target": "product_detail",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "media",
+        "prompt": "发送图片或 /clear",
+        "placeholder": "product.jpg",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "图片",
+            "value": "product.jpg",
+            "target": "result",
+            "feedback": "已填入：图片。"
+          },
+          {
+            "label": "清空",
+            "value": "/clear",
+            "target": "result",
+            "feedback": "已填入：清空。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "product_desc_input",
+      "title": "输入商品描述",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:mall:{chat_id}:product:detail:{product_id}",
+            "action": "back",
+            "target": "product_detail",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "发送商品描述",
+        "placeholder": "兑换后联系管理员发货。",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "描述",
+            "value": "兑换后联系管理员发货。",
+            "target": "result",
+            "feedback": "已填入：描述。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "delete_product",
+      "title": "删除商品确认",
+      "message": [
+        "删除商品不会删除已产生订单。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "确认删除",
+            "callbackData": "adm:mall:{chat_id}:product:delete:{product_id}",
+            "action": "confirm",
+            "target": "result",
+            "feedback": "商品已删除。"
+          },
+          {
+            "label": "返回详情",
+            "callbackData": "adm:mall:{chat_id}:product:detail:{product_id}",
+            "action": "back",
+            "target": "product_detail",
+            "feedback": "已取消。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "result",
+      "title": "设置结果",
+      "message": [
+        "Bot 保存配置后会重新渲染当前功能页。",
+        "请在群内用测试账号触发一次，确认权限和运行结果。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回设置页",
+            "callbackData": "adm:menu:points_mall:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回设置页。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "审计：回调来自后端真实路由"
+      ]
+    }
+  ]
+}

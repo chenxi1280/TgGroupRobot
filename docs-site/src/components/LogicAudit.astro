@@ -1,0 +1,12 @@
+---
+const { feature } = Astro.props;
+const isReview = feature.logicAudit.status === 'needsReview';
+---
+
+<section class:list={['logic-audit', isReview && 'needs-review']}>
+  <p class="eyebrow">逻辑检查</p>
+  <h2 id="logic-audit">{isReview ? '需要复核' : '当前检查通过'}</h2>
+  <ul>
+    {feature.logicAudit.items.map((item: string) => <li>{item}</li>)}
+  </ul>
+</section>

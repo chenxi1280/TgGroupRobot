@@ -1,0 +1,24 @@
+{
+  "name": "tggrouprobot-docs-site",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "validate": "python3 scripts/validate_feature_docs.py",
+    "audit:flows": "python3 scripts/audit_flow_alignment.py",
+    "check": "astro check && npm run validate && npm run audit:flows",
+    "build": "npm run validate && npm run audit:flows && astro build",
+    "preview": "astro preview"
+  },
+  "dependencies": {
+    "@astrojs/mdx": "^5.0.3",
+    "@astrojs/starlight": "^0.38.3",
+    "astro": "^6.1.7",
+    "mermaid": "^11.12.2"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.5",
+    "typescript": "^5.9.3"
+  }
+}

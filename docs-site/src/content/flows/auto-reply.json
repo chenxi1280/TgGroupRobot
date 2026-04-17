@@ -1,0 +1,566 @@
+{
+  "slug": "auto-reply",
+  "title": "自动回复",
+  "status": "已闭环",
+  "category": "消息自动化",
+  "entryScreen": "entry",
+  "coverage": {
+    "mode": "complete",
+    "callbackPrefixes": [
+      "auto_reply:create:",
+      "auto_reply:list:",
+      "auto_reply:detail:",
+      "auto_reply:set:",
+      "auto_reply:edit:",
+      "auto_reply:preview:",
+      "auto_reply:delay:",
+      "auto_reply:delete:",
+      "btned:open:auto_reply:"
+    ],
+    "inputStates": [
+      "auto_reply_create",
+      "auto_reply_edit_keywords",
+      "auto_reply_edit_content",
+      "auto_reply_edit_cover",
+      "auto_reply_edit_buttons"
+    ],
+    "sourceFiles": [
+      "backend/features/admin/core/menu_dispatch.py",
+      "backend/features/admin/runtime.py",
+      "backend/features/admin/ui/admin_main_keyboards.py",
+      "backend/features/moderation/auto_reply_input.py",
+      "backend/features/moderation/auto_reply_router.py",
+      "backend/features/moderation/ui/auto_reply.py"
+    ],
+    "alignmentStatus": "ok",
+    "alignmentSummary": "真实回调审计通过。"
+  },
+  "screens": [
+    {
+      "id": "entry",
+      "title": "管理员主菜单",
+      "message": [
+        "发送 /admin 后选择当前群组。",
+        "点击「自动回复」进入配置页。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "自动回复",
+            "callbackData": "auto_reply:list:{chat_id}",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「自动回复」。",
+            "highlight": true
+          }
+        ],
+        [
+          {
+            "label": "切换群",
+            "callbackData": "adm:switch_group",
+            "action": "goto",
+            "target": "select_group",
+            "feedback": "进入群组选择。"
+          },
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "goto",
+            "target": "main_menu",
+            "feedback": "已回到主菜单。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "当前群组：演示群"
+      ]
+    },
+    {
+      "id": "select_group",
+      "title": "选择配置群组",
+      "message": [
+        "私聊配置前先确认目标群组，后续按钮都会写入这个群。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "演示群",
+            "callbackData": "adm:select_group:-1001001",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到演示群。"
+          },
+          {
+            "label": "测试群",
+            "callbackData": "adm:select_group:-1001002",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到测试群。"
+          }
+        ],
+        [
+          {
+            "label": "返回",
+            "callbackData": "auto_reply:list:{chat_id}",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "可管理群：演示群、测试群"
+      ]
+    },
+    {
+      "id": "main_menu",
+      "title": "主菜单",
+      "message": [
+        "这里展示机器人后台的真实功能入口。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "自动回复",
+            "callbackData": "auto_reply:list:{chat_id}",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「自动回复」。",
+            "highlight": true
+          }
+        ]
+      ]
+    },
+    {
+      "id": "home",
+      "title": "自动回复列表",
+      "message": [
+        "自动回复通过 auto_reply:* 回调创建、编辑、排序和删除。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "创建规则",
+            "callbackData": "auto_reply:create:{chat_id}",
+            "action": "input",
+            "target": "create_input",
+            "feedback": "请输入触发词和回复内容。",
+            "highlight": true
+          },
+          {
+            "label": "刷新列表",
+            "callbackData": "auto_reply:list:{chat_id}",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已刷新列表。"
+          }
+        ],
+        [
+          {
+            "label": "规则详情",
+            "callbackData": "auto_reply:detail:{chat_id}:{rule_id}",
+            "action": "goto",
+            "target": "detail",
+            "feedback": "已打开规则详情。"
+          }
+        ],
+        [
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回主菜单。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "detail",
+      "title": "自动回复详情",
+      "message": [
+        "详情页覆盖启用、匹配方式、编辑内容、按钮、预览、延迟和删除。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "启用",
+            "callbackData": "auto_reply:set:{chat_id}:{rule_id}:active:1",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "规则已启用。"
+          },
+          {
+            "label": "关闭",
+            "callbackData": "auto_reply:set:{chat_id}:{rule_id}:active:0",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "规则已关闭。"
+          }
+        ],
+        [
+          {
+            "label": "精准匹配",
+            "callbackData": "auto_reply:set:{chat_id}:{rule_id}:match:exact",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "已改为精准匹配。"
+          },
+          {
+            "label": "包含匹配",
+            "callbackData": "auto_reply:set:{chat_id}:{rule_id}:match:contains",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "已改为包含匹配。"
+          }
+        ],
+        [
+          {
+            "label": "关键词",
+            "callbackData": "auto_reply:edit:{chat_id}:{rule_id}:keywords",
+            "action": "input",
+            "target": "keywords_input",
+            "feedback": "请输入关键词。"
+          },
+          {
+            "label": "回复内容",
+            "callbackData": "auto_reply:edit:{chat_id}:{rule_id}:content",
+            "action": "input",
+            "target": "content_input",
+            "feedback": "请输入回复内容。"
+          },
+          {
+            "label": "封面",
+            "callbackData": "auto_reply:edit:{chat_id}:{rule_id}:cover",
+            "action": "input",
+            "target": "cover_input",
+            "feedback": "请发送封面。"
+          }
+        ],
+        [
+          {
+            "label": "设置按钮",
+            "callbackData": "btned:open:auto_reply:{chat_id}:{rule_id}",
+            "action": "input",
+            "target": "buttons_input",
+            "feedback": "请输入按钮。"
+          },
+          {
+            "label": "预览",
+            "callbackData": "auto_reply:preview:{chat_id}:{rule_id}",
+            "action": "goto",
+            "target": "result",
+            "feedback": "已发送预览。"
+          },
+          {
+            "label": "延迟",
+            "callbackData": "auto_reply:delay:{chat_id}:{rule_id}",
+            "action": "goto",
+            "target": "delay",
+            "feedback": "打开延迟设置。"
+          }
+        ],
+        [
+          {
+            "label": "删除",
+            "callbackData": "auto_reply:delete:{chat_id}:{rule_id}:confirm",
+            "action": "confirm",
+            "target": "delete_confirm",
+            "feedback": "请确认删除。"
+          },
+          {
+            "label": "返回列表",
+            "callbackData": "auto_reply:list:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回列表。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "delay",
+      "title": "回复延迟",
+      "message": [
+        "延迟按钮使用 auto_reply:delay:set 回调。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "15 秒",
+            "callbackData": "auto_reply:delay:set:{chat_id}:{rule_id}:15",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "已设置 15 秒。"
+          },
+          {
+            "label": "30 秒",
+            "callbackData": "auto_reply:delay:set:{chat_id}:{rule_id}:30",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "已设置 30 秒。"
+          },
+          {
+            "label": "不延迟",
+            "callbackData": "auto_reply:delay:set:{chat_id}:{rule_id}:0",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "已关闭延迟。"
+          }
+        ],
+        [
+          {
+            "label": "返回详情",
+            "callbackData": "auto_reply:detail:{chat_id}:{rule_id}",
+            "action": "back",
+            "target": "detail",
+            "feedback": "已返回详情。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "create_input",
+      "title": "创建自动回复",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "auto_reply:list:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "格式：关键词 -> 回复内容",
+        "placeholder": "关键词 -> 回复内容",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "创建规则",
+            "value": "价格 -> 请查看置顶价格表",
+            "target": "detail",
+            "feedback": "已填入：创建规则。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "keywords_input",
+      "title": "编辑关键词",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "auto_reply:detail:{chat_id}:{rule_id}",
+            "action": "back",
+            "target": "detail",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "每行一个关键词",
+        "placeholder": "价格\n报价",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "关键词",
+            "value": "价格\n报价",
+            "target": "result",
+            "feedback": "已填入：关键词。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "content_input",
+      "title": "编辑回复内容",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "auto_reply:detail:{chat_id}:{rule_id}",
+            "action": "back",
+            "target": "detail",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "发送文本，支持 /clear",
+        "placeholder": "这是自动回复内容。",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "回复文本",
+            "value": "这是自动回复内容。",
+            "target": "result",
+            "feedback": "已填入：回复文本。"
+          },
+          {
+            "label": "清空",
+            "value": "/clear",
+            "target": "result",
+            "feedback": "已填入：清空。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "cover_input",
+      "title": "编辑封面",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "auto_reply:detail:{chat_id}:{rule_id}",
+            "action": "back",
+            "target": "detail",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "media",
+        "prompt": "发送媒体或 /clear",
+        "placeholder": "image.jpg",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "图片",
+            "value": "image.jpg",
+            "target": "result",
+            "feedback": "已填入：图片。"
+          },
+          {
+            "label": "清空",
+            "value": "/clear",
+            "target": "result",
+            "feedback": "已填入：清空。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "buttons_input",
+      "title": "编辑自动回复按钮",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "auto_reply:detail:{chat_id}:{rule_id}",
+            "action": "back",
+            "target": "detail",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "buttons",
+        "prompt": "逐行按钮，支持分号同排和 JSON",
+        "placeholder": "官网 - https://example.com",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "按钮",
+            "value": "官网 - https://example.com",
+            "target": "result",
+            "feedback": "已填入：按钮。"
+          },
+          {
+            "label": "同排",
+            "value": "官网 - https://a.com;客服 - https://b.com",
+            "target": "result",
+            "feedback": "已填入：同排。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "delete_confirm",
+      "title": "删除确认",
+      "message": [
+        "确认后规则会被删除。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "确认删除",
+            "callbackData": "auto_reply:delete:{chat_id}:{rule_id}:do",
+            "action": "confirm",
+            "target": "result",
+            "feedback": "规则已删除。"
+          },
+          {
+            "label": "返回详情",
+            "callbackData": "auto_reply:detail:{chat_id}:{rule_id}",
+            "action": "back",
+            "target": "detail",
+            "feedback": "已取消。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "result",
+      "title": "自动回复设置结果",
+      "message": [
+        "保存后回到列表或详情页，运行时按关键词匹配。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回详情",
+            "callbackData": "auto_reply:detail:{chat_id}:{rule_id}",
+            "action": "back",
+            "target": "detail",
+            "feedback": "已返回详情。"
+          },
+          {
+            "label": "返回列表",
+            "callbackData": "auto_reply:list:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回列表。"
+          }
+        ]
+      ]
+    }
+  ]
+}

@@ -1,0 +1,216 @@
+---
+interface FlowButton {
+  label: string;
+  callbackData: string;
+  action: 'goto' | 'back' | 'input' | 'toggle' | 'toast' | 'noop' | 'confirm' | 'external';
+  target?: string;
+  feedback?: string;
+  highlight?: boolean;
+}
+
+interface FlowInputExample {
+  label: string;
+  value: string;
+  feedback?: string;
+  target?: string;
+}
+
+interface FlowInput {
+  type: 'text' | 'media' | 'json' | 'buttons' | 'datetime' | 'number';
+  prompt: string;
+  placeholder?: string;
+  clearCommand?: string;
+  examples?: FlowInputExample[];
+  errors?: string[];
+}
+
+interface FlowScreen {
+  id: string;
+  title: string;
+  message: string[];
+  stateLines?: string[];
+  input?: FlowInput;
+  keyboard: FlowButton[][];
+}
+
+interface FlowData {
+  slug: string;
+  title: string;
+  coverage?: {
+    mode?: string;
+    alignmentStatus?: 'ok' | 'needsReview';
+    alignmentSummary?: string;
+    callbackPrefixes?: string[];
+    inputStates?: string[];
+    sourceFiles?: string[];
+  };
+  entryScreen: string;
+  screens: FlowScreen[];
+}
+
+const { flow } = Astro.props as { flow: FlowData };
+const initialScreen = flow.entryScreen || flow.screens[0]?.id;
+const isNeedsReview = flow.coverage?.alignmentStatus === 'needsReview';
+---
+
+<section class="telegram-flow" data-telegram-flow aria-label={`${flow.title} Telegram 操作流`}>
+  <div class="telegram-flow__head">
+    <div>
+      <p class="eyebrow">Telegram 操作流</p>
+      <h2 id="telegram-flow">按真实按钮操作</h2>
+    </div>
+    <span class:list={['telegram-flow__badge', isNeedsReview && 'is-review']}>
+      {isNeedsReview ? '真实回调待对账' : '完整回调树'}
+    </span>
+  </div>
+  {flow.coverage && (
+    <div class="telegram-flow__coverage" aria-label="覆盖范围">
+      <span>Callback：{flow.coverage.callbackPrefixes?.join('、') || '无公开回调'}</span>
+      <span>输入态：{flow.coverage.inputStates?.join('、') || '无输入态'}</span>
+      {isNeedsReview && <span>审计：当前 flow 可演示，真实 callback 仍需补齐</span>}
+    </div>
+  )}
+
+  <div class="telegram-flow__stage">
+    {flow.screens.map((screen) => (
+      <article
+        class:list={['telegram-flow-screen', screen.id === initialScreen && 'is-active']}
+        data-flow-screen={screen.id}
+      >
+        <div class="telegram-screen" aria-label={`${flow.title}: ${screen.title}`}>
+          <div class="telegram-message">
+            <div class="bot-name">@TgGroupRobot</div>
+            <div class="message-title">{screen.title}</div>
+            {screen.message.map((line) => <p>{line}</p>)}
+            {screen.stateLines && screen.stateLines.length > 0 && (
+              <div class="state-lines">
+                {screen.stateLines.map((line) => <span>{line}</span>)}
+              </div>
+            )}
+            {screen.input && (
+              <div class="telegram-input-block" data-input-block>
+                <strong>{screen.input.prompt}</strong>
+                <div class="telegram-input-box" data-input-value>
+                  {screen.input.placeholder ?? '等待输入...'}
+                </div>
+                {screen.input.clearCommand && (
+                  <p class="tip">清空方式：{screen.input.clearCommand}</p>
+                )}
+                {screen.input.examples && screen.input.examples.length > 0 && (
+                  <div class="telegram-input-examples">
+                    {screen.input.examples.map((example) => (
+                      <button
+                        type="button"
+                        data-input-example={example.value}
+                        data-flow-target={example.target}
+                        data-feedback={example.feedback ?? `已填入示例：${example.label}`}
+                      >
+                        {example.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {screen.input.errors && screen.input.errors.length > 0 && (
+                  <ul class="telegram-input-errors">
+                    {screen.input.errors.map((error) => <li>{error}</li>)}
+                  </ul>
+                )}
+              </div>
+            )}
+            <span class="message-time">13:41</span>
+          </div>
+
+          <div class="telegram-keyboard">
+            {screen.keyboard.map((row) => (
+              <div class="keyboard-row">
+                {row.map((button) => (
+                  <button
+                    type="button"
+                    class:list={['keyboard-button', button.highlight && 'is-highlighted']}
+                    data-flow-action={button.action}
+                    data-flow-target={button.target}
+                    data-feedback={button.feedback}
+                    data-callback-data={button.callbackData}
+                    title={button.callbackData}
+                  >
+                    {button.label}
+                  </button>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      </article>
+    ))}
+  </div>
+
+  <p class="telegram-feedback" data-flow-feedback aria-live="polite">
+    点击上方 Telegram 按钮开始。
+  </p>
+</section>
+
+<script>
+  for (const root of document.querySelectorAll('[data-telegram-flow]')) {
+    const screens = Array.from(root.querySelectorAll('[data-flow-screen]'));
+    const feedback = root.querySelector('[data-flow-feedback]');
+    let active = screens.find((screen) => screen.classList.contains('is-active'))?.getAttribute('data-flow-screen') ?? '';
+
+    const setFeedback = (message: string) => {
+      if (feedback) feedback.textContent = message;
+    };
+
+    const show = (screenId: string, message?: string) => {
+      if (!screenId || !screens.some((screen) => screen.getAttribute('data-flow-screen') === screenId)) {
+        setFeedback(message ?? '这个按钮当前停留在本页。');
+        return;
+      }
+      active = screenId;
+      screens.forEach((screen) => {
+        screen.classList.toggle('is-active', screen.getAttribute('data-flow-screen') === active);
+      });
+      if (message) setFeedback(message);
+      if (root instanceof HTMLElement) root.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+
+    const pulse = (button: Element) => {
+      button.classList.add('is-pressed');
+      window.setTimeout(() => button.classList.remove('is-pressed'), 180);
+    };
+
+    root.querySelectorAll('[data-flow-action]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const action = button.getAttribute('data-flow-action');
+        const target = button.getAttribute('data-flow-target') ?? '';
+        const message = button.getAttribute('data-feedback') ?? '已点击。';
+        pulse(button);
+
+        if (['goto', 'back', 'input', 'toggle', 'confirm'].includes(action ?? '')) {
+          show(target || active, message);
+          return;
+        }
+        if (action === 'external') {
+          setFeedback(message || '这是外部链接按钮。');
+          return;
+        }
+        setFeedback(message);
+      });
+    });
+
+    root.querySelectorAll('[data-input-example]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const value = button.getAttribute('data-input-example') ?? '';
+        const message = button.getAttribute('data-feedback') ?? '已填入示例。';
+        const target = button.getAttribute('data-flow-target') ?? '';
+        const screen = button.closest('[data-flow-screen]');
+        const valueBox = screen?.querySelector('[data-input-value]');
+        if (valueBox) valueBox.textContent = value;
+        pulse(button);
+        if (target) {
+          window.setTimeout(() => show(target, message), 180);
+          return;
+        }
+        setFeedback(message);
+      });
+    });
+  }
+</script>

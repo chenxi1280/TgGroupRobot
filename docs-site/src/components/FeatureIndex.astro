@@ -1,0 +1,42 @@
+---
+import { getCollection } from 'astro:content';
+
+const { compact = false } = Astro.props;
+const features = (await getCollection('features')).map((entry) => entry.data);
+const categoryOrder = [
+  '群组核心',
+  '入群风控',
+  '内容审核',
+  '积分运营',
+  '消息自动化',
+  '邀请增长',
+  '群组扩展',
+  '活动互动',
+  '频道管理',
+  '全局设置'
+];
+const categories = categoryOrder.filter((category) => features.some((feature) => feature.category === category));
+---
+
+<section class:list={['feature-index', compact && 'is-compact']}>
+  {categories.map((category) => {
+    const items = features.filter((feature) => feature.category === category);
+    return (
+      <section class="feature-category" id={category}>
+        <div class="feature-category__head">
+          <h2>{category}</h2>
+          <span>{items.length} 个功能</span>
+        </div>
+        <div class="feature-grid">
+          {items.map((feature) => (
+            <a class="feature-link" href={`/features/${feature.slug}/`}>
+              <span class:list={['status-dot', feature.status === '暂时关闭' && 'is-paused']}>{feature.status}</span>
+              <strong>{feature.title}</strong>
+              <span>{feature.summary}</span>
+            </a>
+          ))}
+        </div>
+      </section>
+    );
+  })}
+</section>

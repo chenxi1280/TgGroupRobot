@@ -1,0 +1,260 @@
+{
+  "slug": "auction",
+  "title": "拍卖",
+  "status": "已闭环",
+  "category": "活动互动",
+  "entryScreen": "entry",
+  "coverage": {
+    "mode": "complete",
+    "callbackPrefixes": [
+      "adm:menu:auction",
+      "auc:"
+    ],
+    "inputStates": [
+      "auction_wait_title",
+      "auction_wait_start_price",
+      "auction_wait_end_at",
+      "auction_wait_confirm"
+    ],
+    "sourceFiles": [
+      "backend/features/activity/auction_handler.py",
+      "backend/features/admin/activity/auction.py",
+      "backend/features/admin/core/menu_dispatch.py",
+      "backend/features/admin/runtime.py",
+      "backend/features/admin/ui/admin_main_keyboards.py"
+    ],
+    "alignmentStatus": "ok",
+    "alignmentSummary": "真实回调审计通过。"
+  },
+  "screens": [
+    {
+      "id": "entry",
+      "title": "管理员主菜单",
+      "message": [
+        "发送 /admin 后选择当前群组。",
+        "点击「拍卖」进入配置页。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "拍卖",
+            "callbackData": "adm:menu:auction:{chat_id}",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「拍卖」。",
+            "highlight": true
+          }
+        ],
+        [
+          {
+            "label": "切换群",
+            "callbackData": "adm:switch_group",
+            "action": "goto",
+            "target": "select_group",
+            "feedback": "进入群组选择。"
+          },
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "goto",
+            "target": "main_menu",
+            "feedback": "已回到主菜单。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "当前群组：演示群"
+      ]
+    },
+    {
+      "id": "select_group",
+      "title": "选择配置群组",
+      "message": [
+        "私聊配置前先确认目标群组，后续按钮都会写入这个群。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "演示群",
+            "callbackData": "adm:select_group:-1001001",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到演示群。"
+          },
+          {
+            "label": "测试群",
+            "callbackData": "adm:select_group:-1001002",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到测试群。"
+          }
+        ],
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:menu:auction:{chat_id}",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "可管理群：演示群、测试群"
+      ]
+    },
+    {
+      "id": "main_menu",
+      "title": "主菜单",
+      "message": [
+        "这里展示机器人后台的真实功能入口。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "拍卖",
+            "callbackData": "adm:menu:auction:{chat_id}",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「拍卖」。",
+            "highlight": true
+          }
+        ]
+      ]
+    },
+    {
+      "id": "home",
+      "title": "拍卖",
+      "message": [
+        "配置拍卖开关、权限、积分模式和拍卖项目。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "开启拍卖",
+            "callbackData": "auc:toggle:{chat_id}:enabled:1",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "拍卖已开启。"
+          },
+          {
+            "label": "置顶",
+            "callbackData": "auc:toggle:{chat_id}:pin:1",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "拍卖置顶已开启。"
+          },
+          {
+            "label": "自动延时",
+            "callbackData": "auc:toggle:{chat_id}:auto_extend:1",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "自动延时已开启。"
+          }
+        ],
+        [
+          {
+            "label": "管理员发起",
+            "callbackData": "auc:perm:{chat_id}:admin",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "仅管理员可发起。"
+          },
+          {
+            "label": "积分模式",
+            "callbackData": "auc:points_mode:{chat_id}:group_points",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "已使用群积分。"
+          },
+          {
+            "label": "拍卖列表",
+            "callbackData": "auc:list:{chat_id}:0",
+            "action": "goto",
+            "target": "list",
+            "feedback": "打开拍卖列表。"
+          }
+        ],
+        [
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回主菜单。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "当前群组：演示群"
+      ]
+    },
+    {
+      "id": "list",
+      "title": "拍卖列表",
+      "message": [
+        "列表页可打开拍卖详情。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "拍卖详情",
+            "callbackData": "auc:detail:{chat_id}:{auction_id}",
+            "action": "goto",
+            "target": "detail",
+            "feedback": "已打开拍卖详情。"
+          }
+        ],
+        [
+          {
+            "label": "返回拍卖",
+            "callbackData": "auc:home:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回拍卖。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "detail",
+      "title": "拍卖详情",
+      "message": [
+        "详情展示当前出价和结束时间。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回列表",
+            "callbackData": "auc:list:{chat_id}:0",
+            "action": "back",
+            "target": "list",
+            "feedback": "已返回列表。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "result",
+      "title": "设置结果",
+      "message": [
+        "Bot 保存配置后会重新渲染当前功能页。",
+        "请在群内用测试账号触发一次，确认权限和运行结果。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回设置页",
+            "callbackData": "adm:menu:auction:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回设置页。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "审计：回调来自后端真实路由"
+      ]
+    }
+  ]
+}

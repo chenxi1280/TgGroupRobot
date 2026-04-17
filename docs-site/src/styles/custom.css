@@ -1,0 +1,572 @@
+:root {
+  --sl-color-accent-low: #d9f3ef;
+  --sl-color-accent: #0f766e;
+  --sl-color-accent-high: #063f3b;
+  --manual-ink: #111827;
+  --manual-muted: #64748b;
+  --manual-line: #dbe3ea;
+  --manual-surface: #ffffff;
+  --manual-soft: #f7faf9;
+  --manual-red: #ff4d5a;
+  --manual-gold: #c28a19;
+}
+
+:root[data-theme='dark'] {
+  --manual-ink: #f8fafc;
+  --manual-muted: #a8b3bd;
+  --manual-line: #34414a;
+  --manual-surface: #151a1e;
+  --manual-soft: #111619;
+}
+
+.eyebrow {
+  color: var(--sl-color-accent);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  margin: 0 0 0.45rem;
+}
+
+.manual-landing {
+  display: grid;
+  gap: clamp(1.5rem, 4vw, 3rem);
+  grid-template-columns: minmax(0, 0.92fr) minmax(280px, 0.78fr);
+  align-items: center;
+  min-height: 58vh;
+  padding: clamp(1rem, 4vw, 3.5rem) 0 2rem;
+}
+
+.manual-landing h1,
+.page-heading h1,
+.feature-hero h1 {
+  letter-spacing: 0;
+}
+
+.manual-landing__copy h1 {
+  font-size: clamp(3.25rem, 9vw, 7.5rem);
+  line-height: 0.92;
+  margin: 0;
+}
+
+.manual-landing__copy p:not(.eyebrow) {
+  max-width: 46rem;
+  color: var(--manual-muted);
+  font-size: 1.12rem;
+}
+
+.landing-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1.6rem;
+}
+
+.landing-actions a,
+.step-actions button {
+  border: 1px solid var(--sl-color-accent);
+  border-radius: 8px;
+  color: var(--manual-ink);
+  display: inline-flex;
+  font-weight: 700;
+  padding: 0.7rem 1rem;
+  text-decoration: none;
+}
+
+.landing-actions a:first-child,
+.step-actions button:not(:disabled):last-child {
+  background: var(--sl-color-accent);
+  color: white;
+}
+
+.landing-mock,
+.telegram-screen {
+  background: var(--manual-soft);
+  border: 1px solid var(--manual-line);
+  border-radius: 8px;
+  padding: clamp(1rem, 3vw, 1.5rem);
+}
+
+.landing-bubble,
+.telegram-message {
+  background: var(--manual-surface);
+  border: 1px solid var(--manual-line);
+  border-radius: 8px;
+  box-shadow: 0 12px 34px rgba(17, 24, 39, 0.08);
+  color: var(--manual-ink);
+  padding: 1.25rem;
+  position: relative;
+}
+
+.landing-bubble strong,
+.bot-name {
+  color: #2f6fee;
+  display: block;
+  font-weight: 800;
+  margin-bottom: 0.7rem;
+}
+
+.landing-bubble span,
+.message-title {
+  display: block;
+  font-size: 1.2rem;
+  font-weight: 800;
+  margin-bottom: 0.8rem;
+}
+
+.landing-buttons,
+.telegram-keyboard {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.8rem;
+}
+
+.landing-buttons {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.landing-buttons span,
+.keyboard-button {
+  background: var(--manual-surface);
+  border: 1px solid var(--manual-line);
+  border-radius: 8px;
+  color: var(--manual-ink);
+  min-height: 2.75rem;
+  padding: 0.62rem;
+  text-align: center;
+}
+
+.keyboard-button[data-telegram-action] {
+  cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.keyboard-button[data-telegram-action]:hover {
+  border-color: var(--sl-color-accent);
+}
+
+.keyboard-button.is-pressed {
+  background: var(--manual-soft);
+  transform: translateY(1px);
+}
+
+.is-highlighted,
+.keyboard-button.is-highlighted {
+  border-color: var(--manual-red);
+  box-shadow: 0 0 0 4px rgba(255, 77, 90, 0.18);
+}
+
+.manual-intro {
+  border-top: 1px solid var(--manual-line);
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.62fr);
+  margin: 2rem 0;
+  padding-top: 2rem;
+}
+
+.manual-points,
+.manual-steps,
+.check-list,
+.logic-audit ul {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.manual-steps {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.manual-steps li {
+  padding-left: 0.25rem;
+}
+
+.manual-steps strong,
+.manual-steps span,
+.manual-steps small {
+  display: block;
+}
+
+.manual-steps small {
+  color: var(--manual-muted);
+}
+
+.feature-category {
+  border-top: 1px solid var(--manual-line);
+  padding: 1.8rem 0;
+}
+
+.feature-category__head {
+  align-items: baseline;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+.feature-category__head h2 {
+  margin: 0;
+}
+
+.feature-category__head span {
+  color: var(--manual-muted);
+}
+
+.feature-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  margin-top: 1rem;
+}
+
+.feature-link {
+  border: 1px solid var(--manual-line);
+  border-radius: 8px;
+  color: var(--manual-ink);
+  display: grid;
+  gap: 0.55rem;
+  padding: 1rem;
+  text-decoration: none;
+  transition: border-color 160ms ease, transform 160ms ease;
+}
+
+.feature-link:hover {
+  border-color: var(--sl-color-accent);
+  transform: translateY(-2px);
+}
+
+.status-dot,
+.status-badge {
+  color: var(--sl-color-accent);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.status-dot.is-paused,
+.status-badge.is-paused {
+  color: var(--manual-gold);
+}
+
+.feature-hero {
+  align-items: start;
+  border-bottom: 1px solid var(--manual-line);
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.38fr);
+  padding-bottom: 1.5rem;
+}
+
+.feature-hero p:not(.eyebrow) {
+  color: var(--manual-muted);
+  font-size: 1.08rem;
+}
+
+.feature-meta {
+  border: 1px solid var(--manual-line);
+  border-radius: 8px;
+  display: grid;
+  gap: 0.65rem;
+  padding: 1rem;
+}
+
+.step-tutorial,
+.telegram-flow,
+.feature-flow,
+.qa-section,
+.logic-audit,
+.audit-summary {
+  border-top: 1px solid var(--manual-line);
+  margin-top: 2.2rem;
+  padding-top: 2rem;
+}
+
+.step-tutorial__head {
+  align-items: end;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+.step-counter {
+  color: var(--manual-muted);
+  font-weight: 700;
+}
+
+.step-nav {
+  display: flex;
+  gap: 0.55rem;
+  margin: 1rem 0;
+  overflow-x: auto;
+  padding-bottom: 0.4rem;
+}
+
+.step-dot {
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--manual-line);
+  border-radius: 8px;
+  color: var(--manual-ink);
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 0.45rem;
+  padding: 0.55rem 0.75rem;
+}
+
+.step-dot span {
+  align-items: center;
+  background: var(--manual-soft);
+  border-radius: 999px;
+  display: inline-flex;
+  height: 1.35rem;
+  justify-content: center;
+  width: 1.35rem;
+}
+
+.step-dot.is-active {
+  border-color: var(--sl-color-accent);
+  color: var(--sl-color-accent);
+}
+
+.step-panel {
+  display: none;
+  gap: 1.5rem;
+  grid-template-columns: minmax(0, 0.72fr) minmax(300px, 1fr);
+}
+
+.step-panel.is-active {
+  display: grid;
+}
+
+.step-copy {
+  align-self: center;
+}
+
+.step-copy h3 {
+  margin-top: 0;
+}
+
+.step-tip,
+.tip {
+  color: var(--manual-muted);
+}
+
+.keyboard-row {
+  display: grid;
+  gap: 0.55rem;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+}
+
+.keyboard-button {
+  font: inherit;
+}
+
+.keyboard-button[data-flow-action] {
+  cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.keyboard-button[data-flow-action]:hover {
+  border-color: var(--sl-color-accent);
+}
+
+.telegram-flow__head {
+  align-items: center;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+.telegram-flow__head h2 {
+  margin-top: 0;
+}
+
+.telegram-flow__badge {
+  border: 1px solid var(--manual-line);
+  border-radius: 8px;
+  color: var(--sl-color-accent);
+  font-size: 0.8rem;
+  font-weight: 800;
+  padding: 0.45rem 0.7rem;
+}
+
+.telegram-flow__badge.is-review {
+  color: var(--manual-gold);
+}
+
+.telegram-flow__coverage {
+  color: var(--manual-muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  margin: 0.5rem 0 1rem;
+}
+
+.telegram-flow__stage {
+  min-height: 28rem;
+}
+
+.telegram-flow-screen {
+  display: none;
+}
+
+.telegram-flow-screen.is-active {
+  display: block;
+}
+
+.telegram-input-block {
+  background: var(--manual-soft);
+  border: 1px dashed var(--manual-line);
+  border-radius: 8px;
+  display: grid;
+  gap: 0.7rem;
+  margin: 1rem 0 1.4rem;
+  padding: 0.9rem;
+}
+
+.telegram-input-box {
+  background: var(--manual-surface);
+  border: 1px solid var(--manual-line);
+  border-radius: 8px;
+  color: var(--manual-ink);
+  min-height: 2.75rem;
+  overflow-wrap: anywhere;
+  padding: 0.7rem 0.8rem;
+  white-space: pre-wrap;
+}
+
+.telegram-input-examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.telegram-input-examples button {
+  background: var(--manual-surface);
+  border: 1px solid var(--manual-line);
+  border-radius: 8px;
+  color: var(--manual-ink);
+  cursor: pointer;
+  font: inherit;
+  padding: 0.45rem 0.65rem;
+}
+
+.telegram-input-examples button:hover {
+  border-color: var(--sl-color-accent);
+}
+
+.telegram-input-errors {
+  color: var(--manual-red);
+  margin: 0;
+  padding-left: 1rem;
+}
+
+.state-lines {
+  display: grid;
+  gap: 0.25rem;
+  font-weight: 700;
+  margin-top: 1rem;
+}
+
+.message-time {
+  bottom: 0.8rem;
+  color: var(--manual-muted);
+  position: absolute;
+  right: 1rem;
+}
+
+.step-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  margin-top: 1rem;
+}
+
+.telegram-feedback {
+  background: var(--manual-soft);
+  border: 1px solid var(--manual-line);
+  border-radius: 8px;
+  color: var(--manual-muted);
+  margin: 1rem 0 0;
+  padding: 0.75rem 0.9rem;
+}
+
+.step-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.flow-card {
+  border: 1px solid var(--manual-line);
+  border-radius: 8px;
+  overflow-x: auto;
+  padding: 1rem;
+}
+
+.qa-list {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.qa-list details {
+  border: 1px solid var(--manual-line);
+  border-radius: 8px;
+  padding: 0.9rem 1rem;
+}
+
+.qa-list summary {
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.logic-audit.needs-review {
+  border-color: var(--manual-gold);
+}
+
+.audit-metrics {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+.audit-metrics div {
+  border: 1px solid var(--manual-line);
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.audit-metrics strong {
+  display: block;
+  font-size: 2rem;
+}
+
+.audit-metrics span {
+  color: var(--manual-muted);
+}
+
+@media (max-width: 760px) {
+  .manual-landing,
+  .manual-intro,
+  .feature-hero,
+  .step-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .manual-landing__copy h1 {
+    font-size: clamp(3rem, 18vw, 5rem);
+  }
+
+  .feature-category__head,
+  .step-tutorial__head {
+    align-items: start;
+    flex-direction: column;
+  }
+}

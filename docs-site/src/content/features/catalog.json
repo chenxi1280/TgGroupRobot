@@ -1,0 +1,1124 @@
+{
+  "features": [
+    {
+      "slug": "multi-group-management",
+      "title": "多群隔离 / 私聊切群",
+      "category": "群组核心",
+      "status": "已闭环",
+      "kind": "reference",
+      "summary": "同一个机器人可以管理多个群组，每个群组拥有独立配置和数据。",
+      "entry": { "label": "切换群", "command": "/admin", "menuKeys": [] },
+      "prerequisites": ["机器人已加入至少一个群组。", "操作者在目标群组具备管理员权限。"],
+      "steps": [
+        { "title": "打开管理面板", "action": "在私聊或群内发送 /admin，进入群组管理面板。", "tip": "私聊里会优先展示已管理的群组。" },
+        { "title": "选择目标群组", "action": "点击「切换群」或群组列表中的目标群，确认当前配置对象。", "tip": "页面会显示当前群组名称。" },
+        { "title": "进入功能配置", "action": "返回主菜单，点击需要配置的功能。", "tip": "后续配置只会写入当前群组。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": false,
+      "qa": [{ "question": "多个群会不会互相影响？", "answer": "不会。配置和运行数据按 chat_id 隔离。" }],
+      "logicAudit": { "status": "ok", "items": ["主菜单回调透传 target_chat_id。", "文档重点提示先确认当前群组，避免误配置。"] },
+      "truthTableNames": ["多群隔离 / 私聊切群"]
+    },
+    {
+      "slug": "admin-permission",
+      "title": "管理员权限校验",
+      "category": "群组核心",
+      "status": "已闭环",
+      "kind": "runtime",
+      "summary": "管理员入口和敏感配置都会先检查 Telegram 群权限。",
+      "entry": { "label": "管理员权限", "command": "/admin", "menuKeys": [] },
+      "prerequisites": ["操作者必须是群主或管理员。", "机器人需要能读取群成员权限。"],
+      "steps": [
+        { "title": "打开管理入口", "action": "发送 /admin 或点击私聊管理入口。", "tip": "非管理员会收到权限提示。" },
+        { "title": "执行权限检查", "action": "系统根据目标群组检查操作者身份。", "tip": "私聊切群后同样按目标群判断。" },
+        { "title": "继续或返回", "action": "校验通过进入菜单；失败时联系群主调整权限。", "tip": "该流程保护所有群级设置。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": true,
+      "qa": [{ "question": "私聊里配置也会校验吗？", "answer": "会。私聊配置会根据当前选择的目标群组校验管理员权限。" }],
+      "logicAudit": { "status": "ok", "items": ["权限检查统一收口到权限服务。", "失败路径需要在页面中明确提示管理员身份和目标群组。"] },
+      "truthTableNames": ["管理员权限校验"]
+    },
+    {
+      "slug": "group-health-check",
+      "title": "群组健康检查",
+      "category": "群组核心",
+      "status": "已闭环",
+      "kind": "reference",
+      "summary": "集中检查机器人权限、风控状态、定时任务和配置缺口。",
+      "entry": { "label": "健康检查", "command": "/admin", "menuKeys": ["health"] },
+      "prerequisites": ["已选择目标群组。", "机器人在群内具备基础管理员权限。"],
+      "steps": [
+        { "title": "进入健康检查", "action": "打开 /admin，点击「健康检查」。", "tip": "建议新群配置前先检查。" },
+        { "title": "查看风险提示", "action": "阅读验证、强制关注、反垃圾、防刷屏、关群和定时消息状态。", "tip": "黄色或警告项需要优先处理。" },
+        { "title": "跳转修复", "action": "根据提示进入对应功能页补齐配置。", "tip": "修复后重新检查一次。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": false,
+      "qa": [{ "question": "健康检查会自动修改配置吗？", "answer": "不会，只汇总状态并给出需要关注的入口。" }],
+      "logicAudit": { "status": "ok", "items": ["健康检查已覆盖机器人权限和主要风控模块。", "官网审计页会把该功能作为配置排查起点。"] },
+      "truthTableNames": ["群组健康检查"]
+    },
+    {
+      "slug": "auto-delete-system-messages",
+      "title": "自动删除",
+      "category": "群组核心",
+      "status": "已闭环",
+      "kind": "simple",
+      "summary": "自动删除进群、退群、置顶、头像、群名和匿名消息等系统提示。",
+      "entry": { "label": "删除提示", "command": "/admin", "menuKeys": ["autodel"] },
+      "prerequisites": ["机器人有删除消息权限。", "已选择目标群组。"],
+      "steps": [
+        { "title": "进入删除提示", "action": "打开 /admin，点击「删除提示」。", "tip": "页面会显示已开启类型数量。" },
+        { "title": "选择删除类型", "action": "按需开启进群、退群、置顶、头像、群名或匿名消息。", "tip": "可逐项开关，不需要全开。" },
+        { "title": "触发验证", "action": "在群内触发对应系统提示，确认机器人自动清理。", "tip": "如果未删除，先检查机器人权限。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": true,
+      "qa": [{ "question": "开启后会删除普通聊天吗？", "answer": "不会，只处理已配置的系统提示类型。" }],
+      "logicAudit": { "status": "ok", "items": ["菜单入口为 autodel。", "失败路径主要是机器人缺少删除消息权限。"] },
+      "truthTableNames": ["自动删除"]
+    },
+    {
+      "slug": "control-permission",
+      "title": "控制权限",
+      "category": "群组核心",
+      "status": "已闭环",
+      "kind": "simple",
+      "summary": "控制群级管理能力的可用范围，避免误操作。",
+      "entry": { "label": "管理权限", "command": "/admin", "menuKeys": ["control"] },
+      "prerequisites": ["操作者有管理权限。", "已选择需要配置的群。"],
+      "steps": [
+        { "title": "进入管理权限", "action": "打开 /admin，点击「管理权限」。", "tip": "该入口用于控制谁能管理哪些能力。" },
+        { "title": "调整策略", "action": "按页面选项配置允许或限制的管理能力。", "tip": "建议先从关键功能开始收紧。" },
+        { "title": "回到主菜单验证", "action": "使用受限账号尝试进入相关功能，确认策略生效。", "tip": "测试时注意目标群组是否一致。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": true,
+      "qa": [{ "question": "它和 Telegram 管理员权限一样吗？", "answer": "不是。Telegram 权限是基础门槛，本功能控制机器人内部管理能力。" }],
+      "logicAudit": { "status": "ok", "items": ["菜单入口为 control。", "文档需强调 Telegram 权限和机器人内部权限的区别。"] },
+      "truthTableNames": ["控制权限"]
+    },
+    {
+      "slug": "group-stats",
+      "title": "群组统计",
+      "category": "群组核心",
+      "status": "已闭环",
+      "kind": "reference",
+      "summary": "查看成员、邀请、积分和违规记录的群组摘要。",
+      "entry": { "label": "群组统计", "command": "/admin", "menuKeys": ["stats"] },
+      "prerequisites": ["群内已有成员或行为数据。", "操作者有查看管理面板权限。"],
+      "steps": [
+        { "title": "进入统计页", "action": "打开 /admin，点击「群组统计」。", "tip": "统计页按当前群组汇总。" },
+        { "title": "查看核心指标", "action": "读取成员数量、邀请加入、积分流水和违规记录。", "tip": "近 7 日数据用于快速判断活跃度。" },
+        { "title": "定位后续动作", "action": "根据异常指标进入邀请、积分或审核相关功能。", "tip": "统计页不直接修改配置。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": false,
+      "qa": [{ "question": "统计数据跨群汇总吗？", "answer": "不会，页面只展示当前选中群组的数据。" }],
+      "logicAudit": { "status": "ok", "items": ["菜单入口为 stats。", "统计查询按 chat_id 过滤。"] },
+      "truthTableNames": []
+    },
+    {
+      "slug": "newcomer-verification",
+      "title": "新人验证",
+      "category": "入群风控",
+      "status": "已闭环",
+      "kind": "runtime",
+      "summary": "支持按钮、数学题、验证码和管理员审核等入群验证模式。",
+      "entry": { "label": "进群验证", "command": "/admin", "menuKeys": ["verification"] },
+      "prerequisites": ["机器人有禁言、解除限制和删除消息等必要权限。", "群组允许机器人接收新成员事件。"],
+      "steps": [
+        { "title": "进入进群验证", "action": "打开 /admin，点击「进群验证」。", "tip": "页面会展示当前验证模式和状态。" },
+        { "title": "选择验证模式", "action": "选择按钮、数学题、验证码或管理员审核，并设置超时时间。", "tip": "高风险群建议使用数学题或验证码。" },
+        { "title": "模拟新成员入群", "action": "让测试账号入群，确认验证消息、限制和通过后的解除动作。", "tip": "测试前确认机器人是管理员。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": true,
+      "qa": [{ "question": "管理员审核模式会自动通过吗？", "answer": "不会，需要管理员在审核入口中确认。" }],
+      "logicAudit": { "status": "ok", "items": ["菜单入口为 verification。", "运行时需覆盖通过、失败、超时和机器人权限不足路径。"] },
+      "truthTableNames": ["新人验证"]
+    },
+    {
+      "slug": "verification-timeout",
+      "title": "验证超时处理",
+      "category": "入群风控",
+      "status": "已闭环",
+      "kind": "runtime",
+      "summary": "新人未在限定时间内完成验证时，可自动禁言或踢出。",
+      "entry": { "label": "验证超时", "command": "/admin", "menuKeys": ["verification"] },
+      "prerequisites": ["新人验证已开启。", "后台超时任务正常运行。"],
+      "steps": [
+        { "title": "进入验证设置", "action": "打开「进群验证」，找到超时时间和超时处理。", "tip": "不同验证模式对超时处理支持不同。" },
+        { "title": "设置处理动作", "action": "选择不处理、禁言或踢出，并配置禁言时长。", "tip": "强风控群建议选择踢出或禁言。" },
+        { "title": "等待超时验证", "action": "使用测试账号不完成验证，等待后台任务处理。", "tip": "如果未处理，检查调度任务和机器人权限。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": true,
+      "qa": [{ "question": "超时处理是否适用于直接禁言模式？", "answer": "直接禁言模式本身就是处理动作，不依赖普通验证超时链路。" }],
+      "logicAudit": { "status": "ok", "items": ["超时任务在调度器中处理。", "验证超时只支持禁言或踢出，删除策略不会改动验证配置。"] },
+      "truthTableNames": ["验证超时处理"]
+    },
+    {
+      "slug": "join-guard",
+      "title": "入群刷号保护",
+      "category": "入群风控",
+      "status": "已闭环",
+      "kind": "runtime",
+      "summary": "检测批量进群、可疑新号和垃圾入群行为，并执行提示、禁言或踢出。",
+      "entry": { "label": "垃圾防护", "command": "/admin", "menuKeys": ["antispam"] },
+      "prerequisites": ["机器人可接收成员加入事件。", "需要禁言或踢出时机器人必须有对应权限。"],
+      "steps": [
+        { "title": "进入垃圾防护", "action": "打开 /admin，点击「垃圾防护」。", "tip": "入群刷号保护与消息垃圾防护在同一类风控入口中管理。" },
+        { "title": "配置入群规则", "action": "开启检测规则、阈值和触发后的处理方式。", "tip": "先用温和提示模式观察命中情况。" },
+        { "title": "观察触发结果", "action": "当短时间大量账号入群时，检查提示、禁言或踢出动作。", "tip": "误伤时降低阈值或调整处理方式。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": true,
+      "qa": [{ "question": "它会替代新人验证吗？", "answer": "不会。它更偏批量或可疑入群检测，新人验证负责单个新成员确认。" }],
+      "logicAudit": { "status": "ok", "items": ["真值表覆盖 join spam / join burst。", "页面需要提示阈值、处罚和机器人权限三者关系。"] },
+      "truthTableNames": ["入群刷号保护"]
+    },
+    {
+      "slug": "force-subscribe",
+      "title": "强制订阅",
+      "category": "入群风控",
+      "status": "已闭环",
+      "kind": "runtime",
+      "summary": "要求成员关注指定频道或群组后才能发言，支持封面、按钮和处理动作。",
+      "entry": { "label": "强制关注", "command": "/admin", "menuKeys": ["forcesub"] },
+      "prerequisites": ["已准备需要关注的频道或群组链接。", "机器人具备删除、提示或禁言所需权限。"],
+      "steps": [
+        { "title": "进入强制关注", "action": "打开 /admin，点击「强制关注」。", "tip": "页面会显示绑定目标、文案和按钮状态。" },
+        { "title": "绑定目标并开启", "action": "设置频道/群组、关注判定、未关注处理动作，然后启动功能。", "tip": "可以选择全部目标关注或任一目标关注。" },
+        { "title": "预览并测试", "action": "点击预览效果，再用未关注账号在群里发言。", "tip": "测试时确认目标链接可访问。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": true,
+      "qa": [{ "question": "可以绑定两个目标吗？", "answer": "可以，当前配置支持两个频道或群组目标。" }],
+      "logicAudit": { "status": "ok", "items": ["菜单入口为 forcesub。", "页面已覆盖频道绑定、封面、按钮、判定模式和动作循环。"] },
+      "truthTableNames": ["强制订阅"]
+    },
+    {
+      "slug": "new-member-limit",
+      "title": "新成员限制",
+      "category": "入群风控",
+      "status": "已闭环",
+      "kind": "simple",
+      "summary": "按入群时长限制新成员发送媒体、链接或非纯文本内容，并可删除触发消息。",
+      "entry": { "label": "新成员限制", "command": "/admin", "menuKeys": ["newmem"] },
+      "prerequisites": ["机器人可以读取成员加入时间。", "如需删除触发消息，机器人需要删除权限。"],
+      "steps": [
+        { "title": "进入新成员限制", "action": "打开 /admin，点击「新成员限制」。", "tip": "页面会显示状态、限制时长和限制类型。" },
+        { "title": "设置限制范围", "action": "开启状态，设置限制时长，并选择媒体、链接、纯文本和提示消息策略。", "tip": "参考页式红框会突出当前要点击的按钮。" },
+        { "title": "发送测试消息", "action": "让刚入群的测试账号发送链接或媒体，确认删除和提示是否符合预期。", "tip": "超过限制时长后应恢复正常发言。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": true,
+      "qa": [{ "question": "限制时长单位是什么？", "answer": "配置输入按分钟保存，运行时按秒计算。" }],
+      "logicAudit": { "status": "ok", "items": ["菜单入口为 newmem。", "输入处理已校验正整数分钟和提示文案非空。"] },
+      "truthTableNames": ["新成员限制"]
+    },
+    {
+      "slug": "banned-words",
+      "title": "违禁词",
+      "category": "内容审核",
+      "status": "已闭环",
+      "kind": "runtime",
+      "summary": "按群维护违禁词列表，命中后执行删除、警告、禁言或封禁等策略。",
+      "entry": { "label": "违禁词", "command": "/admin", "menuKeys": ["keywords"] },
+      "prerequisites": ["已选择目标群组。", "需要处罚时机器人具备对应权限。"],
+      "steps": [
+        { "title": "进入违禁词", "action": "打开 /admin，点击「违禁词」。", "tip": "部分菜单会从垃圾防护或审核入口进入。" },
+        { "title": "添加关键词", "action": "点击添加，发送需要拦截的词，并确认启用状态。", "tip": "建议先添加高确定性的词。" },
+        { "title": "触发审核", "action": "在群里发送包含违禁词的测试消息，确认处理动作。", "tip": "管理员豁免策略按当前代码逻辑执行。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": true,
+      "qa": [{ "question": "违禁词按全局还是按群生效？", "answer": "按群隔离，每个群可维护自己的列表。" }],
+      "logicAudit": { "status": "ok", "items": ["菜单入口 keywords 存在于非 chat_id 菜单。", "运行时需关注处罚动作降级。"] },
+      "truthTableNames": ["违禁词"]
+    },
+    {
+      "slug": "anti-spam",
+      "title": "反垃圾",
+      "category": "内容审核",
+      "status": "已闭环",
+      "kind": "runtime",
+      "summary": "集中配置广告、链接、转发、超长内容、黑名单等垃圾消息规则。",
+      "entry": { "label": "垃圾防护", "command": "/admin", "menuKeys": ["antispam"] },
+      "prerequisites": ["机器人可接收群消息。", "处理动作所需权限已授予机器人。"],
+      "steps": [
+        { "title": "进入垃圾防护", "action": "打开 /admin，点击「垃圾防护」。", "tip": "首页会展示规则状态。" },
+        { "title": "配置检测规则", "action": "开启常见广告、链接、转发、超长内容或黑名单规则。", "tip": "建议先开启提示或删除，再观察误伤。" },
+        { "title": "测试命中", "action": "发送测试链接、转发或广告文本，确认处理动作和提醒。", "tip": "未命中时检查规则开关和白名单。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": true,
+      "qa": [{ "question": "反垃圾和违禁词有什么区别？", "answer": "反垃圾偏通用模式和行为规则，违禁词偏自定义词表。" }],
+      "logicAudit": { "status": "ok", "items": ["菜单入口为 antispam。", "页面应提示规则命中、白名单和处罚动作的优先关系。"] },
+      "truthTableNames": ["反垃圾"]
+    },
+    {
+      "slug": "anti-flood",
+      "title": "防刷屏",
+      "category": "内容审核",
+      "status": "已闭环",
+      "kind": "runtime",
+      "summary": "检测短时间内大量消息，并按阈值禁言、删除或封禁。",
+      "entry": { "label": "防刷屏", "command": "/admin", "menuKeys": ["flood"] },
+      "prerequisites": ["群消息处理器正常运行。", "机器人拥有执行处罚动作所需权限。"],
+      "steps": [
+        { "title": "进入防刷屏规则", "action": "从垃圾防护或管理入口打开防刷屏配置。", "tip": "该入口在代码中对应 flood 配置页。" },
+        { "title": "设置阈值和动作", "action": "配置触发条数、时间窗口、处罚动作和清理策略。", "tip": "活跃群应设置更宽松的阈值。" },
+        { "title": "连续发送测试", "action": "用测试账号在时间窗口内连续发言，确认是否触发。", "tip": "管理员豁免会影响测试结果。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": true,
+      "qa": [{ "question": "防刷屏会删除所有历史消息吗？", "answer": "不会，只按配置清理触发相关消息和提示。" }],
+      "logicAudit": { "status": "ok", "items": ["配置入口在 ADMIN_MENU_HANDLERS 中保留为 flood。", "主菜单当前更多通过垃圾防护聚合进入。"] },
+      "truthTableNames": ["防刷屏"]
+    },
+    {
+      "slug": "punishment-downgrade",
+      "title": "处罚动作降级",
+      "category": "内容审核",
+      "status": "已闭环",
+      "kind": "runtime",
+      "summary": "当机器人权限不足时，将处罚动作降级到当前可执行的动作。",
+      "entry": { "label": "处罚动作降级", "command": "/admin", "menuKeys": [] },
+      "prerequisites": ["已配置某类处罚动作。", "机器人权限可能不完整，需要健康检查辅助确认。"],
+      "steps": [
+        { "title": "配置目标动作", "action": "在反垃圾、防刷屏、违禁词或验证超时里设置处罚。", "tip": "例如禁言或封禁。" },
+        { "title": "触发违规场景", "action": "用测试消息命中规则。", "tip": "如果机器人权限不足，系统会尝试降级处理。" },
+        { "title": "查看实际结果", "action": "检查消息、成员状态和日志，确认最终执行动作。", "tip": "建议随后补齐机器人权限。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": true,
+      "qa": [{ "question": "降级会改变我的配置吗？", "answer": "不会，降级只影响本次实际执行动作。" }],
+      "logicAudit": { "status": "ok", "items": ["真值表已标记闭环。", "官网需强调配置动作和实际执行动作可能不同。"] },
+      "truthTableNames": ["处罚动作降级"]
+    },
+    {
+      "slug": "punishment-policy",
+      "title": "惩罚策略统一产品页",
+      "category": "内容审核",
+      "status": "已闭环",
+      "kind": "simple",
+      "summary": "一键同步反垃圾、防刷屏、关键词和验证超时的常见处罚策略。",
+      "entry": { "label": "惩罚策略", "command": "/admin", "menuKeys": ["punish"] },
+      "prerequisites": ["已选择目标群组。", "了解删除、禁言、封禁对群成员的影响。"],
+      "steps": [
+        { "title": "进入惩罚策略", "action": "打开 /admin，点击「惩罚策略」。", "tip": "页面展示当前各模块处理方式。" },
+        { "title": "选择预设", "action": "点击删除、禁言或封禁预设，批量调整常见违规处理。", "tip": "验证超时只支持禁言或踢出，不接受删除预设。" },
+        { "title": "回到模块检查", "action": "分别进入反垃圾、防刷屏或关键词页确认配置结果。", "tip": "复杂群建议手动微调各模块。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": false,
+      "qa": [{ "question": "预设会覆盖所有风控设置吗？", "answer": "只覆盖常见处罚动作，不会清空具体规则。" }],
+      "logicAudit": { "status": "ok", "items": ["菜单入口为 punish。", "页面代码已提示验证超时的动作限制。"] },
+      "truthTableNames": ["惩罚策略统一产品页"]
+    },
+    {
+      "slug": "sign-points",
+      "title": "签到积分",
+      "category": "积分运营",
+      "status": "已闭环",
+      "kind": "runtime",
+      "summary": "成员每日签到获得积分，支持连续签到奖励和冷却控制。",
+      "entry": { "label": "主积分", "command": "/sign", "menuKeys": ["points"] },
+      "prerequisites": ["主积分功能已开启。", "用户在群内发送签到指令。"],
+      "steps": [
+        { "title": "进入主积分", "action": "管理员打开 /admin，点击「主积分」查看签到配置。", "tip": "普通成员通过 /sign 使用。" },
+        { "title": "配置奖励", "action": "设置签到积分、连续签到奖励和冷却规则。", "tip": "保持规则简单，便于成员理解。" },
+        { "title": "成员签到", "action": "成员在群里发送 /sign，机器人返回签到结果和余额。", "tip": "重复签到会按冷却规则处理。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": true,
+      "qa": [{ "question": "签到积分跨群共享吗？", "answer": "不共享，积分按群组维度计算。" }],
+      "logicAudit": { "status": "ok", "items": ["主积分中心入口为 points。", "运行时需要覆盖重复签到和连续签到奖励。"] },
+      "truthTableNames": ["签到积分"]
+    },
+    {
+      "slug": "message-points",
+      "title": "发言积分",
+      "category": "积分运营",
+      "status": "已闭环",
+      "kind": "runtime",
+      "summary": "成员发言可获得积分，支持最小字数门槛和每日上限。",
+      "entry": { "label": "主积分", "command": "/admin", "menuKeys": ["points"] },
+      "prerequisites": ["主积分中心已开启发言积分。", "群消息处理器正常接收消息。"],
+      "steps": [
+        { "title": "进入主积分", "action": "打开 /admin，点击「主积分」。", "tip": "发言积分属于主积分规则。" },
+        { "title": "配置发言规则", "action": "设置每次发言积分、最小字数和每日上限。", "tip": "设置上限可以防止刷分。" },
+        { "title": "发送测试消息", "action": "成员发送满足字数的消息，查看积分余额或流水。", "tip": "管理员或机器人消息可能不计入。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": true,
+      "qa": [{ "question": "短消息会加分吗？", "answer": "如果设置了最小字数，短于门槛的消息不会加分。" }],
+      "logicAudit": { "status": "ok", "items": ["真值表标记支持字数门槛和每日限制。", "页面需提示刷分风险和每日上限。"] },
+      "truthTableNames": ["发言积分"]
+    },
+    {
+      "slug": "invite-points",
+      "title": "邀请积分",
+      "category": "积分运营",
+      "status": "已闭环",
+      "kind": "runtime",
+      "summary": "成员邀请新用户入群后获得积分，仅在可靠归因存在时发放。",
+      "entry": { "label": "主积分", "command": "/admin", "menuKeys": ["points", "invite"] },
+      "prerequisites": ["邀请链接或 Telegram invite metadata 可用于归因。", "主积分邀请规则已配置。"],
+      "steps": [
+        { "title": "配置邀请奖励", "action": "在主积分或邀请链接功能中设置邀请积分规则。", "tip": "建议同时开启邀请统计。" },
+        { "title": "生成邀请链接", "action": "成员或管理员生成可归因的邀请链接。", "tip": "普通成员可通过用户邀请链接生成自己的链接。" },
+        { "title": "新成员加入", "action": "新成员通过链接入群后，系统记录归因并发放积分。", "tip": "无法确认来源时不会误发奖励。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": true,
+      "qa": [{ "question": "无法归因时会不会发错积分？", "answer": "不会。当前实现只在可靠 metadata 存在时发放。" }],
+      "logicAudit": { "status": "ok", "items": ["邀请积分依赖可靠 invite metadata。", "页面需明确无法确认来源时不发奖励。"] },
+      "truthTableNames": ["邀请积分"]
+    },
+    {
+      "slug": "points-center",
+      "title": "主积分中心",
+      "category": "积分运营",
+      "status": "已闭环",
+      "kind": "workspace",
+      "summary": "集中管理规则、排行、发言量、转让、管理员加减分、日志导出和清空积分。",
+      "entry": { "label": "主积分", "command": "/admin", "menuKeys": ["points"] },
+      "prerequisites": ["已选择目标群组。", "管理员了解积分清空和加减分影响。"],
+      "steps": [
+        { "title": "进入主积分", "action": "打开 /admin，点击「主积分」。", "tip": "这里是积分系统的主要工作台。" },
+        { "title": "选择管理项", "action": "进入规则、排行、个人发言量、转让、加减分或日志导出。", "tip": "高风险操作会有确认或输入步骤。" },
+        { "title": "核对结果", "action": "回到积分中心查看状态，或用 /points 检查成员余额。", "tip": "日志导出适合运营复盘。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": false,
+      "qa": [{ "question": "清空积分能撤销吗？", "answer": "不能当作普通可撤销操作处理，执行前应先导出日志。" }],
+      "logicAudit": { "status": "ok", "items": ["菜单入口为 points。", "页面需把高风险操作和普通查看操作区分清楚。"] },
+      "truthTableNames": ["主积分中心"]
+    },
+    {
+      "slug": "custom-points",
+      "title": "自定义积分",
+      "category": "积分运营",
+      "status": "已闭环",
+      "kind": "workspace",
+      "summary": "创建独立积分类型，支持启停、加减、排行、导出日志和清空余额。",
+      "entry": { "label": "自定义积分", "command": "/admin", "menuKeys": ["custom_points", "custom_points_add"] },
+      "prerequisites": ["管理员已明确积分类型名称和用途。", "已选择目标群组。"],
+      "steps": [
+        { "title": "进入自定义积分", "action": "打开 /admin，点击「自定义积分」。", "tip": "可查看已有积分类型。" },
+        { "title": "新增或管理类型", "action": "添加积分类型，设置启停、排行或加减分。", "tip": "名称要短，方便成员识别。" },
+        { "title": "检查余额与日志", "action": "查看排行、导出日志或核对成员余额。", "tip": "清空余额前先确认目标类型。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": false,
+      "qa": [{ "question": "自定义积分和主积分互通吗？", "answer": "不直接互通，每种积分类型单独管理。" }],
+      "logicAudit": { "status": "ok", "items": ["菜单入口为 custom_points。", "新增入口 custom_points_add 也纳入页面说明。"] },
+      "truthTableNames": ["自定义积分"]
+    },
+    {
+      "slug": "points-level",
+      "title": "积分等级",
+      "category": "积分运营",
+      "status": "已闭环",
+      "kind": "workspace",
+      "summary": "按积分门槛配置等级和可见权限。",
+      "entry": { "label": "积分等级", "command": "/admin", "menuKeys": ["points_level", "points_level_add"] },
+      "prerequisites": ["主积分或自定义积分已有稳定规则。", "管理员已设计等级门槛。"],
+      "steps": [
+        { "title": "进入积分等级", "action": "打开 /admin，点击「积分等级」。", "tip": "可查看当前等级列表。" },
+        { "title": "添加等级", "action": "设置等级名称、门槛和权限配置。", "tip": "门槛应由低到高，避免重叠。" },
+        { "title": "验证展示", "action": "用不同积分余额的成员检查等级结果。", "tip": "规则变更后注意成员等级变化。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": false,
+      "qa": [{ "question": "等级门槛可以重复吗？", "answer": "不建议重复，重复会让成员理解和展示结果变复杂。" }],
+      "logicAudit": { "status": "ok", "items": ["菜单入口为 points_level。", "新增等级入口 points_level_add 纳入文档。"] },
+      "truthTableNames": ["积分等级"]
+    },
+    {
+      "slug": "points-mall",
+      "title": "积分商城",
+      "category": "积分运营",
+      "status": "已闭环",
+      "kind": "workspace",
+      "summary": "配置商城入口、封面、商品、库存、订单和履约人员。",
+      "entry": { "label": "积分商城", "command": "/admin", "menuKeys": ["points_mall", "points_mall_cover", "points_mall_command", "points_mall_products", "points_mall_orders"] },
+      "prerequisites": ["主积分可用。", "管理员已准备商品、价格和履约方式。"],
+      "steps": [
+        { "title": "进入积分商城", "action": "打开 /admin，点击「积分商城」。", "tip": "商城工作台包含入口、商品和订单。" },
+        { "title": "配置商品", "action": "设置商城指令、封面、商品名称、价格、库存和排序。", "tip": "先创建少量商品试运行。" },
+        { "title": "处理订单", "action": "成员兑换后，在订单页查看并完成履约。", "tip": "履约人员配置会影响通知和处理。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": true,
+      "qa": [{ "question": "商品库存为 0 会怎样？", "answer": "库存不足时不应继续完成兑换，具体提示以运行时页面为准。" }],
+      "logicAudit": { "status": "ok", "items": ["积分商城相关子入口均纳入 menuKeys。", "流程图需覆盖兑换、扣分、订单和履约路径。"] },
+      "truthTableNames": ["积分商城"]
+    },
+    {
+      "slug": "points-tasks",
+      "title": "积分任务体系",
+      "category": "积分运营",
+      "status": "已闭环",
+      "kind": "reference",
+      "summary": "统一展示签到、发言、邀请等积分任务规则。",
+      "entry": { "label": "积分任务", "command": "/admin", "menuKeys": ["points"] },
+      "prerequisites": ["主积分中心可用。", "至少开启一种积分任务规则。"],
+      "steps": [
+        { "title": "进入主积分中心", "action": "打开 /admin，点击「主积分」。", "tip": "任务体系在积分中心中展示。" },
+        { "title": "查看任务页", "action": "进入积分任务页，查看签到、发言和邀请任务。", "tip": "页面用于成员理解积分来源。" },
+        { "title": "调整相关规则", "action": "回到签到、发言或邀请规则页修改奖励。", "tip": "任务页本身偏展示和汇总。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": false,
+      "qa": [{ "question": "任务体系会自动创建新任务吗？", "answer": "不会，它统一展示已有签到、发言、邀请任务规则。" }],
+      "logicAudit": { "status": "ok", "items": ["真值表标记积分中心新增任务页。", "文档需要避免把它写成独立任务引擎。"] },
+      "truthTableNames": ["积分任务体系"]
+    },
+    {
+      "slug": "auto-reply",
+      "title": "自动回复",
+      "category": "消息自动化",
+      "status": "已闭环",
+      "kind": "workspace",
+      "summary": "关键词触发自动回复，支持封面、按钮、排序和延迟删除。",
+      "entry": { "label": "自动回复", "command": "/admin", "menuKeys": ["autoreply"] },
+      "prerequisites": ["已准备关键词和回复内容。", "机器人可在群内发送消息。"],
+      "steps": [
+        { "title": "进入自动回复", "action": "打开 /admin，点击「自动回复」。", "tip": "规则列表会展示启停和管理按钮。" },
+        { "title": "创建规则", "action": "添加关键词、回复内容、封面、按钮和匹配方式。", "tip": "多个关键词可用于同一条回复。" },
+        { "title": "发送关键词测试", "action": "在群里发送关键词，确认回复内容和按钮。", "tip": "未触发时检查规则是否启用。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": true,
+      "qa": [{ "question": "可以设置回复按钮吗？", "answer": "可以，支持文本|链接格式或按钮编辑器。" }],
+      "logicAudit": { "status": "ok", "items": ["菜单入口为 autoreply。", "测试覆盖规则列表、详情、启停、编辑和删除回调。"] },
+      "truthTableNames": ["自动回复"]
+    },
+    {
+      "slug": "scheduled-message",
+      "title": "定时消息",
+      "category": "消息自动化",
+      "status": "已闭环",
+      "kind": "workspace",
+      "summary": "定时发送文本、媒体和按钮消息，支持开始结束时间、重复间隔、删除和详情管理。",
+      "entry": { "label": "定时消息", "command": "/admin", "menuKeys": ["scheduled"] },
+      "prerequisites": ["机器人可在目标群发送对应消息类型。", "管理员已准备内容和发送时间。"],
+      "steps": [
+        { "title": "进入定时消息", "action": "打开 /admin，点击「定时消息」。", "tip": "当前主菜单直接进入定时消息列表。" },
+        { "title": "创建或编辑任务", "action": "设置文本、媒体、按钮、开始/结束时间和重复间隔。", "tip": "时间输入需使用页面提示格式。" },
+        { "title": "查看详情和发送结果", "action": "在任务列表查看状态，等待调度器发送到群。", "tip": "若未发送，检查时间、状态和机器人权限。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": true,
+      "qa": [{ "question": "可以发媒体吗？", "answer": "可以，支持图片、视频、文档、贴纸和动画等已实现类型。" }],
+      "logicAudit": { "status": "ok", "items": ["聊天主菜单使用 sm:list 入口，旧菜单键 scheduled 仍纳入对账。", "流程图需覆盖调度任务和发送失败。"] },
+      "truthTableNames": ["定时消息"]
+    },
+    {
+      "slug": "scheduled-message-buttons",
+      "title": "定时消息按钮输入",
+      "category": "消息自动化",
+      "status": "已闭环",
+      "kind": "simple",
+      "summary": "定时消息按钮支持 文本|链接 逐行格式和 JSON 格式。",
+      "entry": { "label": "定时消息按钮", "command": "/admin", "menuKeys": ["scheduled"] },
+      "prerequisites": ["已有定时消息任务或正在创建任务。", "按钮链接使用 http 或 https 地址。"],
+      "steps": [
+        { "title": "进入任务编辑", "action": "打开定时消息任务，点击按钮配置。", "tip": "按钮属于消息内容的一部分。" },
+        { "title": "输入按钮", "action": "按 文本|链接 逐行输入，或粘贴 JSON 按钮数组。", "tip": "普通运营更适合逐行格式。" },
+        { "title": "预览发送效果", "action": "保存后查看任务详情或等待发送，确认按钮布局。", "tip": "链接格式错误会被拒绝。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": false,
+      "qa": [{ "question": "一行能放多个按钮吗？", "answer": "JSON 格式可表达更复杂布局，逐行格式更适合简单按钮。" }],
+      "logicAudit": { "status": "ok", "items": ["真值表明确两种输入格式都支持。", "文档需给出最小示例和错误处理。"] },
+      "truthTableNames": ["定时消息按钮输入"]
+    },
+    {
+      "slug": "rotating-ads",
+      "title": "轮播广告",
+      "category": "消息自动化",
+      "status": "已闭环",
+      "kind": "workspace",
+      "summary": "支持单次推送、定时开始、间隔轮播、图片广告配置和看板。",
+      "entry": { "label": "轮播广告", "command": "/admin", "menuKeys": ["ads"] },
+      "prerequisites": ["已准备广告内容和投放规则。", "机器人可在目标群发送广告消息。"],
+      "steps": [
+        { "title": "进入轮播广告", "action": "打开 /admin，点击「轮播广告」。", "tip": "广告菜单展示活动和投放状态。" },
+        { "title": "配置广告项", "action": "创建广告内容、封面、开始时间、结束时间和轮播间隔。", "tip": "先用单次推送测试素材。" },
+        { "title": "查看看板", "action": "回到广告看板，确认运行状态和下一次投放。", "tip": "异常时检查任务时间和权限。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": true,
+      "qa": [{ "question": "轮播广告需要会员吗？", "answer": "当前版本付费限制关闭，功能默认开放。" }],
+      "logicAudit": { "status": "ok", "items": ["菜单入口为 ads。", "测试已覆盖付费逻辑关闭时广告菜单可打开。"] },
+      "truthTableNames": ["轮播广告"]
+    },
+    {
+      "slug": "invite-link-management",
+      "title": "邀请链接管理",
+      "category": "邀请增长",
+      "status": "已闭环",
+      "kind": "workspace",
+      "summary": "管理员可创建、查看、统计、预览、清零、清空和导出邀请链接。",
+      "entry": { "label": "邀请链接", "command": "/admin", "menuKeys": ["invite"] },
+      "prerequisites": ["机器人能创建或读取群邀请链接。", "管理员已选择目标群组。"],
+      "steps": [
+        { "title": "进入邀请链接", "action": "打开 /admin，点击「邀请链接」。", "tip": "页面展示链接状态和统计入口。" },
+        { "title": "配置链接规则", "action": "设置模式、封面、文本、按钮、过期天数和加入人数限制。", "tip": "可先预览邀请卡片。" },
+        { "title": "查看统计", "action": "成员通过链接加入后，查看列表、详情、统计和导出。", "tip": "需要可靠归因才能准确统计邀请人。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": true,
+      "qa": [{ "question": "可以清空旧链接吗？", "answer": "可以，管理页支持清零、清空链接和导出。" }],
+      "logicAudit": { "status": "ok", "items": ["菜单入口为 invite。", "邀请管理覆盖创建、列表、详情、统计和导出。"] },
+      "truthTableNames": ["邀请链接管理"]
+    },
+    {
+      "slug": "user-invite-link",
+      "title": "用户邀请链接",
+      "category": "邀请增长",
+      "status": "已闭环",
+      "kind": "runtime",
+      "summary": "普通成员可以生成自己的邀请链接，用于邀请统计和奖励归因。",
+      "entry": { "label": "用户邀请链接", "command": "/link", "menuKeys": ["invite"] },
+      "prerequisites": ["邀请链接功能已开启。", "普通成员在群内使用 /link。"],
+      "steps": [
+        { "title": "管理员开启入口", "action": "在邀请链接管理页开启用户生成链接。", "tip": "可设置每个用户的链接数量上限。" },
+        { "title": "成员生成链接", "action": "成员在群里发送 /link，机器人返回个人邀请链接。", "tip": "链接会记录邀请人。" },
+        { "title": "查看邀请结果", "action": "新成员通过链接加入后，在邀请统计中查看归因。", "tip": "无法确认来源时不会发放奖励。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": true,
+      "qa": [{ "question": "普通成员需要管理员权限吗？", "answer": "不需要，只要群开启了用户邀请链接能力。" }],
+      "logicAudit": { "status": "ok", "items": ["普通用户命令由 InviteRouter 注册。", "文档需突出 /link 使用场景。"] },
+      "truthTableNames": ["用户邀请链接"]
+    },
+    {
+      "slug": "invite-attribution",
+      "title": "邀请归因",
+      "category": "邀请增长",
+      "status": "已闭环",
+      "kind": "runtime",
+      "summary": "基于 ChatMemberUpdate 的可靠 invite metadata 缓存归因。",
+      "entry": { "label": "邀请归因", "command": "/admin", "menuKeys": ["invite"] },
+      "prerequisites": ["新成员通过可识别邀请链接加入。", "Telegram 提供可靠 invite metadata。"],
+      "steps": [
+        { "title": "生成可追踪链接", "action": "通过邀请链接功能创建或让成员生成链接。", "tip": "不要手工混用不可识别链接。" },
+        { "title": "新成员入群", "action": "系统接收成员变更事件并缓存来源信息。", "tip": "归因依赖 Telegram 返回的数据。" },
+        { "title": "发放或跳过奖励", "action": "来源可靠时记录邀请和积分；无法确认时跳过。", "tip": "跳过比误发更安全。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": true,
+      "qa": [{ "question": "为什么有时没有邀请奖励？", "answer": "当来源无法可靠确认时，系统不会误发奖励。" }],
+      "logicAudit": { "status": "ok", "items": ["真值表明确无法确认来源时不会误发奖励。", "流程图需显示未知来源分支。"] },
+      "truthTableNames": ["邀请归因"]
+    },
+    {
+      "slug": "invite-rank",
+      "title": "邀请排行",
+      "category": "邀请增长",
+      "status": "已闭环",
+      "kind": "reference",
+      "summary": "邀请统计页展示前 10 排行和成员数据。",
+      "entry": { "label": "邀请排行", "command": "/admin", "menuKeys": ["invite"] },
+      "prerequisites": ["邀请链接功能已有统计数据。", "管理员进入邀请链接管理页。"],
+      "steps": [
+        { "title": "进入邀请链接", "action": "打开 /admin，点击「邀请链接」。", "tip": "排行入口在邀请统计相关页面。" },
+        { "title": "查看排行", "action": "进入统计页，查看前 10 邀请排行和成员数据。", "tip": "排行只统计可靠归因数据。" },
+        { "title": "导出或复盘", "action": "按需要导出数据，结合邀请积分做运营复盘。", "tip": "异常数据先看邀请归因说明。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": false,
+      "qa": [{ "question": "排行显示多少人？", "answer": "当前邀请统计页展示前 10 排行和成员数据。" }],
+      "logicAudit": { "status": "ok", "items": ["邀请排行来自邀请统计页。", "文档需说明排行依赖可靠归因。"] },
+      "truthTableNames": ["邀请排行"]
+    },
+    {
+      "slug": "welcome-message",
+      "title": "欢迎消息",
+      "category": "群组扩展",
+      "status": "已闭环",
+      "kind": "workspace",
+      "summary": "配置进群欢迎模式、封面、按钮、删除策略和欢迎文案。",
+      "entry": { "label": "进群欢迎", "command": "/admin", "menuKeys": ["welcome"] },
+      "prerequisites": ["机器人可接收新成员事件。", "已准备欢迎文案或素材。"],
+      "steps": [
+        { "title": "进入进群欢迎", "action": "打开 /admin，点击「进群欢迎」。", "tip": "欢迎页支持列表和详情配置。" },
+        { "title": "配置欢迎内容", "action": "设置标题、正文、封面、按钮和删除策略。", "tip": "文案可使用成员变量。" },
+        { "title": "新成员入群测试", "action": "让测试账号入群，确认欢迎消息样式和删除策略。", "tip": "如果没发送，检查欢迎开关和事件权限。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": true,
+      "qa": [{ "question": "欢迎消息可以带按钮吗？", "answer": "可以，支持按钮布局配置。" }],
+      "logicAudit": { "status": "ok", "items": ["菜单入口为 welcome。", "测试覆盖欢迎详情按钮编辑入口。"] },
+      "truthTableNames": ["欢迎消息"]
+    },
+    {
+      "slug": "group-lock",
+      "title": "关群设置",
+      "category": "群组扩展",
+      "status": "已闭环",
+      "kind": "simple",
+      "summary": "支持话术开关、定时关群开群和通知删除策略。",
+      "entry": { "label": "关群设置", "command": "/admin", "menuKeys": ["closegroup"] },
+      "prerequisites": ["机器人可设置群发言权限。", "管理员已确定开群和关群时间或话术。"],
+      "steps": [
+        { "title": "进入关群设置", "action": "打开 /admin，点击「关群设置」。", "tip": "页面展示话术和定时状态。" },
+        { "title": "配置话术或时间", "action": "设置开群词、关群词、开群时间和关群时间。", "tip": "时间使用 HH:MM 格式。" },
+        { "title": "检查权限变化", "action": "到设定时间或发送话术，确认群权限被正确切换。", "tip": "机器人缺少权限时无法改群权限。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": true,
+      "qa": [{ "question": "定时关群和话术能同时开吗？", "answer": "可以，但建议在文档中记录当前群使用哪一种为主。" }],
+      "logicAudit": { "status": "ok", "items": ["菜单入口为 closegroup。", "健康检查会提示定时关群配置缺失。"] },
+      "truthTableNames": ["关群设置"]
+    },
+    {
+      "slug": "rename-monitor",
+      "title": "改名监控",
+      "category": "群组扩展",
+      "status": "已闭环",
+      "kind": "simple",
+      "summary": "监控成员改名行为，支持模板文本和提示删除策略。",
+      "entry": { "label": "改名监控", "command": "/admin", "menuKeys": ["renamewatch"] },
+      "prerequisites": ["机器人可以接收成员资料变化相关事件。", "已准备提示模板。"],
+      "steps": [
+        { "title": "进入改名监控", "action": "打开 /admin，点击「改名监控」。", "tip": "页面展示当前提示模板和状态。" },
+        { "title": "设置模板", "action": "开启监控，配置提示文案和删除策略。", "tip": "模板应明确旧名和新名。" },
+        { "title": "测试改名", "action": "用测试成员修改名称，确认提示消息和删除规则。", "tip": "如果无事件，先确认 Telegram 是否推送该类更新。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": true,
+      "qa": [{ "question": "改名监控会阻止改名吗？", "answer": "不会，主要用于提示、记录和群内提醒。" }],
+      "logicAudit": { "status": "ok", "items": ["菜单入口为 renamewatch。", "文档需避免写成强制禁止改名。"] },
+      "truthTableNames": ["改名监控"]
+    },
+    {
+      "slug": "alliance",
+      "title": "联盟功能 / 联合封禁",
+      "category": "群组扩展",
+      "status": "已闭环",
+      "kind": "workspace",
+      "summary": "支持联盟状态、成员管理和联合封禁。",
+      "entry": { "label": "联盟功能", "command": "/admin", "menuKeys": ["alliance"] },
+      "prerequisites": ["管理员已明确联盟名称和成员群范围。", "联合封禁需要机器人在相关群具备权限。"],
+      "steps": [
+        { "title": "进入联盟功能", "action": "打开 /admin，点击「联盟功能」。", "tip": "页面展示联盟状态和成员数量。" },
+        { "title": "创建或加入联盟", "action": "按页面提示创建联盟、输入邀请码或管理成员。", "tip": "邀请码注意只发给可信管理员。" },
+        { "title": "执行联合封禁", "action": "对违规成员执行联合封禁，并在成员群验证结果。", "tip": "权限不足的群可能无法执行封禁。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": true,
+      "qa": [{ "question": "联合封禁会影响所有群吗？", "answer": "只影响联盟覆盖且机器人有权限执行的群。" }],
+      "logicAudit": { "status": "ok", "items": ["菜单入口为 alliance。", "测试覆盖联盟菜单成员数量和联合封禁状态展示。"] },
+      "truthTableNames": ["联盟功能 / 联合封禁"]
+    },
+    {
+      "slug": "garage-auth",
+      "title": "车库认证",
+      "category": "群组扩展",
+      "status": "已闭环",
+      "kind": "workspace",
+      "summary": "配置车库认证状态、认证限制和相关字段。",
+      "entry": { "label": "车库认证", "command": "/admin", "menuKeys": ["garage_auth"] },
+      "prerequisites": ["群组需要车库认证业务。", "管理员已准备认证规则。"],
+      "steps": [
+        { "title": "进入车库认证", "action": "打开 /admin，点击「车库认证」。", "tip": "该功能属于群组扩展业务。" },
+        { "title": "配置认证规则", "action": "按业务需要设置认证状态、限制和提示。", "tip": "先用测试成员验证流程。" },
+        { "title": "检查运行结果", "action": "在群内触发认证相关操作，确认限制和提示。", "tip": "业务字段需和当前群运营规则一致。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": true,
+      "qa": [{ "question": "这个功能适合所有群吗？", "answer": "不一定，它是面向特定车库/认证场景的扩展能力。" }],
+      "logicAudit": { "status": "ok", "items": ["菜单入口为 garage_auth。", "文档需把通用群管理和垂直业务能力区分。"] },
+      "truthTableNames": ["车库认证"]
+    },
+    {
+      "slug": "teacher-search",
+      "title": "老师搜索",
+      "category": "群组扩展",
+      "status": "已闭环",
+      "kind": "workspace",
+      "summary": "支持标签搜索、附近搜索、出勤状态和底部按钮。",
+      "entry": { "label": "老师搜索", "command": "/admin", "menuKeys": ["teacher_search"] },
+      "prerequisites": ["已维护老师资料或搜索标签。", "附近搜索需要位置相关配置。"],
+      "steps": [
+        { "title": "进入老师搜索", "action": "打开 /admin，点击「老师搜索」。", "tip": "页面会根据主开关展示依赖配置。" },
+        { "title": "配置搜索能力", "action": "设置标签、附近搜索、出勤模式、底部按钮和委托信息。", "tip": "位置输入支持 Telegram 位置或地图链接。" },
+        { "title": "执行搜索测试", "action": "使用群内搜索入口，确认返回结果和底部按钮。", "tip": "如果位置无效，按页面提示重新输入。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": true,
+      "qa": [{ "question": "附近搜索必须打开定位吗？", "answer": "需要配置可解析的位置来源，否则无法进行距离相关搜索。" }],
+      "logicAudit": { "status": "ok", "items": ["菜单入口为 teacher_search。", "测试覆盖底部按钮、出勤模式和位置输入校验。"] },
+      "truthTableNames": ["老师搜索"]
+    },
+    {
+      "slug": "garage-forward",
+      "title": "车库转发",
+      "category": "群组扩展",
+      "status": "已闭环",
+      "kind": "workspace",
+      "summary": "频道同步基础能力，支持来源、模式、关键词和审核记录。",
+      "entry": { "label": "频道同步", "command": "/admin", "menuKeys": ["garage_forward", "sync"] },
+      "prerequisites": ["已准备来源频道或群组。", "机器人具备读取来源和发送目标的权限。"],
+      "steps": [
+        { "title": "进入同步配置", "action": "打开 /admin，点击「频道同步」。", "tip": "代码中 sync 会跳转到车库转发提示页。" },
+        { "title": "配置来源和模式", "action": "设置来源、同步模式、关键词过滤和按钮模板。", "tip": "先用一个来源测试。" },
+        { "title": "查看审核记录", "action": "触发同步后查看审核记录和目标群消息。", "tip": "关键词过滤会影响是否同步。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": true,
+      "qa": [{ "question": "频道同步和车库转发是同一个入口吗？", "answer": "当前菜单中「频道同步」复用车库转发相关配置能力。" }],
+      "logicAudit": { "status": "ok", "items": ["sync 和 garage_forward 都映射到同一处理入口。", "文档需说明这是复用模块，避免用户找不到车库转发名称。"] },
+      "truthTableNames": ["车库转发"]
+    },
+    {
+      "slug": "car-review",
+      "title": "车评系统",
+      "category": "群组扩展",
+      "status": "已闭环",
+      "kind": "workspace",
+      "summary": "支持报告提交流程、审核、发布目标、自定义项、报告列表和排行。",
+      "entry": { "label": "车评系统", "command": "/admin", "menuKeys": ["car_review"] },
+      "prerequisites": ["已明确报告模板、审核人和发布目标。", "机器人可接收成员报告消息。"],
+      "steps": [
+        { "title": "进入车评系统", "action": "打开 /admin，点击「车评系统」。", "tip": "首页展示动态标签和真实子页面。" },
+        { "title": "配置提交流程", "action": "设置提交指令、排行指令、审核人、自定义字段和发布目标。", "tip": "必填字段影响提交校验。" },
+        { "title": "提交并审核报告", "action": "成员按模板提交报告，管理员在报告列表中通过或拒绝。", "tip": "审核后按发布设置推送结果。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": true,
+      "qa": [{ "question": "可以自定义评分项吗？", "answer": "可以，字段页支持自定义项管理。" }],
+      "logicAudit": { "status": "ok", "items": ["菜单入口为 car_review。", "测试覆盖报告字段、列表、详情审批和发布设置。"] },
+      "truthTableNames": ["车评系统"]
+    },
+    {
+      "slug": "night-mode",
+      "title": "夜间模式",
+      "category": "群组扩展",
+      "status": "已闭环",
+      "kind": "simple",
+      "summary": "在指定时段限制发言，支持管理员豁免、白名单、提示文案和删除策略。",
+      "entry": { "label": "夜间模式", "command": "/admin", "menuKeys": ["night"] },
+      "prerequisites": ["已确定夜间开始和结束时间。", "机器人有删除或限制消息所需权限。"],
+      "steps": [
+        { "title": "进入夜间模式", "action": "打开 /admin，点击「夜间模式」。", "tip": "页面展示时间、白名单和提示状态。" },
+        { "title": "配置时段和策略", "action": "设置开始时间、结束时间、管理员豁免、白名单、删除和提示文案。", "tip": "时间格式为 HH:MM。" },
+        { "title": "在时段内测试", "action": "用普通成员在夜间时段发送消息，确认限制和提示。", "tip": "白名单和管理员豁免会跳过限制。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": true,
+      "qa": [{ "question": "跨天时间支持吗？", "answer": "支持常见的晚间到次日早晨配置，例如 22:00 到 07:00。" }],
+      "logicAudit": { "status": "ok", "items": ["菜单入口为 night。", "输入处理已校验 HH:MM、白名单数字 ID 和提示文案。"] },
+      "truthTableNames": ["夜间模式"]
+    },
+    {
+      "slug": "command-config",
+      "title": "群组命令配置",
+      "category": "群组扩展",
+      "status": "已闭环",
+      "kind": "simple",
+      "summary": "对群内常用命令进行启停和别名设置，并在运行时生效。",
+      "entry": { "label": "命令配置", "command": "/admin", "menuKeys": ["gcmd"] },
+      "prerequisites": ["管理员了解当前群成员常用指令。", "已选择目标群组。"],
+      "steps": [
+        { "title": "进入命令配置", "action": "打开 /admin，点击「命令配置」。", "tip": "页面会列出命令状态和别名。" },
+        { "title": "调整命令", "action": "进入命令详情，启停命令或设置别名。", "tip": "别名不需要输入 /。" },
+        { "title": "群内测试", "action": "在群内发送原命令或别名，确认运行时生效。", "tip": "清空别名可恢复默认使用方式。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": true,
+      "qa": [{ "question": "关闭命令后管理员还能用吗？", "answer": "关闭会影响该群命令运行，具体豁免以运行时命令配置服务为准。" }],
+      "logicAudit": { "status": "ok", "items": ["菜单入口为 gcmd。", "别名输入处理支持空值和“清空”。"] },
+      "truthTableNames": ["群组命令配置"]
+    },
+    {
+      "slug": "import-settings",
+      "title": "导入设置",
+      "category": "群组扩展",
+      "status": "已闭环",
+      "kind": "workspace",
+      "summary": "从其他群按模块导入配置，覆盖目标群对应模块。",
+      "entry": { "label": "导入设置", "command": "/admin", "menuKeys": ["import"] },
+      "prerequisites": ["账号同时管理来源群和目标群。", "已确认要覆盖的配置模块。"],
+      "steps": [
+        { "title": "进入导入设置", "action": "打开 /admin，点击「导入设置」。", "tip": "确认当前选中的目标群。" },
+        { "title": "选择来源和模块", "action": "选择来源群和需要导入的配置模块。", "tip": "只导入需要同步的模块。" },
+        { "title": "确认覆盖", "action": "执行导入后回到对应功能页核对配置。", "tip": "导入是覆盖目标模块，执行前先确认。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": false,
+      "qa": [{ "question": "导入会覆盖所有配置吗？", "answer": "不会，只覆盖你选择的模块。" }],
+      "logicAudit": { "status": "ok", "items": ["菜单入口为 import。", "真值表将导入设置和克隆合并记录，官网拆成两个页面更清楚。"] },
+      "truthTableNames": ["导入设置 / 克隆"]
+    },
+    {
+      "slug": "clone-settings",
+      "title": "克隆",
+      "category": "群组扩展",
+      "status": "已闭环",
+      "kind": "workspace",
+      "summary": "跨群复制配置，适合新群快速套用已有运营模板。",
+      "entry": { "label": "克隆", "command": "/admin", "menuKeys": ["clone"] },
+      "prerequisites": ["账号同时管理来源群和目标群。", "已确认克隆范围和覆盖影响。"],
+      "steps": [
+        { "title": "进入克隆", "action": "打开 /admin，点击「克隆」。", "tip": "先确认当前目标群。" },
+        { "title": "选择来源群", "action": "选择要复制配置的来源群，并确认克隆范围。", "tip": "适合新群初始化。" },
+        { "title": "核对关键功能", "action": "克隆后检查风控、积分、欢迎和自动化配置。", "tip": "涉及频道链接或按钮的配置要重点核对。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": false,
+      "qa": [{ "question": "克隆后还需要手动改吗？", "answer": "通常需要核对群名、链接、按钮和时间等群特定配置。" }],
+      "logicAudit": { "status": "ok", "items": ["菜单入口为 clone。", "与导入设置共用真值表记录但对外拆页。"] },
+      "truthTableNames": ["导入设置 / 克隆"]
+    },
+    {
+      "slug": "account-inherit",
+      "title": "炸号继承",
+      "category": "群组扩展",
+      "status": "已闭环",
+      "kind": "workspace",
+      "summary": "用于账号变更后的权益或邀请关系继承。",
+      "entry": { "label": "炸号继承", "command": "/admin", "menuKeys": ["inherit"] },
+      "prerequisites": ["管理员确认旧账号和新账号身份。", "相关积分或邀请数据已存在。"],
+      "steps": [
+        { "title": "进入炸号继承", "action": "打开 /admin，点击「炸号继承」。", "tip": "该入口用于账号异常后的迁移。" },
+        { "title": "填写继承信息", "action": "按页面提示输入旧账号和新账号信息。", "tip": "执行前确认身份，避免错迁。" },
+        { "title": "核对继承结果", "action": "检查积分、邀请或相关权益是否转移到新账号。", "tip": "保留操作记录便于追溯。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": false,
+      "qa": [{ "question": "普通用户能自己继承吗？", "answer": "不建议，继承涉及权益迁移，应由管理员确认。" }],
+      "logicAudit": { "status": "ok", "items": ["菜单入口为 inherit。", "主菜单有该功能但真值表未单列，官网纳入菜单对账覆盖。"] },
+      "truthTableNames": []
+    },
+    {
+      "slug": "bottom-button",
+      "title": "底部按钮",
+      "category": "群组扩展",
+      "status": "已闭环",
+      "kind": "workspace",
+      "summary": "配置群内底部按钮生成、布局和重复生成策略。",
+      "entry": { "label": "底部按钮", "command": "/admin", "menuKeys": ["bottom_button"] },
+      "prerequisites": ["已准备按钮文本和链接。", "机器人可在群内发送按钮消息。"],
+      "steps": [
+        { "title": "进入底部按钮", "action": "打开 /admin，点击「底部按钮」。", "tip": "页面支持布局和生成策略设置。" },
+        { "title": "配置按钮内容", "action": "设置按钮文本、链接、布局位置和重复生成规则。", "tip": "按钮文本保持简短。" },
+        { "title": "发布并检查", "action": "生成按钮消息后，在群里确认布局和点击链接。", "tip": "链接错误会影响用户跳转。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": true,
+      "qa": [{ "question": "底部按钮和自动回复按钮一样吗？", "answer": "不一样，底部按钮是独立的群运营入口，自动回复按钮跟随回复规则。" }],
+      "logicAudit": { "status": "ok", "items": ["菜单入口为 bottom_button。", "测试覆盖布局位置控制和服务层按钮生成。"] },
+      "truthTableNames": []
+    },
+    {
+      "slug": "lottery",
+      "title": "抽奖",
+      "category": "活动互动",
+      "status": "已闭环",
+      "kind": "workspace",
+      "summary": "支持创建、参与、条件限制、手动或自动开奖。",
+      "entry": { "label": "抽奖", "command": "/lottery", "menuKeys": ["lottery"] },
+      "prerequisites": ["管理员已准备奖品和参与条件。", "机器人可发送开奖通知。"],
+      "steps": [
+        { "title": "进入抽奖", "action": "打开 /admin，点击「抽奖」或使用 /lottery。", "tip": "菜单展示通用、积分、邀请、活跃等类型。" },
+        { "title": "创建活动", "action": "选择抽奖类型，设置奖品、参与条件和开奖方式。", "tip": "先预览活动内容再发布。" },
+        { "title": "开奖和复盘", "action": "活动结束后手动或自动开奖，查看结果和状态。", "tip": "未开奖活动可继续管理或取消。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": true,
+      "qa": [{ "question": "抽奖能按邀请或活跃限制吗？", "answer": "可以，当前菜单展示邀请抽奖和群活跃抽奖入口。" }],
+      "logicAudit": { "status": "ok", "items": ["菜单入口为 lottery。", "测试覆盖不同抽奖类型和创建流程路由。"] },
+      "truthTableNames": ["抽奖"]
+    },
+    {
+      "slug": "solitaire",
+      "title": "接龙",
+      "category": "活动互动",
+      "status": "已闭环",
+      "kind": "workspace",
+      "summary": "创建商品或服务接龙，成员参与后可跟踪状态。",
+      "entry": { "label": "接龙", "command": "/solitaire", "menuKeys": ["solitaire"] },
+      "prerequisites": ["管理员准备接龙项目和规则。", "机器人可发送和更新接龙消息。"],
+      "steps": [
+        { "title": "进入接龙", "action": "通过管理菜单或 /solitaire 打开接龙管理。", "tip": "部分入口可由命令触发。" },
+        { "title": "创建接龙", "action": "设置标题、项目、时间和参与规则。", "tip": "文案要明确数量或服务内容。" },
+        { "title": "成员参与", "action": "成员点击按钮或按提示参与，管理员查看状态。", "tip": "过期后状态会按任务处理。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": true,
+      "qa": [{ "question": "接龙过期后会怎样？", "answer": "调度任务会处理过期通知和状态更新。" }],
+      "logicAudit": { "status": "ok", "items": ["ADMIN_MENU_HANDLERS 中保留 solitaire 入口。", "流程图需覆盖创建、参与和过期处理。"] },
+      "truthTableNames": ["接龙"]
+    },
+    {
+      "slug": "game",
+      "title": "游戏",
+      "category": "活动互动",
+      "status": "已闭环",
+      "kind": "workspace",
+      "summary": "已有游戏设置和牌局列表，支持快三、黑杰克、抽水和定时启停。",
+      "entry": { "label": "游戏", "command": "/admin", "menuKeys": ["game"] },
+      "prerequisites": ["群组允许互动游戏。", "如关联积分，需先配置积分来源。"],
+      "steps": [
+        { "title": "进入游戏", "action": "打开 /admin，点击「游戏」。", "tip": "页面展示快三、黑杰克和关联积分。" },
+        { "title": "配置玩法", "action": "启停玩法，设置抽水比例、抽水归属、定时启停和删除策略。", "tip": "关联积分要确认来源群。" },
+        { "title": "查看牌局", "action": "进入最近牌局或指令帮助，确认运行状态。", "tip": "游戏消息删除策略会影响群内留痕。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": true,
+      "qa": [{ "question": "游戏可以用其他群积分吗？", "answer": "支持关联积分来源群，需管理员明确选择。" }],
+      "logicAudit": { "status": "ok", "items": ["菜单入口为 game。", "测试覆盖游戏设置、关联积分和牌局列表。"] },
+      "truthTableNames": ["游戏"]
+    },
+    {
+      "slug": "guess",
+      "title": "竞猜",
+      "category": "活动互动",
+      "status": "已闭环",
+      "kind": "workspace",
+      "summary": "支持活动设置、选项、庄家、公共奖池、截止时间和结算。",
+      "entry": { "label": "竞猜", "command": "/admin", "menuKeys": ["guess"] },
+      "prerequisites": ["管理员已准备竞猜主题、选项和结算规则。", "如使用积分，需要积分规则可用。"],
+      "steps": [
+        { "title": "进入竞猜", "action": "打开 /admin，点击「竞猜」。", "tip": "首页展示待开奖、进行中、已开奖和已取消列表。" },
+        { "title": "发起竞猜", "action": "设置活动名字、说明、庄家、奖池、选项、指令、截止时间和下注限制。", "tip": "发布前先预览效果。" },
+        { "title": "开奖结算", "action": "在活动详情中选择获胜选项或取消活动。", "tip": "结算后成员余额和状态会更新。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": true,
+      "qa": [{ "question": "竞猜可以设置抽水吗？", "answer": "可以，在规则设置中配置抽水比例和归属。" }],
+      "logicAudit": { "status": "ok", "items": ["菜单入口为 guess。", "测试覆盖创建输入、设置和开奖结算。"] },
+      "truthTableNames": ["竞猜"]
+    },
+    {
+      "slug": "engagement",
+      "title": "促活工具",
+      "category": "活动互动",
+      "status": "已闭环",
+      "kind": "workspace",
+      "summary": "支持彩蛋活动、奖励配置、统计和领奖记录。",
+      "entry": { "label": "促活工具", "command": "/admin", "menuKeys": ["engagement"] },
+      "prerequisites": ["管理员已准备促活规则和奖励计划。", "积分或奖励体系可用。"],
+      "steps": [
+        { "title": "进入促活工具", "action": "打开 /admin，点击「促活工具」。", "tip": "入口展示彩蛋和水群激励等能力。" },
+        { "title": "配置活动", "action": "设置活动模板、奖励规则、领奖口令、周期或发言目标。", "tip": "推荐先套用默认规则。" },
+        { "title": "查看统计", "action": "发布后查看近 7 日统计、领奖记录或活动历史。", "tip": "暂停和重置活动会影响当前进度。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": true,
+      "qa": [{ "question": "促活工具适合什么场景？", "answer": "适合提高群发言、彩蛋互动和周期性奖励。" }],
+      "logicAudit": { "status": "ok", "items": ["菜单入口为 engagement。", "测试覆盖奖励配置和服务解析。"] },
+      "truthTableNames": ["促活工具"]
+    },
+    {
+      "slug": "auction",
+      "title": "拍卖",
+      "category": "活动互动",
+      "status": "已闭环",
+      "kind": "workspace",
+      "summary": "支持拍卖设置、活动列表、出价和结算。",
+      "entry": { "label": "拍卖", "command": "/admin", "menuKeys": ["auction"] },
+      "prerequisites": ["管理员已准备拍卖物品、起拍价和结束时间。", "机器人可在群内接收出价或发送通知。"],
+      "steps": [
+        { "title": "进入拍卖", "action": "打开 /admin，点击「拍卖」。", "tip": "页面展示活动列表和设置入口。" },
+        { "title": "创建拍卖", "action": "设置标题、说明、起拍价、加价规则和结束时间。", "tip": "结束时间支持分钟或 HH:MM 格式。" },
+        { "title": "出价与结算", "action": "成员按规则出价，活动结束后系统结算并通知结果。", "tip": "禁用拍卖时创建流程会被拒绝。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": true,
+      "qa": [{ "question": "拍卖可以通过群消息触发吗？", "answer": "可以，当前测试覆盖群内触发创建的场景。" }],
+      "logicAudit": { "status": "ok", "items": ["菜单入口为 auction。", "旧 todo 入口已重定向到真实菜单。"] },
+      "truthTableNames": ["拍卖"]
+    },
+    {
+      "slug": "channel-sync",
+      "title": "频道同步",
+      "category": "频道管理",
+      "status": "已闭环",
+      "kind": "workspace",
+      "summary": "支持来源、模式、关键词过滤和同步日志。",
+      "entry": { "label": "频道同步", "command": "/admin", "menuKeys": ["sync"] },
+      "prerequisites": ["机器人有来源和目标的读取/发送权限。", "已确定同步模式和过滤规则。"],
+      "steps": [
+        { "title": "进入频道同步", "action": "打开 /admin，点击「频道同步」。", "tip": "该入口复用频道同步模块。" },
+        { "title": "配置来源和模式", "action": "设置来源频道、同步模式、关键词过滤和审核策略。", "tip": "先绑定一个来源试运行。" },
+        { "title": "检查同步记录", "action": "来源发布消息后，查看目标群/频道和审核记录。", "tip": "过滤关键词会影响同步结果。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": true,
+      "qa": [{ "question": "同步失败先查什么？", "answer": "先查机器人权限、来源配置和关键词过滤规则。" }],
+      "logicAudit": { "status": "ok", "items": ["菜单入口为 sync。", "与车库转发共享实现，需要在文档中说明名称差异。"] },
+      "truthTableNames": ["频道同步"]
+    },
+    {
+      "slug": "channel-auto-buttons",
+      "title": "频道自动按钮 / 修改按钮",
+      "category": "频道管理",
+      "status": "已闭环",
+      "kind": "simple",
+      "summary": "同步时自动附加按钮模板，并可更新最近同步消息按钮。",
+      "entry": { "label": "频道按钮", "command": "/admin", "menuKeys": ["sync"] },
+      "prerequisites": ["频道同步已配置。", "已准备按钮文本和链接。"],
+      "steps": [
+        { "title": "进入频道同步", "action": "打开「频道同步」配置页。", "tip": "按钮能力属于同步配置的一部分。" },
+        { "title": "设置按钮模板", "action": "配置同步时附加的按钮文本、链接和布局。", "tip": "按钮链接需可访问。" },
+        { "title": "修改最近按钮", "action": "对最近同步消息执行按钮更新，检查目标消息按钮变化。", "tip": "只能修改机器人可编辑的消息。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": true,
+      "qa": [{ "question": "历史所有消息都会更新吗？", "answer": "不会，当前能力面向最近同步消息或指定可编辑消息。" }],
+      "logicAudit": { "status": "ok", "items": ["真值表标记频道自动按钮和修改按钮闭环。", "文档需说明它是频道同步的子能力。"] },
+      "truthTableNames": ["频道自动按钮 / 修改按钮"]
+    },
+    {
+      "slug": "quick-publish",
+      "title": "全局快捷发布",
+      "category": "频道管理",
+      "status": "已闭环",
+      "kind": "workspace",
+      "summary": "私聊快捷发布入口支持文本、媒体、按钮一键投放。",
+      "entry": { "label": "快捷发布", "command": "/admin", "menuKeys": ["qpub"] },
+      "prerequisites": ["已选择目标群组。", "机器人可发送文本、媒体和按钮消息。"],
+      "steps": [
+        { "title": "进入快捷发布", "action": "在私聊打开 /admin，点击「快捷发布」。", "tip": "该功能适合运营临时投放。" },
+        { "title": "编辑发布内容", "action": "输入文本、上传媒体、设置按钮，并选择目标群。", "tip": "发布前确认目标群名称。" },
+        { "title": "一键投放", "action": "确认后发送到目标群，检查消息样式和按钮。", "tip": "媒体或按钮错误会按输入校验提示修正。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": true,
+      "qa": [{ "question": "快捷发布只能在私聊用吗？", "answer": "推荐在私聊使用，方便选择目标群并避免群内输入干扰。" }],
+      "logicAudit": { "status": "ok", "items": ["菜单入口为 qpub。", "测试覆盖共享消息面板和发布状态展示。"] },
+      "truthTableNames": ["全局快捷发布"]
+    },
+    {
+      "slug": "membership",
+      "title": "会员 / 套餐授权",
+      "category": "全局设置",
+      "status": "暂时关闭",
+      "kind": "paused",
+      "summary": "当前版本关闭付费和续费限制，订阅表与服务保留用于后续恢复。",
+      "entry": { "label": "续费订阅", "command": "/admin", "menuKeys": ["renewal"] },
+      "prerequisites": ["当前无需购买套餐。", "所有群组功能默认开放。"],
+      "steps": [
+        { "title": "了解当前状态", "action": "打开 /admin 可看到「续费订阅」入口，但当前不作为功能门槛。", "tip": "不要把它理解为必须购买。" },
+        { "title": "确认功能开放", "action": "直接进入需要的群组功能进行配置。", "tip": "广告、积分、风控等功能默认可用。" },
+        { "title": "保留后续入口", "action": "如果未来恢复套餐授权，再按产品说明使用续费入口。", "tip": "官网不展示购买步骤。" }
+      ],
+      "flowchart": "auto",
+      "runtimeFlow": false,
+      "qa": [{ "question": "现在需要续费才能使用功能吗？", "answer": "不需要。当前版本关闭付费/续费限制，所有功能默认开放。" }],
+      "logicAudit": { "status": "ok", "items": ["菜单入口 renewal 保留。", "真值表状态为暂时关闭，对外文案不能写成已开放购买流程。"] },
+      "truthTableNames": ["会员 / 套餐授权"]
+    }
+  ]
+}

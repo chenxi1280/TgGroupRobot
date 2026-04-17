@@ -1,0 +1,9 @@
+---
+title: "违禁词"
+description: "按群维护违禁词列表，命中后执行删除、警告、禁言或封禁等策略。"
+---
+
+import FeatureManual from '../../../components/FeatureManual.astro';
+import flow from '../../flows/banned-words.json';
+
+<FeatureManual slug="banned-words" flow={flow} />

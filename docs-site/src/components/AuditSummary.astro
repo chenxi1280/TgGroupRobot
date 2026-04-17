@@ -1,0 +1,41 @@
+---
+import { getCollection } from 'astro:content';
+
+const entries = await getCollection('features');
+const features = entries.map((entry) => entry.data);
+const needsReview = features.filter((feature) => feature.logicAudit.status === 'needsReview');
+const menuCovered = new Set(features.flatMap((feature) => feature.entry.menuKeys));
+const truthRows = new Set(features.flatMap((feature) => feature.truthTableNames));
+---
+
+<section class="audit-summary">
+  <div class="audit-metrics">
+    <div>
+      <strong>{features.length}</strong>
+      <span>功能页</span>
+    </div>
+    <div>
+      <strong>{menuCovered.size}</strong>
+      <span>菜单入口</span>
+    </div>
+    <div>
+      <strong>{truthRows.size}</strong>
+      <span>真值表条目</span>
+    </div>
+    <div>
+      <strong>{needsReview.length}</strong>
+      <span>待复核</span>
+    </div>
+  </div>
+
+  <h2 id="audit-result">审计结果</h2>
+  {needsReview.length === 0 ? (
+    <p>当前功能文档没有标记为需要复核的流程。后续发现代码和文档不一致时，应先在对应功能页标记 needsReview。</p>
+  ) : (
+    <ul>
+      {needsReview.map((feature) => (
+        <li><a href={`/features/${feature.slug}/`}>{feature.title}</a></li>
+      ))}
+    </ul>
+  )}
+</section>

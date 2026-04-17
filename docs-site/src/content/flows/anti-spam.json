@@ -1,0 +1,302 @@
+{
+  "slug": "anti-spam",
+  "title": "反垃圾",
+  "status": "已闭环",
+  "category": "内容审核",
+  "entryScreen": "entry",
+  "coverage": {
+    "mode": "complete",
+    "callbackPrefixes": [
+      "adm:menu:antispam",
+      "gg:rule:",
+      "gg:toggle:",
+      "gg:whitelist:",
+      "gg:input:",
+      "gg:clear:"
+    ],
+    "inputStates": [
+      "anti_spam_config",
+      "garbage_guard_whitelist"
+    ],
+    "sourceFiles": [
+      "backend/features/admin/core/menu_dispatch.py",
+      "backend/features/admin/moderation/verification_views.py",
+      "backend/features/admin/runtime.py",
+      "backend/features/admin/ui/admin_main_keyboards.py",
+      "backend/features/group_ops/group_hooks/moderation.py"
+    ],
+    "alignmentStatus": "ok",
+    "alignmentSummary": "真实回调审计通过。"
+  },
+  "screens": [
+    {
+      "id": "entry",
+      "title": "管理员主菜单",
+      "message": [
+        "发送 /admin 后选择当前群组。",
+        "点击「垃圾防护」进入配置页。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "垃圾防护",
+            "callbackData": "adm:menu:antispam:{chat_id}",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「垃圾防护」。",
+            "highlight": true
+          }
+        ],
+        [
+          {
+            "label": "切换群",
+            "callbackData": "adm:switch_group",
+            "action": "goto",
+            "target": "select_group",
+            "feedback": "进入群组选择。"
+          },
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "goto",
+            "target": "main_menu",
+            "feedback": "已回到主菜单。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "当前群组：演示群"
+      ]
+    },
+    {
+      "id": "select_group",
+      "title": "选择配置群组",
+      "message": [
+        "私聊配置前先确认目标群组，后续按钮都会写入这个群。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "演示群",
+            "callbackData": "adm:select_group:-1001001",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到演示群。"
+          },
+          {
+            "label": "测试群",
+            "callbackData": "adm:select_group:-1001002",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到测试群。"
+          }
+        ],
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:menu:antispam:{chat_id}",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "可管理群：演示群、测试群"
+      ]
+    },
+    {
+      "id": "main_menu",
+      "title": "主菜单",
+      "message": [
+        "这里展示机器人后台的真实功能入口。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "垃圾防护",
+            "callbackData": "adm:menu:antispam:{chat_id}",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「垃圾防护」。",
+            "highlight": true
+          }
+        ]
+      ]
+    },
+    {
+      "id": "home",
+      "title": "垃圾防护",
+      "message": [
+        "反垃圾配置当前复用垃圾防护规则组，真实按钮为 gg 规则回调。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "规则详情",
+            "callbackData": "gg:rule:{rule_id}:{chat_id}",
+            "action": "goto",
+            "target": "rule",
+            "feedback": "打开规则详情。",
+            "highlight": true
+          },
+          {
+            "label": "白名单",
+            "callbackData": "gg:whitelist:{chat_id}",
+            "action": "goto",
+            "target": "whitelist",
+            "feedback": "打开白名单。"
+          }
+        ],
+        [
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回主菜单。"
+          }
+        ],
+        [
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回主菜单。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "规则：文本垃圾、白名单、动作策略"
+      ]
+    },
+    {
+      "id": "result",
+      "title": "操作结果",
+      "message": [
+        "Bot 处理真实回调后会重新渲染当前功能页或返回上一级。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:menu:antispam:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "rule",
+      "title": "垃圾防护规则",
+      "message": [
+        "真实规则按钮按 rule_id 操作。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "开启规则",
+            "callbackData": "gg:toggle:{rule_id}:enabled:{chat_id}",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "规则已切换。"
+          },
+          {
+            "label": "消息阈值",
+            "callbackData": "gg:cycle:{rule_id}:messages:{chat_id}",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "已切换消息阈值。"
+          }
+        ],
+        [
+          {
+            "label": "返回防护首页",
+            "callbackData": "adm:menu:antispam:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回防护首页。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "whitelist",
+      "title": "白名单",
+      "message": [
+        "白名单可通过输入 state 添加，也可一键清空。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "添加白名单",
+            "callbackData": "gg:input:whitelist:{chat_id}",
+            "action": "input",
+            "target": "whitelist_input",
+            "feedback": "请输入白名单。"
+          },
+          {
+            "label": "清空白名单",
+            "callbackData": "gg:clear:whitelist:{chat_id}",
+            "action": "confirm",
+            "target": "result",
+            "feedback": "已清空白名单。"
+          }
+        ],
+        [
+          {
+            "label": "返回防护首页",
+            "callbackData": "gg:home:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回防护首页。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "whitelist_input",
+      "title": "添加白名单",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "gg:whitelist:{chat_id}",
+            "action": "back",
+            "target": "whitelist",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "发送用户 ID、用户名或关键词",
+        "placeholder": "@trusted_user",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "用户名",
+            "value": "@trusted_user",
+            "target": "result",
+            "feedback": "已填入：用户名。"
+          },
+          {
+            "label": "用户 ID",
+            "value": "123456789",
+            "target": "result",
+            "feedback": "已填入：用户 ID。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    }
+  ]
+}

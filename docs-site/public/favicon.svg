@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="TgGroupRobot">
+  <rect width="64" height="64" rx="12" fill="#0f766e"/>
+  <path d="M15 29.5 49 16 42.6 49 32.8 39.4 26.5 45.7 27.2 35.6 43.3 21.9 24 32.7z" fill="#fff"/>
+  <circle cx="45" cy="18" r="5" fill="#ff4d5a"/>
+</svg>

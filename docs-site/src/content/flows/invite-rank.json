@@ -1,0 +1,554 @@
+{
+  "slug": "invite-rank",
+  "title": "邀请排行",
+  "status": "已闭环",
+  "category": "邀请增长",
+  "entryScreen": "entry",
+  "coverage": {
+    "mode": "complete",
+    "callbackPrefixes": [
+      "inv:home:",
+      "inv:toggle:",
+      "inv:mode:",
+      "inv:cover:",
+      "inv:text:",
+      "inv:buttons:",
+      "inv:preview:",
+      "inv:list:",
+      "inv:detail:",
+      "inv:user:"
+    ],
+    "inputStates": [
+      "invite_link_create",
+      "invite_link_cover_input",
+      "invite_link_text_input",
+      "invite_link_buttons_input"
+    ],
+    "sourceFiles": [
+      "backend/features/admin/core/menu_dispatch.py",
+      "backend/features/admin/runtime.py",
+      "backend/features/admin/ui/admin_main_keyboards.py",
+      "backend/features/invite/invite_admin_config_callbacks.py",
+      "backend/features/invite/invite_admin_link_callbacks.py",
+      "backend/features/invite/invite_router.py",
+      "backend/features/invite/invite_user_callbacks.py",
+      "backend/features/invite/ui/invite_link.py"
+    ],
+    "alignmentStatus": "ok",
+    "alignmentSummary": "真实回调审计通过。"
+  },
+  "screens": [
+    {
+      "id": "entry",
+      "title": "管理员主菜单",
+      "message": [
+        "发送 /admin 后选择当前群组。",
+        "点击「邀请排行」进入配置页。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "邀请排行",
+            "callbackData": "inv:home:{chat_id}",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「邀请排行」。",
+            "highlight": true
+          }
+        ],
+        [
+          {
+            "label": "切换群",
+            "callbackData": "adm:switch_group",
+            "action": "goto",
+            "target": "select_group",
+            "feedback": "进入群组选择。"
+          },
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "goto",
+            "target": "main_menu",
+            "feedback": "已回到主菜单。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "当前群组：演示群"
+      ]
+    },
+    {
+      "id": "select_group",
+      "title": "选择配置群组",
+      "message": [
+        "私聊配置前先确认目标群组，后续按钮都会写入这个群。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "演示群",
+            "callbackData": "adm:select_group:-1001001",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到演示群。"
+          },
+          {
+            "label": "测试群",
+            "callbackData": "adm:select_group:-1001002",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到测试群。"
+          }
+        ],
+        [
+          {
+            "label": "返回",
+            "callbackData": "inv:home:{chat_id}",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "可管理群：演示群、测试群"
+      ]
+    },
+    {
+      "id": "main_menu",
+      "title": "主菜单",
+      "message": [
+        "这里展示机器人后台的真实功能入口。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "邀请排行",
+            "callbackData": "inv:home:{chat_id}",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「邀请排行」。",
+            "highlight": true
+          }
+        ]
+      ]
+    },
+    {
+      "id": "home",
+      "title": "邀请配置",
+      "message": [
+        "这里聚焦用户邀请排行和邀请积分结果。",
+        "管理入口使用 inv:home，管理员配置和用户自助入口共用真实邀请服务。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "开启邀请",
+            "callbackData": "inv:toggle:enabled:{chat_id}:1",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "邀请功能已开启。"
+          },
+          {
+            "label": "关闭邀请",
+            "callbackData": "inv:toggle:enabled:{chat_id}:0",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "邀请功能已关闭。"
+          },
+          {
+            "label": "提醒开关",
+            "callbackData": "inv:toggle:remind:{chat_id}:1",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "邀请提醒已切换。"
+          }
+        ],
+        [
+          {
+            "label": "转发模式",
+            "callbackData": "inv:mode:{chat_id}:relay",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "已选择转发模式。"
+          },
+          {
+            "label": "直达模式",
+            "callbackData": "inv:mode:{chat_id}:direct",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "已选择直达模式。"
+          }
+        ],
+        [
+          {
+            "label": "设置封面",
+            "callbackData": "inv:cover:{chat_id}",
+            "action": "input",
+            "target": "cover_input",
+            "feedback": "请发送图片、视频或 /clear。"
+          },
+          {
+            "label": "设置文本",
+            "callbackData": "inv:text:{chat_id}",
+            "action": "input",
+            "target": "text_input",
+            "feedback": "请输入邀请说明文本。"
+          },
+          {
+            "label": "设置按钮",
+            "callbackData": "inv:buttons:{chat_id}",
+            "action": "input",
+            "target": "buttons_input",
+            "feedback": "请输入按钮配置。"
+          }
+        ],
+        [
+          {
+            "label": "预览效果",
+            "callbackData": "inv:preview:{chat_id}",
+            "action": "goto",
+            "target": "preview",
+            "feedback": "已打开邀请卡片预览。"
+          },
+          {
+            "label": "链接列表",
+            "callbackData": "inv:list:0:{chat_id}",
+            "action": "goto",
+            "target": "list",
+            "feedback": "已打开邀请链接列表。"
+          }
+        ],
+        [
+          {
+            "label": "用户入口",
+            "callbackData": "inv:user:menu:{chat_id}",
+            "action": "goto",
+            "target": "user",
+            "feedback": "已打开用户自助邀请入口。"
+          },
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回主菜单。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "当前群组：演示群"
+      ]
+    },
+    {
+      "id": "list",
+      "title": "邀请链接列表",
+      "message": [
+        "管理员可以查看、刷新、撤销或删除具体邀请链接。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "链接详情",
+            "callbackData": "inv:detail:{link_id}:{chat_id}",
+            "action": "goto",
+            "target": "detail",
+            "feedback": "已打开链接详情。"
+          },
+          {
+            "label": "创建确认",
+            "callbackData": "inv:create_confirm",
+            "action": "confirm",
+            "target": "create_input",
+            "feedback": "请输入新链接参数。"
+          }
+        ],
+        [
+          {
+            "label": "返回邀请配置",
+            "callbackData": "inv:home:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回邀请配置。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "detail",
+      "title": "邀请链接详情",
+      "message": [
+        "链接详情展示归因人数、使用状态和撤销操作。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "刷新统计",
+            "callbackData": "inv:refresh:{link_id}:{chat_id}",
+            "action": "goto",
+            "target": "detail",
+            "feedback": "已刷新链接统计。"
+          },
+          {
+            "label": "撤销链接",
+            "callbackData": "inv:revoke:{link_id}:{chat_id}",
+            "action": "confirm",
+            "target": "result",
+            "feedback": "已发起撤销。"
+          },
+          {
+            "label": "删除记录",
+            "callbackData": "inv:delete:{link_id}:{chat_id}",
+            "action": "confirm",
+            "target": "result",
+            "feedback": "已发起删除。"
+          }
+        ],
+        [
+          {
+            "label": "返回链接列表",
+            "callbackData": "inv:list:0:{chat_id}",
+            "action": "back",
+            "target": "list",
+            "feedback": "已返回链接列表。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "user",
+      "title": "用户邀请入口",
+      "message": [
+        "用户在群里点击或发送命令后，可创建自己的链接并查看排行。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "创建我的链接",
+            "callbackData": "inv:user:create:{chat_id}",
+            "action": "goto",
+            "target": "result",
+            "feedback": "已创建或返回现有链接。"
+          },
+          {
+            "label": "我的链接",
+            "callbackData": "inv:user:list:{chat_id}",
+            "action": "goto",
+            "target": "result",
+            "feedback": "已打开我的链接。"
+          },
+          {
+            "label": "邀请排行",
+            "callbackData": "inv:user:rank:{chat_id}",
+            "action": "goto",
+            "target": "result",
+            "feedback": "已打开邀请排行。"
+          }
+        ],
+        [
+          {
+            "label": "返回邀请配置",
+            "callbackData": "inv:home:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回邀请配置。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "preview",
+      "title": "邀请卡片预览",
+      "message": [
+        "预览使用当前封面、文本和按钮配置，不生成新的邀请记录。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回邀请配置",
+            "callbackData": "inv:home:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回邀请配置。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "cover_input",
+      "title": "设置邀请封面",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "inv:home:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "media",
+        "prompt": "发送图片、视频，或发送 /clear 清空封面",
+        "placeholder": "上传一张图片",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "图片",
+            "value": "image.jpg",
+            "target": "preview",
+            "feedback": "已填入：图片。"
+          },
+          {
+            "label": "清空",
+            "value": "/clear",
+            "target": "result",
+            "feedback": "已填入：清空。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "text_input",
+      "title": "设置邀请文本",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "inv:home:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "发送邀请卡片正文",
+        "placeholder": "邀请好友进群可获得积分。",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "邀请文案",
+            "value": "邀请好友进群可获得积分。",
+            "target": "preview",
+            "feedback": "已填入：邀请文案。"
+          },
+          {
+            "label": "清空",
+            "value": "/clear",
+            "target": "result",
+            "feedback": "已填入：清空。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "buttons_input",
+      "title": "设置邀请按钮",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "inv:home:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "buttons",
+        "prompt": "逐行输入按钮，支持分号同排",
+        "placeholder": "加入频道 - https://t.me/example",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "单按钮",
+            "value": "加入频道 - https://t.me/example",
+            "target": "preview",
+            "feedback": "已填入：单按钮。"
+          },
+          {
+            "label": "同排按钮",
+            "value": "频道 - https://t.me/a;客服 - https://t.me/b",
+            "target": "preview",
+            "feedback": "已填入：同排按钮。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "create_input",
+      "title": "创建邀请链接",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "inv:list:0:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "发送链接备注或使用默认创建",
+        "placeholder": "社群活动链接",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "备注",
+            "value": "社群活动链接",
+            "target": "detail",
+            "feedback": "已填入：备注。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "result",
+      "title": "邀请设置结果",
+      "message": [
+        "Bot 保存后会回到邀请配置或链接详情页。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回邀请配置",
+            "callbackData": "inv:home:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回邀请配置。"
+          }
+        ]
+      ]
+    }
+  ]
+}

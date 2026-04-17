@@ -1,0 +1,313 @@
+{
+  "slug": "new-member-limit",
+  "title": "新成员限制",
+  "status": "已闭环",
+  "category": "入群风控",
+  "entryScreen": "entry",
+  "coverage": {
+    "mode": "complete",
+    "callbackPrefixes": [
+      "adm:menu:newmem",
+      "adm:nml:"
+    ],
+    "inputStates": [
+      "new_member_limit_text_input"
+    ],
+    "sourceFiles": [
+      "backend/features/admin/core/menu_dispatch.py",
+      "backend/features/admin/moderation/member_actions.py",
+      "backend/features/admin/moderation/member_menus.py",
+      "backend/features/admin/runtime.py",
+      "backend/features/admin/ui/admin_main_keyboards.py",
+      "backend/features/group_ops/group_hooks/control_new_member.py"
+    ],
+    "alignmentStatus": "ok",
+    "alignmentSummary": "真实回调审计通过。"
+  },
+  "screens": [
+    {
+      "id": "entry",
+      "title": "管理员主菜单",
+      "message": [
+        "发送 /admin 后选择当前群组。",
+        "点击「新成员限制」进入配置页。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "新成员限制",
+            "callbackData": "adm:menu:newmem:{chat_id}",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「新成员限制」。",
+            "highlight": true
+          }
+        ],
+        [
+          {
+            "label": "切换群",
+            "callbackData": "adm:switch_group",
+            "action": "goto",
+            "target": "select_group",
+            "feedback": "进入群组选择。"
+          },
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "goto",
+            "target": "main_menu",
+            "feedback": "已回到主菜单。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "当前群组：演示群"
+      ]
+    },
+    {
+      "id": "select_group",
+      "title": "选择配置群组",
+      "message": [
+        "私聊配置前先确认目标群组，后续按钮都会写入这个群。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "演示群",
+            "callbackData": "adm:select_group:-1001001",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到演示群。"
+          },
+          {
+            "label": "测试群",
+            "callbackData": "adm:select_group:-1001002",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到测试群。"
+          }
+        ],
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:menu:newmem:{chat_id}",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "可管理群：演示群、测试群"
+      ]
+    },
+    {
+      "id": "main_menu",
+      "title": "主菜单",
+      "message": [
+        "这里展示机器人后台的真实功能入口。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "新成员限制",
+            "callbackData": "adm:menu:newmem:{chat_id}",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「新成员限制」。",
+            "highlight": true
+          }
+        ]
+      ]
+    },
+    {
+      "id": "home",
+      "title": "新成员限制",
+      "message": [
+        "按入群时长限制新成员发送媒体、链接或非纯文本内容。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "开启/关闭",
+            "callbackData": "adm:nml:{chat_id}:toggle:enabled",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "新成员限制已切换。"
+          },
+          {
+            "label": "限制时长",
+            "callbackData": "adm:nml:{chat_id}:input:window",
+            "action": "input",
+            "target": "window_input",
+            "feedback": "请输入限制分钟数。"
+          }
+        ],
+        [
+          {
+            "label": "限制媒体",
+            "callbackData": "adm:nml:{chat_id}:toggle:block_media",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "限制媒体已切换。"
+          },
+          {
+            "label": "限制链接",
+            "callbackData": "adm:nml:{chat_id}:toggle:block_links",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "限制链接已切换。"
+          },
+          {
+            "label": "仅纯文本",
+            "callbackData": "adm:nml:{chat_id}:toggle:text_only",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "纯文本限制已切换。"
+          }
+        ],
+        [
+          {
+            "label": "删除触发消息",
+            "callbackData": "adm:nml:{chat_id}:toggle:delete_message",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "删除触发消息已切换。"
+          },
+          {
+            "label": "提示开关",
+            "callbackData": "adm:nml:{chat_id}:toggle:warn_enabled",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "提示已切换。"
+          },
+          {
+            "label": "提示文本",
+            "callbackData": "adm:nml:{chat_id}:input:warn_text",
+            "action": "input",
+            "target": "warn_input",
+            "feedback": "请输入提示文本。"
+          }
+        ],
+        [
+          {
+            "label": "提示删除时间",
+            "callbackData": "adm:nml:{chat_id}:cycle:warn_delete",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "已切换提示删除时间。"
+          }
+        ],
+        [
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回主菜单。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "当前群组：演示群"
+      ]
+    },
+    {
+      "id": "window_input",
+      "title": "设置限制时长",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:menu:newmem:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "发送正整数分钟数",
+        "placeholder": "10",
+        "examples": [
+          {
+            "label": "10 分钟",
+            "value": "10",
+            "target": "result",
+            "feedback": "已填入：10 分钟。"
+          },
+          {
+            "label": "60 分钟",
+            "value": "60",
+            "target": "result",
+            "feedback": "已填入：60 分钟。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "warn_input",
+      "title": "设置提示文本",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:menu:newmem:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "发送触发限制时的提示文案",
+        "placeholder": "新成员入群 10 分钟内不能发送链接。",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "提示文案",
+            "value": "新成员入群 10 分钟内不能发送链接。",
+            "target": "result",
+            "feedback": "已填入：提示文案。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "result",
+      "title": "设置结果",
+      "message": [
+        "Bot 保存配置后会重新渲染当前功能页。",
+        "请在群内用测试账号触发一次，确认权限和运行结果。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回设置页",
+            "callbackData": "adm:menu:newmem:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回设置页。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "审计：回调来自后端真实路由"
+      ]
+    }
+  ]
+}

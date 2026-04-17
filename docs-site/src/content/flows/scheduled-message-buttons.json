@@ -1,0 +1,623 @@
+{
+  "slug": "scheduled-message-buttons",
+  "title": "定时消息按钮输入",
+  "status": "已闭环",
+  "category": "消息自动化",
+  "entryScreen": "entry",
+  "coverage": {
+    "mode": "complete",
+    "callbackPrefixes": [
+      "sm:list:",
+      "sm:add:",
+      "sm:open:",
+      "sm:set:",
+      "sm:edit:",
+      "sm:preview:",
+      "sm:del_confirm:",
+      "sm:del_do:",
+      "sm:del_cancel:"
+    ],
+    "inputStates": [
+      "sm_edit_title",
+      "sm_edit_text",
+      "sm_edit_media",
+      "sm_edit_buttons",
+      "sm_edit_start_at",
+      "sm_edit_end_at"
+    ],
+    "sourceFiles": [
+      "backend/features/admin/core/menu_dispatch.py",
+      "backend/features/admin/runtime.py",
+      "backend/features/admin/ui/admin_main_keyboards.py",
+      "backend/features/automation/scheduled_message_inputs.py",
+      "backend/features/automation/scheduled_message_router.py",
+      "backend/features/automation/ui/scheduled_message_detail.py",
+      "backend/features/automation/ui/scheduled_message_edit.py",
+      "backend/features/automation/ui/scheduled_message_list.py"
+    ],
+    "alignmentStatus": "ok",
+    "alignmentSummary": "真实回调审计通过。"
+  },
+  "screens": [
+    {
+      "id": "entry",
+      "title": "管理员主菜单",
+      "message": [
+        "发送 /admin 后选择当前群组。",
+        "点击「定时消息按钮输入」进入配置页。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "定时消息按钮输入",
+            "callbackData": "sm:list:{chat_id}:0",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「定时消息按钮输入」。",
+            "highlight": true
+          }
+        ],
+        [
+          {
+            "label": "切换群",
+            "callbackData": "adm:switch_group",
+            "action": "goto",
+            "target": "select_group",
+            "feedback": "进入群组选择。"
+          },
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "goto",
+            "target": "main_menu",
+            "feedback": "已回到主菜单。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "当前群组：演示群"
+      ]
+    },
+    {
+      "id": "select_group",
+      "title": "选择配置群组",
+      "message": [
+        "私聊配置前先确认目标群组，后续按钮都会写入这个群。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "演示群",
+            "callbackData": "adm:select_group:-1001001",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到演示群。"
+          },
+          {
+            "label": "测试群",
+            "callbackData": "adm:select_group:-1001002",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到测试群。"
+          }
+        ],
+        [
+          {
+            "label": "返回",
+            "callbackData": "sm:list:{chat_id}:0",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "可管理群：演示群、测试群"
+      ]
+    },
+    {
+      "id": "main_menu",
+      "title": "主菜单",
+      "message": [
+        "这里展示机器人后台的真实功能入口。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "定时消息按钮输入",
+            "callbackData": "sm:list:{chat_id}:0",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「定时消息按钮输入」。",
+            "highlight": true
+          }
+        ]
+      ]
+    },
+    {
+      "id": "home",
+      "title": "定时消息列表",
+      "message": [
+        "这里重点展示「设置按钮」输入格式，入口仍是定时消息详情。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "添加一条",
+            "callbackData": "sm:add:{chat_id}",
+            "action": "goto",
+            "target": "detail",
+            "feedback": "已创建未启用任务。",
+            "highlight": true
+          },
+          {
+            "label": "任务详情",
+            "callbackData": "sm:open:{chat_id}:{task_id}",
+            "action": "goto",
+            "target": "detail",
+            "feedback": "已打开任务详情。"
+          }
+        ],
+        [
+          {
+            "label": "上一页",
+            "callbackData": "sm:list:{chat_id}:0",
+            "action": "toast",
+            "feedback": "已经是第一页。"
+          },
+          {
+            "label": "下一页",
+            "callbackData": "sm:list:{chat_id}:1",
+            "action": "toast",
+            "feedback": "演示数据没有下一页。"
+          }
+        ],
+        [
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回主菜单。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "任务：A1B2C3，状态：关闭"
+      ]
+    },
+    {
+      "id": "detail",
+      "title": "定时消息详情",
+      "message": [
+        "任务必须设置文本或封面后才能启用。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "启用",
+            "callbackData": "sm:set:{chat_id}:{task_id}:enabled:1",
+            "action": "toggle",
+            "target": "enable_error",
+            "feedback": "启用失败：请先设置文本或封面。"
+          },
+          {
+            "label": "关闭",
+            "callbackData": "sm:set:{chat_id}:{task_id}:enabled:0",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "任务已关闭。"
+          }
+        ],
+        [
+          {
+            "label": "标题备注",
+            "callbackData": "sm:edit:{chat_id}:{task_id}:title",
+            "action": "input",
+            "target": "title_input",
+            "feedback": "请输入标题备注。"
+          },
+          {
+            "label": "设置封面",
+            "callbackData": "sm:edit:{chat_id}:{task_id}:media",
+            "action": "input",
+            "target": "media_input",
+            "feedback": "请发送封面媒体。"
+          },
+          {
+            "label": "设置文本",
+            "callbackData": "sm:edit:{chat_id}:{task_id}:text",
+            "action": "input",
+            "target": "text_input",
+            "feedback": "请输入消息正文。"
+          }
+        ],
+        [
+          {
+            "label": "设置按钮",
+            "callbackData": "sm:edit:{chat_id}:{task_id}:buttons",
+            "action": "input",
+            "target": "buttons_input",
+            "feedback": "请输入按钮。",
+            "highlight": true
+          },
+          {
+            "label": "开始时间",
+            "callbackData": "sm:edit:{chat_id}:{task_id}:start_at",
+            "action": "input",
+            "target": "start_input",
+            "feedback": "请输入开始时间。"
+          },
+          {
+            "label": "结束时间",
+            "callbackData": "sm:edit:{chat_id}:{task_id}:end_at",
+            "action": "input",
+            "target": "end_input",
+            "feedback": "请输入结束时间。"
+          }
+        ],
+        [
+          {
+            "label": "每 60 分钟",
+            "callbackData": "sm:set:{chat_id}:{task_id}:interval_minutes:60",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "发送频率已设为 60 分钟。"
+          },
+          {
+            "label": "置顶",
+            "callbackData": "sm:set:{chat_id}:{task_id}:pin:1",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "置顶已开启。"
+          },
+          {
+            "label": "删除上条",
+            "callbackData": "sm:set:{chat_id}:{task_id}:delete_previous:1",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "删除上条已开启。"
+          }
+        ],
+        [
+          {
+            "label": "预览效果",
+            "callbackData": "sm:preview:{chat_id}:{task_id}",
+            "action": "goto",
+            "target": "result",
+            "feedback": "已发送预览。"
+          },
+          {
+            "label": "删除",
+            "callbackData": "sm:del_confirm:{chat_id}:{task_id}",
+            "action": "confirm",
+            "target": "delete_confirm",
+            "feedback": "请确认删除。"
+          },
+          {
+            "label": "返回列表",
+            "callbackData": "sm:list:{chat_id}:0",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回列表。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "enable_error",
+      "title": "启用失败",
+      "message": [
+        "真实后端会检查任务是否有文本或封面；缺少内容时不会启用。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "设置文本",
+            "callbackData": "sm:edit:{chat_id}:{task_id}:text",
+            "action": "input",
+            "target": "text_input",
+            "feedback": "去设置文本。"
+          },
+          {
+            "label": "返回详情",
+            "callbackData": "sm:open:{chat_id}:{task_id}",
+            "action": "back",
+            "target": "detail",
+            "feedback": "已返回详情。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "title_input",
+      "title": "设置标题备注",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "sm:open:{chat_id}:{task_id}",
+            "action": "back",
+            "target": "detail",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "发送备注文本",
+        "placeholder": "每日公告",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "备注",
+            "value": "每日公告",
+            "target": "result",
+            "feedback": "已填入：备注。"
+          },
+          {
+            "label": "清空",
+            "value": "/clear",
+            "target": "result",
+            "feedback": "已填入：清空。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "media_input",
+      "title": "设置封面",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "sm:open:{chat_id}:{task_id}",
+            "action": "back",
+            "target": "detail",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "media",
+        "prompt": "发送图片、视频、文档、贴纸、动画，或 /clear",
+        "placeholder": "image.jpg",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "图片",
+            "value": "image.jpg",
+            "target": "result",
+            "feedback": "已填入：图片。"
+          },
+          {
+            "label": "清空",
+            "value": "/clear",
+            "target": "result",
+            "feedback": "已填入：清空。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "text_input",
+      "title": "设置文本",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "sm:open:{chat_id}:{task_id}",
+            "action": "back",
+            "target": "detail",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "发送消息正文，支持 /clear",
+        "placeholder": "今晚 8 点开始活动。",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "正文",
+            "value": "今晚 8 点开始活动。",
+            "target": "result",
+            "feedback": "已填入：正文。"
+          },
+          {
+            "label": "清空",
+            "value": "/clear",
+            "target": "result",
+            "feedback": "已填入：清空。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "buttons_input",
+      "title": "设置按钮",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "sm:open:{chat_id}:{task_id}",
+            "action": "back",
+            "target": "detail",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "buttons",
+        "prompt": "支持逐行格式、分号同排和 JSON",
+        "placeholder": "官网 - https://example.com",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "逐行",
+            "value": "官网 - https://example.com",
+            "target": "result",
+            "feedback": "已填入：逐行。"
+          },
+          {
+            "label": "同排",
+            "value": "官网 - https://a.com;客服 - https://b.com",
+            "target": "result",
+            "feedback": "已填入：同排。"
+          },
+          {
+            "label": "JSON",
+            "value": "[{\"text\":\"官网\",\"url\":\"https://example.com\"}]",
+            "target": "result",
+            "feedback": "已填入：JSON。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "start_input",
+      "title": "设置开始时间",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "sm:open:{chat_id}:{task_id}",
+            "action": "back",
+            "target": "detail",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "datetime",
+        "prompt": "格式：YYYY-MM-DD HH:MM",
+        "placeholder": "2026-04-18 20:00",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "开始时间",
+            "value": "2026-04-18 20:00",
+            "target": "result",
+            "feedback": "已填入：开始时间。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "end_input",
+      "title": "设置结束时间",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "sm:open:{chat_id}:{task_id}",
+            "action": "back",
+            "target": "detail",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "datetime",
+        "prompt": "格式：YYYY-MM-DD HH:MM",
+        "placeholder": "2026-04-30 23:00",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "结束时间",
+            "value": "2026-04-30 23:00",
+            "target": "result",
+            "feedback": "已填入：结束时间。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "delete_confirm",
+      "title": "删除确认",
+      "message": [
+        "确认后任务会删除。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "确认删除",
+            "callbackData": "sm:del_do:{chat_id}:{task_id}",
+            "action": "confirm",
+            "target": "result",
+            "feedback": "任务已删除。"
+          },
+          {
+            "label": "取消",
+            "callbackData": "sm:del_cancel:{chat_id}:{task_id}",
+            "action": "back",
+            "target": "detail",
+            "feedback": "已取消。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "result",
+      "title": "定时消息设置结果",
+      "message": [
+        "保存后 Bot 回到任务详情或列表页。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回详情",
+            "callbackData": "sm:open:{chat_id}:{task_id}",
+            "action": "back",
+            "target": "detail",
+            "feedback": "已返回详情。"
+          },
+          {
+            "label": "返回列表",
+            "callbackData": "sm:list:{chat_id}:0",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回列表。"
+          }
+        ]
+      ]
+    }
+  ]
+}

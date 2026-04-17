@@ -1,0 +1,597 @@
+{
+  "slug": "invite-points",
+  "title": "邀请积分",
+  "status": "已闭环",
+  "category": "积分运营",
+  "entryScreen": "entry",
+  "coverage": {
+    "mode": "complete",
+    "callbackPrefixes": [
+      "pts:home:",
+      "pts:rule:",
+      "pts:toggle:",
+      "pts:edit:",
+      "inv:user:",
+      "inv:home:"
+    ],
+    "inputStates": [],
+    "sourceFiles": [
+      "backend/features/admin/core/menu_dispatch.py",
+      "backend/features/admin/runtime.py",
+      "backend/features/admin/ui/admin_main_keyboards.py",
+      "backend/features/admin/ui/points.py",
+      "backend/features/invite/ui/invite_link.py",
+      "backend/features/points/points_command_actions.py",
+      "backend/features/points/points_message_actions.py",
+      "backend/features/points/points_router.py"
+    ],
+    "alignmentStatus": "ok",
+    "alignmentSummary": "真实回调审计通过。"
+  },
+  "screens": [
+    {
+      "id": "entry",
+      "title": "管理员主菜单",
+      "message": [
+        "发送 /admin 后选择当前群组。",
+        "点击「邀请积分」进入配置页。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "邀请积分",
+            "callbackData": "pts:home:{chat_id}",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「邀请积分」。",
+            "highlight": true
+          }
+        ],
+        [
+          {
+            "label": "切换群",
+            "callbackData": "adm:switch_group",
+            "action": "goto",
+            "target": "select_group",
+            "feedback": "进入群组选择。"
+          },
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "goto",
+            "target": "main_menu",
+            "feedback": "已回到主菜单。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "当前群组：演示群"
+      ]
+    },
+    {
+      "id": "select_group",
+      "title": "选择配置群组",
+      "message": [
+        "私聊配置前先确认目标群组，后续按钮都会写入这个群。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "演示群",
+            "callbackData": "adm:select_group:-1001001",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到演示群。"
+          },
+          {
+            "label": "测试群",
+            "callbackData": "adm:select_group:-1001002",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到测试群。"
+          }
+        ],
+        [
+          {
+            "label": "返回",
+            "callbackData": "pts:home:{chat_id}",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "可管理群：演示群、测试群"
+      ]
+    },
+    {
+      "id": "main_menu",
+      "title": "主菜单",
+      "message": [
+        "这里展示机器人后台的真实功能入口。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "邀请积分",
+            "callbackData": "pts:home:{chat_id}",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「邀请积分」。",
+            "highlight": true
+          }
+        ]
+      ]
+    },
+    {
+      "id": "home",
+      "title": "积分中心",
+      "message": [
+        "这里聚焦邀请积分，保存后由邀请归因运行时发放。",
+        "签到、发言、邀请和展示规则都通过真实 pts 回调保存。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "签到规则",
+            "callbackData": "pts:rule:checkin:{chat_id}",
+            "action": "goto",
+            "target": "sign_rule",
+            "feedback": "打开签到积分规则。"
+          },
+          {
+            "label": "发言规则",
+            "callbackData": "pts:rule:speech:{chat_id}",
+            "action": "goto",
+            "target": "speech_rule",
+            "feedback": "打开发言积分规则。"
+          },
+          {
+            "label": "邀请规则",
+            "callbackData": "pts:rule:invite:{chat_id}",
+            "action": "goto",
+            "target": "invite_rule",
+            "feedback": "打开邀请积分规则。",
+            "highlight": true
+          }
+        ],
+        [
+          {
+            "label": "积分展示规则",
+            "callbackData": "pts:view:display_rules:{chat_id}",
+            "action": "goto",
+            "target": "display_rules",
+            "feedback": "打开积分展示规则。"
+          },
+          {
+            "label": "额外规则",
+            "callbackData": "pts:view:extra_rules:{chat_id}",
+            "action": "goto",
+            "target": "extra_rules",
+            "feedback": "打开额外规则说明。"
+          }
+        ],
+        [
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回主菜单。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "当前群组：演示群",
+        "状态：已启用"
+      ]
+    },
+    {
+      "id": "sign_rule",
+      "title": "签到积分规则",
+      "message": [
+        "开启签到后，用户发送签到命令即可获得积分。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "开启签到",
+            "callbackData": "pts:toggle:sign_enabled:{chat_id}:1",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "签到积分已开启。"
+          },
+          {
+            "label": "关闭签到",
+            "callbackData": "pts:toggle:sign_enabled:{chat_id}:0",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "签到积分已关闭。"
+          }
+        ],
+        [
+          {
+            "label": "设置签到积分",
+            "callbackData": "pts:edit:sign_points:{chat_id}",
+            "action": "input",
+            "target": "points_input",
+            "feedback": "请输入每次签到积分。"
+          },
+          {
+            "label": "设置连签奖励",
+            "callbackData": "pts:edit:sign_consecutive:{chat_id}",
+            "action": "input",
+            "target": "points_input",
+            "feedback": "请输入连签奖励。"
+          }
+        ],
+        [
+          {
+            "label": "返回积分中心",
+            "callbackData": "pts:home:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回积分中心。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "speech_rule",
+      "title": "发言积分规则",
+      "message": [
+        "开启后，达到最小字数的发言会按日上限累计积分。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "开启发言积分",
+            "callbackData": "pts:toggle:message_points_enabled:{chat_id}:1",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "发言积分已开启。"
+          },
+          {
+            "label": "关闭发言积分",
+            "callbackData": "pts:toggle:message_points_enabled:{chat_id}:0",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "发言积分已关闭。"
+          }
+        ],
+        [
+          {
+            "label": "设置每条积分",
+            "callbackData": "pts:edit:message_points:{chat_id}",
+            "action": "input",
+            "target": "points_input",
+            "feedback": "请输入每条消息积分。"
+          },
+          {
+            "label": "设置每日上限",
+            "callbackData": "pts:edit:message_daily_limit:{chat_id}",
+            "action": "input",
+            "target": "points_input",
+            "feedback": "请输入每日上限。"
+          },
+          {
+            "label": "设置最小字数",
+            "callbackData": "pts:edit:message_min_length:{chat_id}",
+            "action": "input",
+            "target": "points_input",
+            "feedback": "请输入最小字数。"
+          }
+        ],
+        [
+          {
+            "label": "返回积分中心",
+            "callbackData": "pts:home:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回积分中心。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "invite_rule",
+      "title": "邀请积分规则",
+      "message": [
+        "邀请归因成功后，邀请人按规则获得积分。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "开启邀请积分",
+            "callbackData": "pts:toggle:invite_points_enabled:{chat_id}:1",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "邀请积分已开启。"
+          },
+          {
+            "label": "关闭邀请积分",
+            "callbackData": "pts:toggle:invite_points_enabled:{chat_id}:0",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "邀请积分已关闭。"
+          }
+        ],
+        [
+          {
+            "label": "设置邀请积分",
+            "callbackData": "pts:edit:invite_points:{chat_id}",
+            "action": "input",
+            "target": "points_input",
+            "feedback": "请输入每次邀请积分。"
+          },
+          {
+            "label": "设置每日上限",
+            "callbackData": "pts:edit:invite_daily_limit:{chat_id}",
+            "action": "input",
+            "target": "points_input",
+            "feedback": "请输入每日上限。"
+          }
+        ],
+        [
+          {
+            "label": "用户邀请入口",
+            "callbackData": "inv:user:menu:{chat_id}",
+            "action": "goto",
+            "target": "invite_user",
+            "feedback": "打开用户邀请入口。"
+          }
+        ],
+        [
+          {
+            "label": "返回积分中心",
+            "callbackData": "pts:home:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回积分中心。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "display_rules",
+      "title": "积分展示规则",
+      "message": [
+        "排行榜、个人发言统计和积分别名都在这里配置。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "开启排行榜展示",
+            "callbackData": "pts:toggle:points_speech_rank_enabled:{chat_id}:1",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "排行榜展示已开启。"
+          },
+          {
+            "label": "个人发言统计",
+            "callbackData": "pts:toggle:points_personal_speech_enabled:{chat_id}:1",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "个人统计已开启。"
+          }
+        ],
+        [
+          {
+            "label": "设置积分别名",
+            "callbackData": "pts:edit:points_alias:{chat_id}",
+            "action": "input",
+            "target": "text_input",
+            "feedback": "请输入积分显示名称。"
+          },
+          {
+            "label": "设置排行命令",
+            "callbackData": "pts:edit:points_rank_alias:{chat_id}",
+            "action": "input",
+            "target": "text_input",
+            "feedback": "请输入排行命令别名。"
+          }
+        ],
+        [
+          {
+            "label": "返回积分中心",
+            "callbackData": "pts:home:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回积分中心。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "extra_rules",
+      "title": "额外规则",
+      "message": [
+        "管理员可通过真实 pts 编辑入口执行加分、扣分、清空和导出。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "管理员加分",
+            "callbackData": "pts:edit:admin_add:{chat_id}",
+            "action": "input",
+            "target": "points_input",
+            "feedback": "请输入加分格式。"
+          },
+          {
+            "label": "管理员扣分",
+            "callbackData": "pts:edit:admin_deduct:{chat_id}",
+            "action": "input",
+            "target": "points_input",
+            "feedback": "请输入扣分格式。"
+          }
+        ],
+        [
+          {
+            "label": "清空积分",
+            "callbackData": "pts:edit:clear_points:{chat_id}",
+            "action": "confirm",
+            "target": "result",
+            "feedback": "已进入清空确认。"
+          },
+          {
+            "label": "导出日志",
+            "callbackData": "pts:view:export_logs:{chat_id}",
+            "action": "goto",
+            "target": "result",
+            "feedback": "已发起导出。"
+          }
+        ],
+        [
+          {
+            "label": "返回积分中心",
+            "callbackData": "pts:home:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回积分中心。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "invite_user",
+      "title": "用户邀请入口",
+      "message": [
+        "用户可创建自己的邀请链接并查看排行。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "创建我的链接",
+            "callbackData": "inv:user:create:{chat_id}",
+            "action": "goto",
+            "target": "result",
+            "feedback": "已创建或返回现有邀请链接。"
+          },
+          {
+            "label": "我的链接",
+            "callbackData": "inv:user:list:{chat_id}",
+            "action": "goto",
+            "target": "result",
+            "feedback": "已打开我的邀请链接。"
+          },
+          {
+            "label": "邀请排行",
+            "callbackData": "inv:user:rank:{chat_id}",
+            "action": "goto",
+            "target": "result",
+            "feedback": "已打开邀请排行。"
+          }
+        ],
+        [
+          {
+            "label": "返回邀请配置",
+            "callbackData": "inv:home:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回邀请配置。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "points_input",
+      "title": "输入积分数值",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "pts:home:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "发送整数数值",
+        "placeholder": "10",
+        "examples": [
+          {
+            "label": "10",
+            "value": "10",
+            "target": "result",
+            "feedback": "已填入：10。"
+          },
+          {
+            "label": "每日上限 50",
+            "value": "50",
+            "target": "result",
+            "feedback": "已填入：每日上限 50。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "text_input",
+      "title": "输入积分文本",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "pts:home:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "发送别名或命令文本",
+        "placeholder": "积分",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "积分别名",
+            "value": "贡献值",
+            "target": "result",
+            "feedback": "已填入：积分别名。"
+          },
+          {
+            "label": "排行命令",
+            "value": "/rank",
+            "target": "result",
+            "feedback": "已填入：排行命令。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "result",
+      "title": "积分设置结果",
+      "message": [
+        "Bot 保存后回到积分中心，运行时按当前群组 chat_id 统计。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回积分中心",
+            "callbackData": "pts:home:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回积分中心。"
+          }
+        ]
+      ]
+    }
+  ]
+}

@@ -1,0 +1,304 @@
+{
+  "slug": "garage-auth",
+  "title": "车库认证",
+  "status": "已闭环",
+  "category": "群组扩展",
+  "entryScreen": "entry",
+  "coverage": {
+    "mode": "complete",
+    "callbackPrefixes": [
+      "adm:menu:garage_auth",
+      "grg:"
+    ],
+    "inputStates": [
+      "garage_badge_input",
+      "garage_teacher_input",
+      "garage_whitelist_input",
+      "garage_limit_interval_input",
+      "garage_limit_max_count_input"
+    ],
+    "sourceFiles": [
+      "backend/features/admin/core/menu_dispatch.py",
+      "backend/features/admin/garage/auth_actions.py",
+      "backend/features/admin/garage/auth_inputs.py",
+      "backend/features/admin/garage/auth_views.py",
+      "backend/features/admin/runtime.py",
+      "backend/features/admin/ui/admin_main_keyboards.py"
+    ],
+    "alignmentStatus": "ok",
+    "alignmentSummary": "真实回调审计通过。"
+  },
+  "screens": [
+    {
+      "id": "entry",
+      "title": "管理员主菜单",
+      "message": [
+        "发送 /admin 后选择当前群组。",
+        "点击「车库认证」进入配置页。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "车库认证",
+            "callbackData": "adm:menu:garage_auth:{chat_id}",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「车库认证」。",
+            "highlight": true
+          }
+        ],
+        [
+          {
+            "label": "切换群",
+            "callbackData": "adm:switch_group",
+            "action": "goto",
+            "target": "select_group",
+            "feedback": "进入群组选择。"
+          },
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "goto",
+            "target": "main_menu",
+            "feedback": "已回到主菜单。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "当前群组：演示群"
+      ]
+    },
+    {
+      "id": "select_group",
+      "title": "选择配置群组",
+      "message": [
+        "私聊配置前先确认目标群组，后续按钮都会写入这个群。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "演示群",
+            "callbackData": "adm:select_group:-1001001",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到演示群。"
+          },
+          {
+            "label": "测试群",
+            "callbackData": "adm:select_group:-1001002",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到测试群。"
+          }
+        ],
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:menu:garage_auth:{chat_id}",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "可管理群：演示群、测试群"
+      ]
+    },
+    {
+      "id": "main_menu",
+      "title": "主菜单",
+      "message": [
+        "这里展示机器人后台的真实功能入口。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "车库认证",
+            "callbackData": "adm:menu:garage_auth:{chat_id}",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「车库认证」。",
+            "highlight": true
+          }
+        ]
+      ]
+    },
+    {
+      "id": "home",
+      "title": "车库认证",
+      "message": [
+        "配置车库认证标识、老师白名单和发言限制。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "开启认证",
+            "callbackData": "grg:toggle:{chat_id}:1",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "车库认证已开启。"
+          },
+          {
+            "label": "关闭认证",
+            "callbackData": "grg:toggle:{chat_id}:0",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "车库认证已关闭。"
+          },
+          {
+            "label": "认证标识",
+            "callbackData": "grg:badge:{chat_id}",
+            "action": "input",
+            "target": "badge_input",
+            "feedback": "请输入认证标识。"
+          }
+        ],
+        [
+          {
+            "label": "老师列表",
+            "callbackData": "grg:teacher:list:{chat_id}:0",
+            "action": "goto",
+            "target": "teachers",
+            "feedback": "已打开老师列表。"
+          },
+          {
+            "label": "摘要菜单",
+            "callbackData": "grg:summary:menu:{chat_id}",
+            "action": "goto",
+            "target": "result",
+            "feedback": "已打开摘要菜单。"
+          }
+        ],
+        [
+          {
+            "label": "限制开启",
+            "callbackData": "grg:limit:toggle:{chat_id}:1",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "发言限制已开启。"
+          },
+          {
+            "label": "限制模式",
+            "callbackData": "grg:limit:mode:{chat_id}:image_text",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "限制模式已切换。"
+          },
+          {
+            "label": "白名单",
+            "callbackData": "grg:wl:list:{chat_id}:0",
+            "action": "goto",
+            "target": "whitelist",
+            "feedback": "已打开白名单。"
+          }
+        ],
+        [
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回主菜单。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "当前群组：演示群"
+      ]
+    },
+    {
+      "id": "badge_input",
+      "title": "设置认证标识",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "grg:home:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "发送认证标识",
+        "placeholder": "认证车库",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "标识",
+            "value": "认证车库",
+            "target": "result",
+            "feedback": "已填入：标识。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "teachers",
+      "title": "老师列表",
+      "message": [
+        "老师列表由真实 grg:teacher:list 回调分页。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回车库认证",
+            "callbackData": "grg:home:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回车库认证。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "whitelist",
+      "title": "认证白名单",
+      "message": [
+        "白名单列表由真实 grg:wl:list 回调分页。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回车库认证",
+            "callbackData": "grg:home:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回车库认证。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "result",
+      "title": "设置结果",
+      "message": [
+        "Bot 保存配置后会重新渲染当前功能页。",
+        "请在群内用测试账号触发一次，确认权限和运行结果。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回设置页",
+            "callbackData": "adm:menu:garage_auth:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回设置页。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "审计：回调来自后端真实路由"
+      ]
+    }
+  ]
+}

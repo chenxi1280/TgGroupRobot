@@ -1,0 +1,422 @@
+{
+  "slug": "engagement",
+  "title": "促活工具",
+  "status": "已闭环",
+  "category": "活动互动",
+  "entryScreen": "entry",
+  "coverage": {
+    "mode": "complete",
+    "callbackPrefixes": [
+      "adm:menu:engagement",
+      "act:"
+    ],
+    "inputStates": [
+      "engagement_wait_egg_template",
+      "engagement_wait_chat_target",
+      "engagement_wait_chat_plan",
+      "engagement_wait_chat_command"
+    ],
+    "sourceFiles": [
+      "backend/features/admin/activity/engagement.py",
+      "backend/features/admin/activity/engagement_chat_actions.py",
+      "backend/features/admin/activity/engagement_egg_actions.py",
+      "backend/features/admin/activity/engagement_input.py",
+      "backend/features/admin/core/menu_dispatch.py",
+      "backend/features/admin/runtime.py",
+      "backend/features/admin/ui/admin_main_keyboards.py"
+    ],
+    "alignmentStatus": "ok",
+    "alignmentSummary": "真实回调审计通过。"
+  },
+  "screens": [
+    {
+      "id": "entry",
+      "title": "管理员主菜单",
+      "message": [
+        "发送 /admin 后选择当前群组。",
+        "点击「促活工具」进入配置页。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "促活工具",
+            "callbackData": "adm:menu:engagement:{chat_id}",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「促活工具」。",
+            "highlight": true
+          }
+        ],
+        [
+          {
+            "label": "切换群",
+            "callbackData": "adm:switch_group",
+            "action": "goto",
+            "target": "select_group",
+            "feedback": "进入群组选择。"
+          },
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "goto",
+            "target": "main_menu",
+            "feedback": "已回到主菜单。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "当前群组：演示群"
+      ]
+    },
+    {
+      "id": "select_group",
+      "title": "选择配置群组",
+      "message": [
+        "私聊配置前先确认目标群组，后续按钮都会写入这个群。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "演示群",
+            "callbackData": "adm:select_group:-1001001",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到演示群。"
+          },
+          {
+            "label": "测试群",
+            "callbackData": "adm:select_group:-1001002",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到测试群。"
+          }
+        ],
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:menu:engagement:{chat_id}",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "可管理群：演示群、测试群"
+      ]
+    },
+    {
+      "id": "main_menu",
+      "title": "主菜单",
+      "message": [
+        "这里展示机器人后台的真实功能入口。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "促活工具",
+            "callbackData": "adm:menu:engagement:{chat_id}",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「促活工具」。",
+            "highlight": true
+          }
+        ]
+      ]
+    },
+    {
+      "id": "home",
+      "title": "促活工具",
+      "message": [
+        "配置彩蛋活动和聊天促活计划。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "新建彩蛋",
+            "callbackData": "act:egg:{chat_id}:new",
+            "action": "goto",
+            "target": "egg_detail",
+            "feedback": "已创建彩蛋。",
+            "highlight": true
+          },
+          {
+            "label": "彩蛋列表",
+            "callbackData": "act:egg:{chat_id}:list:all",
+            "action": "goto",
+            "target": "egg_list",
+            "feedback": "已打开彩蛋列表。"
+          },
+          {
+            "label": "聊天促活",
+            "callbackData": "act:chat:{chat_id}:home",
+            "action": "goto",
+            "target": "chat",
+            "feedback": "已打开聊天促活。"
+          }
+        ],
+        [
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回主菜单。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "当前群组：演示群"
+      ]
+    },
+    {
+      "id": "egg_list",
+      "title": "彩蛋列表",
+      "message": [
+        "列表可打开彩蛋详情。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "彩蛋详情",
+            "callbackData": "act:egg:{chat_id}:detail:{event_id}",
+            "action": "goto",
+            "target": "egg_detail",
+            "feedback": "已打开彩蛋详情。"
+          }
+        ],
+        [
+          {
+            "label": "返回促活",
+            "callbackData": "act:home:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回促活。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "egg_detail",
+      "title": "彩蛋详情",
+      "message": [
+        "彩蛋可开关、编辑模板、预览和发布。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "启用",
+            "callbackData": "act:egg:{chat_id}:toggle:{event_id}:1",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "彩蛋已启用。"
+          },
+          {
+            "label": "模板",
+            "callbackData": "act:egg:{chat_id}:template:{event_id}",
+            "action": "input",
+            "target": "egg_template_input",
+            "feedback": "请输入模板。"
+          },
+          {
+            "label": "预览",
+            "callbackData": "act:egg:{chat_id}:preview:{event_id}",
+            "action": "goto",
+            "target": "result",
+            "feedback": "已预览。"
+          },
+          {
+            "label": "发布",
+            "callbackData": "act:egg:{chat_id}:publish:{event_id}",
+            "action": "confirm",
+            "target": "result",
+            "feedback": "彩蛋已发布。"
+          }
+        ],
+        [
+          {
+            "label": "返回列表",
+            "callbackData": "act:egg:{chat_id}:list:all",
+            "action": "back",
+            "target": "egg_list",
+            "feedback": "已返回列表。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "chat",
+      "title": "聊天促活",
+      "message": [
+        "聊天促活可设置目标、计划、命令和统计。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "开启",
+            "callbackData": "act:chat:{chat_id}:toggle:1",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "聊天促活已开启。"
+          },
+          {
+            "label": "目标",
+            "callbackData": "act:chat:{chat_id}:target",
+            "action": "input",
+            "target": "chat_target_input",
+            "feedback": "请输入目标。"
+          },
+          {
+            "label": "计划",
+            "callbackData": "act:chat:{chat_id}:plan",
+            "action": "input",
+            "target": "chat_plan_input",
+            "feedback": "请输入计划。"
+          }
+        ],
+        [
+          {
+            "label": "统计",
+            "callbackData": "act:chat:{chat_id}:stats",
+            "action": "goto",
+            "target": "result",
+            "feedback": "已打开统计。"
+          },
+          {
+            "label": "返回促活",
+            "callbackData": "act:home:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回促活。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "egg_template_input",
+      "title": "设置彩蛋模板",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "act:egg:{chat_id}:detail:{event_id}",
+            "action": "back",
+            "target": "egg_detail",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "发送彩蛋模板",
+        "placeholder": "恭喜 {user} 触发彩蛋！",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "模板",
+            "value": "恭喜 {user} 触发彩蛋！",
+            "target": "result",
+            "feedback": "已填入：模板。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "chat_target_input",
+      "title": "设置促活目标",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "act:chat:{chat_id}:home",
+            "action": "back",
+            "target": "chat",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "number",
+        "prompt": "发送目标消息数",
+        "placeholder": "100",
+        "examples": [
+          {
+            "label": "目标",
+            "value": "100",
+            "target": "result",
+            "feedback": "已填入：目标。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "chat_plan_input",
+      "title": "设置促活计划",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "act:chat:{chat_id}:home",
+            "action": "back",
+            "target": "chat",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "发送计划文本",
+        "placeholder": "每天 20:00 提醒聊天",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "计划",
+            "value": "每天 20:00 提醒聊天",
+            "target": "result",
+            "feedback": "已填入：计划。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "result",
+      "title": "设置结果",
+      "message": [
+        "Bot 保存配置后会重新渲染当前功能页。",
+        "请在群内用测试账号触发一次，确认权限和运行结果。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回设置页",
+            "callbackData": "adm:menu:engagement:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回设置页。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "审计：回调来自后端真实路由"
+      ]
+    }
+  ]
+}

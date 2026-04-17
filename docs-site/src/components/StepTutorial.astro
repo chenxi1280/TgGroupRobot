@@ -1,0 +1,128 @@
+---
+import TelegramScreen from './TelegramScreen.astro';
+
+const { feature } = Astro.props;
+const steps = feature.steps;
+---
+
+<section class="step-tutorial" data-step-tutorial>
+  <div class="step-tutorial__head">
+    <div>
+      <p class="eyebrow">分步教程</p>
+      <h2 id="steps">按步骤完成配置</h2>
+    </div>
+    <div class="step-counter" aria-live="polite">
+      步骤 <span data-step-current>1</span> / {steps.length}
+    </div>
+  </div>
+
+  <div class="step-nav" role="tablist" aria-label={`${feature.title} 步骤导航`}>
+    {steps.map((step: { title: string }, index: number) => (
+      <button
+        type="button"
+        class:list={['step-dot', index === 0 && 'is-active']}
+        data-step-target={index}
+        aria-selected={index === 0 ? 'true' : 'false'}
+      >
+        <span>{index + 1}</span>
+        {step.title}
+      </button>
+    ))}
+  </div>
+
+  <div class="step-panels">
+    {steps.map((step: { title: string; action: string; tip?: string }, index: number) => (
+      <article class:list={['step-panel', index === 0 && 'is-active']} data-step-panel={index}>
+        <div class="step-copy">
+          <p class="eyebrow">步骤 {index + 1} / {steps.length}</p>
+          <h3>{step.title}</h3>
+          <p>{step.action}</p>
+          {step.tip && <p class="step-tip">{step.tip}</p>}
+        </div>
+        <TelegramScreen feature={feature} step={step} index={index} total={steps.length} />
+      </article>
+    ))}
+  </div>
+
+  <p class="telegram-feedback" data-telegram-feedback aria-live="polite">
+    点击图中的按钮继续。
+  </p>
+
+  <div class="step-actions">
+    <button type="button" data-step-prev>上一步</button>
+    <button type="button" data-step-next>下一步</button>
+  </div>
+</section>
+
+<script>
+  for (const root of document.querySelectorAll('[data-step-tutorial]')) {
+    const panels = Array.from(root.querySelectorAll('[data-step-panel]'));
+    const targets = Array.from(root.querySelectorAll('[data-step-target]'));
+    const current = root.querySelector('[data-step-current]');
+    const prev = root.querySelector('[data-step-prev]');
+    const next = root.querySelector('[data-step-next]');
+    const feedback = root.querySelector('[data-telegram-feedback]');
+    const telegramButtons = Array.from(root.querySelectorAll('[data-telegram-action]'));
+    let active = 0;
+
+    const setFeedback = (message: string) => {
+      if (feedback) feedback.textContent = message;
+    };
+
+    const show = (index: number, options: { feedback?: string; scroll?: boolean } = {}) => {
+      active = Math.max(0, Math.min(index, panels.length - 1));
+      panels.forEach((panel, panelIndex) => panel.classList.toggle('is-active', panelIndex === active));
+      targets.forEach((target, targetIndex) => {
+        target.classList.toggle('is-active', targetIndex === active);
+        target.setAttribute('aria-selected', targetIndex === active ? 'true' : 'false');
+      });
+      if (current) current.textContent = String(active + 1);
+      if (prev) prev.toggleAttribute('disabled', active === 0);
+      if (next) next.toggleAttribute('disabled', active === panels.length - 1);
+      if (options.feedback) setFeedback(options.feedback);
+      if (options.scroll && root instanceof HTMLElement) {
+        root.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    };
+
+    const pulseButton = (button: Element) => {
+      button.classList.add('is-pressed');
+      window.setTimeout(() => button.classList.remove('is-pressed'), 180);
+    };
+
+    const stepTarget = (button: Element, fallback: number) => {
+      const value = button.getAttribute('data-step-target');
+      if (!value) return fallback;
+      const parsed = Number.parseInt(value, 10);
+      return Number.isNaN(parsed) ? fallback : parsed;
+    };
+
+    const handleTelegramButton = (button: Element) => {
+      const action = button.getAttribute('data-telegram-action');
+      const message = button.getAttribute('data-feedback') ?? '已点击。';
+      pulseButton(button);
+
+      if (action === 'next') {
+        show(stepTarget(button, active + 1), { feedback: message, scroll: true });
+        return;
+      }
+      if (action === 'prev') {
+        show(stepTarget(button, active - 1), { feedback: message, scroll: true });
+        return;
+      }
+      if (action === 'goto' || action === 'home') {
+        show(stepTarget(button, 0), { feedback: message, scroll: true });
+        return;
+      }
+      setFeedback(message);
+    };
+
+    targets.forEach((target, index) => target.addEventListener('click', () => show(index)));
+    prev?.addEventListener('click', () => show(active - 1));
+    next?.addEventListener('click', () => show(active + 1));
+    telegramButtons.forEach((button) => {
+      button.addEventListener('click', () => handleTelegramButton(button));
+    });
+    show(0);
+  }
+</script>

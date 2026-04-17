@@ -1,0 +1,373 @@
+{
+  "slug": "night-mode",
+  "title": "夜间模式",
+  "status": "已闭环",
+  "category": "群组扩展",
+  "entryScreen": "entry",
+  "coverage": {
+    "mode": "complete",
+    "callbackPrefixes": [
+      "adm:menu:night",
+      "adm:night:"
+    ],
+    "inputStates": [
+      "night_mode_text_input"
+    ],
+    "sourceFiles": [
+      "backend/features/admin/core/menu_dispatch.py",
+      "backend/features/admin/module_settings/group_control_inputs.py",
+      "backend/features/admin/runtime.py",
+      "backend/features/admin/ui/admin_main_keyboards.py",
+      "backend/features/group_ops/group_hooks/control_night.py"
+    ],
+    "alignmentStatus": "ok",
+    "alignmentSummary": "真实回调审计通过。"
+  },
+  "screens": [
+    {
+      "id": "entry",
+      "title": "管理员主菜单",
+      "message": [
+        "发送 /admin 后选择当前群组。",
+        "点击「夜间模式」进入配置页。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "夜间模式",
+            "callbackData": "adm:menu:night:{chat_id}",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「夜间模式」。",
+            "highlight": true
+          }
+        ],
+        [
+          {
+            "label": "切换群",
+            "callbackData": "adm:switch_group",
+            "action": "goto",
+            "target": "select_group",
+            "feedback": "进入群组选择。"
+          },
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "goto",
+            "target": "main_menu",
+            "feedback": "已回到主菜单。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "当前群组：演示群"
+      ]
+    },
+    {
+      "id": "select_group",
+      "title": "选择配置群组",
+      "message": [
+        "私聊配置前先确认目标群组，后续按钮都会写入这个群。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "演示群",
+            "callbackData": "adm:select_group:-1001001",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到演示群。"
+          },
+          {
+            "label": "测试群",
+            "callbackData": "adm:select_group:-1001002",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到测试群。"
+          }
+        ],
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:menu:night:{chat_id}",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "可管理群：演示群、测试群"
+      ]
+    },
+    {
+      "id": "main_menu",
+      "title": "主菜单",
+      "message": [
+        "这里展示机器人后台的真实功能入口。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "夜间模式",
+            "callbackData": "adm:menu:night:{chat_id}",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「夜间模式」。",
+            "highlight": true
+          }
+        ]
+      ]
+    },
+    {
+      "id": "home",
+      "title": "夜间模式",
+      "message": [
+        "按时间段限制夜间发言，并支持管理员豁免和提示文本。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "开启/关闭",
+            "callbackData": "adm:night:{chat_id}:toggle:enabled",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "夜间模式已切换。"
+          },
+          {
+            "label": "开始时间",
+            "callbackData": "adm:night:{chat_id}:input:start",
+            "action": "input",
+            "target": "start_input",
+            "feedback": "请输入开始时间。"
+          },
+          {
+            "label": "结束时间",
+            "callbackData": "adm:night:{chat_id}:input:end",
+            "action": "input",
+            "target": "end_input",
+            "feedback": "请输入结束时间。"
+          }
+        ],
+        [
+          {
+            "label": "管理员豁免",
+            "callbackData": "adm:night:{chat_id}:toggle:exempt_admin",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "管理员豁免已切换。"
+          },
+          {
+            "label": "删除消息",
+            "callbackData": "adm:night:{chat_id}:toggle:delete_message",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "删除消息已切换。"
+          },
+          {
+            "label": "提示开关",
+            "callbackData": "adm:night:{chat_id}:toggle:warn_enabled",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "提示已切换。"
+          }
+        ],
+        [
+          {
+            "label": "白名单",
+            "callbackData": "adm:night:{chat_id}:input:whitelist",
+            "action": "input",
+            "target": "whitelist_input",
+            "feedback": "请输入白名单。"
+          },
+          {
+            "label": "提示文本",
+            "callbackData": "adm:night:{chat_id}:input:warn_text",
+            "action": "input",
+            "target": "warn_input",
+            "feedback": "请输入提示文本。"
+          },
+          {
+            "label": "提示删除",
+            "callbackData": "adm:night:{chat_id}:cycle:warn_delete",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "已切换提示删除时间。"
+          }
+        ],
+        [
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回主菜单。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "当前群组：演示群"
+      ]
+    },
+    {
+      "id": "start_input",
+      "title": "设置开始时间",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:menu:night:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "格式 HH:MM",
+        "placeholder": "23:00",
+        "examples": [
+          {
+            "label": "开始",
+            "value": "23:00",
+            "target": "result",
+            "feedback": "已填入：开始。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "end_input",
+      "title": "设置结束时间",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:menu:night:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "格式 HH:MM",
+        "placeholder": "08:00",
+        "examples": [
+          {
+            "label": "结束",
+            "value": "08:00",
+            "target": "result",
+            "feedback": "已填入：结束。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "whitelist_input",
+      "title": "设置夜间白名单",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:menu:night:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "发送用户 ID、用户名或关键词",
+        "placeholder": "@trusted_user",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "白名单",
+            "value": "@trusted_user",
+            "target": "result",
+            "feedback": "已填入：白名单。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "warn_input",
+      "title": "设置夜间提示",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:menu:night:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "发送提示文本",
+        "placeholder": "现在是夜间模式，请明天再发言。",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "提示",
+            "value": "现在是夜间模式，请明天再发言。",
+            "target": "result",
+            "feedback": "已填入：提示。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "result",
+      "title": "设置结果",
+      "message": [
+        "Bot 保存配置后会重新渲染当前功能页。",
+        "请在群内用测试账号触发一次，确认权限和运行结果。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回设置页",
+            "callbackData": "adm:menu:night:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回设置页。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "审计：回调来自后端真实路由"
+      ]
+    }
+  ]
+}

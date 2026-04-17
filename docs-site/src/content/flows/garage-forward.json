@@ -1,0 +1,336 @@
+{
+  "slug": "garage-forward",
+  "title": "车库转发",
+  "status": "已闭环",
+  "category": "群组扩展",
+  "entryScreen": "entry",
+  "coverage": {
+    "mode": "complete",
+    "callbackPrefixes": [
+      "adm:menu:garage_forward",
+      "gfw:"
+    ],
+    "inputStates": [
+      "garage_forward_source_input",
+      "garage_forward_keyword_input",
+      "garage_forward_buttons_input"
+    ],
+    "sourceFiles": [
+      "backend/features/admin/core/menu_dispatch.py",
+      "backend/features/admin/garage/forward.py",
+      "backend/features/admin/garage/forward_inputs.py",
+      "backend/features/admin/runtime.py",
+      "backend/features/admin/ui/admin_main_keyboards.py",
+      "backend/features/garage/garage_forward_handler.py"
+    ],
+    "alignmentStatus": "ok",
+    "alignmentSummary": "真实回调审计通过。"
+  },
+  "screens": [
+    {
+      "id": "entry",
+      "title": "管理员主菜单",
+      "message": [
+        "发送 /admin 后选择当前群组。",
+        "点击「车库转发」进入配置页。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "车库转发",
+            "callbackData": "adm:menu:garage_forward:{chat_id}",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「车库转发」。",
+            "highlight": true
+          }
+        ],
+        [
+          {
+            "label": "切换群",
+            "callbackData": "adm:switch_group",
+            "action": "goto",
+            "target": "select_group",
+            "feedback": "进入群组选择。"
+          },
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "goto",
+            "target": "main_menu",
+            "feedback": "已回到主菜单。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "当前群组：演示群"
+      ]
+    },
+    {
+      "id": "select_group",
+      "title": "选择配置群组",
+      "message": [
+        "私聊配置前先确认目标群组，后续按钮都会写入这个群。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "演示群",
+            "callbackData": "adm:select_group:-1001001",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到演示群。"
+          },
+          {
+            "label": "测试群",
+            "callbackData": "adm:select_group:-1001002",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到测试群。"
+          }
+        ],
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:menu:garage_forward:{chat_id}",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "可管理群：演示群、测试群"
+      ]
+    },
+    {
+      "id": "main_menu",
+      "title": "主菜单",
+      "message": [
+        "这里展示机器人后台的真实功能入口。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "车库转发",
+            "callbackData": "adm:menu:garage_forward:{chat_id}",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「车库转发」。",
+            "highlight": true
+          }
+        ]
+      ]
+    },
+    {
+      "id": "home",
+      "title": "车库转发",
+      "message": [
+        "配置频道/群消息转发、关键词过滤和按钮保留。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "开启转发",
+            "callbackData": "gfw:toggle:{chat_id}:1",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "转发已开启。"
+          },
+          {
+            "label": "关闭转发",
+            "callbackData": "gfw:toggle:{chat_id}:0",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "转发已关闭。"
+          },
+          {
+            "label": "转发模式",
+            "callbackData": "gfw:mode:{chat_id}:all",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "转发模式已切换。"
+          }
+        ],
+        [
+          {
+            "label": "保留按钮",
+            "callbackData": "gfw:btn_toggle:{chat_id}:1",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "保留按钮已开启。"
+          },
+          {
+            "label": "按钮配置",
+            "callbackData": "gfw:buttons:input:{chat_id}",
+            "action": "input",
+            "target": "buttons_input",
+            "feedback": "请输入按钮配置。"
+          },
+          {
+            "label": "关键词",
+            "callbackData": "gfw:keywords:input:{chat_id}",
+            "action": "input",
+            "target": "keywords_input",
+            "feedback": "请输入关键词。"
+          }
+        ],
+        [
+          {
+            "label": "添加来源",
+            "callbackData": "gfw:source:add:{chat_id}",
+            "action": "input",
+            "target": "source_input",
+            "feedback": "请输入来源频道。"
+          },
+          {
+            "label": "审核列表",
+            "callbackData": "gfw:audit:{chat_id}:a",
+            "action": "goto",
+            "target": "result",
+            "feedback": "已打开审核列表。"
+          }
+        ],
+        [
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回主菜单。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "当前群组：演示群"
+      ]
+    },
+    {
+      "id": "buttons_input",
+      "title": "设置转发按钮",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "gfw:home:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "buttons",
+        "prompt": "逐行按钮，支持分号同排",
+        "placeholder": "原文 - https://t.me/source",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "按钮",
+            "value": "原文 - https://t.me/source",
+            "target": "result",
+            "feedback": "已填入：按钮。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "keywords_input",
+      "title": "设置转发关键词",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "gfw:home:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "每行一个关键词",
+        "placeholder": "重要\n公告",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "关键词",
+            "value": "重要\n公告",
+            "target": "result",
+            "feedback": "已填入：关键词。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "source_input",
+      "title": "添加转发来源",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "gfw:home:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "发送频道用户名或 ID",
+        "placeholder": "@source_channel",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "来源",
+            "value": "@source_channel",
+            "target": "result",
+            "feedback": "已填入：来源。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "result",
+      "title": "设置结果",
+      "message": [
+        "Bot 保存配置后会重新渲染当前功能页。",
+        "请在群内用测试账号触发一次，确认权限和运行结果。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回设置页",
+            "callbackData": "adm:menu:garage_forward:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回设置页。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "审计：回调来自后端真实路由"
+      ]
+    }
+  ]
+}

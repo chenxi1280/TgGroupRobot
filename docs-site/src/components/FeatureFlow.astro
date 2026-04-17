@@ -1,0 +1,78 @@
+---
+const { feature } = Astro.props;
+
+const escapeLabel = (value: string) => value.replace(/"/g, "'");
+const generatedUserFlow = `flowchart LR
+  subgraph UserFlow["用户点击流程"]
+    U_A["${escapeLabel(feature.steps[0]?.title ?? '打开入口')}"] --> U_B["${escapeLabel(feature.steps[1]?.title ?? '完成配置')}"]
+    U_B --> U_C{"是否保存成功"}
+    U_C -->|"是"| U_D["${escapeLabel(feature.steps[2]?.title ?? '检查结果')}"]
+    U_C -->|"否"| U_E["按提示修正输入"]
+    U_D --> U_F["当前群组生效"]
+  end`;
+
+const generatedRuntimeFlow = feature.runtimeFlow ? `
+  subgraph RuntimeFlow["后台处理流程"]
+    R_A["群内事件或成员操作"] --> R_B["读取当前群组配置"]
+    R_B --> R_C{"功能是否开启"}
+    R_C -->|"否"| R_D["跳过处理"]
+    R_C -->|"是"| R_E["执行规则判断"]
+    R_E --> R_F{"是否命中"}
+    R_F -->|"否"| R_G["允许继续"]
+    R_F -->|"是"| R_H["执行提示、删除、禁言或记录"]
+    R_H --> R_I{"机器人权限足够"}
+    R_I -->|"是"| R_J["完成动作"]
+    R_I -->|"否"| R_K["降级或提示检查权限"]
+  end` : '';
+
+const flow = typeof feature.flowchart === 'object'
+  ? feature.flowchart.mermaid
+  : `${generatedUserFlow}${generatedRuntimeFlow}`;
+---
+
+<section class="feature-flow">
+  <p class="eyebrow">流程图</p>
+  <h2 id="flow">功能流程</h2>
+  <div class="flow-card">
+    <pre class="mermaid">{flow}</pre>
+  </div>
+</section>
+
+<script>
+  import mermaid from 'mermaid';
+
+  const darkMode = document.documentElement.dataset.theme === 'dark'
+    || window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: darkMode ? 'dark' : 'default',
+    securityLevel: 'strict',
+    flowchart: {
+      curve: 'basis',
+      htmlLabels: false
+    }
+  });
+
+  const renderMermaid = () => {
+    const nodes = Array.from(document.querySelectorAll<HTMLElement>('.feature-flow .mermaid:not([data-processed="true"])'));
+    if (!nodes.length) return;
+
+    mermaid.run({ nodes }).catch((error) => {
+      console.error('[FeatureFlow] Mermaid render failed', error);
+      nodes.forEach((node) => {
+        if (!node.getAttribute('data-processed')) {
+          node.setAttribute('data-render-error', 'true');
+        }
+      });
+    });
+  };
+
+  if (document.readyState === 'complete') {
+    renderMermaid();
+  } else {
+    window.addEventListener('load', renderMermaid, { once: true });
+  }
+
+  document.addEventListener('astro:page-load', renderMermaid);
+</script>

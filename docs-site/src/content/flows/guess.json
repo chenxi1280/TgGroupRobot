@@ -1,0 +1,482 @@
+{
+  "slug": "guess",
+  "title": "竞猜",
+  "status": "已闭环",
+  "category": "活动互动",
+  "entryScreen": "entry",
+  "coverage": {
+    "mode": "complete",
+    "callbackPrefixes": [
+      "adm:menu:guess",
+      "guess:"
+    ],
+    "inputStates": [
+      "guess_wait_title",
+      "guess_wait_cover",
+      "guess_wait_description",
+      "guess_wait_banker",
+      "guess_wait_pool",
+      "guess_wait_options",
+      "guess_wait_command",
+      "guess_wait_deadline",
+      "guess_wait_rake_ratio",
+      "guess_wait_rake_owner"
+    ],
+    "sourceFiles": [
+      "backend/features/activity/guess_handler.py",
+      "backend/features/admin/activity/guess.py",
+      "backend/features/admin/activity/guess_input.py",
+      "backend/features/admin/core/menu_dispatch.py",
+      "backend/features/admin/runtime.py",
+      "backend/features/admin/ui/admin_main_keyboards.py"
+    ],
+    "alignmentStatus": "ok",
+    "alignmentSummary": "真实回调审计通过。"
+  },
+  "screens": [
+    {
+      "id": "entry",
+      "title": "管理员主菜单",
+      "message": [
+        "发送 /admin 后选择当前群组。",
+        "点击「竞猜」进入配置页。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "竞猜",
+            "callbackData": "adm:menu:guess:{chat_id}",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「竞猜」。",
+            "highlight": true
+          }
+        ],
+        [
+          {
+            "label": "切换群",
+            "callbackData": "adm:switch_group",
+            "action": "goto",
+            "target": "select_group",
+            "feedback": "进入群组选择。"
+          },
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "goto",
+            "target": "main_menu",
+            "feedback": "已回到主菜单。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "当前群组：演示群"
+      ]
+    },
+    {
+      "id": "select_group",
+      "title": "选择配置群组",
+      "message": [
+        "私聊配置前先确认目标群组，后续按钮都会写入这个群。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "演示群",
+            "callbackData": "adm:select_group:-1001001",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到演示群。"
+          },
+          {
+            "label": "测试群",
+            "callbackData": "adm:select_group:-1001002",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到测试群。"
+          }
+        ],
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:menu:guess:{chat_id}",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "可管理群：演示群、测试群"
+      ]
+    },
+    {
+      "id": "main_menu",
+      "title": "主菜单",
+      "message": [
+        "这里展示机器人后台的真实功能入口。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "竞猜",
+            "callbackData": "adm:menu:guess:{chat_id}",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「竞猜」。",
+            "highlight": true
+          }
+        ]
+      ]
+    },
+    {
+      "id": "home",
+      "title": "竞猜",
+      "message": [
+        "创建竞猜、设置选项、奖池、命令和开奖。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "创建竞猜",
+            "callbackData": "guess:create:{chat_id}:start",
+            "action": "goto",
+            "target": "create",
+            "feedback": "进入创建竞猜。",
+            "highlight": true
+          },
+          {
+            "label": "待开奖",
+            "callbackData": "guess:list:{chat_id}:running",
+            "action": "goto",
+            "target": "list",
+            "feedback": "打开运行中竞猜。"
+          },
+          {
+            "label": "设置",
+            "callbackData": "guess:settings:{chat_id}:home",
+            "action": "goto",
+            "target": "settings",
+            "feedback": "打开竞猜设置。"
+          }
+        ],
+        [
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回主菜单。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "当前群组：演示群"
+      ]
+    },
+    {
+      "id": "create",
+      "title": "创建竞猜",
+      "message": [
+        "创建流程按字段逐步输入。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "标题",
+            "callbackData": "guess:create:{chat_id}:title",
+            "action": "input",
+            "target": "title_input",
+            "feedback": "请输入标题。"
+          },
+          {
+            "label": "选项",
+            "callbackData": "guess:create:{chat_id}:options",
+            "action": "input",
+            "target": "options_input",
+            "feedback": "请输入选项。"
+          },
+          {
+            "label": "截止时间",
+            "callbackData": "guess:create:{chat_id}:deadline",
+            "action": "input",
+            "target": "deadline_input",
+            "feedback": "请输入截止时间。"
+          }
+        ],
+        [
+          {
+            "label": "预览",
+            "callbackData": "guess:create:{chat_id}:preview",
+            "action": "goto",
+            "target": "result",
+            "feedback": "已打开预览。"
+          },
+          {
+            "label": "发布",
+            "callbackData": "guess:create:{chat_id}:publish",
+            "action": "confirm",
+            "target": "result",
+            "feedback": "竞猜已发布。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "list",
+      "title": "竞猜列表",
+      "message": [
+        "列表可打开详情、开奖或取消。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "竞猜详情",
+            "callbackData": "guess:detail:{chat_id}:{event_id}",
+            "action": "goto",
+            "target": "detail",
+            "feedback": "已打开详情。"
+          }
+        ],
+        [
+          {
+            "label": "返回竞猜",
+            "callbackData": "guess:home:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回竞猜。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "detail",
+      "title": "竞猜详情",
+      "message": [
+        "详情页可选择正确选项开奖。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "选 A 开奖",
+            "callbackData": "guess:open:{chat_id}:{event_id}:A",
+            "action": "confirm",
+            "target": "result",
+            "feedback": "已按 A 开奖。"
+          },
+          {
+            "label": "取消竞猜",
+            "callbackData": "guess:cancel:{chat_id}:{event_id}",
+            "action": "confirm",
+            "target": "result",
+            "feedback": "竞猜已取消。"
+          }
+        ],
+        [
+          {
+            "label": "返回列表",
+            "callbackData": "guess:list:{chat_id}:running",
+            "action": "back",
+            "target": "list",
+            "feedback": "已返回列表。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "settings",
+      "title": "竞猜设置",
+      "message": [
+        "设置抽水和消息删除策略。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "抽水比例",
+            "callbackData": "guess:settings:{chat_id}:rake_ratio",
+            "action": "input",
+            "target": "rake_input",
+            "feedback": "请输入抽水比例。"
+          },
+          {
+            "label": "删除消息",
+            "callbackData": "guess:settings:{chat_id}:delete_mode:delete",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "已设置删除消息。"
+          }
+        ],
+        [
+          {
+            "label": "返回竞猜",
+            "callbackData": "guess:home:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回竞猜。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "title_input",
+      "title": "设置竞猜标题",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "guess:create:{chat_id}:start",
+            "action": "back",
+            "target": "create",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "发送标题",
+        "placeholder": "今晚比分竞猜",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "标题",
+            "value": "今晚比分竞猜",
+            "target": "result",
+            "feedback": "已填入：标题。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "options_input",
+      "title": "设置竞猜选项",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "guess:create:{chat_id}:start",
+            "action": "back",
+            "target": "create",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "每行一个选项",
+        "placeholder": "A 队胜\nB 队胜",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "选项",
+            "value": "A 队胜\nB 队胜",
+            "target": "result",
+            "feedback": "已填入：选项。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "deadline_input",
+      "title": "设置截止时间",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "guess:create:{chat_id}:start",
+            "action": "back",
+            "target": "create",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "datetime",
+        "prompt": "格式 YYYY-MM-DD HH:MM",
+        "placeholder": "2026-04-18 20:00",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "截止",
+            "value": "2026-04-18 20:00",
+            "target": "result",
+            "feedback": "已填入：截止。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "rake_input",
+      "title": "设置抽水比例",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "guess:settings:{chat_id}:home",
+            "action": "back",
+            "target": "settings",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "number",
+        "prompt": "发送百分比或小数",
+        "placeholder": "5",
+        "examples": [
+          {
+            "label": "5%",
+            "value": "5",
+            "target": "result",
+            "feedback": "已填入：5%。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "result",
+      "title": "设置结果",
+      "message": [
+        "Bot 保存配置后会重新渲染当前功能页。",
+        "请在群内用测试账号触发一次，确认权限和运行结果。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回设置页",
+            "callbackData": "adm:menu:guess:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回设置页。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "审计：回调来自后端真实路由"
+      ]
+    }
+  ]
+}

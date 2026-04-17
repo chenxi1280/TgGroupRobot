@@ -1,0 +1,222 @@
+{
+  "slug": "membership",
+  "title": "会员 / 套餐授权",
+  "status": "暂时关闭",
+  "category": "全局设置",
+  "entryScreen": "entry",
+  "coverage": {
+    "mode": "complete",
+    "callbackPrefixes": [
+      "adm:menu:renewal",
+      "renew:",
+      "sub:"
+    ],
+    "inputStates": [],
+    "sourceFiles": [
+      "backend/features/admin/core/menu_dispatch.py",
+      "backend/features/admin/runtime.py",
+      "backend/features/admin/ui/admin_main_keyboards.py",
+      "backend/features/admin/ui/renewal.py",
+      "backend/features/subscription/renewal_router.py",
+      "backend/features/subscription/subscription_router.py"
+    ],
+    "alignmentStatus": "ok",
+    "alignmentSummary": "真实回调审计通过。"
+  },
+  "screens": [
+    {
+      "id": "entry",
+      "title": "管理员主菜单",
+      "message": [
+        "发送 /admin 后选择当前群组。",
+        "点击「会员 / 套餐授权」进入配置页。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "会员 / 套餐授权",
+            "callbackData": "adm:menu:renewal:{chat_id}",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「会员 / 套餐授权」。",
+            "highlight": true
+          }
+        ],
+        [
+          {
+            "label": "切换群",
+            "callbackData": "adm:switch_group",
+            "action": "goto",
+            "target": "select_group",
+            "feedback": "进入群组选择。"
+          },
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "goto",
+            "target": "main_menu",
+            "feedback": "已回到主菜单。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "当前群组：演示群"
+      ]
+    },
+    {
+      "id": "select_group",
+      "title": "选择配置群组",
+      "message": [
+        "私聊配置前先确认目标群组，后续按钮都会写入这个群。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "演示群",
+            "callbackData": "adm:select_group:-1001001",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到演示群。"
+          },
+          {
+            "label": "测试群",
+            "callbackData": "adm:select_group:-1001002",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到测试群。"
+          }
+        ],
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:menu:renewal:{chat_id}",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "可管理群：演示群、测试群"
+      ]
+    },
+    {
+      "id": "main_menu",
+      "title": "主菜单",
+      "message": [
+        "这里展示机器人后台的真实功能入口。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "会员 / 套餐授权",
+            "callbackData": "adm:menu:renewal:{chat_id}",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「会员 / 套餐授权」。",
+            "highlight": true
+          }
+        ]
+      ]
+    },
+    {
+      "id": "home",
+      "title": "会员 / 套餐授权",
+      "message": [
+        "当前所有功能默认开放，付费限制仅保留为后续能力。",
+        "页面只展示真实续费/订阅保留入口，不展示购买流程。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "续费入口",
+            "callbackData": "renew:menu:{chat_id}",
+            "action": "goto",
+            "target": "renewal",
+            "feedback": "打开真实续费保留入口。",
+            "highlight": true
+          },
+          {
+            "label": "订阅说明",
+            "callbackData": "sub:menu:{chat_id}",
+            "action": "goto",
+            "target": "subscription",
+            "feedback": "打开订阅说明。"
+          }
+        ],
+        [
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回主菜单。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "状态：暂时关闭"
+      ]
+    },
+    {
+      "id": "result",
+      "title": "操作结果",
+      "message": [
+        "Bot 处理真实回调后会重新渲染当前功能页或返回上一级。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:menu:renewal:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "renewal",
+      "title": "续费保留入口",
+      "message": [
+        "当前不引导购买；该入口用于后续恢复套餐授权时对接。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回会员页",
+            "callbackData": "adm:menu:renewal:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回会员页。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "subscription",
+      "title": "订阅说明",
+      "message": [
+        "当前功能默认开放，订阅入口只说明能力边界。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "联系客服",
+            "callbackData": "sub:contact:{chat_id}",
+            "action": "toast",
+            "feedback": "当前暂不需要购买；如有疑问联系管理员。"
+          },
+          {
+            "label": "返回会员页",
+            "callbackData": "adm:menu:renewal:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回会员页。"
+          }
+        ]
+      ]
+    }
+  ]
+}

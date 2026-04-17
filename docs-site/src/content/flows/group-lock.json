@@ -1,0 +1,379 @@
+{
+  "slug": "group-lock",
+  "title": "关群设置",
+  "status": "已闭环",
+  "category": "群组扩展",
+  "entryScreen": "entry",
+  "coverage": {
+    "mode": "complete",
+    "callbackPrefixes": [
+      "adm:menu:closegroup",
+      "adm:gl:"
+    ],
+    "inputStates": [
+      "group_lock_open_keyword_input",
+      "group_lock_close_keyword_input",
+      "group_lock_open_time_input",
+      "group_lock_close_time_input"
+    ],
+    "sourceFiles": [
+      "backend/features/admin/core/menu_dispatch.py",
+      "backend/features/admin/module_settings/group_control_inputs.py",
+      "backend/features/admin/runtime.py",
+      "backend/features/admin/ui/admin_main_keyboards.py",
+      "backend/features/group_ops/group_hooks/control_lock.py",
+      "backend/platform/scheduler/tasks/group_lock_task.py"
+    ],
+    "alignmentStatus": "ok",
+    "alignmentSummary": "真实回调审计通过。"
+  },
+  "screens": [
+    {
+      "id": "entry",
+      "title": "管理员主菜单",
+      "message": [
+        "发送 /admin 后选择当前群组。",
+        "点击「关群设置」进入配置页。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "关群设置",
+            "callbackData": "adm:menu:closegroup:{chat_id}",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「关群设置」。",
+            "highlight": true
+          }
+        ],
+        [
+          {
+            "label": "切换群",
+            "callbackData": "adm:switch_group",
+            "action": "goto",
+            "target": "select_group",
+            "feedback": "进入群组选择。"
+          },
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "goto",
+            "target": "main_menu",
+            "feedback": "已回到主菜单。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "当前群组：演示群"
+      ]
+    },
+    {
+      "id": "select_group",
+      "title": "选择配置群组",
+      "message": [
+        "私聊配置前先确认目标群组，后续按钮都会写入这个群。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "演示群",
+            "callbackData": "adm:select_group:-1001001",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到演示群。"
+          },
+          {
+            "label": "测试群",
+            "callbackData": "adm:select_group:-1001002",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到测试群。"
+          }
+        ],
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:menu:closegroup:{chat_id}",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "可管理群：演示群、测试群"
+      ]
+    },
+    {
+      "id": "main_menu",
+      "title": "主菜单",
+      "message": [
+        "这里展示机器人后台的真实功能入口。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "关群设置",
+            "callbackData": "adm:menu:closegroup:{chat_id}",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「关群设置」。",
+            "highlight": true
+          }
+        ]
+      ]
+    },
+    {
+      "id": "home",
+      "title": "关群设置",
+      "message": [
+        "通过关键词或定时计划开关群。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "关键词关群",
+            "callbackData": "adm:gl:{chat_id}:set:phrase:1",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "关键词关群已开启。"
+          },
+          {
+            "label": "关闭关键词",
+            "callbackData": "adm:gl:{chat_id}:set:phrase:0",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "关键词关群已关闭。"
+          }
+        ],
+        [
+          {
+            "label": "开群词",
+            "callbackData": "adm:gl:{chat_id}:input:open_phrase",
+            "action": "input",
+            "target": "open_phrase_input",
+            "feedback": "请输入开群词。"
+          },
+          {
+            "label": "关群词",
+            "callbackData": "adm:gl:{chat_id}:input:close_phrase",
+            "action": "input",
+            "target": "close_phrase_input",
+            "feedback": "请输入关群词。"
+          }
+        ],
+        [
+          {
+            "label": "定时开关",
+            "callbackData": "adm:gl:{chat_id}:set:schedule:1",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "定时开关已开启。"
+          },
+          {
+            "label": "开群时间",
+            "callbackData": "adm:gl:{chat_id}:input:open_time",
+            "action": "input",
+            "target": "open_time_input",
+            "feedback": "请输入开群时间。"
+          },
+          {
+            "label": "关群时间",
+            "callbackData": "adm:gl:{chat_id}:input:close_time",
+            "action": "input",
+            "target": "close_time_input",
+            "feedback": "请输入关群时间。"
+          }
+        ],
+        [
+          {
+            "label": "保留通知",
+            "callbackData": "adm:gl:{chat_id}:notice:keep",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "开关群通知会保留。"
+          },
+          {
+            "label": "删除通知",
+            "callbackData": "adm:gl:{chat_id}:notice:delete",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "开关群通知会删除。"
+          }
+        ],
+        [
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回主菜单。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "当前群组：演示群"
+      ]
+    },
+    {
+      "id": "open_phrase_input",
+      "title": "设置开群词",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:menu:closegroup:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "发送开群关键词",
+        "placeholder": "开群",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "开群词",
+            "value": "开群",
+            "target": "result",
+            "feedback": "已填入：开群词。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "close_phrase_input",
+      "title": "设置关群词",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:menu:closegroup:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "发送关群关键词",
+        "placeholder": "关群",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "关群词",
+            "value": "关群",
+            "target": "result",
+            "feedback": "已填入：关群词。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "open_time_input",
+      "title": "设置开群时间",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:menu:closegroup:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "格式 HH:MM",
+        "placeholder": "09:00",
+        "examples": [
+          {
+            "label": "开群时间",
+            "value": "09:00",
+            "target": "result",
+            "feedback": "已填入：开群时间。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "close_time_input",
+      "title": "设置关群时间",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:menu:closegroup:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "格式 HH:MM",
+        "placeholder": "23:00",
+        "examples": [
+          {
+            "label": "关群时间",
+            "value": "23:00",
+            "target": "result",
+            "feedback": "已填入：关群时间。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "result",
+      "title": "设置结果",
+      "message": [
+        "Bot 保存配置后会重新渲染当前功能页。",
+        "请在群内用测试账号触发一次，确认权限和运行结果。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回设置页",
+            "callbackData": "adm:menu:closegroup:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回设置页。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "审计：回调来自后端真实路由"
+      ]
+    }
+  ]
+}

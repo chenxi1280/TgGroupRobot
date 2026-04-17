@@ -1,0 +1,248 @@
+{
+  "slug": "banned-words",
+  "title": "违禁词",
+  "status": "已闭环",
+  "category": "内容审核",
+  "entryScreen": "entry",
+  "coverage": {
+    "mode": "complete",
+    "callbackPrefixes": [
+      "banned_word:add:",
+      "banned_word:list:",
+      "banned_word_toggle_",
+      "banned_word_delete_",
+      "keywords:cancel:"
+    ],
+    "inputStates": [
+      "banned_word_add"
+    ],
+    "sourceFiles": [
+      "backend/features/admin/core/menu_dispatch.py",
+      "backend/features/admin/runtime.py",
+      "backend/features/admin/ui/admin_main_keyboards.py",
+      "backend/features/moderation/banned_word_router.py",
+      "backend/features/moderation/ui/banned_word.py"
+    ],
+    "alignmentStatus": "ok",
+    "alignmentSummary": "真实回调审计通过。"
+  },
+  "screens": [
+    {
+      "id": "entry",
+      "title": "管理员主菜单",
+      "message": [
+        "发送 /admin 后选择当前群组。",
+        "点击「违禁词」进入配置页。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "违禁词",
+            "callbackData": "banned_word:list:{chat_id}",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「违禁词」。",
+            "highlight": true
+          }
+        ],
+        [
+          {
+            "label": "切换群",
+            "callbackData": "adm:switch_group",
+            "action": "goto",
+            "target": "select_group",
+            "feedback": "进入群组选择。"
+          },
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "goto",
+            "target": "main_menu",
+            "feedback": "已回到主菜单。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "当前群组：演示群"
+      ]
+    },
+    {
+      "id": "select_group",
+      "title": "选择配置群组",
+      "message": [
+        "私聊配置前先确认目标群组，后续按钮都会写入这个群。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "演示群",
+            "callbackData": "adm:select_group:-1001001",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到演示群。"
+          },
+          {
+            "label": "测试群",
+            "callbackData": "adm:select_group:-1001002",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到测试群。"
+          }
+        ],
+        [
+          {
+            "label": "返回",
+            "callbackData": "banned_word:list:{chat_id}",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "可管理群：演示群、测试群"
+      ]
+    },
+    {
+      "id": "main_menu",
+      "title": "主菜单",
+      "message": [
+        "这里展示机器人后台的真实功能入口。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "违禁词",
+            "callbackData": "banned_word:list:{chat_id}",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「违禁词」。",
+            "highlight": true
+          }
+        ]
+      ]
+    },
+    {
+      "id": "home",
+      "title": "违禁词列表",
+      "message": [
+        "违禁词使用独立 banned_word 回调创建、开关和删除。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "添加违禁词",
+            "callbackData": "banned_word:add:{chat_id}",
+            "action": "input",
+            "target": "word_input",
+            "feedback": "请输入违禁词。",
+            "highlight": true
+          },
+          {
+            "label": "刷新列表",
+            "callbackData": "banned_word:list:{chat_id}",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已刷新列表。"
+          }
+        ],
+        [
+          {
+            "label": "启用词条",
+            "callbackData": "banned_word_toggle_12:{chat_id}",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "词条状态已切换。"
+          },
+          {
+            "label": "删除词条",
+            "callbackData": "banned_word_delete_12:{chat_id}",
+            "action": "confirm",
+            "target": "result",
+            "feedback": "已删除词条。"
+          }
+        ],
+        [
+          {
+            "label": "取消输入",
+            "callbackData": "keywords:cancel:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已取消输入。"
+          }
+        ],
+        [
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:back_to_menu:{chat_id}",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回主菜单。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "当前群组：演示群"
+      ]
+    },
+    {
+      "id": "word_input",
+      "title": "添加违禁词",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "banned_word:list:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "发送一个词或多行词条",
+        "placeholder": "广告词",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "单词",
+            "value": "广告词",
+            "target": "result",
+            "feedback": "已填入：单词。"
+          },
+          {
+            "label": "多行",
+            "value": "广告词\n诈骗",
+            "target": "result",
+            "feedback": "已填入：多行。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "result",
+      "title": "违禁词设置结果",
+      "message": [
+        "保存后列表会重新渲染。运行时命中后按惩罚策略处理。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回列表",
+            "callbackData": "banned_word:list:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回列表。"
+          }
+        ]
+      ]
+    }
+  ]
+}

@@ -1,0 +1,393 @@
+{
+  "slug": "teacher-search",
+  "title": "老师搜索",
+  "status": "已闭环",
+  "category": "群组扩展",
+  "entryScreen": "entry",
+  "coverage": {
+    "mode": "complete",
+    "callbackPrefixes": [
+      "adm:menu:teacher_search",
+      "tsearch:"
+    ],
+    "inputStates": [
+      "teacher_footer_text_input",
+      "teacher_footer_link_input",
+      "teacher_attend_target_input",
+      "teacher_att_open_input",
+      "teacher_att_full_input",
+      "teacher_att_rest_input",
+      "teacher_delegate_target_input",
+      "teacher_delegate_location_input"
+    ],
+    "sourceFiles": [
+      "backend/features/admin/core/menu_dispatch.py",
+      "backend/features/admin/garage/teacher_search_actions.py",
+      "backend/features/admin/garage/teacher_search_inputs.py",
+      "backend/features/admin/garage/teacher_search_views.py",
+      "backend/features/admin/runtime.py",
+      "backend/features/admin/ui/admin_main_keyboards.py"
+    ],
+    "alignmentStatus": "ok",
+    "alignmentSummary": "真实回调审计通过。"
+  },
+  "screens": [
+    {
+      "id": "entry",
+      "title": "管理员主菜单",
+      "message": [
+        "发送 /admin 后选择当前群组。",
+        "点击「老师搜索」进入配置页。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "老师搜索",
+            "callbackData": "adm:menu:teacher_search:{chat_id}",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「老师搜索」。",
+            "highlight": true
+          }
+        ],
+        [
+          {
+            "label": "切换群",
+            "callbackData": "adm:switch_group",
+            "action": "goto",
+            "target": "select_group",
+            "feedback": "进入群组选择。"
+          },
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "goto",
+            "target": "main_menu",
+            "feedback": "已回到主菜单。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "当前群组：演示群"
+      ]
+    },
+    {
+      "id": "select_group",
+      "title": "选择配置群组",
+      "message": [
+        "私聊配置前先确认目标群组，后续按钮都会写入这个群。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "演示群",
+            "callbackData": "adm:select_group:-1001001",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到演示群。"
+          },
+          {
+            "label": "测试群",
+            "callbackData": "adm:select_group:-1001002",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到测试群。"
+          }
+        ],
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:menu:teacher_search:{chat_id}",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "可管理群：演示群、测试群"
+      ]
+    },
+    {
+      "id": "main_menu",
+      "title": "主菜单",
+      "message": [
+        "这里展示机器人后台的真实功能入口。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "老师搜索",
+            "callbackData": "adm:menu:teacher_search:{chat_id}",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「老师搜索」。",
+            "highlight": true
+          }
+        ]
+      ]
+    },
+    {
+      "id": "home",
+      "title": "老师搜索",
+      "message": [
+        "配置老师搜索标签、出勤、页脚和代理地点。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "标签开关",
+            "callbackData": "tsearch:toggle:tag:{chat_id}:1",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "标签搜索已开启。"
+          },
+          {
+            "label": "出勤开关",
+            "callbackData": "tsearch:toggle:attendance:{chat_id}:1",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "出勤已开启。"
+          },
+          {
+            "label": "只看可约",
+            "callbackData": "tsearch:toggle:only_open:{chat_id}:1",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "只看可约已开启。"
+          }
+        ],
+        [
+          {
+            "label": "出勤模式",
+            "callbackData": "tsearch:attendance_mode:menu:{chat_id}",
+            "action": "goto",
+            "target": "attendance_mode",
+            "feedback": "打开出勤模式。"
+          },
+          {
+            "label": "页脚",
+            "callbackData": "tsearch:footer:menu:{chat_id}",
+            "action": "goto",
+            "target": "footer",
+            "feedback": "打开页脚设置。"
+          },
+          {
+            "label": "代理设置",
+            "callbackData": "tsearch:delegate:start:{chat_id}",
+            "action": "input",
+            "target": "delegate_input",
+            "feedback": "请输入代理目标。"
+          }
+        ],
+        [
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回主菜单。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "当前群组：演示群"
+      ]
+    },
+    {
+      "id": "attendance_mode",
+      "title": "出勤模式",
+      "message": [
+        "出勤模式可选消息模式或关键词模式。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "消息模式",
+            "callbackData": "tsearch:attendance_mode:set:{chat_id}:message",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "已设置消息模式。"
+          },
+          {
+            "label": "关键词模式",
+            "callbackData": "tsearch:attendance_mode:set:{chat_id}:keyword",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "已设置关键词模式。"
+          }
+        ],
+        [
+          {
+            "label": "返回老师搜索",
+            "callbackData": "tsearch:home:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回老师搜索。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "footer",
+      "title": "页脚设置",
+      "message": [
+        "页脚文本和链接会附加到老师搜索结果。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "页脚文本",
+            "callbackData": "tsearch:footer:text:{chat_id}",
+            "action": "input",
+            "target": "footer_text_input",
+            "feedback": "请输入页脚文本。"
+          },
+          {
+            "label": "页脚链接",
+            "callbackData": "tsearch:footer:link:{chat_id}",
+            "action": "input",
+            "target": "footer_link_input",
+            "feedback": "请输入链接。"
+          }
+        ],
+        [
+          {
+            "label": "返回老师搜索",
+            "callbackData": "tsearch:home:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回老师搜索。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "footer_text_input",
+      "title": "设置页脚文本",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "tsearch:footer:menu:{chat_id}",
+            "action": "back",
+            "target": "footer",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "发送页脚文本",
+        "placeholder": "联系管理员获取更多信息",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "页脚",
+            "value": "联系管理员获取更多信息",
+            "target": "result",
+            "feedback": "已填入：页脚。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "footer_link_input",
+      "title": "设置页脚链接",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "tsearch:footer:menu:{chat_id}",
+            "action": "back",
+            "target": "footer",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "发送 URL",
+        "placeholder": "https://example.com",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "链接",
+            "value": "https://example.com",
+            "target": "result",
+            "feedback": "已填入：链接。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "delegate_input",
+      "title": "设置代理目标",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "tsearch:home:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "发送代理用户或地点",
+        "placeholder": "@delegate",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "代理",
+            "value": "@delegate",
+            "target": "result",
+            "feedback": "已填入：代理。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "result",
+      "title": "设置结果",
+      "message": [
+        "Bot 保存配置后会重新渲染当前功能页。",
+        "请在群内用测试账号触发一次，确认权限和运行结果。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回设置页",
+            "callbackData": "adm:menu:teacher_search:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回设置页。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "审计：回调来自后端真实路由"
+      ]
+    }
+  ]
+}

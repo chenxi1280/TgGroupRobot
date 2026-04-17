@@ -1,0 +1,52 @@
+---
+import StepTutorial from './StepTutorial.astro';
+import FeatureFlow from './FeatureFlow.astro';
+import LogicAudit from './LogicAudit.astro';
+
+const { feature } = Astro.props;
+const entryMeta = [
+  feature.entry.command ? `指令 ${feature.entry.command}` : null,
+  feature.entry.menuKeys.length ? `菜单键 ${feature.entry.menuKeys.join(', ')}` : null
+].filter(Boolean);
+---
+
+<article class="feature-doc">
+  <header class="feature-hero">
+    <div>
+      <p class="eyebrow">{feature.category}</p>
+      <h1>{feature.title}</h1>
+      <p>{feature.summary}</p>
+    </div>
+    <div class="feature-meta" aria-label="功能状态">
+      <span class:list={['status-badge', feature.status === '暂时关闭' && 'is-paused']}>{feature.status}</span>
+      <span>{feature.entry.label}</span>
+      {entryMeta.map((item) => <span>{item}</span>)}
+    </div>
+  </header>
+
+  <section>
+    <p class="eyebrow">使用前确认</p>
+    <h2 id="prerequisites">前置条件</h2>
+    <ul class="check-list">
+      {feature.prerequisites.map((item: string) => <li>{item}</li>)}
+    </ul>
+  </section>
+
+  <StepTutorial feature={feature} />
+  <FeatureFlow feature={feature} />
+
+  <section>
+    <p class="eyebrow">Q&A</p>
+    <h2 id="qa">常见问题</h2>
+    <div class="qa-list">
+      {feature.qa.map((item: { question: string; answer: string }) => (
+        <details>
+          <summary>{item.question}</summary>
+          <p>{item.answer}</p>
+        </details>
+      ))}
+    </div>
+  </section>
+
+  <LogicAudit feature={feature} />
+</article>

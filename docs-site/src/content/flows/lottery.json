@@ -1,0 +1,359 @@
+{
+  "slug": "lottery",
+  "title": "抽奖",
+  "status": "已闭环",
+  "category": "活动互动",
+  "entryScreen": "entry",
+  "coverage": {
+    "mode": "complete",
+    "callbackPrefixes": [
+      "lot:create_menu",
+      "lot:mode_menu:",
+      "lot:create:",
+      "lot:list:",
+      "lot:detail:",
+      "lot:settings",
+      "lot:setting:",
+      "lot:draw:",
+      "join_lottery_"
+    ],
+    "inputStates": [
+      "lottery_create"
+    ],
+    "sourceFiles": [
+      "backend/features/activity/lottery_creation.py",
+      "backend/features/activity/lottery_menus.py",
+      "backend/features/activity/lottery_router.py",
+      "backend/features/admin/core/menu_dispatch.py",
+      "backend/features/admin/runtime.py",
+      "backend/features/admin/ui/admin_main_keyboards.py"
+    ],
+    "alignmentStatus": "ok",
+    "alignmentSummary": "真实回调审计通过。"
+  },
+  "screens": [
+    {
+      "id": "entry",
+      "title": "管理员主菜单",
+      "message": [
+        "发送 /admin 后选择当前群组。",
+        "点击「抽奖」进入配置页。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "抽奖",
+            "callbackData": "lot:list:{chat_id}:all:all:0",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「抽奖」。",
+            "highlight": true
+          }
+        ],
+        [
+          {
+            "label": "切换群",
+            "callbackData": "adm:switch_group",
+            "action": "goto",
+            "target": "select_group",
+            "feedback": "进入群组选择。"
+          },
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "goto",
+            "target": "main_menu",
+            "feedback": "已回到主菜单。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "当前群组：演示群"
+      ]
+    },
+    {
+      "id": "select_group",
+      "title": "选择配置群组",
+      "message": [
+        "私聊配置前先确认目标群组，后续按钮都会写入这个群。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "演示群",
+            "callbackData": "adm:select_group:-1001001",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到演示群。"
+          },
+          {
+            "label": "测试群",
+            "callbackData": "adm:select_group:-1001002",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到测试群。"
+          }
+        ],
+        [
+          {
+            "label": "返回",
+            "callbackData": "lot:list:{chat_id}:all:all:0",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "可管理群：演示群、测试群"
+      ]
+    },
+    {
+      "id": "main_menu",
+      "title": "主菜单",
+      "message": [
+        "这里展示机器人后台的真实功能入口。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "抽奖",
+            "callbackData": "lot:list:{chat_id}:all:all:0",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「抽奖」。",
+            "highlight": true
+          }
+        ]
+      ]
+    },
+    {
+      "id": "home",
+      "title": "抽奖列表",
+      "message": [
+        "抽奖列表支持创建、筛选、详情和开奖。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "创建抽奖",
+            "callbackData": "lot:create_menu:{chat_id}",
+            "action": "goto",
+            "target": "create_menu",
+            "feedback": "打开创建菜单。",
+            "highlight": true
+          },
+          {
+            "label": "抽奖设置",
+            "callbackData": "lot:settings:{chat_id}",
+            "action": "goto",
+            "target": "settings",
+            "feedback": "打开抽奖设置。"
+          }
+        ],
+        [
+          {
+            "label": "抽奖详情",
+            "callbackData": "lot:detail:{chat_id}:{lottery_id}",
+            "action": "goto",
+            "target": "detail",
+            "feedback": "已打开抽奖详情。"
+          }
+        ],
+        [
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回主菜单。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "create_menu",
+      "title": "创建抽奖",
+      "message": [
+        "选择普通抽奖、积分抽奖或邀请抽奖模式。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "普通抽奖",
+            "callbackData": "lot:create:{chat_id}:common",
+            "action": "input",
+            "target": "create_input",
+            "feedback": "请输入抽奖内容。"
+          },
+          {
+            "label": "积分抽奖",
+            "callbackData": "lot:create:{chat_id}:points",
+            "action": "input",
+            "target": "create_input",
+            "feedback": "请输入积分抽奖内容。"
+          }
+        ],
+        [
+          {
+            "label": "邀请抽奖",
+            "callbackData": "lot:mode_menu:{chat_id}:invite",
+            "action": "goto",
+            "target": "invite_mode",
+            "feedback": "选择邀请抽奖模式。"
+          }
+        ],
+        [
+          {
+            "label": "返回列表",
+            "callbackData": "lot:list:{chat_id}:all:all:0",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回列表。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "invite_mode",
+      "title": "邀请抽奖模式",
+      "message": [
+        "邀请抽奖支持按邀请门槛参与。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "门槛随机",
+            "callbackData": "lot:create:{chat_id}:invite:threshold_random",
+            "action": "input",
+            "target": "create_input",
+            "feedback": "请输入邀请门槛。"
+          }
+        ],
+        [
+          {
+            "label": "返回创建",
+            "callbackData": "lot:create_menu:{chat_id}",
+            "action": "back",
+            "target": "create_menu",
+            "feedback": "已返回创建菜单。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "settings",
+      "title": "抽奖设置",
+      "message": [
+        "抽奖设置可切换发布后置顶等选项。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "发布后置顶",
+            "callbackData": "lot:setting:{chat_id}:publish_pin:1",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "发布后置顶已开启。"
+          }
+        ],
+        [
+          {
+            "label": "返回列表",
+            "callbackData": "lot:list:{chat_id}:all:all:0",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回列表。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "detail",
+      "title": "抽奖详情",
+      "message": [
+        "详情页可手动开奖，用户运行时可点击参与。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "立即开奖",
+            "callbackData": "lot:draw:{chat_id}:{lottery_id}",
+            "action": "confirm",
+            "target": "result",
+            "feedback": "已发起开奖。"
+          },
+          {
+            "label": "用户参与",
+            "callbackData": "join_lottery_{lottery_id}",
+            "action": "goto",
+            "target": "result",
+            "feedback": "用户已参与抽奖。"
+          }
+        ],
+        [
+          {
+            "label": "返回列表",
+            "callbackData": "lot:list:{chat_id}:all:all:0",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回列表。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "create_input",
+      "title": "输入抽奖内容",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "lot:create_menu:{chat_id}",
+            "action": "back",
+            "target": "create_menu",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "发送奖品、人数和条件",
+        "placeholder": "奖品：会员；人数：3",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "抽奖内容",
+            "value": "奖品：会员；人数：3",
+            "target": "result",
+            "feedback": "已填入：抽奖内容。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "result",
+      "title": "抽奖操作结果",
+      "message": [
+        "保存或开奖后 Bot 会回到列表或详情页。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回列表",
+            "callbackData": "lot:list:{chat_id}:all:all:0",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回列表。"
+          }
+        ]
+      ]
+    }
+  ]
+}

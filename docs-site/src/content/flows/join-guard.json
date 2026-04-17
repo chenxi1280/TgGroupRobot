@@ -1,0 +1,224 @@
+{
+  "slug": "join-guard",
+  "title": "入群刷号保护",
+  "status": "已闭环",
+  "category": "入群风控",
+  "entryScreen": "entry",
+  "coverage": {
+    "mode": "complete",
+    "callbackPrefixes": [
+      "adm:menu:antispam",
+      "adm:vfy_home:"
+    ],
+    "inputStates": [],
+    "sourceFiles": [
+      "backend/features/admin/core/menu_dispatch.py",
+      "backend/features/admin/moderation/verification_home_actions.py",
+      "backend/features/admin/moderation/verification_views.py",
+      "backend/features/admin/module_settings/verification_inputs.py",
+      "backend/features/admin/runtime.py",
+      "backend/features/admin/ui/admin_main_keyboards.py",
+      "backend/features/verification/verification_runtime.py",
+      "backend/platform/scheduler/tasks/verification_timeout_task.py"
+    ],
+    "alignmentStatus": "ok",
+    "alignmentSummary": "真实回调审计通过。"
+  },
+  "screens": [
+    {
+      "id": "entry",
+      "title": "管理员主菜单",
+      "message": [
+        "发送 /admin 后选择当前群组。",
+        "点击「垃圾防护」进入配置页。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "垃圾防护",
+            "callbackData": "adm:menu:antispam:{chat_id}",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「垃圾防护」。",
+            "highlight": true
+          }
+        ],
+        [
+          {
+            "label": "切换群",
+            "callbackData": "adm:switch_group",
+            "action": "goto",
+            "target": "select_group",
+            "feedback": "进入群组选择。"
+          },
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "goto",
+            "target": "main_menu",
+            "feedback": "已回到主菜单。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "当前群组：演示群"
+      ]
+    },
+    {
+      "id": "select_group",
+      "title": "选择配置群组",
+      "message": [
+        "私聊配置前先确认目标群组，后续按钮都会写入这个群。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "演示群",
+            "callbackData": "adm:select_group:-1001001",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到演示群。"
+          },
+          {
+            "label": "测试群",
+            "callbackData": "adm:select_group:-1001002",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到测试群。"
+          }
+        ],
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:menu:antispam:{chat_id}",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "可管理群：演示群、测试群"
+      ]
+    },
+    {
+      "id": "main_menu",
+      "title": "主菜单",
+      "message": [
+        "这里展示机器人后台的真实功能入口。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "垃圾防护",
+            "callbackData": "adm:menu:antispam:{chat_id}",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「垃圾防护」。",
+            "highlight": true
+          }
+        ]
+      ]
+    },
+    {
+      "id": "home",
+      "title": "垃圾防护",
+      "message": [
+        "入群刷号保护当前复用进群验证的垃圾防护配置和运行时检测。",
+        "页面只展示真实入口，不编造独立设置按钮。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "进入验证垃圾防护",
+            "callbackData": "adm:vfy_home:{chat_id}:spam",
+            "action": "goto",
+            "target": "spam",
+            "feedback": "打开真实垃圾防护配置。",
+            "highlight": true
+          }
+        ],
+        [
+          {
+            "label": "返回进群验证",
+            "callbackData": "adm:menu:verification:{chat_id}",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已打开进群验证入口。"
+          }
+        ],
+        [
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回主菜单。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "触发场景：短时间大量新成员入群"
+      ]
+    },
+    {
+      "id": "result",
+      "title": "操作结果",
+      "message": [
+        "Bot 处理真实回调后会重新渲染当前功能页或返回上一级。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:menu:antispam:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "spam",
+      "title": "入群垃圾防护",
+      "message": [
+        "这里复用进群验证中的垃圾拦截页，覆盖入群刷号、提示、禁言和踢出。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "入群刷号开关",
+            "callbackData": "adm:vfy_home:{chat_id}:spam:toggle:enabled",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "已切换入群刷号检测。"
+          },
+          {
+            "label": "提示开关",
+            "callbackData": "adm:vfy_home:{chat_id}:spam:toggle:notify",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "已切换提示。"
+          },
+          {
+            "label": "踢出",
+            "callbackData": "adm:vfy_home:{chat_id}:spam:toggle:kick",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "已切换踢出。"
+          }
+        ],
+        [
+          {
+            "label": "返回垃圾防护",
+            "callbackData": "adm:menu:antispam:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回垃圾防护。"
+          }
+        ]
+      ]
+    }
+  ]
+}

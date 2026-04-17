@@ -1,0 +1,83 @@
+---
+import { getEntry } from 'astro:content';
+import FeatureFlow from './FeatureFlow.astro';
+import LogicAudit from './LogicAudit.astro';
+import TelegramFlow from './TelegramFlow.astro';
+
+const { slug, flow } = Astro.props as {
+  slug: string;
+  flow: any;
+};
+
+const entry = await getEntry('features', slug);
+if (!entry) {
+  throw new Error(`Feature catalog entry not found: ${slug}`);
+}
+
+const feature = entry.data;
+const isPaused = feature.status === '暂时关闭';
+const replayLabel = flow.coverage?.alignmentStatus === 'needsReview'
+  ? '真实回调待对账'
+  : flow.coverage?.mode === 'complete'
+    ? '完整 Telegram 操作流'
+    : '主链路';
+---
+
+<article class="feature-manual">
+  <header class="feature-hero">
+    <div>
+      <p class="eyebrow">功能使用手册</p>
+      <h1>{feature.title}</h1>
+      <p>{feature.summary}</p>
+    </div>
+    <aside class="feature-meta" aria-label={`${feature.title} 功能信息`}>
+      <span class:list={['status-badge', isPaused && 'is-paused']}>{feature.status}</span>
+      <span>分类：{feature.category}</span>
+      <span>入口：{feature.entry.command ?? '/admin'} → {feature.entry.label}</span>
+      <span>复刻：{replayLabel}</span>
+    </aside>
+  </header>
+
+  <section class="manual-intro">
+    <div>
+      <p class="eyebrow">怎么用</p>
+      <h2 id="overview">操作目标</h2>
+      <p>{feature.summary}</p>
+      <ol class="manual-steps">
+        {feature.steps.map((step: any) => (
+          <li>
+            <strong>{step.title}</strong>
+            <span>{step.action}</span>
+            {step.tip && <small>{step.tip}</small>}
+          </li>
+        ))}
+      </ol>
+    </div>
+    <div>
+      <p class="eyebrow">开始前</p>
+      <h2 id="prerequisites">前置条件</h2>
+      <ul class="manual-points">
+        {feature.prerequisites.map((item: string) => <li>{item}</li>)}
+      </ul>
+    </div>
+  </section>
+
+  <TelegramFlow flow={flow} />
+
+  <FeatureFlow feature={feature} />
+
+  <section class="qa-section">
+    <p class="eyebrow">常见问题</p>
+    <h2 id="faq">常见问题</h2>
+    <div class="qa-list">
+      {feature.qa.map((item: any) => (
+        <details>
+          <summary>{item.question}</summary>
+          <p>{item.answer}</p>
+        </details>
+      ))}
+    </div>
+  </section>
+
+  <LogicAudit feature={feature} />
+</article>

@@ -1,0 +1,294 @@
+{
+  "slug": "solitaire",
+  "title": "接龙",
+  "status": "已闭环",
+  "category": "活动互动",
+  "entryScreen": "entry",
+  "coverage": {
+    "mode": "complete",
+    "callbackPrefixes": [
+      "sol:create:",
+      "sol:list",
+      "sol:stats",
+      "sol:detail:",
+      "sol:refresh:",
+      "sol:close:",
+      "sol:delete:",
+      "join_solitaire:",
+      "solitaire:cancel:"
+    ],
+    "inputStates": [
+      "solitaire_create"
+    ],
+    "sourceFiles": [
+      "backend/features/activity/solitaire_creation_wizard.py",
+      "backend/features/activity/solitaire_router.py",
+      "backend/features/activity/ui/solitaire.py",
+      "backend/features/admin/core/menu_dispatch.py",
+      "backend/features/admin/runtime.py",
+      "backend/features/admin/ui/admin_main_keyboards.py"
+    ],
+    "alignmentStatus": "ok",
+    "alignmentSummary": "真实回调审计通过。"
+  },
+  "screens": [
+    {
+      "id": "entry",
+      "title": "管理员主菜单",
+      "message": [
+        "发送 /admin 后选择当前群组。",
+        "点击「接龙」进入配置页。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "接龙",
+            "callbackData": "sol:list:{chat_id}:0",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「接龙」。",
+            "highlight": true
+          }
+        ],
+        [
+          {
+            "label": "切换群",
+            "callbackData": "adm:switch_group",
+            "action": "goto",
+            "target": "select_group",
+            "feedback": "进入群组选择。"
+          },
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "goto",
+            "target": "main_menu",
+            "feedback": "已回到主菜单。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "当前群组：演示群"
+      ]
+    },
+    {
+      "id": "select_group",
+      "title": "选择配置群组",
+      "message": [
+        "私聊配置前先确认目标群组，后续按钮都会写入这个群。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "演示群",
+            "callbackData": "adm:select_group:-1001001",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到演示群。"
+          },
+          {
+            "label": "测试群",
+            "callbackData": "adm:select_group:-1001002",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到测试群。"
+          }
+        ],
+        [
+          {
+            "label": "返回",
+            "callbackData": "sol:list:{chat_id}:0",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "可管理群：演示群、测试群"
+      ]
+    },
+    {
+      "id": "main_menu",
+      "title": "主菜单",
+      "message": [
+        "这里展示机器人后台的真实功能入口。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "接龙",
+            "callbackData": "sol:list:{chat_id}:0",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「接龙」。",
+            "highlight": true
+          }
+        ]
+      ]
+    },
+    {
+      "id": "home",
+      "title": "接龙列表",
+      "message": [
+        "接龙支持创建、详情、统计、关闭和删除。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "创建接龙",
+            "callbackData": "sol:create:{chat_id}",
+            "action": "input",
+            "target": "create_input",
+            "feedback": "请输入接龙内容。",
+            "highlight": true
+          },
+          {
+            "label": "统计",
+            "callbackData": "sol:stats:{chat_id}",
+            "action": "goto",
+            "target": "stats",
+            "feedback": "打开统计。"
+          }
+        ],
+        [
+          {
+            "label": "接龙详情",
+            "callbackData": "sol:detail:{chat_id}:{solitaire_id}",
+            "action": "goto",
+            "target": "detail",
+            "feedback": "已打开详情。"
+          }
+        ],
+        [
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回主菜单。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "detail",
+      "title": "接龙详情",
+      "message": [
+        "详情页可刷新、关闭、删除；用户可参与。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "刷新",
+            "callbackData": "sol:refresh:{chat_id}:{solitaire_id}",
+            "action": "goto",
+            "target": "detail",
+            "feedback": "已刷新。"
+          },
+          {
+            "label": "关闭",
+            "callbackData": "sol:close:{chat_id}:{solitaire_id}",
+            "action": "confirm",
+            "target": "result",
+            "feedback": "接龙已关闭。"
+          },
+          {
+            "label": "删除",
+            "callbackData": "sol:delete:{chat_id}:{solitaire_id}",
+            "action": "confirm",
+            "target": "result",
+            "feedback": "接龙已删除。"
+          }
+        ],
+        [
+          {
+            "label": "用户参与",
+            "callbackData": "join_solitaire:{solitaire_id}",
+            "action": "goto",
+            "target": "result",
+            "feedback": "用户已参与接龙。"
+          },
+          {
+            "label": "取消创建",
+            "callbackData": "solitaire:cancel:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已取消。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "stats",
+      "title": "接龙统计",
+      "message": [
+        "统计页按当前接龙汇总参与人数和内容。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回列表",
+            "callbackData": "sol:list:{chat_id}:0",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回列表。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "create_input",
+      "title": "创建接龙",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "sol:list:{chat_id}:0",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "发送接龙标题和说明",
+        "placeholder": "今晚报名接龙",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "标题",
+            "value": "今晚报名接龙",
+            "target": "detail",
+            "feedback": "已填入：标题。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "result",
+      "title": "接龙操作结果",
+      "message": [
+        "保存后返回接龙列表或详情。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回列表",
+            "callbackData": "sol:list:{chat_id}:0",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回列表。"
+          }
+        ]
+      ]
+    }
+  ]
+}

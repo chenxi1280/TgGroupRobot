@@ -1,0 +1,160 @@
+---
+interface Step {
+  title: string;
+  action: string;
+  tip?: string;
+}
+
+interface Feature {
+  title: string;
+  entry: {
+    label: string;
+    command?: string;
+  };
+}
+
+type TelegramAction = 'next' | 'prev' | 'goto' | 'home' | 'noop';
+
+interface TelegramButton {
+  label: string;
+  action: TelegramAction;
+  targetStep?: number;
+  highlight?: boolean;
+  feedback: string;
+}
+
+const { feature, step, index, total } = Astro.props as {
+  feature: Feature;
+  step: Step;
+  index: number;
+  total: number;
+};
+
+const now = ['09:18', '10:26', '13:41', '16:08'][index % 4];
+const status = index === 2 ? '已保存 ✅' : index === 1 ? '配置中' : '待设置';
+const nextStep = Math.min(index + 1, total - 1);
+const previousStep = Math.max(index - 1, 0);
+const buttonRows: TelegramButton[][] = index === 0
+  ? [
+      [
+        {
+          label: '群组管理',
+          action: 'noop',
+          feedback: `已打开群组管理菜单，请点击「${feature.entry.label}」。`
+        },
+        {
+          label: feature.entry.label,
+          action: 'next',
+          targetStep: nextStep,
+          highlight: true,
+          feedback: `已点击「${feature.entry.label}」，进入下一步。`
+        }
+      ],
+      [
+        {
+          label: '返回首页',
+          action: 'home',
+          targetStep: 0,
+          feedback: '已回到这个功能的第一步。'
+        }
+      ]
+    ]
+  : index === 1
+    ? [
+        [
+          {
+            label: '状态:',
+            action: 'noop',
+            feedback: '这是当前配置项，继续选择启动、关闭或设置规则。'
+          },
+          {
+            label: '启动',
+            action: 'noop',
+            feedback: '状态已切换为启动，继续点击设置规则。'
+          },
+          {
+            label: '关闭',
+            action: 'noop',
+            feedback: '状态已切换为关闭，继续点击设置规则。'
+          }
+        ],
+        [
+          {
+            label: '设置规则',
+            action: 'next',
+            targetStep: nextStep,
+            highlight: true,
+            feedback: '已进入规则设置后的测试步骤。'
+          },
+          {
+            label: '预览效果',
+            action: 'next',
+            targetStep: nextStep,
+            feedback: '已打开预览效果，进入结果检查。'
+          }
+        ],
+        [
+          {
+            label: '返回',
+            action: 'prev',
+            targetStep: previousStep,
+            feedback: '已返回上一步。'
+          }
+        ]
+      ]
+    : [
+        [
+          {
+            label: '查看设置结果',
+            action: 'noop',
+            targetStep: index,
+            highlight: true,
+            feedback: '设置结果已确认，这个功能教程已完成。'
+          }
+        ],
+        [
+          {
+            label: '返回主菜单',
+            action: 'home',
+            targetStep: 0,
+            feedback: '已回到这个功能的第一步。'
+          }
+        ]
+      ];
+---
+
+<div class="telegram-screen" aria-label={`${feature.title} 第 ${index + 1} 步操作图`}>
+  <div class="telegram-message">
+    <div class="bot-name">@TgGroupRobot</div>
+    <div class="message-title">{feature.title}</div>
+    <p>{step.action}</p>
+    <div class="state-lines">
+      <span>状态: {status}</span>
+      <span>步骤: {index + 1} / {total}</span>
+    </div>
+    {step.tip && <p class="tip">提示：{step.tip}</p>}
+    <span class="message-time">{now}</span>
+  </div>
+
+  <div class="telegram-keyboard">
+    {buttonRows.map((row) => (
+      <div class="keyboard-row">
+        {row.map((button) => (
+          <button
+            class:list={[
+              'keyboard-button',
+              button.highlight && 'is-highlighted'
+            ]}
+            type="button"
+            data-telegram-action={button.action}
+            data-step-target={button.targetStep}
+            data-feedback={button.feedback}
+            aria-label={`${feature.title} 第 ${index + 1} 步：点击 ${button.label}`}
+          >
+            {button.label}
+          </button>
+        ))}
+      </div>
+    ))}
+  </div>
+</div>

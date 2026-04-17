@@ -1,0 +1,435 @@
+{
+  "slug": "custom-points",
+  "title": "自定义积分",
+  "status": "已闭环",
+  "category": "积分运营",
+  "entryScreen": "entry",
+  "coverage": {
+    "mode": "complete",
+    "callbackPrefixes": [
+      "adm:menu:custom_points",
+      "adm:cpt:"
+    ],
+    "inputStates": [
+      "custom_points_name_input",
+      "custom_points_rank_input",
+      "custom_points_adjust_input"
+    ],
+    "sourceFiles": [
+      "backend/features/admin/core/menu_dispatch.py",
+      "backend/features/admin/points_extended/custom_inputs.py",
+      "backend/features/admin/runtime.py",
+      "backend/features/admin/ui/admin_main_keyboards.py",
+      "backend/features/admin/ui/points_extended_custom.py"
+    ],
+    "alignmentStatus": "ok",
+    "alignmentSummary": "真实回调审计通过。"
+  },
+  "screens": [
+    {
+      "id": "entry",
+      "title": "管理员主菜单",
+      "message": [
+        "发送 /admin 后选择当前群组。",
+        "点击「自定义积分」进入配置页。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "自定义积分",
+            "callbackData": "adm:menu:custom_points:{chat_id}",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「自定义积分」。",
+            "highlight": true
+          }
+        ],
+        [
+          {
+            "label": "切换群",
+            "callbackData": "adm:switch_group",
+            "action": "goto",
+            "target": "select_group",
+            "feedback": "进入群组选择。"
+          },
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "goto",
+            "target": "main_menu",
+            "feedback": "已回到主菜单。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "当前群组：演示群"
+      ]
+    },
+    {
+      "id": "select_group",
+      "title": "选择配置群组",
+      "message": [
+        "私聊配置前先确认目标群组，后续按钮都会写入这个群。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "演示群",
+            "callbackData": "adm:select_group:-1001001",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到演示群。"
+          },
+          {
+            "label": "测试群",
+            "callbackData": "adm:select_group:-1001002",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到测试群。"
+          }
+        ],
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:menu:custom_points:{chat_id}",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "可管理群：演示群、测试群"
+      ]
+    },
+    {
+      "id": "main_menu",
+      "title": "主菜单",
+      "message": [
+        "这里展示机器人后台的真实功能入口。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "自定义积分",
+            "callbackData": "adm:menu:custom_points:{chat_id}",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「自定义积分」。",
+            "highlight": true
+          }
+        ]
+      ]
+    },
+    {
+      "id": "home",
+      "title": "自定义积分",
+      "message": [
+        "创建自定义积分类型，并管理排行、加扣分和导出。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "新增类型",
+            "callbackData": "adm:cpt:{chat_id}:add",
+            "action": "input",
+            "target": "type_name_input",
+            "feedback": "请输入积分类型名称。",
+            "highlight": true
+          }
+        ],
+        [
+          {
+            "label": "类型详情",
+            "callbackData": "adm:cpt:{chat_id}:detail:{type_id}",
+            "action": "goto",
+            "target": "detail",
+            "feedback": "已打开类型详情。"
+          },
+          {
+            "label": "开启类型",
+            "callbackData": "adm:cpt:{chat_id}:toggle:{type_id}:1",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "类型已开启。"
+          },
+          {
+            "label": "关闭类型",
+            "callbackData": "adm:cpt:{chat_id}:toggle:{type_id}:0",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "类型已关闭。"
+          }
+        ],
+        [
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回主菜单。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "当前群组：演示群"
+      ]
+    },
+    {
+      "id": "detail",
+      "title": "自定义积分详情",
+      "message": [
+        "详情页可编辑名称、排行命令、加扣分、导出、清空和删除。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "编辑名称",
+            "callbackData": "adm:cpt:{chat_id}:edit:name:{type_id}",
+            "action": "input",
+            "target": "type_name_input",
+            "feedback": "请输入名称。"
+          },
+          {
+            "label": "排行命令",
+            "callbackData": "adm:cpt:{chat_id}:edit:rank:{type_id}",
+            "action": "input",
+            "target": "rank_input",
+            "feedback": "请输入排行命令。"
+          }
+        ],
+        [
+          {
+            "label": "加分",
+            "callbackData": "adm:cpt:{chat_id}:adjust:add:{type_id}",
+            "action": "input",
+            "target": "adjust_input",
+            "feedback": "请输入加分格式。"
+          },
+          {
+            "label": "扣分",
+            "callbackData": "adm:cpt:{chat_id}:adjust:deduct:{type_id}",
+            "action": "input",
+            "target": "adjust_input",
+            "feedback": "请输入扣分格式。"
+          }
+        ],
+        [
+          {
+            "label": "导出",
+            "callbackData": "adm:cpt:{chat_id}:export:{type_id}",
+            "action": "goto",
+            "target": "result",
+            "feedback": "已发起导出。"
+          },
+          {
+            "label": "清空确认",
+            "callbackData": "adm:cpt:{chat_id}:clear_confirm:{type_id}",
+            "action": "confirm",
+            "target": "confirm_clear",
+            "feedback": "请确认清空。"
+          },
+          {
+            "label": "删除确认",
+            "callbackData": "adm:cpt:{chat_id}:delete_confirm:{type_id}",
+            "action": "confirm",
+            "target": "confirm_delete",
+            "feedback": "请确认删除。"
+          }
+        ],
+        [
+          {
+            "label": "返回列表",
+            "callbackData": "adm:menu:custom_points:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回列表。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "type_name_input",
+      "title": "输入积分类型名称",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:menu:custom_points:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "发送名称",
+        "placeholder": "贡献值",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "贡献值",
+            "value": "贡献值",
+            "target": "result",
+            "feedback": "已填入：贡献值。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "rank_input",
+      "title": "输入排行命令",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:cpt:{chat_id}:detail:{type_id}",
+            "action": "back",
+            "target": "detail",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "发送命令别名",
+        "placeholder": "/gxrank",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "排行命令",
+            "value": "/gxrank",
+            "target": "result",
+            "feedback": "已填入：排行命令。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "adjust_input",
+      "title": "输入加扣分",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:cpt:{chat_id}:detail:{type_id}",
+            "action": "back",
+            "target": "detail",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "格式：用户ID 分数 备注",
+        "placeholder": "123456 10 活动奖励",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "加分",
+            "value": "123456 10 活动奖励",
+            "target": "result",
+            "feedback": "已填入：加分。"
+          },
+          {
+            "label": "扣分",
+            "value": "123456 5 违规扣除",
+            "target": "result",
+            "feedback": "已填入：扣分。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "confirm_clear",
+      "title": "清空确认",
+      "message": [
+        "清空会删除该类型积分流水和余额。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "确认清空",
+            "callbackData": "adm:cpt:{chat_id}:clear:{type_id}",
+            "action": "confirm",
+            "target": "result",
+            "feedback": "已清空。"
+          },
+          {
+            "label": "返回详情",
+            "callbackData": "adm:cpt:{chat_id}:detail:{type_id}",
+            "action": "back",
+            "target": "detail",
+            "feedback": "已取消。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "confirm_delete",
+      "title": "删除确认",
+      "message": [
+        "删除积分类型后不可恢复。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "确认删除",
+            "callbackData": "adm:cpt:{chat_id}:delete:{type_id}",
+            "action": "confirm",
+            "target": "result",
+            "feedback": "已删除。"
+          },
+          {
+            "label": "返回详情",
+            "callbackData": "adm:cpt:{chat_id}:detail:{type_id}",
+            "action": "back",
+            "target": "detail",
+            "feedback": "已取消。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "result",
+      "title": "设置结果",
+      "message": [
+        "Bot 保存配置后会重新渲染当前功能页。",
+        "请在群内用测试账号触发一次，确认权限和运行结果。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回设置页",
+            "callbackData": "adm:menu:custom_points:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回设置页。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "审计：回调来自后端真实路由"
+      ]
+    }
+  ]
+}

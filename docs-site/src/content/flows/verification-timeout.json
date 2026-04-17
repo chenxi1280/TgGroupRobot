@@ -1,0 +1,554 @@
+{
+  "slug": "verification-timeout",
+  "title": "验证超时处理",
+  "status": "已闭环",
+  "category": "入群风控",
+  "entryScreen": "entry",
+  "coverage": {
+    "mode": "complete",
+    "callbackPrefixes": [
+      "adm:menu:verification",
+      "adm:vfy_home:"
+    ],
+    "inputStates": [
+      "verification_cover_input",
+      "vfy_agreement_text_input",
+      "vfy_math_prompt_text_input"
+    ],
+    "sourceFiles": [
+      "backend/features/admin/core/menu_dispatch.py",
+      "backend/features/admin/moderation/verification_home_actions.py",
+      "backend/features/admin/moderation/verification_views.py",
+      "backend/features/admin/module_settings/verification_inputs.py",
+      "backend/features/admin/runtime.py",
+      "backend/features/admin/ui/admin_main_keyboards.py",
+      "backend/features/verification/verification_runtime.py",
+      "backend/platform/scheduler/tasks/verification_timeout_task.py"
+    ],
+    "alignmentStatus": "ok",
+    "alignmentSummary": "真实回调审计通过。"
+  },
+  "screens": [
+    {
+      "id": "entry",
+      "title": "管理员主菜单",
+      "message": [
+        "发送 /admin 后选择当前群组。",
+        "点击「验证超时」进入配置页。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "验证超时",
+            "callbackData": "adm:menu:verification:{chat_id}",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「验证超时」。",
+            "highlight": true
+          }
+        ],
+        [
+          {
+            "label": "切换群",
+            "callbackData": "adm:switch_group",
+            "action": "goto",
+            "target": "select_group",
+            "feedback": "进入群组选择。"
+          },
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "goto",
+            "target": "main_menu",
+            "feedback": "已回到主菜单。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "当前群组：演示群"
+      ]
+    },
+    {
+      "id": "select_group",
+      "title": "选择配置群组",
+      "message": [
+        "私聊配置前先确认目标群组，后续按钮都会写入这个群。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "演示群",
+            "callbackData": "adm:select_group:-1001001",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到演示群。"
+          },
+          {
+            "label": "测试群",
+            "callbackData": "adm:select_group:-1001002",
+            "action": "goto",
+            "target": "entry",
+            "feedback": "已切换到测试群。"
+          }
+        ],
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:menu:verification:{chat_id}",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "可管理群：演示群、测试群"
+      ]
+    },
+    {
+      "id": "main_menu",
+      "title": "主菜单",
+      "message": [
+        "这里展示机器人后台的真实功能入口。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "验证超时",
+            "callbackData": "adm:menu:verification:{chat_id}",
+            "action": "goto",
+            "target": "home",
+            "feedback": "已进入「验证超时」。",
+            "highlight": true
+          }
+        ]
+      ]
+    },
+    {
+      "id": "home",
+      "title": "验证超时",
+      "message": [
+        "设置验证超时时间和超时后的禁言或踢出动作。",
+        "所有模式配置通过 adm:vfy_home 回调分发。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "规则总览",
+            "callbackData": "adm:vfy_home:{chat_id}:rules",
+            "action": "goto",
+            "target": "rules",
+            "feedback": "打开验证规则。"
+          },
+          {
+            "label": "垃圾防护",
+            "callbackData": "adm:vfy_home:{chat_id}:spam",
+            "action": "goto",
+            "target": "spam",
+            "feedback": "打开垃圾防护。"
+          }
+        ],
+        [
+          {
+            "label": "按钮验证",
+            "callbackData": "adm:vfy_home:{chat_id}:rule:button",
+            "action": "goto",
+            "target": "button_rule",
+            "feedback": "打开按钮验证。"
+          },
+          {
+            "label": "数学验证",
+            "callbackData": "adm:vfy_home:{chat_id}:rule:math",
+            "action": "goto",
+            "target": "math_rule",
+            "feedback": "打开数学验证。"
+          },
+          {
+            "label": "直接禁言",
+            "callbackData": "adm:vfy_home:{chat_id}:rule:mute",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "已切换直接禁言模式。"
+          }
+        ],
+        [
+          {
+            "label": "返回主菜单",
+            "callbackData": "adm:menu:main:{chat_id}",
+            "action": "back",
+            "target": "entry",
+            "feedback": "已返回主菜单。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "当前群组：演示群"
+      ]
+    },
+    {
+      "id": "rules",
+      "title": "验证规则总览",
+      "message": [
+        "规则总览展示当前启用模式和超时处理。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "按钮验证",
+            "callbackData": "adm:vfy_home:{chat_id}:rule:button",
+            "action": "goto",
+            "target": "button_rule",
+            "feedback": "进入按钮验证。"
+          }
+        ],
+        [
+          {
+            "label": "数学验证",
+            "callbackData": "adm:vfy_home:{chat_id}:rule:math",
+            "action": "goto",
+            "target": "math_rule",
+            "feedback": "进入数学验证。"
+          }
+        ],
+        [
+          {
+            "label": "返回验证首页",
+            "callbackData": "adm:menu:verification:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回验证首页。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "button_rule",
+      "title": "按钮验证",
+      "message": [
+        "按钮验证会发出入群确认按钮，新成员点击后解除限制。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "开启按钮验证",
+            "callbackData": "adm:vfy_home:{chat_id}:rule:button:toggle",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "按钮验证已切换。"
+          },
+          {
+            "label": "设置封面",
+            "callbackData": "adm:vfy_home:{chat_id}:rule:button:input:cover",
+            "action": "input",
+            "target": "vfy_cover",
+            "feedback": "请发送验证封面。"
+          },
+          {
+            "label": "设置文本",
+            "callbackData": "adm:vfy_home:{chat_id}:rule:button:input:text",
+            "action": "input",
+            "target": "vfy_text",
+            "feedback": "请输入验证文案。"
+          }
+        ],
+        [
+          {
+            "label": "预览",
+            "callbackData": "adm:vfy_home:{chat_id}:rule:button:preview",
+            "action": "goto",
+            "target": "result",
+            "feedback": "已发送预览。"
+          },
+          {
+            "label": "超时时间",
+            "callbackData": "adm:vfy_home:{chat_id}:rule:button:cycle:timeout",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "已切换超时时间。"
+          },
+          {
+            "label": "超时动作",
+            "callbackData": "adm:vfy_home:{chat_id}:rule:button:cycle:timeout_action",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "已切换超时动作。"
+          }
+        ],
+        [
+          {
+            "label": "返回规则",
+            "callbackData": "adm:vfy_home:{chat_id}:rules",
+            "action": "back",
+            "target": "rules",
+            "feedback": "已返回规则总览。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "math_rule",
+      "title": "数学验证",
+      "message": [
+        "数学验证会要求新成员回答题目。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "开启数学验证",
+            "callbackData": "adm:vfy_home:{chat_id}:rule:math:toggle",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "数学验证已切换。"
+          },
+          {
+            "label": "设置文案",
+            "callbackData": "adm:vfy_home:{chat_id}:rule:math:input:text",
+            "action": "input",
+            "target": "math_text",
+            "feedback": "请输入数学验证提示文案。"
+          },
+          {
+            "label": "设置封面",
+            "callbackData": "adm:vfy_home:{chat_id}:rule:math:input:cover",
+            "action": "input",
+            "target": "math_cover",
+            "feedback": "请发送数学验证封面。"
+          }
+        ],
+        [
+          {
+            "label": "错误动作",
+            "callbackData": "adm:vfy_home:{chat_id}:rule:math:cycle:wrong_action",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "已切换答错动作。"
+          },
+          {
+            "label": "超时动作",
+            "callbackData": "adm:vfy_home:{chat_id}:rule:math:cycle:timeout_action",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "已切换超时动作。"
+          }
+        ],
+        [
+          {
+            "label": "返回规则",
+            "callbackData": "adm:vfy_home:{chat_id}:rules",
+            "action": "back",
+            "target": "rules",
+            "feedback": "已返回规则总览。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "spam",
+      "title": "入群垃圾防护",
+      "message": [
+        "刷号、可疑新号和入群频率在这里配置。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "入群刷号开关",
+            "callbackData": "adm:vfy_home:{chat_id}:spam:toggle:enabled",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "已切换入群刷号检测。"
+          },
+          {
+            "label": "动作",
+            "callbackData": "adm:vfy_home:{chat_id}:spam:cycle:action",
+            "action": "toggle",
+            "target": "result",
+            "feedback": "已切换处理动作。"
+          }
+        ],
+        [
+          {
+            "label": "返回验证首页",
+            "callbackData": "adm:menu:verification:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回验证首页。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "vfy_cover",
+      "title": "设置验证封面",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:vfy_home:{chat_id}:rule:button",
+            "action": "back",
+            "target": "button_rule",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "media",
+        "prompt": "发送图片、视频或 /clear",
+        "placeholder": "image.jpg",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "图片",
+            "value": "image.jpg",
+            "target": "result",
+            "feedback": "已填入：图片。"
+          },
+          {
+            "label": "清空",
+            "value": "/clear",
+            "target": "result",
+            "feedback": "已填入：清空。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "vfy_text",
+      "title": "设置验证文本",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:vfy_home:{chat_id}:rule:button",
+            "action": "back",
+            "target": "button_rule",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "发送验证提示文案",
+        "placeholder": "请点击下方按钮完成验证。",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "文案",
+            "value": "请点击下方按钮完成验证。",
+            "target": "result",
+            "feedback": "已填入：文案。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "math_text",
+      "title": "设置数学验证文案",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:vfy_home:{chat_id}:rule:math",
+            "action": "back",
+            "target": "math_rule",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "发送数学验证提示文案",
+        "placeholder": "请完成下方算术题，通过后解除限制。",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "文案",
+            "value": "请完成下方算术题，通过后解除限制。",
+            "target": "result",
+            "feedback": "已填入：文案。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "math_cover",
+      "title": "设置数学验证封面",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:vfy_home:{chat_id}:rule:math",
+            "action": "back",
+            "target": "math_rule",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "media",
+        "prompt": "发送图片、视频或 /clear",
+        "placeholder": "image.jpg",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "图片",
+            "value": "image.jpg",
+            "target": "result",
+            "feedback": "已填入：图片。"
+          },
+          {
+            "label": "清空",
+            "value": "/clear",
+            "target": "result",
+            "feedback": "已填入：清空。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "result",
+      "title": "设置结果",
+      "message": [
+        "Bot 保存配置后会重新渲染当前功能页。",
+        "请在群内用测试账号触发一次，确认权限和运行结果。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回设置页",
+            "callbackData": "adm:menu:verification:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回设置页。"
+          }
+        ]
+      ],
+      "stateLines": [
+        "审计：回调来自后端真实路由"
+      ]
+    }
+  ]
+}
