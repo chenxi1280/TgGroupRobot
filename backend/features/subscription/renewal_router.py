@@ -15,7 +15,7 @@ class RenewalRouter(BaseRouter):
         return "renewal"
 
     def register(self, app: Application) -> None:
-        log.info(f"Registering {self.name} router")
+        log.debug(f"Registering {self.name} router")
         app.add_handler(CommandHandler("renew", renew_command))
         app.add_handler(CallbackQueryHandler(renew_callback, pattern=r"^renew:"))
-        log.info(f"{self.name} router registered successfully")
+        log.debug(f"{self.name} router registered successfully")

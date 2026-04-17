@@ -18,7 +18,7 @@ class SubscriptionRouter(BaseRouter):
         return "subscription"
 
     def register(self, app: Application) -> None:
-        log.info(f"Registering {self.name} router")
+        log.debug(f"Registering {self.name} router")
         app.add_handler(CallbackQueryHandler(subscription_menu_callback, pattern=r"^sub:menu:-?\d+$"))
         app.add_handler(CallbackQueryHandler(subscription_contact_callback, pattern=r"^sub:contact:-?\d+$"))
-        log.info(f"{self.name} router registered successfully")
+        log.debug(f"{self.name} router registered successfully")

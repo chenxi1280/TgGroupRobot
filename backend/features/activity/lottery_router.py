@@ -36,7 +36,7 @@ class LotteryRouter(BaseRouter):
 
     def register(self, app: Application) -> None:
         """注册抽奖相关的所有处理器"""
-        log.info(f"Registering {self.name} router")
+        log.debug(f"Registering {self.name} router")
 
         # 回调处理器
         app.add_handler(CallbackQueryHandler(lottery_create_menu_callback, pattern=r"^lot:create_menu"))
@@ -58,4 +58,4 @@ class LotteryRouter(BaseRouter):
 
         # 注意：抽奖消息处理器已移至 __main__.py 的 _register_common_handlers 中统一管理
 
-        log.info(f"{self.name} router registered successfully")
+        log.debug(f"{self.name} router registered successfully")

@@ -25,7 +25,7 @@ class VerificationRouter(BaseRouter):
         return "verification"
 
     def register(self, app: Application) -> None:
-        log.info(f"Registering {self.name} router")
+        log.debug(f"Registering {self.name} router")
 
         # 注册验证配置取消回调
         app.add_handler(CallbackQueryHandler(verification_cancel_callback, pattern=r"^verification:cancel:"))
@@ -36,4 +36,4 @@ class VerificationRouter(BaseRouter):
         # app.add_handler(CallbackQueryHandler(admin_verify_callback, pattern=r"^adm_vfy:"))
         # app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, new_members_handler))
 
-        log.info(f"{self.name} router registered successfully")
+        log.debug(f"{self.name} router registered successfully")

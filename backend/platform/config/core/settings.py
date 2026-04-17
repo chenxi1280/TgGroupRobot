@@ -31,7 +31,8 @@ class Settings(BaseSettings):
     )
 
     app_env: str = Field(default="dev", alias="APP_ENV")
-    log_level: str = Field(default="INFO", alias="LOG_LEVEL")
+    log_level: str = Field(default="WARNING", alias="LOG_LEVEL")
+    log_format: str = Field(default="console", alias="LOG_FORMAT")
 
     bot_token: str = Field(alias="BOT_TOKEN")
     database_url: str = Field(
@@ -39,6 +40,7 @@ class Settings(BaseSettings):
         alias="DATABASE_URL",
     )
     database_connect_timeout_seconds: int = Field(default=10, alias="DATABASE_CONNECT_TIMEOUT_SECONDS")
+    startup_schema_migrations_enabled: bool = Field(default=True, alias="STARTUP_SCHEMA_MIGRATIONS_ENABLED")
 
     # 代理设置（用于连接 Telegram API）
     proxy_url: str | None = Field(default=None, alias="PROXY_URL")
@@ -49,6 +51,10 @@ class Settings(BaseSettings):
     telegram_connect_timeout_seconds: float = Field(default=10.0, alias="TELEGRAM_CONNECT_TIMEOUT_SECONDS")
     telegram_read_timeout_seconds: float = Field(default=20.0, alias="TELEGRAM_READ_TIMEOUT_SECONDS")
     telegram_write_timeout_seconds: float = Field(default=20.0, alias="TELEGRAM_WRITE_TIMEOUT_SECONDS")
+
+    # 启动期调度器控制：默认不在启动瞬间立刻跑所有后台任务，避免抢占 bot 初始化。
+    scheduler_run_immediately: bool = Field(default=False, alias="SCHEDULER_RUN_IMMEDIATELY")
+    scheduler_initial_stagger_seconds: float = Field(default=0.25, alias="SCHEDULER_INITIAL_STAGGER_SECONDS")
 
     # 预留：未来 webhook 模式
     webhook_url: str | None = Field(default=None, alias="WEBHOOK_URL")

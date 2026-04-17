@@ -22,7 +22,7 @@ class BannedWordRouter(BaseRouter):
         return "banned_word"
     
     def register(self, app: Application) -> None:
-        log.info(f"Registering {self.name} router")
+        log.debug(f"Registering {self.name} router")
         
         # 回调处理器
         app.add_handler(CallbackQueryHandler(banned_word_add_start, pattern=r"^banned_word:add"))
@@ -41,4 +41,4 @@ class BannedWordRouter(BaseRouter):
 
         # 注意：违禁词检测已移至 group_message_handler.py 中的统一处理入口
         
-        log.info(f"{self.name} router registered successfully")
+        log.debug(f"{self.name} router registered successfully")

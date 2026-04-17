@@ -22,7 +22,7 @@ class ScheduledMessageRouter(BaseRouter):
         return "scheduled_message"
 
     def register(self, app: Application) -> None:
-        log.info(f"Registering {self.name} router")
+        log.debug(f"Registering {self.name} router")
 
         # 回调处理器（使用前缀匹配）
         app.add_handler(CallbackQueryHandler(sm_callback_handler, pattern=r"^sm:list:"))
@@ -166,4 +166,4 @@ class ScheduledMessageRouter(BaseRouter):
         #     group=1,
         # )
 
-        log.info(f"{self.name} router registered successfully")
+        log.debug(f"{self.name} router registered successfully")

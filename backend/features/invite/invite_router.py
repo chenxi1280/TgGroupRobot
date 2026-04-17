@@ -43,7 +43,7 @@ class InviteRouter(BaseRouter):
         return "invite"
     
     def register(self, app: Application) -> None:
-        log.info(f"Registering {self.name} router")
+        log.debug(f"Registering {self.name} router")
         
         # 命令处理器
         app.add_handler(CommandHandler("link", link_command))
@@ -91,4 +91,4 @@ class InviteRouter(BaseRouter):
         )
         app.add_handler(invite_link_conv)
         
-        log.info(f"{self.name} router registered successfully")
+        log.debug(f"{self.name} router registered successfully")

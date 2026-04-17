@@ -32,7 +32,7 @@ class AutoReplyRouter(BaseRouter):
         return "auto_reply"
     
     def register(self, app: Application) -> None:
-        log.info(f"Registering {self.name} router")
+        log.debug(f"Registering {self.name} router")
         
         # 回调处理器
         app.add_handler(CallbackQueryHandler(auto_reply_create_start, pattern=r"^auto_reply:create"))
@@ -55,4 +55,4 @@ class AutoReplyRouter(BaseRouter):
 
         # 注意：自动回复配置处理器已移至 __main__.py 的 _register_common_handlers 中统一管理
 
-        log.info(f"{self.name} router registered successfully")
+        log.debug(f"{self.name} router registered successfully")

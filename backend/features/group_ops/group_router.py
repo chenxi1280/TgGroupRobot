@@ -19,7 +19,7 @@ class GroupRouter(BaseRouter):
         return "group"
     
     def register(self, app: Application) -> None:
-        log.info(f"Registering {self.name} router")
+        log.debug(f"Registering {self.name} router")
         
         # 群组切换回调处理器（私聊功能）
         app.add_handler(CallbackQueryHandler(chat_group_list_callback, pattern=r"^group:list"))
@@ -27,4 +27,4 @@ class GroupRouter(BaseRouter):
         app.add_handler(CallbackQueryHandler(chat_group_refresh_callback, pattern=r"^group:refresh"))
         app.add_handler(CallbackQueryHandler(chat_group_admin_callback, pattern=r"^group:admin:\-?\d+$"))
         
-        log.info(f"{self.name} router registered successfully")
+        log.debug(f"{self.name} router registered successfully")

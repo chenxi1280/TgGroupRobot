@@ -15,6 +15,6 @@ class GameRuntimeRouter(BaseRouter):
         return "game_runtime"
 
     def register(self, app: Application) -> None:
-        log.info(f"Registering {self.name} router")
+        log.debug(f"Registering {self.name} router")
         app.add_handler(CallbackQueryHandler(game_runtime_callback, pattern=r"^gmrun:"))
-        log.info(f"{self.name} router registered successfully")
+        log.debug(f"{self.name} router registered successfully")

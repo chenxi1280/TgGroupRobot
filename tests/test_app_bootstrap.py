@@ -61,7 +61,7 @@ def test_build_application_uses_serial_updates(monkeypatch):
             captured_requests.append((proxy, kwargs))
 
     monkeypatch.setattr(app_main, "get_settings", lambda: settings)
-    monkeypatch.setattr(app_main, "configure_logging", lambda level: None)
+    monkeypatch.setattr(app_main, "configure_logging", lambda level, log_format="console": None)
     def fake_create_database(url: str, connect_timeout_seconds: int = 10):
         captured_db.append((url, connect_timeout_seconds))
         return fake_db

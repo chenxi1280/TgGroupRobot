@@ -22,7 +22,7 @@ class NearbyRouter(BaseRouter):
         return "nearby"
 
     def register(self, app: Application) -> None:
-        log.info(f"Registering {self.name} router")
+        log.debug(f"Registering {self.name} router")
 
         app.add_handler(CommandHandler("mydata", mydata_command))
         app.add_handler(CommandHandler("nearby", nearby_command))
@@ -30,5 +30,5 @@ class NearbyRouter(BaseRouter):
 
         app.add_handler(CallbackQueryHandler(nearby_callback, pattern=r"^lbs:"))
 
-        log.info(f"{self.name} router registered successfully")
+        log.debug(f"{self.name} router registered successfully")
 

@@ -33,7 +33,7 @@ class AdsRouter(BaseRouter):
         return "ads"
     
     def register(self, app: Application) -> None:
-        log.info(f"Registering {self.name} router")
+        log.debug(f"Registering {self.name} router")
         
         # 回调处理器
         app.add_handler(CallbackQueryHandler(ads_create_start_callback, pattern=r"^ads:create(?::|$)"))
@@ -63,4 +63,4 @@ class AdsRouter(BaseRouter):
         #     group=1
         # )
         
-        log.info(f"{self.name} router registered successfully")
+        log.debug(f"{self.name} router registered successfully")

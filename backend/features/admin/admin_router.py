@@ -17,7 +17,7 @@ class AdminRouter(BaseRouter):
         return "admin"
     
     def register(self, app: Application) -> None:
-        log.info(f"Registering {self.name} router")
+        log.debug(f"Registering {self.name} router")
         
         # 命令处理器
         app.add_handler(CommandHandler("admin", admin_callback))
@@ -31,4 +31,4 @@ class AdminRouter(BaseRouter):
         # 频道消息处理器（车库转发）
         app.add_handler(MessageHandler(filters.ChatType.CHANNEL, garage_forward_channel_post_handler))
         
-        log.info(f"{self.name} router registered successfully")
+        log.debug(f"{self.name} router registered successfully")

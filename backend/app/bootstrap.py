@@ -53,7 +53,7 @@ async def _raw_update_probe(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     if message is not None:
         text = message.text or message.caption or ""
 
-    log.info(
+    log.debug(
         "raw_update_entry",
         update_id=update.update_id,
         has_message=update.message is not None,
@@ -83,10 +83,10 @@ def _configure_ptb_runtime() -> None:
 def build_application() -> Application:
     """构建并配置 Telegram Bot 应用"""
     settings = get_settings()
-    configure_logging(settings.log_level)
+    configure_logging(settings.log_level, getattr(settings, "log_format", "console"))
     _configure_ptb_runtime()
 
-    log.info("bot_application_building")
+    log.debug("bot_application_building")
 
     db = create_database(
         settings.database_url,
@@ -130,7 +130,7 @@ def build_application() -> Application:
     _register_common_handlers(app)
     app.add_error_handler(_on_error)
 
-    log.info("bot_application_built")
+    log.debug("bot_application_built")
     return app
 
 
@@ -242,7 +242,11 @@ async def _validate_schema_or_exit(app: Application) -> None:
     allow_compat = os.getenv("BOT_ALLOW_SCHEMA_COMPAT", "").strip() == "1"
 
     try:
-        await run_startup_schema_migrations(db.engine)
+        settings = app.bot_data.get("settings")
+        if getattr(settings, "startup_schema_migrations_enabled", True):
+            await run_startup_schema_migrations(db.engine)
+        else:
+            log.warning("startup_schema_migrations_skipped_by_config")
         await validate_database_schema(db.engine)
         log.info("schema_gate_passed")
     except SchemaValidationError:

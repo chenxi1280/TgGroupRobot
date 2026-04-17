@@ -85,14 +85,14 @@ class ScheduledTask(ABC):
         start_time = dt.datetime.now(dt.timezone.utc)
 
         try:
-            log.info("task_started", task_name=self.name)
+            log.debug("task_started", task_name=self.name)
             await self.execute(app)
             self.last_run = start_time
             self.total_runs += 1
             self.error_count = 0  # 重置连续失败计数
 
             duration = (dt.datetime.now(dt.timezone.utc) - start_time).total_seconds()
-            log.info(
+            log.debug(
                 "task_completed",
                 task_name=self.name,
                 duration=duration,
@@ -131,14 +131,24 @@ class ScheduledTask(ABC):
 class Scheduler:
     """统一任务调度器"""
 
-    def __init__(self, app: "Application"):
+    def __init__(
+        self,
+        app: "Application",
+        *,
+        run_immediately: bool = False,
+        initial_stagger_seconds: float = 0.0,
+    ):
         """
         初始化调度器
 
         Args:
             app: Telegram Bot Application 实例
+            run_immediately: 是否在调度器启动后立刻执行首轮任务
+            initial_stagger_seconds: 首轮任务之间的错峰间隔
         """
         self.app = app
+        self.run_immediately = run_immediately
+        self.initial_stagger_seconds = max(initial_stagger_seconds, 0.0)
         self.tasks: dict[str, ScheduledTask] = {}
         self.running = False
         self._task_tasks: dict[str, asyncio.Task] = {}  # 存储每个任务的 asyncio.Task
@@ -151,7 +161,7 @@ class Scheduler:
             task: 要注册的任务
         """
         self.tasks[task.name] = task
-        log.info("task_registered", task_name=task.name, interval=task.interval)
+        log.debug("task_registered", task_name=task.name, interval=task.interval)
 
     def register_tasks(self, tasks: list[ScheduledTask]) -> None:
         """
@@ -170,12 +180,18 @@ class Scheduler:
             return
 
         self.running = True
-        log.info("scheduler_started", task_count=len(self.tasks))
+        log.info(
+            "scheduler_started",
+            task_count=len(self.tasks),
+            run_immediately=self.run_immediately,
+            initial_stagger_seconds=self.initial_stagger_seconds,
+        )
 
         # 为每个任务创建独立的异步任务
-        for task in self.tasks.values():
+        for index, task in enumerate(self.tasks.values()):
             if task.enabled:
-                async_task = asyncio.create_task(self._run_task_loop(task))
+                initial_delay = index * self.initial_stagger_seconds
+                async_task = asyncio.create_task(self._run_task_loop(task, initial_delay=initial_delay))
                 self._task_tasks[task.name] = async_task
 
     async def stop(self) -> None:
@@ -199,14 +215,15 @@ class Scheduler:
         self._task_tasks.clear()
         log.info("scheduler_stopped")
 
-    async def _run_task_loop(self, task: ScheduledTask) -> None:
+    async def _run_task_loop(self, task: ScheduledTask, *, initial_delay: float = 0.0) -> None:
         """
         运行任务循环
 
         Args:
             task: 要运行的任务
         """
-        task.next_run = dt.datetime.now(dt.timezone.utc)
+        first_delay = initial_delay if self.run_immediately else task.interval + initial_delay
+        task.next_run = dt.datetime.now(dt.timezone.utc) + dt.timedelta(seconds=first_delay)
 
         while self.running:
             try:

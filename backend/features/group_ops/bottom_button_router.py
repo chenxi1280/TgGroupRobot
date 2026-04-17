@@ -15,6 +15,6 @@ class BottomButtonRouter(BaseRouter):
         return "bottom_button"
 
     def register(self, app: Application) -> None:
-        log.info(f"Registering {self.name} router")
+        log.debug(f"Registering {self.name} router")
         app.add_handler(CallbackQueryHandler(bottom_button_runtime_callback, pattern=r"^btmrun:"))
-        log.info(f"{self.name} router registered successfully")
+        log.debug(f"{self.name} router registered successfully")

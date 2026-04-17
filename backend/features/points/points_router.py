@@ -27,7 +27,7 @@ class PointsRouter(BaseRouter):
         return "points"
     
     def register(self, app: Application) -> None:
-        log.info(f"Registering {self.name} router")
+        log.debug(f"Registering {self.name} router")
         
         # 命令处理器
         app.add_handler(CommandHandler("sign", sign_command))
@@ -56,4 +56,4 @@ class PointsRouter(BaseRouter):
 
         # 注意：积分消息处理器已移至 __main__.py 的 _register_common_handlers 中统一管理
 
-        log.info(f"{self.name} router registered successfully")
+        log.debug(f"{self.name} router registered successfully")

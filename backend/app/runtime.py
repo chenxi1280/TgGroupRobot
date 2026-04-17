@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import signal
 import sys
+import time
 
 from telegram import Update
 
@@ -15,21 +16,40 @@ from backend.app.bootstrap import (
     log,
 )
 from backend.platform.scheduler.core import Scheduler
-from backend.platform.scheduler.tasks import (
-    AdsTask,
-    AuctionTask,
-    BottomButtonTask,
-    CleanupTask,
-    EngagementTask,
-    GameTask,
-    GroupLockTask,
-    GuessTask,
-    LotteryTask,
-    ScheduledMessageTaskRunner,
-    SolitaireTask,
-    TeacherSearchTask,
-    VerificationTimeoutTask,
-)
+
+
+def _register_scheduler_tasks(scheduler: Scheduler) -> None:
+    from backend.platform.scheduler.tasks import (
+        AdsTask,
+        AuctionTask,
+        BottomButtonTask,
+        CleanupTask,
+        EngagementTask,
+        GameTask,
+        GroupLockTask,
+        GuessTask,
+        LotteryTask,
+        ScheduledMessageTaskRunner,
+        SolitaireTask,
+        TeacherSearchTask,
+        VerificationTimeoutTask,
+    )
+
+    scheduler.register_tasks([
+        LotteryTask(),
+        AuctionTask(),
+        SolitaireTask(),
+        AdsTask(),
+        CleanupTask(),
+        VerificationTimeoutTask(),
+        ScheduledMessageTaskRunner(),
+        GroupLockTask(),
+        BottomButtonTask(),
+        EngagementTask(),
+        GameTask(),
+        GuessTask(),
+        TeacherSearchTask(),
+    ])
 
 
 async def _wait_for_shutdown_signal() -> None:
@@ -58,31 +78,21 @@ async def _wait_for_shutdown_signal() -> None:
 
 
 async def run_bot_with_scheduler() -> None:
+    startup_started = time.perf_counter()
     app = build_application()
     log.info("bot_starting")
 
-    scheduler = Scheduler(app)
-    scheduler.register_tasks([
-        LotteryTask(),
-        AuctionTask(),
-        SolitaireTask(),
-        AdsTask(),
-        CleanupTask(),
-        VerificationTimeoutTask(),
-        ScheduledMessageTaskRunner(),
-        GroupLockTask(),
-        BottomButtonTask(),
-        EngagementTask(),
-        GameTask(),
-        GuessTask(),
-        TeacherSearchTask(),
-    ])
-
+    settings = app.bot_data["settings"]
+    scheduler = Scheduler(
+        app,
+        run_immediately=getattr(settings, "scheduler_run_immediately", False),
+        initial_stagger_seconds=getattr(settings, "scheduler_initial_stagger_seconds", 0.0),
+    )
     await _validate_schema_or_exit(app)
-    await scheduler.start()
     initialized = False
     started = False
     polling_started = False
+    scheduler_started = False
 
     try:
         await app.initialize()
@@ -91,10 +101,18 @@ async def run_bot_with_scheduler() -> None:
         started = True
         await app.updater.start_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
         polling_started = True
-        log.info("polling_started", allowed_updates="ALL_TYPES")
+        log.info(
+            "polling_started",
+            allowed_updates="ALL_TYPES",
+            startup_seconds=round(time.perf_counter() - startup_started, 3),
+        )
+        _register_scheduler_tasks(scheduler)
+        await scheduler.start()
+        scheduler_started = True
         await _wait_for_shutdown_signal()
     finally:
-        await scheduler.stop()
+        if scheduler_started:
+            await scheduler.stop()
         if polling_started and app.updater is not None:
             await app.updater.stop()
         if started:

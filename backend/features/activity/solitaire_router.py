@@ -42,7 +42,7 @@ class SolitaireRouter(BaseRouter):
 
     def register(self, app: Application) -> None:
         """注册接龙相关的所有处理器"""
-        log.info(f"Registering {self.name} router")
+        log.debug(f"Registering {self.name} router")
 
         # 回调处理器
         app.add_handler(CallbackQueryHandler(solitaire_menu_callback, pattern=r"^sol:menu$"))
@@ -77,4 +77,4 @@ class SolitaireRouter(BaseRouter):
 
         # 注意：接龙参与消息处理器已移至 __main__.py 的 _register_common_handlers 中统一管理
 
-        log.info(f"{self.name} router registered successfully")
+        log.debug(f"{self.name} router registered successfully")
