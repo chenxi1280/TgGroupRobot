@@ -33,7 +33,7 @@
       "id": "entry",
       "title": "管理员主菜单",
       "message": [
-        "发送 /admin 后选择当前群组。",
+        "发送 /start 后点击管理入口，按按钮选择当前群组。",
         "点击「验证超时」进入配置页。"
       ],
       "keyboard": [
@@ -167,7 +167,7 @@
             "label": "直接禁言",
             "callbackData": "adm:vfy_home:{chat_id}:rule:mute",
             "action": "toggle",
-            "target": "result",
+            "target": "home",
             "feedback": "已切换直接禁言模式。"
           }
         ],
@@ -233,7 +233,7 @@
             "label": "开启按钮验证",
             "callbackData": "adm:vfy_home:{chat_id}:rule:button:toggle",
             "action": "toggle",
-            "target": "result",
+            "target": "button_rule",
             "feedback": "按钮验证已切换。"
           },
           {
@@ -263,14 +263,14 @@
             "label": "超时时间",
             "callbackData": "adm:vfy_home:{chat_id}:rule:button:cycle:timeout",
             "action": "toggle",
-            "target": "result",
+            "target": "button_rule",
             "feedback": "已切换超时时间。"
           },
           {
             "label": "超时动作",
             "callbackData": "adm:vfy_home:{chat_id}:rule:button:cycle:timeout_action",
             "action": "toggle",
-            "target": "result",
+            "target": "button_rule",
             "feedback": "已切换超时动作。"
           }
         ],
@@ -297,7 +297,7 @@
             "label": "开启数学验证",
             "callbackData": "adm:vfy_home:{chat_id}:rule:math:toggle",
             "action": "toggle",
-            "target": "result",
+            "target": "math_rule",
             "feedback": "数学验证已切换。"
           },
           {
@@ -320,14 +320,14 @@
             "label": "错误动作",
             "callbackData": "adm:vfy_home:{chat_id}:rule:math:cycle:wrong_action",
             "action": "toggle",
-            "target": "result",
+            "target": "math_rule",
             "feedback": "已切换答错动作。"
           },
           {
             "label": "超时动作",
             "callbackData": "adm:vfy_home:{chat_id}:rule:math:cycle:timeout_action",
             "action": "toggle",
-            "target": "result",
+            "target": "math_rule",
             "feedback": "已切换超时动作。"
           }
         ],
@@ -354,14 +354,14 @@
             "label": "入群刷号开关",
             "callbackData": "adm:vfy_home:{chat_id}:spam:toggle:enabled",
             "action": "toggle",
-            "target": "result",
+            "target": "spam",
             "feedback": "已切换入群刷号检测。"
           },
           {
             "label": "动作",
             "callbackData": "adm:vfy_home:{chat_id}:spam:cycle:action",
             "action": "toggle",
-            "target": "result",
+            "target": "spam",
             "feedback": "已切换处理动作。"
           }
         ],

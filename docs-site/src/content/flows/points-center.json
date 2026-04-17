@@ -33,7 +33,7 @@
       "id": "entry",
       "title": "管理员主菜单",
       "message": [
-        "发送 /admin 后选择当前群组。",
+        "发送 /start 后点击管理入口，按按钮选择当前群组。",
         "点击「主积分中心」进入配置页。"
       ],
       "keyboard": [
@@ -198,14 +198,14 @@
             "label": "开启签到",
             "callbackData": "pts:toggle:sign_enabled:{chat_id}:1",
             "action": "toggle",
-            "target": "result",
+            "target": "sign_rule",
             "feedback": "签到积分已开启。"
           },
           {
             "label": "关闭签到",
             "callbackData": "pts:toggle:sign_enabled:{chat_id}:0",
             "action": "toggle",
-            "target": "result",
+            "target": "sign_rule",
             "feedback": "签到积分已关闭。"
           }
         ],
@@ -248,14 +248,14 @@
             "label": "开启发言积分",
             "callbackData": "pts:toggle:message_points_enabled:{chat_id}:1",
             "action": "toggle",
-            "target": "result",
+            "target": "speech_rule",
             "feedback": "发言积分已开启。"
           },
           {
             "label": "关闭发言积分",
             "callbackData": "pts:toggle:message_points_enabled:{chat_id}:0",
             "action": "toggle",
-            "target": "result",
+            "target": "speech_rule",
             "feedback": "发言积分已关闭。"
           }
         ],
@@ -305,14 +305,14 @@
             "label": "开启邀请积分",
             "callbackData": "pts:toggle:invite_points_enabled:{chat_id}:1",
             "action": "toggle",
-            "target": "result",
+            "target": "invite_rule",
             "feedback": "邀请积分已开启。"
           },
           {
             "label": "关闭邀请积分",
             "callbackData": "pts:toggle:invite_points_enabled:{chat_id}:0",
             "action": "toggle",
-            "target": "result",
+            "target": "invite_rule",
             "feedback": "邀请积分已关闭。"
           }
         ],
@@ -364,14 +364,14 @@
             "label": "开启排行榜展示",
             "callbackData": "pts:toggle:points_speech_rank_enabled:{chat_id}:1",
             "action": "toggle",
-            "target": "result",
+            "target": "display_rules",
             "feedback": "排行榜展示已开启。"
           },
           {
             "label": "个人发言统计",
             "callbackData": "pts:toggle:points_personal_speech_enabled:{chat_id}:1",
             "action": "toggle",
-            "target": "result",
+            "target": "display_rules",
             "feedback": "个人统计已开启。"
           }
         ],

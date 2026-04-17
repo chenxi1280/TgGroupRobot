@@ -26,7 +26,7 @@
       "id": "entry",
       "title": "管理员主菜单",
       "message": [
-        "发送 /admin 后选择当前群组。",
+        "发送 /start 后点击管理入口，按按钮选择当前群组。",
         "点击「处罚动作降级」进入配置页。"
       ],
       "keyboard": [
@@ -130,21 +130,21 @@
             "label": "只删除",
             "callbackData": "adm:punish:{chat_id}:preset:delete",
             "action": "toggle",
-            "target": "result",
+            "target": "home",
             "feedback": "已切换为只删除。"
           },
           {
             "label": "禁言",
             "callbackData": "adm:punish:{chat_id}:preset:mute",
             "action": "toggle",
-            "target": "result",
+            "target": "home",
             "feedback": "已切换为禁言。"
           },
           {
             "label": "封禁",
             "callbackData": "adm:punish:{chat_id}:preset:ban",
             "action": "toggle",
-            "target": "result",
+            "target": "home",
             "feedback": "已切换为封禁。"
           }
         ],

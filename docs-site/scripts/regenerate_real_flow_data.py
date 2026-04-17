@@ -151,7 +151,7 @@ def admin_entry(label: str, callback: str, target: str = "home") -> dict[str, An
     return screen(
         "entry",
         "管理员主菜单",
-        ["发送 /admin 后选择当前群组。", f"点击「{label}」进入配置页。"],
+        ["发送 /start 后点击管理入口，按按钮选择当前群组。", f"点击「{label}」进入配置页。"],
         [
             [button(label, callback, "goto", target, f"已进入「{label}」。", True)],
             [
@@ -305,7 +305,7 @@ def basic_runtime_flow(slug: str, label: str, messages: list[str], prefixes: lis
                 label,
                 messages,
                 [
-                    [button("重新打开 /admin", f"adm:menu:main:{CHAT}", "goto", "entry", "回到真实管理员入口。")],
+                    [button("返回管理入口", f"adm:menu:main:{CHAT}", "goto", "entry", "回到真实管理员入口。")],
                     [button("切换群", "adm:switch_group", "goto", "select_group", "进入群组选择。")],
                 ],
                 ["该页说明真实运行时逻辑，不编造二级配置按钮。"],
@@ -614,7 +614,7 @@ def build_flows() -> dict[str, dict[str, Any]]:
             screen(
                 "entry",
                 "管理员主菜单",
-                ["发送 /admin 后进入当前群组后台。", "点击「切换群」会进入真实群组选择回调。"],
+                ["发送 /start 后点击管理入口进入当前群组后台。", "点击「切换群」会进入真实群组选择回调。"],
                 [
                     [button("切换群", "adm:switch_group", "goto", "select_group", "进入群组选择。", True)],
                     [button("返回主菜单", f"adm:menu:main:{CHAT}", "goto", "main_menu", "已回到主菜单。")],
@@ -2045,6 +2045,18 @@ def build_flows() -> dict[str, dict[str, Any]]:
     return flows
 
 
+def normalize_toggle_targets(payload: dict[str, Any]) -> None:
+    for screen_item in payload.get("screens", []):
+        screen_id = screen_item.get("id")
+        if not screen_id:
+            continue
+        for row in screen_item.get("keyboard", []):
+            for flow_button in row:
+                if flow_button.get("action") == "toggle":
+                    flow_button["target"] = screen_id
+                    flow_button.setdefault("feedback", "设置已切换，Bot 会刷新当前页面。")
+
+
 def main() -> int:
     FLOWS_DIR.mkdir(parents=True, exist_ok=True)
     flows = build_flows()
@@ -2054,6 +2066,7 @@ def main() -> int:
     if missing or extra:
         raise SystemExit(f"flow slug mismatch: missing={sorted(missing)} extra={sorted(extra)}")
     for slug, payload in sorted(flows.items()):
+        normalize_toggle_targets(payload)
         (FLOWS_DIR / f"{slug}.json").write_text(
             json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",

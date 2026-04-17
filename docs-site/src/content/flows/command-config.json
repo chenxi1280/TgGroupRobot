@@ -28,7 +28,7 @@
       "id": "entry",
       "title": "管理员主菜单",
       "message": [
-        "发送 /admin 后选择当前群组。",
+        "发送 /start 后点击管理入口，按按钮选择当前群组。",
         "点击「群组命令配置」进入配置页。"
       ],
       "keyboard": [
@@ -131,7 +131,7 @@
             "label": "总开关",
             "callbackData": "adm:gcmd:{chat_id}:toggle_enabled",
             "action": "toggle",
-            "target": "result",
+            "target": "home",
             "feedback": "群命令总开关已切换。"
           },
           {
@@ -168,7 +168,7 @@
             "label": "开启命令",
             "callbackData": "adm:gcmd:{chat_id}:toggle:rank",
             "action": "toggle",
-            "target": "result",
+            "target": "detail",
             "feedback": "命令已切换。"
           },
           {

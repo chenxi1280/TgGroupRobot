@@ -53,7 +53,7 @@ async def _raw_update_probe(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     if message is not None:
         text = message.text or message.caption or ""
 
-    log.debug(
+    log.info(
         "raw_update_entry",
         update_id=update.update_id,
         has_message=update.message is not None,
@@ -242,6 +242,7 @@ async def _validate_schema_or_exit(app: Application) -> None:
     allow_compat = os.getenv("BOT_ALLOW_SCHEMA_COMPAT", "").strip() == "1"
 
     try:
+        log.info("schema_gate_started")
         settings = app.bot_data.get("settings")
         if getattr(settings, "startup_schema_migrations_enabled", True):
             await run_startup_schema_migrations(db.engine)

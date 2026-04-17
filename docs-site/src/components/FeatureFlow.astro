@@ -54,10 +54,16 @@ const actionLabel: Record<string, string> = {
   toggle: '切换',
 };
 
+const displayButtonLabel = (button: FlowButton) => {
+  if (button.action !== 'toggle' || /^[✅❌☑️✖]/.test(button.label.trim())) return button.label;
+  const mark = /关闭|禁用|取消|删除|清空/.test(button.label) ? '❌' : '✅';
+  return `${mark} ${button.label}`;
+};
+
 const nodeByScreen = new Map<string, string>();
 flow.screens.forEach((screen, index) => nodeByScreen.set(screen.id, `S${index}`));
 
-const lines = ['flowchart LR', '  subgraph TG["Telegram 键盘流程"]'];
+const lines = ['flowchart TB', '  subgraph TG["Telegram 键盘流程"]'];
 
 for (const [index, screen] of flow.screens.entries()) {
   const nodeId = nodeByScreen.get(screen.id) ?? `S${index}`;
@@ -69,14 +75,22 @@ let externalCount = 0;
 for (const screen of flow.screens) {
   const source = nodeByScreen.get(screen.id);
   if (!source) continue;
+  const sameScreenActions: string[] = [];
+  const edgesByTarget = new Map<string, string[]>();
+
+  const addEdge = (targetNode: string, label: string) => {
+    const labels = edgesByTarget.get(targetNode) ?? [];
+    labels.push(label);
+    edgesByTarget.set(targetNode, labels);
+  };
 
   screen.keyboard.forEach((row, rowIndex) => {
     row.forEach((button, buttonIndex) => {
       const action = actionLabel[button.action] ?? button.action;
-      const edgeLabel = `${rowIndex + 1}-${buttonIndex + 1} ${trimLabel(button.label, 20)} / ${action}`;
+      const edgeLabel = `${rowIndex + 1}-${buttonIndex + 1} ${trimLabel(displayButtonLabel(button), 20)} / ${action}`;
 
-      if (button.action === 'toast' || button.action === 'noop') {
-        lines.push(`    ${source} -->|"${edgeLabel}"| ${source}`);
+      if (button.action === 'toast' || button.action === 'noop' || button.target === screen.id) {
+        sameScreenActions.push(edgeLabel);
         return;
       }
 
@@ -88,7 +102,7 @@ for (const screen of flow.screens) {
       }
 
       if (button.target && nodeByScreen.has(button.target)) {
-        lines.push(`    ${source} -->|"${edgeLabel}"| ${nodeByScreen.get(button.target)}`);
+        addEdge(nodeByScreen.get(button.target) ?? '', edgeLabel);
       }
     });
   });
@@ -96,33 +110,46 @@ for (const screen of flow.screens) {
   if (screen.input?.examples?.length) {
     screen.input.examples.forEach((example, exampleIndex) => {
       if (example.target && nodeByScreen.has(example.target)) {
-        lines.push(
-          `    ${source} -->|"输入 ${exampleIndex + 1}: ${trimLabel(example.label, 20)}"| ${nodeByScreen.get(example.target)}`
-        );
+        addEdge(nodeByScreen.get(example.target) ?? '', `输入 ${exampleIndex + 1}: ${trimLabel(example.label, 20)}`);
       }
     });
+  }
+
+  for (const [targetNode, labels] of edgesByTarget) {
+    if (!targetNode) continue;
+    const label = labels.length > 3
+      ? `${labels.slice(0, 3).join('、')} 等 ${labels.length} 个动作`
+      : labels.join('、');
+    lines.push(`    ${source} -->|"${trimLabel(label, 72)}"| ${targetNode}`);
+  }
+
+  if (sameScreenActions.length) {
+    const refreshNode = `${source}_SAME`;
+    const labels = sameScreenActions.slice(0, 4).map((item) => trimLabel(item, 22)).join('、');
+    const suffix = sameScreenActions.length > 4 ? ` 等 ${sameScreenActions.length} 个按钮` : '';
+    lines.push(`    ${refreshNode}["${trimLabel(`刷新本页 / 提示：${labels}${suffix}`, 52)}"]`);
+    lines.push(`    ${source} --> ${refreshNode}`);
   }
 }
 
 lines.push('  end');
 
-if (feature.runtimeFlow) {
-  lines.push('');
-  lines.push('  subgraph Runtime["后台运行路径"]');
-  lines.push('    R0["群内事件或成员操作"] --> R1["读取当前 chat_id 配置"]');
-  lines.push('    R1 --> R2{"功能是否开启"}');
-  lines.push('    R2 -->|"否"| R3["跳过处理"]');
-  lines.push('    R2 -->|"是"| R4["按配置执行判定"]');
-  lines.push('    R4 --> R5{"是否命中规则"}');
-  lines.push('    R5 -->|"否"| R6["允许继续"]');
-  lines.push('    R5 -->|"是"| R7["提示、删除、禁言、踢出或记录"]');
-  lines.push('    R7 --> R8{"机器人权限足够"}');
-  lines.push('    R8 -->|"是"| R9["完成动作"]');
-  lines.push('    R8 -->|"否"| R10["降级或提示检查权限"]');
-  lines.push('  end');
-}
-
 const mermaidFlow = lines.join('\n');
+const runtimeMermaidFlow = feature.runtimeFlow
+  ? [
+      'flowchart TB',
+      '  R0["群内事件或成员操作"] --> R1["读取当前 chat_id 配置"]',
+      '  R1 --> R2{"功能是否开启"}',
+      '  R2 -->|"否"| R3["跳过处理"]',
+      '  R2 -->|"是"| R4["按配置执行判定"]',
+      '  R4 --> R5{"是否命中规则"}',
+      '  R5 -->|"否"| R6["允许继续"]',
+      '  R5 -->|"是"| R7["提示、删除、禁言、踢出或记录"]',
+      '  R7 --> R8{"机器人权限足够"}',
+      '  R8 -->|"是"| R9["完成动作"]',
+      '  R8 -->|"否"| R10["降级或提示检查权限"]',
+    ].join('\n')
+  : '';
 ---
 
 <section class="feature-flow">
@@ -134,6 +161,14 @@ const mermaidFlow = lines.join('\n');
   <div class="flow-card">
     <pre class="mermaid">{mermaidFlow}</pre>
   </div>
+  {runtimeMermaidFlow && (
+    <>
+      <h3>后台运行路径</h3>
+      <div class="flow-card flow-card--runtime">
+        <pre class="mermaid">{runtimeMermaidFlow}</pre>
+      </div>
+    </>
+  )}
 </section>
 
 <script>
@@ -147,25 +182,45 @@ const mermaidFlow = lines.join('\n');
     theme: darkMode ? 'dark' : 'default',
     securityLevel: 'strict',
     flowchart: {
-      curve: 'basis',
+      curve: 'linear',
       htmlLabels: false,
       nodeSpacing: 42,
       rankSpacing: 58
     }
   });
 
+  const resizeRenderedGraphs = (nodes: HTMLElement[]) => {
+    nodes.forEach((node) => {
+      const svg = node.querySelector('svg');
+      if (!(svg instanceof SVGSVGElement)) return;
+
+      const viewBox = svg.viewBox.baseVal;
+      if (!viewBox.width || !viewBox.height) return;
+
+      const cardWidth = node.closest('.flow-card')?.clientWidth ?? node.clientWidth;
+      const targetWidth = Math.max(cardWidth, Math.min(viewBox.width, 1800));
+      const targetHeight = (targetWidth / viewBox.width) * viewBox.height;
+
+      svg.setAttribute('width', String(Math.ceil(targetWidth)));
+      svg.setAttribute('height', String(Math.ceil(targetHeight)));
+      svg.style.maxWidth = 'none';
+    });
+  };
+
   const renderMermaid = () => {
     const nodes = Array.from(document.querySelectorAll<HTMLElement>('.feature-flow .mermaid:not([data-processed="true"])'));
     if (!nodes.length) return;
 
-    mermaid.run({ nodes }).catch((error) => {
-      console.error('[FeatureFlow] Mermaid render failed', error);
-      nodes.forEach((node) => {
-        if (!node.getAttribute('data-processed')) {
-          node.setAttribute('data-render-error', 'true');
-        }
+    mermaid.run({ nodes })
+      .then(() => resizeRenderedGraphs(nodes))
+      .catch((error) => {
+        console.error('[FeatureFlow] Mermaid render failed', error);
+        nodes.forEach((node) => {
+          if (!node.getAttribute('data-processed')) {
+            node.setAttribute('data-render-error', 'true');
+          }
+        });
       });
-    });
   };
 
   if (document.readyState === 'complete') {

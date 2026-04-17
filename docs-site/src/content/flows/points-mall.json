@@ -38,7 +38,7 @@
       "id": "entry",
       "title": "管理员主菜单",
       "message": [
-        "发送 /admin 后选择当前群组。",
+        "发送 /start 后点击管理入口，按按钮选择当前群组。",
         "点击「积分商城」进入配置页。"
       ],
       "keyboard": [
@@ -141,21 +141,21 @@
             "label": "开启商城",
             "callbackData": "adm:mall:{chat_id}:toggle:enabled:1",
             "action": "toggle",
-            "target": "result",
+            "target": "home",
             "feedback": "商城已开启。"
           },
           {
             "label": "关闭商城",
             "callbackData": "adm:mall:{chat_id}:toggle:enabled:0",
             "action": "toggle",
-            "target": "result",
+            "target": "home",
             "feedback": "商城已关闭。"
           },
           {
             "label": "自动下架",
             "callbackData": "adm:mall:{chat_id}:toggle:auto_unlist:1",
             "action": "toggle",
-            "target": "result",
+            "target": "home",
             "feedback": "自动下架已开启。"
           }
         ],
@@ -269,7 +269,7 @@
             "label": "上架",
             "callbackData": "adm:mall:{chat_id}:product:toggle:{product_id}:1",
             "action": "toggle",
-            "target": "result",
+            "target": "product_detail",
             "feedback": "商品已上架。"
           }
         ],

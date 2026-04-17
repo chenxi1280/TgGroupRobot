@@ -36,7 +36,7 @@
       "id": "entry",
       "title": "管理员主菜单",
       "message": [
-        "发送 /admin 后选择当前群组。",
+        "发送 /start 后点击管理入口，按按钮选择当前群组。",
         "点击「老师搜索」进入配置页。"
       ],
       "keyboard": [
@@ -139,21 +139,21 @@
             "label": "标签开关",
             "callbackData": "tsearch:toggle:tag:{chat_id}:1",
             "action": "toggle",
-            "target": "result",
+            "target": "home",
             "feedback": "标签搜索已开启。"
           },
           {
             "label": "出勤开关",
             "callbackData": "tsearch:toggle:attendance:{chat_id}:1",
             "action": "toggle",
-            "target": "result",
+            "target": "home",
             "feedback": "出勤已开启。"
           },
           {
             "label": "只看可约",
             "callbackData": "tsearch:toggle:only_open:{chat_id}:1",
             "action": "toggle",
-            "target": "result",
+            "target": "home",
             "feedback": "只看可约已开启。"
           }
         ],
@@ -206,14 +206,14 @@
             "label": "消息模式",
             "callbackData": "tsearch:attendance_mode:set:{chat_id}:message",
             "action": "toggle",
-            "target": "result",
+            "target": "attendance_mode",
             "feedback": "已设置消息模式。"
           },
           {
             "label": "关键词模式",
             "callbackData": "tsearch:attendance_mode:set:{chat_id}:keyword",
             "action": "toggle",
-            "target": "result",
+            "target": "attendance_mode",
             "feedback": "已设置关键词模式。"
           }
         ],

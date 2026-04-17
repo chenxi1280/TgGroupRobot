@@ -29,7 +29,7 @@
       "id": "entry",
       "title": "管理员主菜单",
       "message": [
-        "发送 /admin 后选择当前群组。",
+        "发送 /start 后点击管理入口，按按钮选择当前群组。",
         "点击「新成员限制」进入配置页。"
       ],
       "keyboard": [
@@ -132,7 +132,7 @@
             "label": "开启/关闭",
             "callbackData": "adm:nml:{chat_id}:toggle:enabled",
             "action": "toggle",
-            "target": "result",
+            "target": "home",
             "feedback": "新成员限制已切换。"
           },
           {
@@ -148,21 +148,21 @@
             "label": "限制媒体",
             "callbackData": "adm:nml:{chat_id}:toggle:block_media",
             "action": "toggle",
-            "target": "result",
+            "target": "home",
             "feedback": "限制媒体已切换。"
           },
           {
             "label": "限制链接",
             "callbackData": "adm:nml:{chat_id}:toggle:block_links",
             "action": "toggle",
-            "target": "result",
+            "target": "home",
             "feedback": "限制链接已切换。"
           },
           {
             "label": "仅纯文本",
             "callbackData": "adm:nml:{chat_id}:toggle:text_only",
             "action": "toggle",
-            "target": "result",
+            "target": "home",
             "feedback": "纯文本限制已切换。"
           }
         ],
@@ -171,14 +171,14 @@
             "label": "删除触发消息",
             "callbackData": "adm:nml:{chat_id}:toggle:delete_message",
             "action": "toggle",
-            "target": "result",
+            "target": "home",
             "feedback": "删除触发消息已切换。"
           },
           {
             "label": "提示开关",
             "callbackData": "adm:nml:{chat_id}:toggle:warn_enabled",
             "action": "toggle",
-            "target": "result",
+            "target": "home",
             "feedback": "提示已切换。"
           },
           {
@@ -194,7 +194,7 @@
             "label": "提示删除时间",
             "callbackData": "adm:nml:{chat_id}:cycle:warn_delete",
             "action": "toggle",
-            "target": "result",
+            "target": "home",
             "feedback": "已切换提示删除时间。"
           }
         ],

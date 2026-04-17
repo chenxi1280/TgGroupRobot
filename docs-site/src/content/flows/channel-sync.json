@@ -28,7 +28,7 @@
       "id": "entry",
       "title": "管理员主菜单",
       "message": [
-        "发送 /admin 后选择当前群组。",
+        "发送 /start 后点击管理入口，按按钮选择当前群组。",
         "点击「频道同步」进入配置页。"
       ],
       "keyboard": [
@@ -131,7 +131,7 @@
             "label": "开启同步",
             "callbackData": "gfw:toggle:{chat_id}:1",
             "action": "toggle",
-            "target": "result",
+            "target": "home",
             "feedback": "同步已开启。"
           },
           {
@@ -146,7 +146,7 @@
             "label": "全部转发",
             "callbackData": "gfw:mode:{chat_id}:all",
             "action": "toggle",
-            "target": "result",
+            "target": "home",
             "feedback": "已设置全部转发。"
           }
         ],

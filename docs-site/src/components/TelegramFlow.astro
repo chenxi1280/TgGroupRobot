@@ -51,6 +51,11 @@ interface FlowData {
 const { flow } = Astro.props as { flow: FlowData };
 const initialScreen = flow.entryScreen || flow.screens[0]?.id;
 const isNeedsReview = flow.coverage?.alignmentStatus === 'needsReview';
+const toggleMark = (label: string) => {
+  if (/^[✅☑️✓✔]/.test(label.trim())) return 'on';
+  if (/^[❌✖×]/.test(label.trim())) return 'off';
+  return /关闭|禁用|取消|删除|清空/.test(label) ? 'off' : 'on';
+};
 ---
 
 <section class="telegram-flow" data-telegram-flow aria-label={`${flow.title} Telegram 操作流`}>
@@ -131,9 +136,21 @@ const isNeedsReview = flow.coverage?.alignmentStatus === 'needsReview';
                     data-flow-target={button.target}
                     data-feedback={button.feedback}
                     data-callback-data={button.callbackData}
+                    aria-pressed={button.action === 'toggle' ? 'false' : undefined}
                     title={button.callbackData}
                   >
-                    <span class="keyboard-button__label">{button.label}</span>
+                    <span class="keyboard-button__label">
+                      {button.action === 'toggle' && (
+                        <span
+                          class:list={['keyboard-button__toggle-mark', toggleMark(button.label) === 'off' && 'is-off']}
+                          data-toggle-mark={toggleMark(button.label)}
+                          aria-hidden="true"
+                        >
+                          {toggleMark(button.label) === 'off' ? '×' : '✓'}
+                        </span>
+                      )}
+                      <span>{button.label}</span>
+                    </span>
                   </button>
                 ))}
               </div>
@@ -177,6 +194,20 @@ const isNeedsReview = flow.coverage?.alignmentStatus === 'needsReview';
       window.setTimeout(() => button.classList.remove('is-pressed'), 180);
     };
 
+    const toggleSwitch = (button: Element, message: string) => {
+      const mark = button.querySelector('[data-toggle-mark]');
+      if (mark) {
+        const nextState = mark.getAttribute('data-toggle-mark') === 'on' ? 'off' : 'on';
+        mark.setAttribute('data-toggle-mark', nextState);
+        mark.textContent = nextState === 'on' ? '✓' : '×';
+        mark.classList.toggle('is-off', nextState === 'off');
+      }
+      const nextPressed = button.getAttribute('aria-pressed') !== 'true';
+      button.setAttribute('aria-pressed', String(nextPressed));
+      button.classList.toggle('is-toggled', nextPressed);
+      setFeedback(message || '设置已切换，Bot 会刷新当前页面。');
+    };
+
     root.querySelectorAll('[data-flow-action]').forEach((button) => {
       button.addEventListener('click', () => {
         const action = button.getAttribute('data-flow-action');
@@ -184,7 +215,11 @@ const isNeedsReview = flow.coverage?.alignmentStatus === 'needsReview';
         const message = button.getAttribute('data-feedback') ?? '已点击。';
         pulse(button);
 
-        if (['goto', 'back', 'input', 'toggle', 'confirm'].includes(action ?? '')) {
+        if (action === 'toggle') {
+          toggleSwitch(button, message);
+          return;
+        }
+        if (['goto', 'back', 'input', 'confirm'].includes(action ?? '')) {
           show(target || active, message);
           return;
         }

@@ -373,18 +373,49 @@
 
 .keyboard-button {
   align-self: stretch;
+  box-sizing: border-box;
   font: inherit;
-  height: 100%;
-  min-height: 3rem;
+  height: 3.25rem;
+  margin: 0;
+  min-height: 3.25rem;
+  overflow: hidden;
   padding: 0.5rem 0.62rem;
 }
 
 .keyboard-button__label {
-  display: block;
+  align-items: center;
+  display: flex;
+  gap: 0.42rem;
+  justify-content: center;
   line-height: 1.2;
   overflow-wrap: anywhere;
   width: 100%;
   word-break: break-word;
+}
+
+.keyboard-button__toggle-mark {
+  align-items: center;
+  background: #19b858;
+  border-radius: 4px;
+  color: #fff;
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: 0.9rem;
+  font-weight: 900;
+  height: 1.18rem;
+  justify-content: center;
+  line-height: 1;
+  transform: translateY(0);
+  width: 1.18rem;
+}
+
+.keyboard-button__toggle-mark.is-off {
+  background: #ef4444;
+}
+
+.keyboard-button.is-toggled {
+  border-color: var(--sl-color-accent);
+  box-shadow: inset 0 0 0 1px var(--sl-color-accent);
 }
 
 .keyboard-button[data-flow-action] {
@@ -531,6 +562,11 @@
   border-radius: 8px;
   overflow-x: auto;
   padding: 1rem;
+}
+
+.flow-card .mermaid svg {
+  display: block;
+  max-width: none;
 }
 
 .flow-note {

@@ -40,7 +40,7 @@
       "id": "entry",
       "title": "管理员主菜单",
       "message": [
-        "发送 /admin 后选择当前群组。",
+        "发送 /start 后点击管理入口，按按钮选择当前群组。",
         "点击「自动回复」进入配置页。"
       ],
       "keyboard": [
@@ -187,14 +187,14 @@
             "label": "启用",
             "callbackData": "auto_reply:set:{chat_id}:{rule_id}:active:1",
             "action": "toggle",
-            "target": "result",
+            "target": "detail",
             "feedback": "规则已启用。"
           },
           {
             "label": "关闭",
             "callbackData": "auto_reply:set:{chat_id}:{rule_id}:active:0",
             "action": "toggle",
-            "target": "result",
+            "target": "detail",
             "feedback": "规则已关闭。"
           }
         ],
@@ -203,14 +203,14 @@
             "label": "精准匹配",
             "callbackData": "auto_reply:set:{chat_id}:{rule_id}:match:exact",
             "action": "toggle",
-            "target": "result",
+            "target": "detail",
             "feedback": "已改为精准匹配。"
           },
           {
             "label": "包含匹配",
             "callbackData": "auto_reply:set:{chat_id}:{rule_id}:match:contains",
             "action": "toggle",
-            "target": "result",
+            "target": "detail",
             "feedback": "已改为包含匹配。"
           }
         ],
@@ -290,21 +290,21 @@
             "label": "15 秒",
             "callbackData": "auto_reply:delay:set:{chat_id}:{rule_id}:15",
             "action": "toggle",
-            "target": "result",
+            "target": "delay",
             "feedback": "已设置 15 秒。"
           },
           {
             "label": "30 秒",
             "callbackData": "auto_reply:delay:set:{chat_id}:{rule_id}:30",
             "action": "toggle",
-            "target": "result",
+            "target": "delay",
             "feedback": "已设置 30 秒。"
           },
           {
             "label": "不延迟",
             "callbackData": "auto_reply:delay:set:{chat_id}:{rule_id}:0",
             "action": "toggle",
-            "target": "result",
+            "target": "delay",
             "feedback": "已关闭延迟。"
           }
         ],

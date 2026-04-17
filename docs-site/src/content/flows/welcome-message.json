@@ -32,7 +32,7 @@
       "id": "entry",
       "title": "管理员主菜单",
       "message": [
-        "发送 /admin 后选择当前群组。",
+        "发送 /start 后点击管理入口，按按钮选择当前群组。",
         "点击「欢迎消息」进入配置页。"
       ],
       "keyboard": [
@@ -175,14 +175,14 @@
             "label": "启用",
             "callbackData": "adm:wel:{chat_id}:toggle:{welcome_id}",
             "action": "toggle",
-            "target": "result",
+            "target": "detail",
             "feedback": "欢迎消息已切换。"
           },
           {
             "label": "模式",
             "callbackData": "adm:wel:{chat_id}:mode:{welcome_id}",
             "action": "toggle",
-            "target": "result",
+            "target": "detail",
             "feedback": "欢迎模式已切换。"
           }
         ],
@@ -228,7 +228,7 @@
             "label": "删除延迟",
             "callbackData": "adm:wel:{chat_id}:cycle_delete:{welcome_id}",
             "action": "toggle",
-            "target": "result",
+            "target": "detail",
             "feedback": "已切换删除延迟。"
           }
         ],

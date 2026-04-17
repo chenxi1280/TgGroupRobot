@@ -204,6 +204,7 @@ def _required_index_sql(table_name: str, index_name: str, columns: Iterable[str]
 
 async def run_startup_schema_migrations(engine: AsyncEngine) -> None:
     """在 schema gate 前执行幂等补丁，兼容历史库结构。"""
+    log.info("startup_schema_migrations_started")
     _load_model_metadata()
 
     async with engine.begin() as conn:

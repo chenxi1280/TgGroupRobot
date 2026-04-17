@@ -33,7 +33,7 @@ const replayLabel = flow.coverage?.alignmentStatus === 'needsReview'
     <aside class="feature-meta" aria-label={`${feature.title} 功能信息`}>
       <span class:list={['status-badge', isPaused && 'is-paused']}>{feature.status}</span>
       <span>分类：{feature.category}</span>
-      <span>入口：{feature.entry.command ?? '/admin'} → {feature.entry.label}</span>
+      <span>入口：{feature.entry.command ?? '/start'} → {feature.entry.label}</span>
       <span>复刻：{replayLabel}</span>
     </aside>
   </header>

@@ -32,7 +32,7 @@
       "id": "entry",
       "title": "管理员主菜单",
       "message": [
-        "发送 /admin 后选择当前群组。",
+        "发送 /start 后点击管理入口，按按钮选择当前群组。",
         "点击「关群设置」进入配置页。"
       ],
       "keyboard": [
@@ -135,14 +135,14 @@
             "label": "关键词关群",
             "callbackData": "adm:gl:{chat_id}:set:phrase:1",
             "action": "toggle",
-            "target": "result",
+            "target": "home",
             "feedback": "关键词关群已开启。"
           },
           {
             "label": "关闭关键词",
             "callbackData": "adm:gl:{chat_id}:set:phrase:0",
             "action": "toggle",
-            "target": "result",
+            "target": "home",
             "feedback": "关键词关群已关闭。"
           }
         ],
@@ -167,7 +167,7 @@
             "label": "定时开关",
             "callbackData": "adm:gl:{chat_id}:set:schedule:1",
             "action": "toggle",
-            "target": "result",
+            "target": "home",
             "feedback": "定时开关已开启。"
           },
           {
@@ -190,14 +190,14 @@
             "label": "保留通知",
             "callbackData": "adm:gl:{chat_id}:notice:keep",
             "action": "toggle",
-            "target": "result",
+            "target": "home",
             "feedback": "开关群通知会保留。"
           },
           {
             "label": "删除通知",
             "callbackData": "adm:gl:{chat_id}:notice:delete",
             "action": "toggle",
-            "target": "result",
+            "target": "home",
             "feedback": "开关群通知会删除。"
           }
         ],

@@ -29,7 +29,7 @@
       "id": "entry",
       "title": "管理员主菜单",
       "message": [
-        "发送 /admin 后选择当前群组。",
+        "发送 /start 后点击管理入口，按按钮选择当前群组。",
         "点击「防刷屏」进入配置页。"
       ],
       "keyboard": [
@@ -140,7 +140,7 @@
             "label": "开启规则",
             "callbackData": "gg:toggle:{rule_id}:enabled:{chat_id}",
             "action": "toggle",
-            "target": "result",
+            "target": "home",
             "feedback": "刷屏规则已切换。"
           }
         ],
@@ -149,7 +149,7 @@
             "label": "消息阈值",
             "callbackData": "gg:cycle:{rule_id}:messages:{chat_id}",
             "action": "toggle",
-            "target": "result",
+            "target": "home",
             "feedback": "已切换消息阈值。"
           },
           {

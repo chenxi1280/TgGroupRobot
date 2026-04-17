@@ -25,7 +25,7 @@
       "id": "entry",
       "title": "管理员主菜单",
       "message": [
-        "发送 /admin 后选择当前群组。",
+        "发送 /start 后点击管理入口，按按钮选择当前群组。",
         "点击「管理权限」进入配置页。"
       ],
       "keyboard": [
@@ -128,14 +128,14 @@
             "label": "所有管理员",
             "callbackData": "adm:perm:{chat_id}:all_admins",
             "action": "toggle",
-            "target": "result",
+            "target": "home",
             "feedback": "已允许所有管理员。"
           },
           {
             "label": "需要禁言权限",
             "callbackData": "adm:perm:{chat_id}:can_restrict_members",
             "action": "toggle",
-            "target": "result",
+            "target": "home",
             "feedback": "已切换禁言权限门槛。"
           }
         ],
@@ -144,21 +144,21 @@
             "label": "需要改群资料",
             "callbackData": "adm:perm:{chat_id}:can_change_info",
             "action": "toggle",
-            "target": "result",
+            "target": "home",
             "feedback": "已切换改群资料门槛。"
           },
           {
             "label": "需要提升管理员",
             "callbackData": "adm:perm:{chat_id}:can_promote_members",
             "action": "toggle",
-            "target": "result",
+            "target": "home",
             "feedback": "已切换提升管理员门槛。"
           },
           {
             "label": "仅群主",
             "callbackData": "adm:perm:{chat_id}:owner_only",
             "action": "toggle",
-            "target": "result",
+            "target": "home",
             "feedback": "已切换仅群主。"
           }
         ],

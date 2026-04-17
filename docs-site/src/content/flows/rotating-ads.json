@@ -49,7 +49,7 @@
       "id": "entry",
       "title": "管理员主菜单",
       "message": [
-        "发送 /admin 后选择当前群组。",
+        "发送 /start 后点击管理入口，按按钮选择当前群组。",
         "点击「轮播广告」进入配置页。"
       ],
       "keyboard": [
@@ -194,14 +194,14 @@
             "label": "启用规则",
             "callbackData": "ads:rules:set:{chat_id}:enabled:1",
             "action": "toggle",
-            "target": "result",
+            "target": "rules",
             "feedback": "规则已启用。"
           },
           {
             "label": "发送并置顶",
             "callbackData": "ads:rules:set:{chat_id}:mode:send_pin",
             "action": "toggle",
-            "target": "result",
+            "target": "rules",
             "feedback": "模式已切换。"
           }
         ],
@@ -233,14 +233,14 @@
             "label": "取消上次置顶",
             "callbackData": "ads:rules:set:{chat_id}:unpin_previous:1",
             "action": "toggle",
-            "target": "result",
+            "target": "rules",
             "feedback": "已开启取消上次置顶。"
           },
           {
             "label": "删除上一条",
             "callbackData": "ads:rules:set:{chat_id}:delete_policy:delete_prev",
             "action": "toggle",
-            "target": "result",
+            "target": "rules",
             "feedback": "删除策略已切换。"
           }
         ],
@@ -294,7 +294,7 @@
             "label": "启用",
             "callbackData": "ads:item:set:{chat_id}:{item_id}:enabled:1",
             "action": "toggle",
-            "target": "result",
+            "target": "detail",
             "feedback": "广告已启用。"
           },
           {

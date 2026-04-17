@@ -31,7 +31,7 @@
       "id": "entry",
       "title": "管理员主菜单",
       "message": [
-        "发送 /admin 后选择当前群组。",
+        "发送 /start 后点击管理入口，按按钮选择当前群组。",
         "点击「违禁词」进入配置页。"
       ],
       "keyboard": [
@@ -151,7 +151,7 @@
             "label": "启用词条",
             "callbackData": "banned_word_toggle_12:{chat_id}",
             "action": "toggle",
-            "target": "result",
+            "target": "home",
             "feedback": "词条状态已切换。"
           },
           {

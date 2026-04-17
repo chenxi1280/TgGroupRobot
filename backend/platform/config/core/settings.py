@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     )
 
     app_env: str = Field(default="dev", alias="APP_ENV")
-    log_level: str = Field(default="WARNING", alias="LOG_LEVEL")
+    log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     log_format: str = Field(default="console", alias="LOG_FORMAT")
 
     bot_token: str = Field(alias="BOT_TOKEN")

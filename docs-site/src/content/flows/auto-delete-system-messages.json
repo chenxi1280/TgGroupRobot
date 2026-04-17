@@ -27,7 +27,7 @@
       "id": "entry",
       "title": "管理员主菜单",
       "message": [
-        "发送 /admin 后选择当前群组。",
+        "发送 /start 后点击管理入口，按按钮选择当前群组。",
         "点击「删除提示」进入配置页。"
       ],
       "keyboard": [
@@ -130,21 +130,21 @@
             "label": "进群提示",
             "callbackData": "autodel:set:join:1:{chat_id}",
             "action": "toggle",
-            "target": "result",
+            "target": "home",
             "feedback": "进群提示删除已开启。"
           },
           {
             "label": "退群提示",
             "callbackData": "autodel:set:left:1:{chat_id}",
             "action": "toggle",
-            "target": "result",
+            "target": "home",
             "feedback": "退群提示删除已开启。"
           },
           {
             "label": "置顶提示",
             "callbackData": "autodel:set:pinned:1:{chat_id}",
             "action": "toggle",
-            "target": "result",
+            "target": "home",
             "feedback": "置顶提示删除已开启。"
           }
         ],
@@ -153,21 +153,21 @@
             "label": "头像变更",
             "callbackData": "autodel:set:avatar:1:{chat_id}",
             "action": "toggle",
-            "target": "result",
+            "target": "home",
             "feedback": "头像变更删除已开启。"
           },
           {
             "label": "群名变更",
             "callbackData": "autodel:set:title:1:{chat_id}",
             "action": "toggle",
-            "target": "result",
+            "target": "home",
             "feedback": "群名变更删除已开启。"
           },
           {
             "label": "匿名消息",
             "callbackData": "autodel:set:anonymous:1:{chat_id}",
             "action": "toggle",
-            "target": "result",
+            "target": "home",
             "feedback": "匿名消息删除已开启。"
           }
         ],

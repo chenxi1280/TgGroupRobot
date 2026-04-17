@@ -163,8 +163,8 @@ DATABASE_CONNECT_TIMEOUT_SECONDS=10
 # 外部 Docker 网络
 INFRA_NETWORK_NAME=infra_default
 
-# 日志级别（可选，默认 WARNING；需要排查时可临时改为 INFO/DEBUG）
-LOG_LEVEL=WARNING
+# 日志级别（可选，默认 INFO；需要更安静可临时改为 WARNING）
+LOG_LEVEL=INFO
 LOG_FORMAT=console
 
 # 启动优化（可选）

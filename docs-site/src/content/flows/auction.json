@@ -31,7 +31,7 @@
       "id": "entry",
       "title": "管理员主菜单",
       "message": [
-        "发送 /admin 后选择当前群组。",
+        "发送 /start 后点击管理入口，按按钮选择当前群组。",
         "点击「拍卖」进入配置页。"
       ],
       "keyboard": [
@@ -134,21 +134,21 @@
             "label": "开启拍卖",
             "callbackData": "auc:toggle:{chat_id}:enabled:1",
             "action": "toggle",
-            "target": "result",
+            "target": "home",
             "feedback": "拍卖已开启。"
           },
           {
             "label": "置顶",
             "callbackData": "auc:toggle:{chat_id}:pin:1",
             "action": "toggle",
-            "target": "result",
+            "target": "home",
             "feedback": "拍卖置顶已开启。"
           },
           {
             "label": "自动延时",
             "callbackData": "auc:toggle:{chat_id}:auto_extend:1",
             "action": "toggle",
-            "target": "result",
+            "target": "home",
             "feedback": "自动延时已开启。"
           }
         ],
@@ -157,14 +157,14 @@
             "label": "管理员发起",
             "callbackData": "auc:perm:{chat_id}:admin",
             "action": "toggle",
-            "target": "result",
+            "target": "home",
             "feedback": "仅管理员可发起。"
           },
           {
             "label": "积分模式",
             "callbackData": "auc:points_mode:{chat_id}:group_points",
             "action": "toggle",
-            "target": "result",
+            "target": "home",
             "feedback": "已使用群积分。"
           },
           {

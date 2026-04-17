@@ -29,7 +29,7 @@ def configure_logging(log_level: str = "INFO", log_format: str = "console") -> N
     structlog.configure(
         processors=[
             structlog.stdlib.filter_by_level,
-            structlog.processors.add_logger_name,
+            structlog.stdlib.add_logger_name,
             structlog.processors.add_log_level,
             timestamper,
             structlog.processors.StackInfoRenderer(),

@@ -29,7 +29,7 @@
       "id": "entry",
       "title": "管理员主菜单",
       "message": [
-        "发送 /admin 后选择当前群组。",
+        "发送 /start 后点击管理入口，按按钮选择当前群组。",
         "点击「垃圾防护」进入配置页。"
       ],
       "keyboard": [
@@ -191,21 +191,21 @@
             "label": "入群刷号开关",
             "callbackData": "adm:vfy_home:{chat_id}:spam:toggle:enabled",
             "action": "toggle",
-            "target": "result",
+            "target": "spam",
             "feedback": "已切换入群刷号检测。"
           },
           {
             "label": "提示开关",
             "callbackData": "adm:vfy_home:{chat_id}:spam:toggle:notify",
             "action": "toggle",
-            "target": "result",
+            "target": "spam",
             "feedback": "已切换提示。"
           },
           {
             "label": "踢出",
             "callbackData": "adm:vfy_home:{chat_id}:spam:toggle:kick",
             "action": "toggle",
-            "target": "result",
+            "target": "spam",
             "feedback": "已切换踢出。"
           }
         ],

@@ -43,7 +43,7 @@
       "id": "entry",
       "title": "管理员主菜单",
       "message": [
-        "发送 /admin 后选择当前群组。",
+        "发送 /start 后点击管理入口，按按钮选择当前群组。",
         "点击「定时消息按钮输入」进入配置页。"
       ],
       "keyboard": [
@@ -198,14 +198,14 @@
             "label": "启用",
             "callbackData": "sm:set:{chat_id}:{task_id}:enabled:1",
             "action": "toggle",
-            "target": "enable_error",
+            "target": "detail",
             "feedback": "启用失败：请先设置文本或封面。"
           },
           {
             "label": "关闭",
             "callbackData": "sm:set:{chat_id}:{task_id}:enabled:0",
             "action": "toggle",
-            "target": "result",
+            "target": "detail",
             "feedback": "任务已关闭。"
           }
         ],
@@ -261,21 +261,21 @@
             "label": "每 60 分钟",
             "callbackData": "sm:set:{chat_id}:{task_id}:interval_minutes:60",
             "action": "toggle",
-            "target": "result",
+            "target": "detail",
             "feedback": "发送频率已设为 60 分钟。"
           },
           {
             "label": "置顶",
             "callbackData": "sm:set:{chat_id}:{task_id}:pin:1",
             "action": "toggle",
-            "target": "result",
+            "target": "detail",
             "feedback": "置顶已开启。"
           },
           {
             "label": "删除上条",
             "callbackData": "sm:set:{chat_id}:{task_id}:delete_previous:1",
             "action": "toggle",
-            "target": "result",
+            "target": "detail",
             "feedback": "删除上条已开启。"
           }
         ],

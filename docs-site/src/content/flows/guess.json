@@ -38,7 +38,7 @@
       "id": "entry",
       "title": "管理员主菜单",
       "message": [
-        "发送 /admin 后选择当前群组。",
+        "发送 /start 后点击管理入口，按按钮选择当前群组。",
         "点击「竞猜」进入配置页。"
       ],
       "keyboard": [
@@ -302,7 +302,7 @@
             "label": "删除消息",
             "callbackData": "guess:settings:{chat_id}:delete_mode:delete",
             "action": "toggle",
-            "target": "result",
+            "target": "settings",
             "feedback": "已设置删除消息。"
           }
         ],

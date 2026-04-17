@@ -32,7 +32,7 @@
       "id": "entry",
       "title": "管理员主菜单",
       "message": [
-        "发送 /admin 后选择当前群组。",
+        "发送 /start 后点击管理入口，按按钮选择当前群组。",
         "点击「底部按钮」进入配置页。"
       ],
       "keyboard": [
@@ -135,7 +135,7 @@
             "label": "开启",
             "callbackData": "btm:toggle:{chat_id}:1",
             "action": "toggle",
-            "target": "result",
+            "target": "home",
             "feedback": "底部按钮已开启。"
           },
           {
@@ -165,7 +165,7 @@
             "label": "重复发送",
             "callbackData": "btm:repeat:{chat_id}:1",
             "action": "toggle",
-            "target": "result",
+            "target": "home",
             "feedback": "重复发送已开启。"
           }
         ],
@@ -238,14 +238,14 @@
             "label": "发送模式",
             "callbackData": "btm:button:{chat_id}:mode:1:send",
             "action": "toggle",
-            "target": "result",
+            "target": "button_detail",
             "feedback": "已设置发送模式。"
           },
           {
             "label": "填充模式",
             "callbackData": "btm:button:{chat_id}:mode:1:fill",
             "action": "toggle",
-            "target": "result",
+            "target": "button_detail",
             "feedback": "已设置填充模式。"
           },
           {
