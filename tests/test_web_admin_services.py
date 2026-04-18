@@ -1,0 +1,83 @@
+from __future__ import annotations
+
+from types import SimpleNamespace
+
+import pytest
+
+from backend.features.web_admin.announcement_service import (
+    DEFAULT_ANNOUNCEMENT_TEXT,
+    format_announcement_line,
+)
+from backend.features.web_admin.auth_service import ensure_bootstrap_admin, hash_password, verify_password
+from backend.features.web_admin.card_service import COPY_CARD_LIMIT, KEY_SPECS
+
+
+class _ScalarResult:
+    def __init__(self, value):
+        self.value = value
+
+    def scalar_one_or_none(self):
+        return self.value
+
+
+class _FakeSession:
+    def __init__(self, existing):
+        self.existing = existing
+        self.added = []
+
+    async def execute(self, statement):
+        return _ScalarResult(self.existing)
+
+    def add(self, entity):
+        self.added.append(entity)
+
+    async def flush(self):
+        return None
+
+
+def test_admin_password_hash_verifies_and_rejects_wrong_password() -> None:
+    stored = hash_password("secret-pass")
+
+    assert verify_password("secret-pass", stored)
+    assert not verify_password("wrong-pass", stored)
+
+
+def test_key_specs_match_first_version_contract() -> None:
+    assert [item["days"] for item in KEY_SPECS] == [30, 60, 90, 365]
+    assert COPY_CARD_LIMIT == 40
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_admin_does_not_recreate_when_disabled_account_exists() -> None:
+    existing = SimpleNamespace(id=1, username="admin", status="disabled")
+    session = _FakeSession(existing)
+    settings = SimpleNamespace(
+        admin_bootstrap_username="admin",
+        admin_bootstrap_password="secret-pass",
+        admin_bootstrap_display_name="超级管理员",
+    )
+
+    result = await ensure_bootstrap_admin(session, settings)
+
+    assert result is existing
+    assert session.added == []
+
+
+@pytest.mark.parametrize(
+    ("settings", "expected"),
+    [
+        ({"enabled": True, "entry_text": "", "target_url": "", "message_text": ""}, DEFAULT_ANNOUNCEMENT_TEXT),
+        (
+            {
+                "enabled": True,
+                "entry_text": "更新日志",
+                "target_url": "https://example.com/changelog",
+                "message_text": "新版后台已上线",
+            },
+            "更新日志\nhttps://example.com/changelog\n新版后台已上线",
+        ),
+        ({"enabled": False, "entry_text": "更新日志", "target_url": "", "message_text": ""}, ""),
+    ],
+)
+def test_format_announcement_line(settings: dict, expected: str) -> None:
+    assert format_announcement_line(settings) == expected

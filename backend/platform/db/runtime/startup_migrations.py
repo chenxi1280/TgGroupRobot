@@ -170,6 +170,19 @@ GAME_SETTINGS_COMPAT_SQL: tuple[str, ...] = (
     "ALTER TABLE bot.game_settings ADD COLUMN IF NOT EXISTS points_source_chat_id BIGINT",
 )
 
+RENEWAL_CARD_KEYS_COMPAT_SQL: tuple[str, ...] = (
+    "ALTER TABLE bot.renewal_card_keys ADD COLUMN IF NOT EXISTS batch_id INTEGER REFERENCES bot.renewal_card_key_batches(id) ON DELETE SET NULL",
+    "ALTER TABLE bot.renewal_card_keys ADD COLUMN IF NOT EXISTS card_code_plain VARCHAR(128)",
+    "ALTER TABLE bot.renewal_card_keys ADD COLUMN IF NOT EXISTS spec_days INTEGER",
+    "ALTER TABLE bot.renewal_card_keys ADD COLUMN IF NOT EXISTS created_by_admin_id INTEGER REFERENCES bot.admin_accounts(id) ON DELETE SET NULL",
+    "ALTER TABLE bot.renewal_card_keys ADD COLUMN IF NOT EXISTS copy_status VARCHAR(20) NOT NULL DEFAULT 'new'",
+    "ALTER TABLE bot.renewal_card_keys ADD COLUMN IF NOT EXISTS export_status VARCHAR(20) NOT NULL DEFAULT 'new'",
+    "ALTER TABLE bot.renewal_card_keys ADD COLUMN IF NOT EXISTS copied_at TIMESTAMPTZ",
+    "ALTER TABLE bot.renewal_card_keys ADD COLUMN IF NOT EXISTS exported_at TIMESTAMPTZ",
+    "CREATE INDEX IF NOT EXISTS ix_renewal_card_keys_batch_id ON bot.renewal_card_keys(batch_id)",
+    "CREATE INDEX IF NOT EXISTS ix_renewal_card_keys_spec_days ON bot.renewal_card_keys(spec_days)",
+)
+
 COMPATIBILITY_MIGRATIONS: dict[str, tuple[str, ...]] = {
     "chat_settings": CHAT_SETTINGS_COMPAT_SQL,
     "garage_forward_settings": GARAGE_FORWARD_SETTINGS_COMPAT_SQL,
@@ -178,6 +191,7 @@ COMPATIBILITY_MIGRATIONS: dict[str, tuple[str, ...]] = {
     "scheduled_message_tasks": SCHEDULED_MESSAGE_COMPAT_SQL,
     "ad_campaigns": AD_CAMPAIGNS_COMPAT_SQL,
     "game_settings": GAME_SETTINGS_COMPAT_SQL,
+    "renewal_card_keys": RENEWAL_CARD_KEYS_COMPAT_SQL,
 }
 
 
@@ -185,6 +199,7 @@ def _load_model_metadata() -> None:
     # 导入模型以填充 Base.metadata
     import backend.platform.db.schema.models.alliance  # noqa: F401
     import backend.platform.db.schema.models.activity  # noqa: F401
+    import backend.platform.db.schema.models.admin_web  # noqa: F401
     import backend.platform.db.schema.models.automation  # noqa: F401
     import backend.platform.db.schema.models.chat  # noqa: F401
     import backend.platform.db.schema.models.expansion  # noqa: F401

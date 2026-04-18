@@ -108,6 +108,25 @@ ensure_runtime_env() {
     echo "Missing runtime env vars: ${missing[*]}" >&2
     exit 1
   fi
+
+  case "${ADMIN_WEB_ENABLED:-true}" in
+    false|False|FALSE|0|no|No|NO)
+      return 0
+      ;;
+  esac
+
+  case "${ADMIN_WEB_HOST:-0.0.0.0}" in
+    127.0.0.1|localhost|::1)
+      cat >&2 <<'EOF'
+Invalid production admin web binding: ADMIN_WEB_HOST is loopback-only.
+
+docker-compose.server.yml publishes the admin service through Docker port mapping.
+Inside the bot container the FastAPI admin server must bind ADMIN_WEB_HOST=0.0.0.0,
+while ADMIN_WEB_PUBLISH_HOST=127.0.0.1 keeps the published port private to the host.
+EOF
+      exit 1
+      ;;
+  esac
 }
 
 compose() {

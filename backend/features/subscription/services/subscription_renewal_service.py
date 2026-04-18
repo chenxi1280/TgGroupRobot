@@ -52,9 +52,9 @@ def build_contact_url(bot_username: str | None) -> str:
 
 def format_renewal_page(data: RenewalPageData, *, contact_hint: str = "当前版本所有功能默认开放。") -> str:
     return (
-        "🔓 功能开放说明\n\n"
-        "当前版本已暂时关闭付费/续费逻辑。\n"
-        "所有群组功能默认开放，无需购买套餐或输入卡密。\n\n"
+        "💳 续费订阅\n\n"
+        "请使用后台生成的续费卡密延长群组有效期。\n"
+        "卡密核销后会绑定当前群组，无法再次使用。\n\n"
         f"当前版本：{data.current_version_text}\n"
         f"群组名称：{data.chat_title}\n"
         f"到期时间：{data.expiry_text}"

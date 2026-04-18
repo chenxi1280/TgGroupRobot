@@ -6,10 +6,12 @@ pydantic-settings==2.6.1
 python-dotenv==1.0.1
 structlog==24.4.0
 httpx
+fastapi==0.115.6
+uvicorn==0.32.1
+openpyxl==3.1.5
 
 pytest==8.3.4
 pytest-asyncio==0.25.0
-
 
 
 

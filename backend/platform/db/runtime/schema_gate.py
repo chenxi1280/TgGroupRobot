@@ -144,8 +144,25 @@ REQUIRED_INDEXES: tuple[RequiredIndex, ...] = (
         unique=True,
     ),
     RequiredIndex(
+        table_name="renewal_card_key_batches",
+        index_name="uq_renewal_card_key_batch_no",
+        columns=("batch_no",),
+        unique=True,
+    ),
+    RequiredIndex(
         table_name="renewal_audit_logs",
         index_name="ix_renewal_audit_logs_created_at",
+        columns=("created_at",),
+    ),
+    RequiredIndex(
+        table_name="admin_sessions",
+        index_name="ix_admin_sessions_token_hash",
+        columns=("token_hash",),
+        unique=True,
+    ),
+    RequiredIndex(
+        table_name="admin_audit_logs",
+        index_name="ix_admin_audit_logs_created_at",
         columns=("created_at",),
     ),
     RequiredIndex(
@@ -179,6 +196,7 @@ def _load_model_metadata() -> None:
     # 导入模型以填充 Base.metadata
     import backend.platform.db.schema.models.alliance  # noqa: F401
     import backend.platform.db.schema.models.activity  # noqa: F401
+    import backend.platform.db.schema.models.admin_web  # noqa: F401
     import backend.platform.db.schema.models.automation  # noqa: F401
     import backend.platform.db.schema.models.chat  # noqa: F401
     import backend.platform.db.schema.models.expansion  # noqa: F401

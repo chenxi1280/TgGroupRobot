@@ -95,6 +95,8 @@ async def run_bot_with_scheduler() -> None:
     started = False
     polling_started = False
     scheduler_started = False
+    admin_web_server = None
+    admin_web_task: asyncio.Task | None = None
 
     try:
         await app.initialize()
@@ -111,8 +113,35 @@ async def run_bot_with_scheduler() -> None:
         _register_scheduler_tasks(scheduler)
         await scheduler.start()
         scheduler_started = True
+        if getattr(settings, "admin_web_enabled", True):
+            from backend.features.web_admin.app import create_admin_web_app
+            import uvicorn
+
+            db = app.bot_data["db"]
+            admin_web_app = create_admin_web_app(db, settings)
+            config = uvicorn.Config(
+                admin_web_app,
+                host=settings.admin_web_host,
+                port=settings.admin_web_port,
+                log_level="info",
+            )
+            admin_web_server = uvicorn.Server(config)
+            admin_web_task = asyncio.create_task(admin_web_server.serve())
+            log.info(
+                "admin_web_started",
+                host=settings.admin_web_host,
+                port=settings.admin_web_port,
+                url=f"http://{settings.admin_web_host}:{settings.admin_web_port}/admin/",
+            )
         await _wait_for_shutdown_signal()
     finally:
+        if admin_web_server is not None:
+            admin_web_server.should_exit = True
+        if admin_web_task is not None:
+            try:
+                await asyncio.wait_for(admin_web_task, timeout=10)
+            except asyncio.TimeoutError:
+                admin_web_task.cancel()
         if scheduler_started:
             await scheduler.stop()
         if polling_started and app.updater is not None:

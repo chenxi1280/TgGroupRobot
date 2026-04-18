@@ -59,3 +59,34 @@ def test_admin_main_menu_text_includes_daily_stats_and_subscription() -> None:
     assert "昨日：加入(0) 离开(2) 签到(1)" in text
     assert "保安公告栏 👉 点击关注 (https://t.me/abaoantips)" in text
     assert "有效期至：2026-04-22 23:59" in text
+
+
+def test_admin_main_menu_text_uses_configured_announcement() -> None:
+    text = format_admin_main_menu_text(
+        "桩基俱乐部",
+        AdminMenuStats(
+            today=GroupDayCounts(),
+            yesterday=GroupDayCounts(),
+            expires_at_text="永久",
+            announcement_text="更新日志：https://example.com/changelog\n新版后台已上线",
+        ),
+    )
+
+    assert "更新日志：https://example.com/changelog" in text
+    assert "新版后台已上线" in text
+    assert "保安公告栏 👉 点击关注" not in text
+
+
+def test_admin_main_menu_text_hides_disabled_announcement() -> None:
+    text = format_admin_main_menu_text(
+        "桩基俱乐部",
+        AdminMenuStats(
+            today=GroupDayCounts(),
+            yesterday=GroupDayCounts(),
+            expires_at_text="永久",
+            announcement_text="",
+        ),
+    )
+
+    assert "保安公告栏 👉 点击关注" not in text
+    assert "有效期至：永久" in text

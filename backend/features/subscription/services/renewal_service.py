@@ -232,11 +232,13 @@ async def redeem_renewal_card(
 
 
 def format_renewal_entry_text(snapshot: RenewalSnapshot, contact_username: str | None) -> str:
+    contact_line = f"\n购买咨询：@{contact_username.lstrip('@')}" if contact_username else ""
     return (
-        "🔓 功能开放说明\n\n"
-        "当前版本已暂时关闭付费/续费逻辑。\n"
-        "所有群组功能默认开放，无需购买套餐或输入卡密。\n\n"
+        "💳 续费订阅\n\n"
+        "请点击下方按钮输入后台生成的续费卡密。\n"
+        "核销成功后，卡密会绑定当前群组并自动延长有效期。\n\n"
         f"群组名字：{snapshot.group_title}\n"
         f"当前版本：{snapshot.version_name}\n"
         f"到期时间：{snapshot.end_at_text}"
+        f"{contact_line}"
     )

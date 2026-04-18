@@ -115,6 +115,49 @@ prune_old_releases() {
   done
 }
 
+post_deploy_checks_enabled() {
+  if [[ -z "${POST_DEPLOY_CHECKS_ENABLED+x}" && -f "${SHARED_DIR}/.env" ]]; then
+    local shared_value
+    shared_value="$(
+      set -a
+      # shellcheck disable=SC1091
+      source "${SHARED_DIR}/.env"
+      printf '%s' "${POST_DEPLOY_CHECKS_ENABLED:-}"
+    )"
+    if [[ -n "$shared_value" ]]; then
+      POST_DEPLOY_CHECKS_ENABLED="$shared_value"
+    fi
+  fi
+
+  case "${POST_DEPLOY_CHECKS_ENABLED:-true}" in
+    false|False|FALSE|0|no|No|NO|off|Off|OFF)
+      return 1
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+}
+
+run_post_deploy_checks() {
+  if ! post_deploy_checks_enabled; then
+    echo "==> Post-deploy checks skipped (POST_DEPLOY_CHECKS_ENABLED=${POST_DEPLOY_CHECKS_ENABLED:-false})"
+    return 0
+  fi
+
+  if [[ ! -f "${RELEASE_DIR}/deploy/check-web.sh" ]]; then
+    echo "Missing post-deploy check script: ${RELEASE_DIR}/deploy/check-web.sh" >&2
+    exit 1
+  fi
+
+  echo "==> Running post-deploy checks"
+  APP_DIR="${RELEASE_DIR}" \
+  BASE_DIR="${BASE_DIR}" \
+  SHARED_DIR="${SHARED_DIR}" \
+  ENV_FILE="${SHARED_DIR}/.env" \
+    bash "${RELEASE_DIR}/deploy/check-web.sh"
+}
+
 require_command docker
 prepare_shared_layout
 bootstrap_shared_env
@@ -137,6 +180,7 @@ ENV_FILE="${SHARED_DIR}/.env" \
 ln -sfn "$RELEASE_DIR" "${CURRENT_LINK}.tmp"
 mv -Tf "${CURRENT_LINK}.tmp" "$CURRENT_LINK"
 
+run_post_deploy_checks
 prune_old_releases
 
 echo "✅ Release ${RELEASE_ID} is live"

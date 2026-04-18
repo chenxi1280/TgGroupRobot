@@ -45,19 +45,23 @@ def format_admin_main_menu_text(chat_title: str, menu_stats: AdminMenuStats | No
     if menu_stats is None:
         return f"🎛️ 群组管理\n\n📍 当前群组: {chat_title}\n\n请选择要管理的内容："
 
-    return "\n".join(
+    lines = [
+        "🎛️ 群组管理",
+        "",
+        f"正在管理【{chat_title}】",
+        "",
+        _format_day_line("今日", menu_stats.today),
+        _format_day_line("昨日", menu_stats.yesterday),
+        "",
+    ]
+    announcement_text = getattr(menu_stats, "announcement_text", ANNOUNCEMENT_LINK_TEXT)
+    if announcement_text:
+        lines.extend([announcement_text, ""])
+    lines.extend(
         [
-            "🎛️ 群组管理",
-            "",
-            f"正在管理【{chat_title}】",
-            "",
-            _format_day_line("今日", menu_stats.today),
-            _format_day_line("昨日", menu_stats.yesterday),
-            "",
-            ANNOUNCEMENT_LINK_TEXT,
-            "",
             f"有效期至：{menu_stats.expires_at_text}",
             "",
             "请选择要管理的内容：",
         ]
     )
+    return "\n".join(lines)

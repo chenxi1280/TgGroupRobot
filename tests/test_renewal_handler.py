@@ -15,19 +15,21 @@ def test_renewal_keyboard_uses_url_when_contact_username_present() -> None:
         contact_username="seller_name",
         contact_label="一键联系",
     )
-    assert len(keyboard.inline_keyboard) == 1
+    assert keyboard.inline_keyboard[0][0].callback_data == "renew:input:-100123"
+    assert keyboard.inline_keyboard[1][0].url == "https://t.me/seller_name"
     assert keyboard.inline_keyboard[-1][0].callback_data == "renew:back:-100123"
 
 
-def test_renewal_keyboard_only_keeps_back_button_when_paid_logic_disabled() -> None:
+def test_renewal_keyboard_exposes_input_and_back_buttons() -> None:
     keyboard = renewal_entry_keyboard(
         -100123,
         contact_username=None,
         contact_url=None,
     )
 
-    assert len(keyboard.inline_keyboard) == 1
-    assert keyboard.inline_keyboard[0][0].callback_data == "renew:back:-100123"
+    assert len(keyboard.inline_keyboard) == 2
+    assert keyboard.inline_keyboard[0][0].callback_data == "renew:input:-100123"
+    assert keyboard.inline_keyboard[1][0].callback_data == "renew:back:-100123"
 
 
 @pytest.mark.asyncio
@@ -49,7 +51,7 @@ async def test_renew_command_in_private_requires_selected_chat(monkeypatch) -> N
 
 
 @pytest.mark.asyncio
-async def test_renew_callback_contact_reports_paid_logic_disabled(monkeypatch) -> None:
+async def test_renew_callback_contact_reports_contact_hint(monkeypatch) -> None:
     alerts: list[tuple[str, bool]] = []
 
     async def fake_answer(update, text, show_alert=False):
@@ -65,11 +67,11 @@ async def test_renew_callback_contact_reports_paid_logic_disabled(monkeypatch) -
 
     await renewal_handler.renew_callback(update, context)
 
-    assert alerts == [("付费逻辑已关闭，所有功能默认开放", True)]
+    assert alerts == [("请联系服务商获取续费卡密", True)]
 
 
 @pytest.mark.asyncio
-async def test_renewal_code_message_handler_clears_state_and_reports_disabled(monkeypatch) -> None:
+async def test_renewal_code_message_handler_clears_state_and_reports_success(monkeypatch) -> None:
     calls: list[tuple[int, int]] = []
     shown: list[int] = []
     replies: list[tuple[str, dict]] = []
@@ -87,18 +89,23 @@ async def test_renewal_code_message_handler_clears_state_and_reports_disabled(mo
     async def fake_show(update, context, *, chat_id):
         shown.append(chat_id)
 
+    async def fake_redeem(session, *, chat_id, operator_user_id, card_code, now=None):
+        assert (chat_id, operator_user_id, card_code) == (-1001, 42, "ABC123")
+        return SimpleNamespace(success=True, message="续费成功")
+
     monkeypatch.setattr(renewal_handler.ConversationStateService, "clear", fake_clear)
     monkeypatch.setattr(renewal_handler, "_show_menu", fake_show)
+    monkeypatch.setattr(renewal_handler, "redeem_renewal_card", fake_redeem)
 
     await renewal_handler.renewal_code_message_handler(update, context, object(), state, "ABC123")
 
     assert calls == [(-1001, 42)]
     assert shown == [-1001]
-    assert replies == [("付费逻辑已关闭，所有功能默认开放，无需输入卡密。", {})]
+    assert replies == [("续费成功", {})]
 
 
 @pytest.mark.asyncio
-async def test_renewal_code_message_handler_no_longer_redeems_cards(monkeypatch) -> None:
+async def test_renewal_code_message_handler_reports_failed_redeem(monkeypatch) -> None:
     replies: list[tuple[str, dict]] = []
     shown: list[int] = []
     clears: list[tuple[int, int]] = []
@@ -116,14 +123,18 @@ async def test_renewal_code_message_handler_no_longer_redeems_cards(monkeypatch)
     async def fake_show(update, context, *, chat_id):
         shown.append(chat_id)
 
+    async def fake_redeem(session, *, chat_id, operator_user_id, card_code, now=None):
+        return SimpleNamespace(success=False, message="卡密不存在")
+
     monkeypatch.setattr(renewal_handler.ConversationStateService, "clear", fake_clear)
     monkeypatch.setattr(renewal_handler, "_show_menu", fake_show)
+    monkeypatch.setattr(renewal_handler, "redeem_renewal_card", fake_redeem)
 
     await renewal_handler.renewal_code_message_handler(update, context, object(), state, "ABC123")
 
     assert clears == [(-1001, 42)]
     assert shown == [-1001]
-    assert replies == [("付费逻辑已关闭，所有功能默认开放，无需输入卡密。", {})]
+    assert replies == [("卡密不存在", {})]
 
 
 def test_hash_card_code_is_case_insensitive() -> None:

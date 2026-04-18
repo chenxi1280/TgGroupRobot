@@ -188,12 +188,26 @@ shell_quote() {
 }
 
 remote_env_prefix=""
-if [[ -n "${GHCR_USERNAME:-}" ]]; then
-  remote_env_prefix+=" GHCR_USERNAME=$(shell_quote "$GHCR_USERNAME")"
-fi
-if [[ -n "${GHCR_TOKEN:-}" ]]; then
-  remote_env_prefix+=" GHCR_TOKEN=$(shell_quote "$GHCR_TOKEN")"
-fi
+
+append_remote_env_if_set() {
+  local name="$1"
+  local value="${!name:-}"
+  if [[ -n "$value" ]]; then
+    remote_env_prefix+=" ${name}=$(shell_quote "$value")"
+  fi
+}
+
+append_remote_env_if_set GHCR_USERNAME
+append_remote_env_if_set GHCR_TOKEN
+append_remote_env_if_set POST_DEPLOY_CHECKS_ENABLED
+append_remote_env_if_set TGGROUPROBOT_WEB_HOST
+append_remote_env_if_set TGGROUPROBOT_CHECK_HOST_NGINX
+append_remote_env_if_set TGGROUPROBOT_CHECK_PUBLIC_URLS
+append_remote_env_if_set TGGROUPROBOT_DOCS_PUBLIC_URL
+append_remote_env_if_set TGGROUPROBOT_ADMIN_PUBLIC_URL
+append_remote_env_if_set TGGROUPROBOT_HOST_NGINX_HEALTH_URL
+append_remote_env_if_set TGGROUPROBOT_CHECK_ATTEMPTS
+append_remote_env_if_set TGGROUPROBOT_CHECK_RETRY_DELAY_SECONDS
 
 echo "==> Creating release archive for ${REF_NAME} (${short_sha})"
 git archive --format=tar.gz --output "$archive_path" "$REF_NAME"

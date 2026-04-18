@@ -194,12 +194,42 @@ def _full_tables() -> dict[str, dict]:
             "uniques": [{"name": "uq_moderation_warnings_chat_user", "column_names": ["chat_id", "user_id"]}],
         },
         "verification_challenges": {"columns": {"id", "chat_id", "user_id", "token", "expires_at", "solved", "verification_type", "question", "answer", "timeout_handled", "created_at"}},
+        "admin_accounts": {
+            "columns": {
+                "id", "username", "password_hash", "display_name", "status",
+                "last_login_at", "created_at", "updated_at",
+            },
+        },
+        "admin_sessions": {
+            "columns": {
+                "id", "token_hash", "admin_account_id", "expires_at",
+                "revoked_at", "created_at", "last_seen_at",
+            },
+            "indexes": [{"name": "ix_admin_sessions_token_hash", "column_names": ["token_hash"], "unique": True}],
+        },
+        "admin_audit_logs": {
+            "columns": {
+                "id", "admin_account_id", "action", "target_type", "target_id",
+                "detail", "created_at",
+            },
+            "indexes": [{"name": "ix_admin_audit_logs_created_at", "column_names": ["created_at"], "unique": False}],
+        },
+        "app_settings": {"columns": {"key", "value", "updated_at"}},
         "subscription_plans": {"columns": {"id", "code", "name", "price_cents", "duration_days", "feature_flags", "created_at"}},
         "chat_subscriptions": {"columns": {"id", "chat_id", "plan_id", "status", "start_at", "end_at", "created_at"}},
+        "renewal_card_key_batches": {
+            "columns": {
+                "id", "batch_no", "spec_days", "quantity", "created_by_admin_id",
+                "copy_count", "export_count", "created_at",
+            },
+            "uniques": [{"name": "uq_renewal_card_key_batch_no", "column_names": ["batch_no"]}],
+        },
         "renewal_card_keys": {
             "columns": {
-                "id", "card_key_hash", "duration_seconds", "expires_at", "used",
+                "id", "card_key_hash", "batch_id", "card_code_plain", "spec_days",
+                "created_by_admin_id", "duration_seconds", "expires_at", "used",
                 "used_by_chat_id", "used_by_user_id", "used_at", "created_at",
+                "copy_status", "export_status", "copied_at", "exported_at",
             },
             "uniques": [{"name": "uq_renewal_card_key_hash", "column_names": ["card_key_hash"]}],
         },

@@ -7,10 +7,15 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.platform.db.schema.models.core import ChatSubscription, GroupDailyStats, SignInLog
+from backend.features.web_admin.announcement_service import (
+    DEFAULT_ANNOUNCEMENT_TEXT,
+    format_announcement_line,
+    get_announcement_settings,
+)
 from backend.shared.time_helper import LOCAL_TIMEZONE
 
 
-ANNOUNCEMENT_LINK_TEXT = "保安公告栏 👉 点击关注 (https://t.me/abaoantips)"
+ANNOUNCEMENT_LINK_TEXT = DEFAULT_ANNOUNCEMENT_TEXT
 
 
 @dataclass(frozen=True)
@@ -25,6 +30,7 @@ class AdminMenuStats:
     today: GroupDayCounts
     yesterday: GroupDayCounts
     expires_at_text: str
+    announcement_text: str = ANNOUNCEMENT_LINK_TEXT
 
 
 def _today(now: dt.datetime | None = None) -> dt.date:
@@ -130,9 +136,11 @@ async def get_admin_menu_stats(
     subscription_result = await session.execute(
         select(ChatSubscription.end_at).where(ChatSubscription.chat_id == chat_id)
     )
+    announcement = format_announcement_line(await get_announcement_settings(session))
 
     return AdminMenuStats(
         today=await _day_counts(session, chat_id, today),
         yesterday=await _day_counts(session, chat_id, yesterday),
         expires_at_text=_format_expire_at(subscription_result.scalar_one_or_none()),
+        announcement_text=announcement,
     )

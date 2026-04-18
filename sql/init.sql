@@ -1089,19 +1089,98 @@ CREATE INDEX IF NOT EXISTS ix_chat_subscriptions_status ON bot.chat_subscription
 CREATE INDEX IF NOT EXISTS ix_chat_subscriptions_end_at ON bot.chat_subscriptions(end_at);
 
 -- ============================================
--- 12. 续费卡密与审计
+-- 12. 内置后台账号、会话、配置与审计
 -- ============================================
+CREATE TABLE IF NOT EXISTS bot.admin_accounts (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(64) NOT NULL UNIQUE,
+    password_hash VARCHAR(256) NOT NULL,
+    display_name VARCHAR(64) NOT NULL DEFAULT '超级管理员',
+    status VARCHAR(16) NOT NULL DEFAULT 'active',
+    last_login_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS bot.admin_sessions (
+    id SERIAL PRIMARY KEY,
+    token_hash VARCHAR(128) NOT NULL UNIQUE,
+    admin_account_id INTEGER NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    revoked_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT fk_admin_sessions_admin_account_id FOREIGN KEY (admin_account_id)
+        REFERENCES bot.admin_accounts(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS bot.admin_audit_logs (
+    id SERIAL PRIMARY KEY,
+    admin_account_id INTEGER,
+    action VARCHAR(64) NOT NULL,
+    target_type VARCHAR(64),
+    target_id VARCHAR(128),
+    detail JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT fk_admin_audit_logs_admin_account_id FOREIGN KEY (admin_account_id)
+        REFERENCES bot.admin_accounts(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS bot.app_settings (
+    key VARCHAR(128) PRIMARY KEY,
+    value TEXT NOT NULL DEFAULT '',
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS ix_admin_accounts_username ON bot.admin_accounts(username);
+CREATE INDEX IF NOT EXISTS ix_admin_accounts_status ON bot.admin_accounts(status);
+CREATE UNIQUE INDEX IF NOT EXISTS ix_admin_sessions_token_hash ON bot.admin_sessions(token_hash);
+CREATE INDEX IF NOT EXISTS ix_admin_sessions_admin_account_id ON bot.admin_sessions(admin_account_id);
+CREATE INDEX IF NOT EXISTS ix_admin_sessions_expires_at ON bot.admin_sessions(expires_at);
+CREATE INDEX IF NOT EXISTS ix_admin_audit_logs_admin_account_id ON bot.admin_audit_logs(admin_account_id);
+CREATE INDEX IF NOT EXISTS ix_admin_audit_logs_action ON bot.admin_audit_logs(action);
+CREATE INDEX IF NOT EXISTS ix_admin_audit_logs_created_at ON bot.admin_audit_logs(created_at);
+
+-- ============================================
+-- 13. 续费卡密与审计
+-- ============================================
+CREATE TABLE IF NOT EXISTS bot.renewal_card_key_batches (
+    id SERIAL PRIMARY KEY,
+    batch_no VARCHAR(32) NOT NULL,
+    spec_days INTEGER NOT NULL,
+    quantity INTEGER NOT NULL,
+    created_by_admin_id INTEGER,
+    copy_count INTEGER NOT NULL DEFAULT 0,
+    export_count INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_renewal_card_key_batch_no UNIQUE (batch_no),
+    CONSTRAINT fk_renewal_card_key_batches_created_by_admin_id FOREIGN KEY (created_by_admin_id)
+        REFERENCES bot.admin_accounts(id) ON DELETE SET NULL
+);
+
 CREATE TABLE IF NOT EXISTS bot.renewal_card_keys (
     id SERIAL PRIMARY KEY,
     card_key_hash VARCHAR(128) NOT NULL,
+    batch_id INTEGER,
+    card_code_plain VARCHAR(128),
+    spec_days INTEGER,
+    created_by_admin_id INTEGER,
     duration_seconds INTEGER NOT NULL,
     expires_at TIMESTAMPTZ,
     used BOOLEAN NOT NULL DEFAULT FALSE,
     used_by_chat_id BIGINT,
     used_by_user_id BIGINT,
     used_at TIMESTAMPTZ,
+    copy_status VARCHAR(20) NOT NULL DEFAULT 'new',
+    export_status VARCHAR(20) NOT NULL DEFAULT 'new',
+    copied_at TIMESTAMPTZ,
+    exported_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL,
     CONSTRAINT uq_renewal_card_key_hash UNIQUE (card_key_hash),
+    CONSTRAINT fk_renewal_card_keys_batch_id FOREIGN KEY (batch_id)
+        REFERENCES bot.renewal_card_key_batches(id) ON DELETE SET NULL,
+    CONSTRAINT fk_renewal_card_keys_created_by_admin_id FOREIGN KEY (created_by_admin_id)
+        REFERENCES bot.admin_accounts(id) ON DELETE SET NULL,
     CONSTRAINT fk_renewal_card_keys_used_by_chat_id FOREIGN KEY (used_by_chat_id)
         REFERENCES bot.tg_chats(id) ON DELETE SET NULL,
     CONSTRAINT fk_renewal_card_keys_used_by_user_id FOREIGN KEY (used_by_user_id)
@@ -1122,14 +1201,28 @@ CREATE TABLE IF NOT EXISTS bot.renewal_audit_logs (
         REFERENCES bot.tg_users(id) ON DELETE SET NULL
 );
 
+ALTER TABLE bot.renewal_card_keys ADD COLUMN IF NOT EXISTS batch_id INTEGER REFERENCES bot.renewal_card_key_batches(id) ON DELETE SET NULL;
+ALTER TABLE bot.renewal_card_keys ADD COLUMN IF NOT EXISTS card_code_plain VARCHAR(128);
+ALTER TABLE bot.renewal_card_keys ADD COLUMN IF NOT EXISTS spec_days INTEGER;
+ALTER TABLE bot.renewal_card_keys ADD COLUMN IF NOT EXISTS created_by_admin_id INTEGER REFERENCES bot.admin_accounts(id) ON DELETE SET NULL;
+ALTER TABLE bot.renewal_card_keys ADD COLUMN IF NOT EXISTS copy_status VARCHAR(20) NOT NULL DEFAULT 'new';
+ALTER TABLE bot.renewal_card_keys ADD COLUMN IF NOT EXISTS export_status VARCHAR(20) NOT NULL DEFAULT 'new';
+ALTER TABLE bot.renewal_card_keys ADD COLUMN IF NOT EXISTS copied_at TIMESTAMPTZ;
+ALTER TABLE bot.renewal_card_keys ADD COLUMN IF NOT EXISTS exported_at TIMESTAMPTZ;
+
 COMMENT ON TABLE bot.renewal_card_keys IS '续费卡密表，仅存储卡密哈希和核销状态';
-COMMENT ON COLUMN bot.renewal_card_keys.card_key_hash IS '续费卡密哈希值，不存储明文卡密';
+COMMENT ON TABLE bot.renewal_card_key_batches IS '续费卡密批次表';
+COMMENT ON COLUMN bot.renewal_card_keys.card_key_hash IS '续费卡密哈希值，用于核销查找';
+COMMENT ON COLUMN bot.renewal_card_keys.card_code_plain IS '后台导出/复制使用的明文卡密，历史卡密可能为空';
+COMMENT ON COLUMN bot.renewal_card_keys.spec_days IS '卡密规格天数';
 COMMENT ON COLUMN bot.renewal_card_keys.duration_seconds IS '核销成功后增加的时长（秒）';
 COMMENT ON COLUMN bot.renewal_card_keys.expires_at IS '卡密失效时间，NULL 表示永不过期';
 COMMENT ON COLUMN bot.renewal_card_keys.used IS '卡密是否已被使用';
 COMMENT ON COLUMN bot.renewal_card_keys.used_by_chat_id IS '核销到的群组';
 COMMENT ON COLUMN bot.renewal_card_keys.used_by_user_id IS '执行核销的操作人';
 COMMENT ON COLUMN bot.renewal_card_keys.used_at IS '核销时间';
+COMMENT ON COLUMN bot.renewal_card_keys.copy_status IS '复制状态：new/copied';
+COMMENT ON COLUMN bot.renewal_card_keys.export_status IS '导出状态：new/exported';
 COMMENT ON COLUMN bot.renewal_card_keys.created_at IS '卡密创建时间';
 
 COMMENT ON TABLE bot.renewal_audit_logs IS '续费审计日志，记录核销成功和失败原因';
@@ -1142,11 +1235,17 @@ COMMENT ON COLUMN bot.renewal_audit_logs.created_at IS '审计记录创建时间
 
 CREATE INDEX IF NOT EXISTS ix_renewal_card_keys_expires_at ON bot.renewal_card_keys(expires_at);
 CREATE INDEX IF NOT EXISTS ix_renewal_card_keys_used ON bot.renewal_card_keys(used);
+CREATE INDEX IF NOT EXISTS ix_renewal_card_keys_batch_id ON bot.renewal_card_keys(batch_id);
+CREATE INDEX IF NOT EXISTS ix_renewal_card_keys_spec_days ON bot.renewal_card_keys(spec_days);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_renewal_card_key_batch_no ON bot.renewal_card_key_batches(batch_no);
+CREATE INDEX IF NOT EXISTS ix_renewal_card_key_batches_batch_no ON bot.renewal_card_key_batches(batch_no);
+CREATE INDEX IF NOT EXISTS ix_renewal_card_key_batches_spec_days ON bot.renewal_card_key_batches(spec_days);
+CREATE INDEX IF NOT EXISTS ix_renewal_card_key_batches_created_at ON bot.renewal_card_key_batches(created_at);
 CREATE INDEX IF NOT EXISTS ix_renewal_audit_logs_chat_id ON bot.renewal_audit_logs(chat_id);
 CREATE INDEX IF NOT EXISTS ix_renewal_audit_logs_created_at ON bot.renewal_audit_logs(created_at);
 
 -- ============================================
--- 13. 广告活动表 (ad_campaigns)
+-- 14. 广告活动表 (ad_campaigns)
 -- 存储群组内的广告活动信息
 -- ============================================
 CREATE TABLE IF NOT EXISTS bot.ad_campaigns (

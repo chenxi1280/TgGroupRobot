@@ -73,6 +73,15 @@ class Settings(BaseSettings):
     renewal_contact_url: str | None = Field(default=None, alias="RENEWAL_CONTACT_URL")
     renewal_contact_label: str = Field(default="一键联系", alias="RENEWAL_CONTACT_LABEL")
 
+    # 内置后台管理
+    admin_web_enabled: bool = Field(default=True, alias="ADMIN_WEB_ENABLED")
+    admin_web_host: str = Field(default="127.0.0.1", alias="ADMIN_WEB_HOST")
+    admin_web_port: int = Field(default=8088, alias="ADMIN_WEB_PORT")
+    admin_session_days: int = Field(default=7, alias="ADMIN_SESSION_DAYS")
+    admin_bootstrap_username: str | None = Field(default=None, alias="ADMIN_BOOTSTRAP_USERNAME")
+    admin_bootstrap_password: str | None = Field(default=None, alias="ADMIN_BOOTSTRAP_PASSWORD")
+    admin_bootstrap_display_name: str = Field(default="超级管理员", alias="ADMIN_BOOTSTRAP_DISPLAY_NAME")
+
 
 def get_settings() -> Settings:
     # 查找 env 文件

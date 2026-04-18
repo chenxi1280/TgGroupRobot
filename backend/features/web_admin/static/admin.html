@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TgGroupRobot 后台管理</title>
+  <link rel="stylesheet" href="/admin/static/admin.css">
+</head>
+<body>
+  <main class="shell">
+    <section id="loginPanel" class="login-panel">
+      <div>
+        <p class="eyebrow">TgGroupRobot</p>
+        <h1>后台管理</h1>
+        <p class="muted">登录后生成、复制、导出续费卡密，并维护公告栏。</p>
+      </div>
+      <form id="loginForm" class="form-stack">
+        <label>
+          <span>账号</span>
+          <input id="loginUsername" autocomplete="username" required>
+        </label>
+        <label>
+          <span>密码</span>
+          <input id="loginPassword" type="password" autocomplete="current-password" required>
+        </label>
+        <button type="submit">登录</button>
+      </form>
+    </section>
+
+    <section id="adminPanel" class="admin-panel hidden">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">内置后台</p>
+          <h1>卡密与公告栏</h1>
+        </div>
+        <div class="user-box">
+          <span id="currentAdmin"></span>
+          <button id="logoutBtn" class="ghost">退出</button>
+        </div>
+      </header>
+
+      <nav class="tabs">
+        <button class="tab active" data-tab="keys">卡密管理</button>
+        <button class="tab" data-tab="announcement">公告栏配置</button>
+      </nav>
+
+      <section id="tabKeys" class="tab-panel">
+        <div class="grid two">
+          <section class="panel">
+            <div class="panel-head">
+              <h2>立即生成卡密</h2>
+              <span id="copyLimitHint" class="pill"></span>
+            </div>
+            <form id="generateForm" class="form-grid">
+              <label>
+                <span>规格</span>
+                <select id="specSelect"></select>
+              </label>
+              <label>
+                <span>数量</span>
+                <input id="quantityInput" type="number" min="1" max="500" value="5">
+              </label>
+              <button type="submit">生成卡密</button>
+            </form>
+            <div id="generateResult" class="result-box hidden">
+              <div class="result-title">本次生成结果</div>
+              <textarea id="generatedText" readonly></textarea>
+              <div class="actions">
+                <button id="copyGeneratedBtn" type="button">复制本次卡密</button>
+                <span id="generatedHint" class="muted"></span>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h2>筛选条件</h2>
+              <button id="refreshBtn" class="ghost" type="button">刷新</button>
+            </div>
+            <div class="form-grid">
+              <label>
+                <span>规格</span>
+                <select id="filterSpec"></select>
+              </label>
+              <label>
+                <span>状态</span>
+                <select id="filterStatus">
+                  <option value="">全部</option>
+                  <option value="available">可用</option>
+                  <option value="used">已激活</option>
+                </select>
+              </label>
+              <label class="wide">
+                <span>关键词</span>
+                <input id="filterKeyword" placeholder="卡密或批次号">
+              </label>
+              <button id="applyFilterBtn" type="button">查询</button>
+            </div>
+          </section>
+        </div>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>卡密明细</h2>
+            <div class="actions">
+              <button id="copySelectedBtn" type="button">复制选中</button>
+              <button id="copySelectedMetaBtn" type="button" class="ghost">复制选中+规格</button>
+              <button id="exportBtn" type="button" class="ghost">导出 XLSX</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th><input id="selectAllCards" type="checkbox"></th>
+                  <th>卡密</th>
+                  <th>规格</th>
+                  <th>状态</th>
+                  <th>激活群组</th>
+                  <th>激活用户</th>
+                  <th>群主</th>
+                  <th>激活时间</th>
+                </tr>
+              </thead>
+              <tbody id="cardsBody"></tbody>
+            </table>
+          </div>
+          <div id="cardsEmpty" class="empty hidden">暂无卡密</div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>卡密批次</h2>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>批次号</th>
+                  <th>规格</th>
+                  <th>数量</th>
+                  <th>已激活</th>
+                  <th>复制次数</th>
+                  <th>导出次数</th>
+                  <th>创建时间</th>
+                </tr>
+              </thead>
+              <tbody id="batchesBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section id="tabAnnouncement" class="tab-panel hidden">
+        <section class="panel narrow">
+          <div class="panel-head">
+            <h2>公告栏配置</h2>
+            <span class="pill">保存后 Bot 管理主菜单生效</span>
+          </div>
+          <form id="announcementForm" class="form-stack">
+            <label class="inline">
+              <input id="announcementEnabled" type="checkbox">
+              <span>启用公告栏</span>
+            </label>
+            <label>
+              <span>展示文案</span>
+              <input id="announcementEntry" maxlength="500">
+            </label>
+            <label>
+              <span>跳转链接</span>
+              <input id="announcementUrl" maxlength="500" placeholder="https://...">
+            </label>
+            <label>
+              <span>后置消息</span>
+              <textarea id="announcementMessage" rows="5" maxlength="2000"></textarea>
+            </label>
+            <button type="submit">保存公告配置</button>
+          </form>
+        </section>
+      </section>
+    </section>
+
+    <div id="toast" class="toast hidden"></div>
+  </main>
+  <script src="/admin/static/admin.js"></script>
+</body>
+</html>
