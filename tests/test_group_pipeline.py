@@ -75,6 +75,28 @@ async def test_group_message_handler_short_circuits_after_core_handler() -> None
 
 
 @pytest.mark.asyncio
+async def test_group_message_handler_short_circuits_after_business_handler() -> None:
+    calls: list[str] = []
+    handler = GroupMessageHandler()
+    handler._core_handler = _recording_handler("core", calls, result=False)
+
+    async def forbidden_handler(update, context):
+        del update, context
+        raise AssertionError("business handlers must stop after a handler consumes the message")
+
+    handler._business_handlers = [
+        ("auction", _recording_handler("auction", calls, result=True)),
+        ("engagement", forbidden_handler),
+    ]
+    update, context, chat, user = _update_context()
+
+    handled = await handler.handle(update, context, chat, user, "拍卖")
+
+    assert handled is True
+    assert calls == ["core", "auction"]
+
+
+@pytest.mark.asyncio
 async def test_group_message_handler_continues_after_business_handler_error() -> None:
     calls: list[str] = []
     handler = GroupMessageHandler()

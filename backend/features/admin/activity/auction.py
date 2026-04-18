@@ -39,10 +39,6 @@ class AuctionAdminControllerMixin:
                 InlineKeyboardButton("✅ 关闭" if not setting.auto_extend_enabled else "关闭", callback_data=f"auc:toggle:{chat_id}:auto_extend:0"),
             ],
             [
-                InlineKeyboardButton("👮 仅管理员" + (" ✅" if setting.create_permission == "admin" else ""), callback_data=f"auc:perm:{chat_id}:admin"),
-                InlineKeyboardButton("👥 所有人" + (" ✅" if setting.create_permission == "all" else ""), callback_data=f"auc:perm:{chat_id}:all"),
-            ],
-            [
                 InlineKeyboardButton("🚫 不关联" + (" ✅" if setting.points_mode == "none" else ""), callback_data=f"auc:points_mode:{chat_id}:none"),
                 InlineKeyboardButton("🌑 主积分" + (" ✅" if setting.points_mode == "group_points" else ""), callback_data=f"auc:points_mode:{chat_id}:group_points"),
             ],

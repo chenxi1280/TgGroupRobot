@@ -13,12 +13,22 @@ from backend.platform.scheduler.core.task_config import TASK_CONFIG
 log = structlog.get_logger(__name__)
 
 
+def _get_group_lock_schedule_times(settings: ChatSettings) -> tuple[str | None, str | None]:
+    night_start = getattr(settings, 'night_mode_start_time', None)
+    night_end = getattr(settings, 'night_mode_end_time', None)
+    if night_start and night_end:
+        return night_end, night_start
+    return (
+        getattr(settings, 'group_lock_open_time', None),
+        getattr(settings, 'group_lock_close_time', None),
+    )
+
+
 def _is_closed_now(settings: ChatSettings) -> bool:
     if not bool(getattr(settings, 'group_lock_schedule_enabled', False)):
         return False
 
-    open_time = getattr(settings, 'group_lock_open_time', None)
-    close_time = getattr(settings, 'group_lock_close_time', None)
+    open_time, close_time = _get_group_lock_schedule_times(settings)
     if not open_time or not close_time:
         return False
 

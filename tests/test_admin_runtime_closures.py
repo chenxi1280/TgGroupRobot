@@ -52,6 +52,17 @@ def test_group_lock_window_cross_day():
     assert isinstance(_is_closed_now(settings), bool)
 
 
+def test_group_lock_window_prefers_night_control_times():
+    settings = SimpleNamespace(
+        group_lock_schedule_enabled=True,
+        group_lock_open_time='08:00',
+        group_lock_close_time='02:00',
+        night_mode_start_time='23:00',
+        night_mode_end_time='07:00',
+    )
+    assert isinstance(_is_closed_now(settings), bool)
+
+
 @pytest.mark.asyncio
 async def test_group_lock_task_skips_unchanged_state(monkeypatch):
     task = GroupLockTask()

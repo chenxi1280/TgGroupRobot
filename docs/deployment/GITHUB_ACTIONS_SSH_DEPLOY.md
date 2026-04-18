@@ -6,7 +6,7 @@
 2. GitHub Actions 在 GitHub runner 上运行
 3. runner 通过 SSH 连接服务器
 4. 执行 `deploy/release.sh`
-5. 服务器接收 release 包并更新 `tggrouprobot-bot`
+5. 服务器接收 release 包，拉取指定 GHCR 镜像，更新 `tggrouprobot-bot` 并发布用户手册静态文件
 
 ## 生产约定
 
@@ -24,6 +24,8 @@
 - `PRODUCTION_HOST`
 - `PRODUCTION_USER`
 - `PRODUCTION_PORT` 可选
+- `GHCR_TOKEN`
+- `GHCR_USERNAME` 可选，不填时 workflow 使用 `github.actor`
 
 ## GitHub Variables
 
@@ -45,6 +47,9 @@ cp /data/tggrouprobot/.env /data/tggrouprobot/shared/.env
 BOT_TOKEN=...
 DATABASE_URL=postgresql+psycopg://app_user:<shared_password>@postgres:5432/tggrouprobot
 INFRA_NETWORK_NAME=infra_default
+GHCR_USERNAME=<github_user>
+GHCR_TOKEN=<github_pat_with_read_packages>
+TGGROUPROBOT_DOCS_STATIC_BASE_DIR=/data/infra/www/robot.telema.cn
 ```
 
 ## Workflow 做了什么
@@ -57,21 +62,23 @@ INFRA_NETWORK_NAME=infra_default
 
 1. checkout 当前代码
 2. 运行 Python 代码检查和测试
-3. 读取 GitHub Secrets
-4. 配置 SSH
-5. 调用 `bash deploy/release.sh --host production-server`
+3. 在 GitHub Actions runner 上构建并推送 bot/docs-site GHCR 镜像
+4. 读取 GitHub Secrets
+5. 配置 SSH
+6. 调用 `bash deploy/release.sh --host production-server`
 
 而 `deploy/release.sh` 会：
 
 1. 校验当前分支和工作区状态
-2. 使用 `git archive` 生成干净 release 包
+2. 使用 `git archive` 生成干净 release 包，并写入本次镜像版本 `.image.env`
 3. 上传到服务器 `/data/tggrouprobot/incoming`
 4. 解压到 `/data/tggrouprobot/releases/<release_id>`
 5. 调用 `deploy/server-install-release.sh`
-6. 先确保 `tggrouprobot` 数据库存在，再串行预构建服务镜像
+6. 先确保 `tggrouprobot` 数据库存在，再拉取本次指定镜像
 7. 执行项目内 `sql/init.sql`
-8. 启动 `bot` 容器，并等待运行状态
-9. 更新 `/data/tggrouprobot/current`
+8. 从 docs-site 镜像释放静态文件到 `/data/infra/www/robot.telema.cn`
+9. 启动 `bot` 容器，并等待运行状态
+10. 更新 `/data/tggrouprobot/current`
 
 ## 回滚
 

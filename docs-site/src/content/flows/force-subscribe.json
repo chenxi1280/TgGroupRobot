@@ -203,10 +203,10 @@
         [
           {
             "label": "删除延迟",
-            "callbackData": "adm:fs:{chat_id}:cycle_delete_after",
+            "callbackData": "adm:fs:{chat_id}:delete_after",
             "action": "toggle",
             "target": "home",
-            "feedback": "已切换删除延迟。"
+            "feedback": "请选择删除延迟。"
           }
         ],
         [

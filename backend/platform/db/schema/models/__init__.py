@@ -15,6 +15,7 @@ from backend.platform.db.schema.models.chat import (  # noqa: F401
     ChatMember,
     ChatSettings,
     ConversationState,
+    GroupDailyStats,
     NearbyProfile,
     TgChat,
     TgUser,

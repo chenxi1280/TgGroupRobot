@@ -55,7 +55,7 @@ class ModerationControlActionsMixin:
                         else GroupLockDeleteNoticeMode.keep.value
                     )
                 await session.commit()
-            await self._show_group_lock_menu(update, context, chat_id)
+            await self._show_night_mode_menu(update, context, chat_id)
             return
 
         if op == "set":
@@ -73,7 +73,7 @@ class ModerationControlActionsMixin:
                     await answer_callback_query_safely(update, "无效配置项", show_alert=True)
                     return
                 await session.commit()
-            await self._show_group_lock_menu(update, context, chat_id)
+            await self._show_night_mode_menu(update, context, chat_id)
             return
 
         if op == "notice":
@@ -85,7 +85,7 @@ class ModerationControlActionsMixin:
                 settings = await get_chat_settings(session, chat_id)
                 settings.group_lock_delete_notice_mode = mode
                 await session.commit()
-            await self._show_group_lock_menu(update, context, chat_id)
+            await self._show_night_mode_menu(update, context, chat_id)
             return
 
         if op == "input":
@@ -108,8 +108,8 @@ class ModerationControlActionsMixin:
             )
             if arg in {"open_time", "close_time"}:
                 sample_text = next_top_of_hour_hhmm(hours_offset=0 if arg == "open_time" else 8)
-                title = "🔓 定时开关群 | 编辑开群时间" if arg == "open_time" else "🔒 定时开关群 | 编辑关群时间"
-                hint = "👉 请输入开群时间（格式 HH:MM）： " if arg == "open_time" else "👉 请输入关群时间（格式 HH:MM）： "
+                title = "🌙 夜间管控 | 编辑结束时间" if arg == "open_time" else "🌙 夜间管控 | 编辑开始时间"
+                hint = "👉 请输入管控结束时间（格式 HH:MM）： " if arg == "open_time" else "👉 请输入管控开始时间（格式 HH:MM）： "
                 await self.message_helper.safe_edit(
                     update,
                     build_hhmm_prompt_text(
@@ -118,7 +118,7 @@ class ModerationControlActionsMixin:
                         input_hint=hint.strip(),
                     ),
                     parse_mode="HTML",
-                    reply_markup=build_copy_time_keyboard(f"adm:menu:closegroup:{chat_id}", sample_text),
+                    reply_markup=build_copy_time_keyboard(f"adm:menu:night:{chat_id}", sample_text),
                 )
                 return
             prompt = {
@@ -128,7 +128,7 @@ class ModerationControlActionsMixin:
             await self.message_helper.safe_edit(
                 update,
                 prompt,
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:closegroup:{chat_id}")]]),
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:night:{chat_id}")]]),
             )
 
     async def _handle_rename_monitor(

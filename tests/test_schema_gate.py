@@ -116,6 +116,12 @@ def _full_tables() -> dict[str, dict]:
             },
         },
         "chat_members": {"columns": {"id", "chat_id", "user_id", "role", "joined_at", "updated_at"}},
+        "group_daily_stats": {
+            "columns": {
+                "id", "chat_id", "stat_date", "join_count", "leave_count",
+                "created_at", "updated_at",
+            },
+        },
         "nearby_profiles": {"columns": {"id", "chat_id", "user_id", "latitude", "longitude", "price_text", "method_text", "address_text", "is_visible", "fuzzy_distance", "last_location_at", "created_at", "updated_at"}},
         "points_accounts": {"columns": {"id", "chat_id", "user_id", "balance", "updated_at"}},
         "points_transactions": {"columns": {"id", "chat_id", "user_id", "txn_type", "amount", "reason", "created_at"}},

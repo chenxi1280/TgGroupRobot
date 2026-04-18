@@ -8,11 +8,17 @@ from backend.features.group_ops.group_hooks.control_force_subscribe import _chec
 
 
 class _Bot:
-    def __init__(self, statuses: dict[object, str]) -> None:
+    def __init__(self, statuses: dict[object, str], chat_titles: dict[object, str] | None = None) -> None:
         self.statuses = statuses
+        self.chat_titles = chat_titles or {}
+        self.get_chat_calls: list[object] = []
         self.get_chat_member_calls: list[tuple[object, int]] = []
         self.messages: list[dict] = []
         self.restrict_calls: list[dict] = []
+
+    async def get_chat(self, *, chat_id):
+        self.get_chat_calls.append(chat_id)
+        return SimpleNamespace(type="channel", title=self.chat_titles[chat_id])
 
     async def get_chat_member(self, *, chat_id, user_id):
         self.get_chat_member_calls.append((chat_id, user_id))
@@ -125,7 +131,7 @@ async def test_force_subscribe_any_mode_allows_one_matching_target() -> None:
 
 @pytest.mark.asyncio
 async def test_force_subscribe_deletes_and_warns_unsubscribed_member() -> None:
-    bot = _Bot({"@channel_a": "left"})
+    bot = _Bot({"@channel_a": "left"}, chat_titles={"@channel_a": "频道 A"})
     message = _Message()
 
     allowed = await _check_force_subscribe(
@@ -140,6 +146,7 @@ async def test_force_subscribe_deletes_and_warns_unsubscribed_member() -> None:
     assert message.deleted is True
     assert bot.messages[0]["chat_id"] == -100123
     assert bot.messages[0]["text"] == "Alice，请关注后发言。"
+    assert bot.messages[0]["reply_markup"].inline_keyboard[0][0].text == "频道 A"
     assert bot.messages[0]["reply_markup"].inline_keyboard[0][0].url == "https://t.me/channel_a"
 
 

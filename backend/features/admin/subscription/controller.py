@@ -75,7 +75,11 @@ class SubscriptionAdminControllerMixin:
         ]
         auto_delete_count = sum(auto_delete_flags)
         enabled_tasks = sum(1 for task in tasks if bool(getattr(task, "enabled", False)))
-        group_lock_enabled = bool(getattr(settings, "group_lock_phrase_enabled", False) or getattr(settings, "group_lock_schedule_enabled", False))
+        night_control_enabled = bool(
+            getattr(settings, "night_mode_enabled", False)
+            or getattr(settings, "group_lock_phrase_enabled", False)
+            or getattr(settings, "group_lock_schedule_enabled", False)
+        )
         new_member_limit_enabled = bool(getattr(settings, "new_member_limit_enabled", False))
         new_member_limit_window = int(getattr(settings, "new_member_limit_window_seconds", 3600) or 3600)
         from backend.features.moderation.services.garbage_guard_rules import any_garbage_rule_enabled
@@ -92,7 +96,7 @@ class SubscriptionAdminControllerMixin:
             f"• 新成员限制：{'✅ 开启' if new_member_limit_enabled else '❌ 关闭'}（{_format_duration_label(new_member_limit_window)}）",
             f"• 强制关注：{'✅ 开启' if getattr(settings, 'force_subscribe_enabled', False) else '❌ 关闭'}",
             f"• 垃圾防护：{'✅ 开启' if garbage_guard_enabled else '❌ 关闭'}",
-            f"• 关群设置：{'✅ 开启' if group_lock_enabled else '❌ 关闭'}",
+            f"• 夜间管控：{'✅ 开启' if night_control_enabled else '❌ 关闭'}",
             f"• 自动删除：{auto_delete_count}/6 项",
             f"• 定时消息：{len(tasks)} 条（启用 {enabled_tasks} 条）",
             "",
@@ -106,10 +110,10 @@ class SubscriptionAdminControllerMixin:
             if not ch1 and not ch2:
                 warnings.append("⚠️ 强制关注已开启但尚未绑定频道/群组")
         if getattr(settings, "group_lock_schedule_enabled", False):
-            open_time = getattr(settings, "group_lock_open_time", None)
-            close_time = getattr(settings, "group_lock_close_time", None)
+            open_time = getattr(settings, "night_mode_end_time", None) or getattr(settings, "group_lock_open_time", None)
+            close_time = getattr(settings, "night_mode_start_time", None) or getattr(settings, "group_lock_close_time", None)
             if not open_time or not close_time:
-                warnings.append("⚠️ 定时关群已开启但开群/关群时间未完整配置")
+                warnings.append("⚠️ 夜间全员禁言已开启但管控开始/结束时间未完整配置")
         if (
             not settings.verification_enabled
             and not garbage_guard_enabled
@@ -134,7 +138,7 @@ class SubscriptionAdminControllerMixin:
             ],
             [
                 InlineKeyboardButton("📣 强制关注", callback_data=f"adm:menu:forcesub:{chat_id}"),
-                InlineKeyboardButton("🧨 关群设置", callback_data=f"adm:menu:closegroup:{chat_id}"),
+                InlineKeyboardButton("🌙 夜间管控", callback_data=f"adm:menu:night:{chat_id}"),
                 InlineKeyboardButton("⏰ 定时消息", callback_data=f"sm:list:{chat_id}:0"),
             ],
             [

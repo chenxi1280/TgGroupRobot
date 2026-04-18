@@ -28,6 +28,17 @@ from .moderation import (
 log = structlog.get_logger(__name__)
 
 
+def _is_reserved_activity_trigger(message_text: str) -> bool:
+    normalized = "".join(
+        char
+        for char in message_text
+        if not char.isspace() and char not in {"\u200b", "\u200c", "\u200d", "\ufeff"}
+    )
+    if normalized.startswith("💰"):
+        normalized = normalized[1:]
+    return normalized == "拍卖"
+
+
 async def unified_group_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     chat = update.effective_chat
     message = update.effective_message
@@ -133,6 +144,7 @@ async def unified_group_message_handler(update: Update, context: ContextTypes.DE
                 sender_chat_id=sender_chat_id,
             )
 
-        await _process_auto_reply(context, db, chat, message, message_text)
+        if not _is_reserved_activity_trigger(message_text):
+            await _process_auto_reply(context, db, chat, message, message_text)
 
     return False

@@ -126,7 +126,7 @@
       "id": "home",
       "title": "拍卖",
       "message": [
-        "配置拍卖开关、权限、积分模式和拍卖项目。"
+        "配置拍卖开关、积分模式和拍卖项目。群成员发送“拍卖”后，机器人会提示回复拍卖物品。"
       ],
       "keyboard": [
         [
@@ -154,14 +154,14 @@
         ],
         [
           {
-            "label": "管理员发起",
-            "callbackData": "auc:perm:{chat_id}:admin",
+            "label": "不关联积分",
+            "callbackData": "auc:points_mode:{chat_id}:none",
             "action": "toggle",
             "target": "home",
-            "feedback": "仅管理员可发起。"
+            "feedback": "已关闭积分关联。"
           },
           {
-            "label": "积分模式",
+            "label": "主积分",
             "callbackData": "auc:points_mode:{chat_id}:group_points",
             "action": "toggle",
             "target": "home",

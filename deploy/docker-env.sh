@@ -16,6 +16,7 @@ fi
 
 SHARED_DIR="${SHARED_DIR:-${BASE_DIR}/shared}"
 COMPOSE_FILE="${COMPOSE_FILE:-${APP_DIR}/docker-compose.server.yml}"
+IMAGE_ENV_FILE="${IMAGE_ENV_FILE:-${APP_DIR}/.image.env}"
 
 if [[ -n "${ENV_FILE:-}" ]]; then
   ENV_FILE="$ENV_FILE"
@@ -44,6 +45,10 @@ load_base_env() {
   set -a
   # shellcheck disable=SC1090
   source "$ENV_FILE"
+  if [[ -f "$IMAGE_ENV_FILE" ]]; then
+    # shellcheck disable=SC1090
+    source "$IMAGE_ENV_FILE"
+  fi
   set +a
 }
 

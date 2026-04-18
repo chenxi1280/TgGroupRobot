@@ -104,7 +104,7 @@ class ConversationStateType(str, enum.Enum):
     force_subscribe_cover_input = "force_subscribe_cover_input"  # 强制关注封面
     force_subscribe_buttons_input = "force_subscribe_buttons_input"  # 强制关注按钮
     new_member_limit_text_input = "new_member_limit_text_input"  # 新成员限制提示文案
-    night_mode_text_input = "night_mode_text_input"  # 夜间模式配置输入
+    night_mode_text_input = "night_mode_text_input"  # 夜间管控配置输入
     command_config_alias_input = "command_config_alias_input"  # 命令配置别名输入
     group_lock_open_keyword_input = "group_lock_open_keyword_input"  # 关群开群词
     group_lock_close_keyword_input = "group_lock_close_keyword_input"  # 关群关群词
@@ -128,7 +128,7 @@ class ConversationStateType(str, enum.Enum):
     nearby_edit_address = "nearby_edit_address"  # 编辑周边资料备注
     nearby_edit_location = "nearby_edit_location"  # 编辑周边资料定位
     control_permission_config = "control_permission_config"  # 控制权限配置流程
-    group_lock_config = "group_lock_config"  # 关群设置配置流程
+    group_lock_config = "group_lock_config"  # 旧版关群设置配置流程
     name_change_monitor_config = "name_change_monitor_config"  # 改名监控配置流程
     force_subscribe_config = "force_subscribe_config"  # 强制关注配置流程
     alliance_create_name_input = "alliance_create_name_input"  # 联盟名称输入

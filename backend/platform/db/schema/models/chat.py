@@ -151,7 +151,7 @@ class ChatSettings(Base):
     night_mode_whitelist_user_ids: Mapped[list[int]] = mapped_column(JSONB, default=list)
     night_mode_delete_message: Mapped[bool] = mapped_column(Boolean, default=True)
     night_mode_warn_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
-    night_mode_warn_text: Mapped[str] = mapped_column(Text, default="🌙 夜间模式生效中，请稍后再试。")
+    night_mode_warn_text: Mapped[str] = mapped_column(Text, default="🌙 夜间管控生效中，请稍后再试。")
     night_mode_warn_delete_after_seconds: Mapped[int] = mapped_column(Integer, default=60)
 
     command_config_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -260,6 +260,26 @@ class ChatMember(Base):
     user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("bot.tg_users.id", ondelete="CASCADE"), index=True)
     role: Mapped[str] = mapped_column(String(16), default=MemberRole.member.value)
     joined_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: dt.datetime.now(dt.UTC),
+        onupdate=lambda: dt.datetime.now(dt.UTC),
+    )
+
+
+class GroupDailyStats(Base):
+    __tablename__ = "group_daily_stats"
+    __table_args__ = (
+        UniqueConstraint("chat_id", "stat_date", name="uq_group_daily_stats_chat_date"),
+        {"schema": "bot"},
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("bot.tg_chats.id", ondelete="CASCADE"), index=True)
+    stat_date: Mapped[dt.date] = mapped_column(default=lambda: dt.datetime.now(dt.UTC).date(), index=True)
+    join_count: Mapped[int] = mapped_column(Integer, default=0)
+    leave_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC))
     updated_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: dt.datetime.now(dt.UTC),

@@ -57,7 +57,7 @@ async def _process_night_mode(
             log.warning("night_mode_delete_failed", chat_id=chat.id, user_id=user.id, error=str(exc))
 
     if bool(getattr(settings, "night_mode_warn_enabled", True)):
-        warn_text = getattr(settings, "night_mode_warn_text", None) or "🌙 夜间模式生效中，请稍后再试。"
+        warn_text = getattr(settings, "night_mode_warn_text", None) or "🌙 夜间管控生效中，请稍后再试。"
         try:
             sent = await context.bot.send_message(
                 chat.id,

@@ -1,17 +1,17 @@
 ---
-import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
+import SiteLayout from '../../components/SiteLayout.astro';
 
-const frontmatter = {
+const page = {
   title: '文档说明',
   description: '功能手册当前以配置步骤、操作图和常见问题为主。'
 };
 ---
 
-<StarlightPage frontmatter={frontmatter}>
+<SiteLayout title={`${page.title} - TgGroupRobot 功能手册`} description={page.description}>
   <header class="page-heading">
     <p class="eyebrow">文档说明</p>
     <h1>功能手册</h1>
     <p>功能页保留配置步骤、Telegram 风格操作图和常见问题，管理员可以从功能总览进入对应页面。</p>
   </header>
   <p><a href="/features/">查看全部功能</a></p>
-</StarlightPage>
+</SiteLayout>

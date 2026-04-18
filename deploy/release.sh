@@ -11,6 +11,9 @@ KEEP_ARCHIVE="${KEEP_ARCHIVE:-0}"
 EXPECTED_BRANCHES="${EXPECTED_BRANCHES:-release-tg}"
 RELEASE_SSH_ATTEMPTS="${RELEASE_SSH_ATTEMPTS:-3}"
 RELEASE_SSH_RETRY_DELAY="${RELEASE_SSH_RETRY_DELAY:-10}"
+IMAGE_NAMESPACE="${IMAGE_NAMESPACE:-ghcr.io/chenxi1280}"
+STATIC_KEEP_RELEASES="${STATIC_KEEP_RELEASES:-5}"
+TGGROUPROBOT_DOCS_STATIC_BASE_DIR="${TGGROUPROBOT_DOCS_STATIC_BASE_DIR:-/data/infra/www/robot.telema.cn}"
 SSH_OPTS=(
   -o "ConnectTimeout=${SSH_CONNECT_TIMEOUT:-20}"
   -o "ServerAliveInterval=${SSH_SERVER_ALIVE_INTERVAL:-30}"
@@ -129,6 +132,7 @@ require_command git
 require_command ssh
 require_command scp
 require_command mktemp
+require_command tar
 require_positive_integer RELEASE_SSH_ATTEMPTS "$RELEASE_SSH_ATTEMPTS"
 require_positive_integer RELEASE_SSH_RETRY_DELAY "$RELEASE_SSH_RETRY_DELAY"
 
@@ -157,13 +161,39 @@ if [[ "$ALLOW_DIRTY" != "1" ]] && [[ -n "$(git status --porcelain)" ]]; then
 fi
 
 short_sha="$(git rev-parse --short "$REF_NAME")"
+full_sha="$(git rev-parse "$REF_NAME")"
+image_tag="${IMAGE_TAG:-$full_sha}"
+TGGROUPROBOT_BOT_IMAGE="${TGGROUPROBOT_BOT_IMAGE:-${IMAGE_NAMESPACE}/tggrouprobot-bot:${image_tag}}"
+TGGROUPROBOT_DOCS_SITE_IMAGE="${TGGROUPROBOT_DOCS_SITE_IMAGE:-${IMAGE_NAMESPACE}/tggrouprobot-docs-site:${image_tag}}"
 release_id="$(date '+%Y%m%d%H%M%S')_${short_sha}"
 archive_path="$(mktemp "/tmp/tggrouprobot-release-${release_id}.XXXXXX.tar.gz")"
+image_env_path="$(mktemp "/tmp/tggrouprobot-image-env-${release_id}.XXXXXX.env")"
 remote_archive="${BASE_DIR}/incoming/${release_id}.tar.gz"
 remote_tmp_archive="/tmp/tggrouprobot-release-${release_id}.tar.gz"
+remote_image_env="/tmp/tggrouprobot-release-${release_id}.image.env"
 remote_release_dir="${BASE_DIR}/releases/${release_id}"
 
-trap '[[ "$KEEP_ARCHIVE" == "1" ]] || rm -f "$archive_path"' EXIT
+trap '[[ "$KEEP_ARCHIVE" == "1" ]] || rm -f "$archive_path" "$image_env_path"' EXIT
+
+cat >"$image_env_path" <<EOF
+TGGROUPROBOT_BOT_IMAGE=${TGGROUPROBOT_BOT_IMAGE}
+TGGROUPROBOT_DOCS_SITE_IMAGE=${TGGROUPROBOT_DOCS_SITE_IMAGE}
+STATIC_RELEASE_ID=${release_id}
+STATIC_KEEP_RELEASES=${STATIC_KEEP_RELEASES}
+TGGROUPROBOT_DOCS_STATIC_BASE_DIR=${TGGROUPROBOT_DOCS_STATIC_BASE_DIR}
+EOF
+
+shell_quote() {
+  printf '%q' "$1"
+}
+
+remote_env_prefix=""
+if [[ -n "${GHCR_USERNAME:-}" ]]; then
+  remote_env_prefix+=" GHCR_USERNAME=$(shell_quote "$GHCR_USERNAME")"
+fi
+if [[ -n "${GHCR_TOKEN:-}" ]]; then
+  remote_env_prefix+=" GHCR_TOKEN=$(shell_quote "$GHCR_TOKEN")"
+fi
 
 echo "==> Creating release archive for ${REF_NAME} (${short_sha})"
 git archive --format=tar.gz --output "$archive_path" "$REF_NAME"
@@ -171,6 +201,8 @@ git archive --format=tar.gz --output "$archive_path" "$REF_NAME"
 echo "==> Uploading release archive to ${USER_NAME}@${HOST}:${remote_tmp_archive}"
 run_with_retries "Uploading release archive" \
   scp "${SSH_OPTS[@]}" "$archive_path" "${USER_NAME}@${HOST}:${remote_tmp_archive}"
+run_with_retries "Uploading image env" \
+  scp "${SSH_OPTS[@]}" "$image_env_path" "${USER_NAME}@${HOST}:${remote_image_env}"
 
 echo "==> Installing release ${release_id} on ${HOST}"
 run_with_retries "Installing remote release" \
@@ -183,11 +215,12 @@ if [[ -f '${remote_archive}' ]]; then \
   mkdir -p '${remote_release_dir}' && \
   tar -xzf '${remote_archive}' -C '${remote_release_dir}'; \
 fi && \
+mv -f '${remote_image_env}' '${remote_release_dir}/.image.env' && \
 test -d '${remote_release_dir}' && \
-bash '${remote_release_dir}/deploy/server-install-release.sh' \
+${remote_env_prefix} bash '${remote_release_dir}/deploy/server-install-release.sh' \
   --base-dir '${BASE_DIR}' \
   --release-dir '${remote_release_dir}' \
   --release-id '${release_id}' && \
-rm -f '${remote_archive}' '${remote_tmp_archive}'"
+rm -f '${remote_archive}' '${remote_tmp_archive}' '${remote_image_env}'"
 
 echo "✅ Release ${release_id} completed"

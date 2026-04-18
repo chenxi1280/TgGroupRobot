@@ -29,8 +29,14 @@ class ModerationMemberMenusMixin:
             await session.commit()
 
         enabled = bool(getattr(settings, "force_subscribe_enabled", False))
-        ch1 = getattr(settings, "force_subscribe_bound_channel_1", None) or "未绑定"
-        ch2 = getattr(settings, "force_subscribe_bound_channel_2", None) or "未绑定"
+        ch1 = await _describe_force_subscribe_target(
+            context,
+            getattr(settings, "force_subscribe_bound_channel_1", None),
+        )
+        ch2 = await _describe_force_subscribe_target(
+            context,
+            getattr(settings, "force_subscribe_bound_channel_2", None),
+        )
         delete_after = int(getattr(settings, "force_subscribe_delete_warn_after_seconds", 60) or 60)
         default_guide_text = "{member}，您需要关注指定频道/群组后才能发言。"
         guide_text = getattr(settings, "force_subscribe_guide_text", "") or default_guide_text
@@ -112,7 +118,7 @@ class ModerationMemberMenusMixin:
                 InlineKeyboardButton("⚙️ 删除提示消息：", callback_data=f"adm:menu:forcesub:{chat_id}"),
                 InlineKeyboardButton(
                     mark_configured(f"{delete_after}秒后删除", delete_after != 60),
-                    callback_data=f"adm:fs:{chat_id}:cycle_delete_after",
+                    callback_data=f"adm:fs:{chat_id}:delete_after",
                 ),
             ],
             [InlineKeyboardButton("🧹 清空封面", callback_data=f"adm:fs:{chat_id}:clear_cover")],
@@ -202,39 +208,60 @@ class ModerationMemberMenusMixin:
             settings = await get_chat_settings(session, chat_id)
             await session.commit()
 
-        enabled = bool(getattr(settings, "night_mode_enabled", False))
-        start_time = getattr(settings, "night_mode_start_time", None) or "未设置"
-        end_time = getattr(settings, "night_mode_end_time", None) or "未设置"
+        message_control_enabled = bool(getattr(settings, "night_mode_enabled", False))
+        start_time = getattr(settings, "night_mode_start_time", None) or getattr(settings, "group_lock_close_time", None) or "未设置"
+        end_time = getattr(settings, "night_mode_end_time", None) or getattr(settings, "group_lock_open_time", None) or "未设置"
         exempt_admin = bool(getattr(settings, "night_mode_exempt_admin", True))
         whitelist = getattr(settings, "night_mode_whitelist_user_ids", None) or []
         delete_message = bool(getattr(settings, "night_mode_delete_message", True))
         warn_enabled = bool(getattr(settings, "night_mode_warn_enabled", True))
-        warn_text = getattr(settings, "night_mode_warn_text", "") or "🌙 夜间模式生效中，请稍后再试。"
+        warn_text = getattr(settings, "night_mode_warn_text", "") or "🌙 夜间管控生效中，请稍后再试。"
         warn_delete = int(getattr(settings, "night_mode_warn_delete_after_seconds", 60) or 60)
+        lock_schedule_enabled = bool(getattr(settings, "group_lock_schedule_enabled", False))
+        phrase_enabled = bool(getattr(settings, "group_lock_phrase_enabled", False))
+        open_phrase = getattr(settings, "group_lock_open_phrase", None) or "开群"
+        close_phrase = getattr(settings, "group_lock_close_phrase", None) or "关群"
+        delete_notice = getattr(settings, "group_lock_delete_notice_mode", "keep") == "delete"
 
         whitelist_summary = f"{len(whitelist)} 人" if whitelist else "未配置"
         text = (
-            "🌙 夜间模式\n\n"
-            "在指定时间段内限制发言，用于夜间防刷屏与控场。\n\n"
-            f"状态: {'✅ 启动' if enabled else '❌ 关闭'}\n"
-            f"开始时间: {start_time}\n"
-            f"结束时间: {end_time}\n"
+            "🌙 夜间管控\n\n"
+            "以夜间模式为主，统一管理夜间时段、消息拦截、全员禁言和口令开关群。\n\n"
+            f"管控开始: {start_time}\n"
+            f"管控结束: {end_time}\n"
+            f"消息拦截: {'✅ 开启' if message_control_enabled else '❌ 关闭'}\n"
+            f"全员禁言: {'✅ 开启' if lock_schedule_enabled else '❌ 关闭'}\n"
+            f"口令开关群: {'✅ 开启' if phrase_enabled else '❌ 关闭'}\n"
             f"管理员豁免: {'✅ 开启' if exempt_admin else '❌ 关闭'}\n"
             f"白名单: {whitelist_summary}\n"
             f"删除触发消息: {'✅ 开启' if delete_message else '❌ 关闭'}\n"
             f"提示消息: {'✅ 开启' if warn_enabled else '❌ 关闭'}\n"
+            f"开群词/关群词: {open_phrase} / {close_phrase}\n"
+            f"口令通知删除: {'✅ 删除' if delete_notice else '保留'}\n"
             f"提示删除: {warn_delete}秒后删除\n\n"
             f"当前提示文案:\n{warn_text}"
         )
         keyboard = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("⚙️ 状态：", callback_data=f"adm:menu:night:{chat_id}"),
-                InlineKeyboardButton("✅ 启动" if enabled else "启动", callback_data=f"adm:night:{chat_id}:toggle:enabled"),
-                InlineKeyboardButton("关闭" if enabled else "❌ 关闭", callback_data=f"adm:night:{chat_id}:toggle:enabled"),
+                InlineKeyboardButton("🧹 消息拦截", callback_data=f"adm:night:{chat_id}:toggle:enabled"),
+                InlineKeyboardButton("✅ 开启" if message_control_enabled else "开启", callback_data=f"adm:night:{chat_id}:toggle:enabled"),
+                InlineKeyboardButton("关闭" if message_control_enabled else "❌ 关闭", callback_data=f"adm:night:{chat_id}:toggle:enabled"),
             ],
             [
-                InlineKeyboardButton(f"⏰ 开始时间（{start_time}）", callback_data=f"adm:night:{chat_id}:input:start"),
-                InlineKeyboardButton(f"⏰ 结束时间（{end_time}）", callback_data=f"adm:night:{chat_id}:input:end"),
+                InlineKeyboardButton(f"⏰ 管控开始（{start_time}）", callback_data=f"adm:night:{chat_id}:input:start"),
+                InlineKeyboardButton(f"⏰ 管控结束（{end_time}）", callback_data=f"adm:night:{chat_id}:input:end"),
+            ],
+            [
+                InlineKeyboardButton("🔒 全员禁言模式", callback_data=f"adm:night:{chat_id}:toggle:lock_schedule"),
+                InlineKeyboardButton("✅ 开启" if lock_schedule_enabled else "关闭", callback_data=f"adm:night:{chat_id}:toggle:lock_schedule"),
+            ],
+            [
+                InlineKeyboardButton("🗣 口令开关群", callback_data=f"adm:night:{chat_id}:toggle:lock_phrase"),
+                InlineKeyboardButton("✅ 开启" if phrase_enabled else "关闭", callback_data=f"adm:night:{chat_id}:toggle:lock_phrase"),
+            ],
+            [
+                InlineKeyboardButton(f"🔓 开群词（{open_phrase[:8]}）", callback_data=f"adm:night:{chat_id}:input:open_phrase"),
+                InlineKeyboardButton(f"🔒 关群词（{close_phrase[:8]}）", callback_data=f"adm:night:{chat_id}:input:close_phrase"),
             ],
             [
                 InlineKeyboardButton("🛡️ 管理员豁免", callback_data=f"adm:night:{chat_id}:toggle:exempt_admin"),
@@ -254,6 +281,10 @@ class ModerationMemberMenusMixin:
             [
                 InlineKeyboardButton("✏️ 提示文案", callback_data=f"adm:night:{chat_id}:input:warn_text"),
                 InlineKeyboardButton(f"🕒 删除提示（{warn_delete}秒）", callback_data=f"adm:night:{chat_id}:cycle:warn_delete"),
+            ],
+            [
+                InlineKeyboardButton("🧹 口令通知", callback_data=f"adm:night:{chat_id}:notice:{'keep' if delete_notice else 'delete'}"),
+                InlineKeyboardButton("删除" if delete_notice else "保留", callback_data=f"adm:night:{chat_id}:notice:{'keep' if delete_notice else 'delete'}"),
             ],
             [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
         ])

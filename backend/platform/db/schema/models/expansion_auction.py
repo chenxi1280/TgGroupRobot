@@ -16,7 +16,7 @@ class AuctionSetting(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     pin_message_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     auto_extend_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
-    create_permission: Mapped[str] = mapped_column(String(16), default="admin")
+    create_permission: Mapped[str] = mapped_column(String(16), default="all")
     points_mode: Mapped[str] = mapped_column(String(32), default="none")
     updated_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True),

@@ -28,9 +28,18 @@ class _Db:
 
 
 @pytest.mark.asyncio
-async def test_group_lock_menu_uses_document_style_labels(monkeypatch):
-    rendered: list[object] = []
+async def test_legacy_group_lock_menu_renders_night_control(monkeypatch):
+    rendered: list[tuple[str, object]] = []
     settings = SimpleNamespace(
+        night_mode_enabled=False,
+        night_mode_start_time="02:00",
+        night_mode_end_time="08:00",
+        night_mode_exempt_admin=True,
+        night_mode_whitelist_user_ids=[],
+        night_mode_delete_message=True,
+        night_mode_warn_enabled=True,
+        night_mode_warn_text="夜间管控中",
+        night_mode_warn_delete_after_seconds=60,
         group_lock_delete_notice_mode="keep",
         group_lock_open_time="08:00",
         group_lock_close_time="02:00",
@@ -47,7 +56,7 @@ async def test_group_lock_menu_uses_document_style_labels(monkeypatch):
         return settings
 
     async def fake_safe_edit(update, text, reply_markup):
-        rendered.append(reply_markup)
+        rendered.append((text, reply_markup))
 
     monkeypatch.setattr(admin_handler._admin_handler, "_set_current_chat", fake_set_current_chat)
     monkeypatch.setattr(admin_handler, "get_chat_settings", fake_get_chat_settings)
@@ -58,10 +67,12 @@ async def test_group_lock_menu_uses_document_style_labels(monkeypatch):
 
     await admin_handler._admin_handler._show_group_lock_menu(update, context, -100123)
 
-    keyboard = rendered[0]
-    assert keyboard.inline_keyboard[0][0].text == "⚙️ 话术开关："
-    assert keyboard.inline_keyboard[3][0].text == "⚙️ 定时开关："
-    assert keyboard.inline_keyboard[6][0].text == "🧹 删除通知消息："
+    text, keyboard = rendered[0]
+    row_texts = [[button.text for button in row] for row in keyboard.inline_keyboard]
+    assert "🌙 夜间管控" in text
+    assert ["🧹 消息拦截", "开启", "❌ 关闭"] in row_texts
+    assert ["🔒 全员禁言模式", "关闭"] in row_texts
+    assert ["🗣 口令开关群", "关闭"] in row_texts
 
 
 @pytest.mark.asyncio
@@ -469,9 +480,9 @@ async def test_health_menu_surfaces_conflicts_and_shortcuts(monkeypatch):
     assert "🩺 [测试群] 群组健康检查" in text
     assert "• 定时消息：2 条（启用 1 条）" in text
     assert "⚠️ 强制关注已开启但尚未绑定频道/群组" in text
-    assert "⚠️ 定时关群已开启但开群/关群时间未完整配置" in text
+    assert "⚠️ 夜间全员禁言已开启但管控开始/结束时间未完整配置" in text
     assert "⚠️ 当前验证、垃圾防护均关闭，新成员保护较弱" in text
 
     row_texts = [[button.text for button in row] for row in keyboard.inline_keyboard]
     assert ["🛡️ 新人验证", "☂️ 垃圾防护"] in row_texts
-    assert ["📣 强制关注", "🧨 关群设置", "⏰ 定时消息"] in row_texts
+    assert ["📣 强制关注", "🌙 夜间管控", "⏰ 定时消息"] in row_texts

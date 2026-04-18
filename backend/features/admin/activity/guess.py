@@ -4,13 +4,27 @@ from backend.features.admin.activity.runtime import clear_private_admin_state
 from backend.features.admin.support import *
 from backend.shared.time_ui import build_copy_options_keyboard, build_minutes_or_hhmm_prompt_text, next_top_of_hour_hhmm
 
+DEFAULT_GUESS_COMMAND = "竞猜"
+
+
+def _guess_draft_with_defaults(draft: dict | None) -> dict:
+    next_draft = dict(draft or {})
+    if not str(next_draft.get("command_keyword") or "").strip():
+        next_draft["command_keyword"] = DEFAULT_GUESS_COMMAND
+    return next_draft
+
+
+def _state_matches_guess_chat(state, chat_id: int) -> bool:
+    state_data = getattr(state, "state_data", None) or {}
+    return int(state_data.get("target_chat_id") or 0) == int(chat_id)
+
 
 async def _get_guess_draft_state(session, user_id: int, chat_id: int):
     state = await get_user_state(session, user_id, user_id)
-    if state is not None and str(state.state_type).startswith("guess_wait_"):
+    if state is not None and str(state.state_type).startswith("guess_wait_") and _state_matches_guess_chat(state, chat_id):
         return state
     state = await get_user_state(session, chat_id, user_id)
-    if state is not None and str(state.state_type).startswith("guess_wait_"):
+    if state is not None and str(state.state_type).startswith("guess_wait_") and _state_matches_guess_chat(state, chat_id):
         return state
     return None
 
@@ -72,6 +86,7 @@ class GuessAdminControllerMixin:
         chat_id: int,
         draft: dict,
     ) -> None:
+        draft = _guess_draft_with_defaults(draft)
         text = format_event_preview(draft)
         keyboard = InlineKeyboardMarkup([
             [
@@ -198,7 +213,7 @@ class GuessAdminControllerMixin:
                 state = await _get_guess_draft_state(session, update.effective_user.id, chat_id)
                 draft = dict(state.state_data or {}) if state else {}
                 if sub == "start":
-                    await _start_guess_input_state(session, user_id=update.effective_user.id, chat_id=chat_id, state_type="guess_wait_title", draft={})
+                    await _start_guess_input_state(session, user_id=update.effective_user.id, chat_id=chat_id, state_type="guess_wait_title", draft=_guess_draft_with_defaults({}))
                     await session.commit()
                     await self.message_helper.safe_edit(update, "⚽ 竞猜 | 活动名字\n\n👉 请输入活动名字：", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"guess:home:{chat_id}")]]))
                     return
@@ -251,18 +266,21 @@ class GuessAdminControllerMixin:
                     return
                 if sub == "clear":
                     await clear_private_admin_state(session, target_chat_id=chat_id, user_id=update.effective_user.id)
+                    draft = _guess_draft_with_defaults({})
+                    await _start_guess_input_state(session, user_id=update.effective_user.id, chat_id=chat_id, state_type="guess_wait_title", draft=draft)
                     await session.commit()
-                    await self._show_guess_create_menu(update, context, chat_id, {})
+                    await self._show_guess_create_menu(update, context, chat_id, draft)
                     return
                 if sub == "preview":
                     await session.commit()
                     await self._show_guess_create_menu(update, context, chat_id, draft)
                     return
                 if sub == "publish":
-                    required = {"title", "options", "command_keyword", "deadline_at"}
+                    draft = _guess_draft_with_defaults(draft)
+                    required = {"title", "options", "deadline_at"}
                     if not required.issubset(set(draft.keys())):
                         await session.commit()
-                        await answer_callback_query_safely(update, "❌ 请先补齐活动名字、竞猜选项、群内指令和截止时间。", show_alert=True)
+                        await answer_callback_query_safely(update, "❌ 请先补齐活动名字、竞猜选项和截止时间。", show_alert=True)
                         return
                     try:
                         event = await create_guess_event(session, chat_id, update.effective_user.id, draft)
@@ -270,7 +288,12 @@ class GuessAdminControllerMixin:
                         await session.rollback()
                         await answer_callback_query_safely(update, f"❌ {exc}", show_alert=True)
                         return
-                    sent = await context.bot.send_message(chat_id=chat_id, text=format_event_runtime(event), parse_mode="Markdown")
+                    try:
+                        sent = await context.bot.send_message(chat_id=chat_id, text=format_event_runtime(event), parse_mode="Markdown")
+                    except TelegramError as exc:
+                        await session.rollback()
+                        await answer_callback_query_safely(update, f"❌ 发布到群里失败：{exc}", show_alert=True)
+                        return
                     event.announcement_message_id = sent.message_id
                     await clear_private_admin_state(session, target_chat_id=chat_id, user_id=update.effective_user.id)
                     await session.commit()

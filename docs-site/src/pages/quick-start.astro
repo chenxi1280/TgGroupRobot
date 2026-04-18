@@ -1,0 +1,60 @@
+---
+import SiteLayout from '../components/SiteLayout.astro';
+---
+
+<SiteLayout
+  title="快速开始 - TgGroupRobot 功能手册"
+  description="管理员第一次使用 TgGroupRobot 时需要完成的基础步骤。"
+>
+  <article class="quick-start">
+    <header class="page-heading">
+      <p class="eyebrow">快速开始</p>
+      <h1>第一次配置这样走</h1>
+      <p>先完成机器人入群、权限确认和目标群选择，再按功能页逐项配置。</p>
+    </header>
+
+    <section class="manual-intro">
+      <div>
+        <p class="eyebrow">管理员入口</p>
+        <h2 id="admin-entry">进入后台</h2>
+        <ol class="manual-steps">
+          <li>
+            <strong>加入群组</strong>
+            <span>把机器人加入目标群组，并授予需要的管理员权限。</span>
+          </li>
+          <li>
+            <strong>打开私聊入口</strong>
+            <span>在私聊发送 /start，点击管理入口。</span>
+          </li>
+          <li>
+            <strong>选择目标群组</strong>
+            <span>如果管理多个群组，先通过按钮选择要配置的群。</span>
+          </li>
+          <li>
+            <strong>进入功能配置</strong>
+            <span>从按钮菜单进入对应页面，按步骤完成配置。</span>
+          </li>
+        </ol>
+      </div>
+      <div>
+        <p class="eyebrow">推荐顺序</p>
+        <h2 id="order">先配置安全，再配置运营</h2>
+        <ul class="manual-points">
+          <li>先跑一次“群组健康检查”，确认机器人权限。</li>
+          <li>开启“新人验证”“强制关注”或“新成员限制”，建立入群保护。</li>
+          <li>配置“反垃圾”“防刷屏”“违禁词”和“惩罚策略”。</li>
+          <li>再配置积分、邀请、定时消息、轮播广告和活动类功能。</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="quick-start__cta">
+      <p class="eyebrow">下一步</p>
+      <h2 id="feature-docs">按功能继续</h2>
+      <p>每个功能页都包含真实按钮操作流、前置条件和常见问题。配置时按页面里的按钮顺序走，异常时先确认目标群组、机器人权限和 Q&A。</p>
+      <div class="landing-actions">
+        <a href="/features/">查看功能总览</a>
+      </div>
+    </section>
+  </article>
+</SiteLayout>

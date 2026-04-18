@@ -661,26 +661,6 @@
       "truthTableNames": ["欢迎消息"]
     },
     {
-      "slug": "group-lock",
-      "title": "关群设置",
-      "category": "群组扩展",
-      "status": "已闭环",
-      "kind": "simple",
-      "summary": "支持话术开关、定时关群开群和通知删除策略。",
-      "entry": { "label": "关群设置", "command": "/start", "menuKeys": ["closegroup"] },
-      "prerequisites": ["机器人可设置群发言权限。", "管理员已确定开群和关群时间或话术。"],
-      "steps": [
-        { "title": "进入关群设置", "action": "发送 /start 打开基础菜单，点击管理入口，再点击「关群设置」。", "tip": "页面展示话术和定时状态。" },
-        { "title": "配置话术或时间", "action": "设置开群词、关群词、开群时间和关群时间。", "tip": "时间使用 HH:MM 格式。" },
-        { "title": "检查权限变化", "action": "到设定时间或发送话术，确认群权限被正确切换。", "tip": "机器人缺少权限时无法改群权限。" }
-      ],
-      "flowchart": "auto",
-      "runtimeFlow": true,
-      "qa": [{ "question": "定时关群和话术能同时开吗？", "answer": "可以，但建议在文档中记录当前群使用哪一种为主。" }],
-      "logicAudit": { "status": "ok", "items": ["菜单入口为 closegroup。", "健康检查会提示定时关群配置缺失。"] },
-      "truthTableNames": ["关群设置"]
-    },
-    {
       "slug": "rename-monitor",
       "title": "改名监控",
       "category": "群组扩展",
@@ -802,23 +782,24 @@
     },
     {
       "slug": "night-mode",
-      "title": "夜间模式",
+      "title": "夜间管控",
       "category": "群组扩展",
       "status": "已闭环",
       "kind": "simple",
-      "summary": "在指定时段限制发言，支持管理员豁免、白名单、提示文案和删除策略。",
-      "entry": { "label": "夜间模式", "command": "/start", "menuKeys": ["night"] },
-      "prerequisites": ["已确定夜间开始和结束时间。", "机器人有删除或限制消息所需权限。"],
+      "summary": "以夜间模式为主，统一支持时段限制、管理员豁免、白名单、提示文案、全员禁言和口令开关群。",
+      "entry": { "label": "夜间管控", "command": "/start", "menuKeys": ["night", "closegroup"] },
+      "prerequisites": ["已确定夜间管控开始和结束时间。", "机器人有删除消息或设置群发言权限所需权限。"],
       "steps": [
-        { "title": "进入夜间模式", "action": "发送 /start 打开基础菜单，点击管理入口，再点击「夜间模式」。", "tip": "页面展示时间、白名单和提示状态。" },
-        { "title": "配置时段和策略", "action": "设置开始时间、结束时间、管理员豁免、白名单、删除和提示文案。", "tip": "时间格式为 HH:MM。" },
-        { "title": "在时段内测试", "action": "用普通成员在夜间时段发送消息，确认限制和提示。", "tip": "白名单和管理员豁免会跳过限制。" }
+        { "title": "进入夜间管控", "action": "发送 /start 打开基础菜单，点击管理入口，再点击「夜间管控」。", "tip": "页面展示时间、白名单、提示、全员禁言和口令开关群状态。" },
+        { "title": "配置时段和策略", "action": "设置管控开始、管控结束、消息拦截、全员禁言、管理员豁免、白名单、删除和提示文案。", "tip": "时间格式为 HH:MM。" },
+        { "title": "需要手动开关群时配置口令", "action": "设置开群词、关群词和口令通知删除策略。", "tip": "旧版关群入口会兼容进入夜间管控。" },
+        { "title": "在时段内测试", "action": "用普通成员在夜间时段发送消息，确认限制和提示。", "tip": "白名单和管理员豁免会跳过消息拦截；全员禁言模式会改群发言权限。" }
       ],
       "flowchart": "auto",
       "runtimeFlow": true,
       "qa": [{ "question": "跨天时间支持吗？", "answer": "支持常见的晚间到次日早晨配置，例如 22:00 到 07:00。" }],
-      "logicAudit": { "status": "ok", "items": ["菜单入口为 night。", "输入处理已校验 HH:MM、白名单数字 ID 和提示文案。"] },
-      "truthTableNames": ["夜间模式"]
+      "logicAudit": { "status": "ok", "items": ["主菜单入口为 night，旧 closegroup 入口兼容进入夜间管控。", "输入处理已校验 HH:MM、白名单数字 ID、提示文案和口令配置。"] },
+      "truthTableNames": ["夜间管控"]
     },
     {
       "slug": "command-config",
@@ -1028,15 +1009,15 @@
       "kind": "workspace",
       "summary": "支持拍卖设置、活动列表、出价和结算。",
       "entry": { "label": "拍卖", "command": "/start", "menuKeys": ["auction"] },
-      "prerequisites": ["管理员已准备拍卖物品、起拍价和结束时间。", "机器人可在群内接收出价或发送通知。"],
+      "prerequisites": ["拍卖功能已开启。", "机器人可在群内接收拍卖物品、出价并发送通知。"],
       "steps": [
         { "title": "进入拍卖", "action": "发送 /start 打开基础菜单，点击管理入口，再点击「拍卖」。", "tip": "页面展示活动列表和设置入口。" },
-        { "title": "创建拍卖", "action": "设置标题、说明、起拍价、加价规则和结束时间。", "tip": "结束时间支持分钟或 HH:MM 格式。" },
+        { "title": "创建拍卖", "action": "群成员在群内发送“拍卖”，按机器人提示回复拍卖物品，再填写起拍价、截止时间并确认发布。", "tip": "也可以回复现有消息发送“拍卖”快速带入拍卖物品。" },
         { "title": "出价与结算", "action": "成员按规则出价，活动结束后系统结算并通知结果。", "tip": "禁用拍卖时创建流程会被拒绝。" }
       ],
       "flowchart": "auto",
       "runtimeFlow": true,
-      "qa": [{ "question": "拍卖可以通过群消息触发吗？", "answer": "可以，当前测试覆盖群内触发创建的场景。" }],
+      "qa": [{ "question": "拍卖可以通过群消息触发吗？", "answer": "可以，群成员发送“拍卖”后，机器人会提示回复拍卖物品并继续创建流程。" }],
       "logicAudit": { "status": "ok", "items": ["菜单入口为 auction。", "旧 todo 入口已重定向到真实菜单。"] },
       "truthTableNames": ["拍卖"]
     },

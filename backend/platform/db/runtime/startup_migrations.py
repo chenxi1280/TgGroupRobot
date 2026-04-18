@@ -65,7 +65,7 @@ CHAT_SETTINGS_COMPAT_SQL: tuple[str, ...] = (
     "ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS night_mode_whitelist_user_ids JSONB NOT NULL DEFAULT '[]'::jsonb",
     "ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS night_mode_delete_message BOOLEAN NOT NULL DEFAULT TRUE",
     "ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS night_mode_warn_enabled BOOLEAN NOT NULL DEFAULT TRUE",
-    "ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS night_mode_warn_text TEXT NOT NULL DEFAULT '🌙 夜间模式生效中，请稍后再试。'",
+    "ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS night_mode_warn_text TEXT NOT NULL DEFAULT '🌙 夜间管控生效中，请稍后再试。'",
     "ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS night_mode_warn_delete_after_seconds INTEGER NOT NULL DEFAULT 60",
     "ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS command_config_enabled BOOLEAN NOT NULL DEFAULT FALSE",
     "ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS command_config JSONB NOT NULL DEFAULT '{}'::jsonb",

@@ -37,6 +37,14 @@ TASK_CONFIG = {
         "enabled": True,
         "max_consecutive_failures": 10,
     },
+    "rename_monitor": {
+        "interval": 300,  # 每5分钟巡检一批已记录成员资料
+        "enabled": True,
+        "max_consecutive_failures": 10,
+        "max_members_per_chat": 50,
+        "max_members_per_run": 200,
+        "request_pause_seconds": 0.05,
+    },
     "auction": {
         "interval": 30,
         "enabled": True,

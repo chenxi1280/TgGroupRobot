@@ -73,6 +73,7 @@ async def test_show_auction_menu_contains_activity_list_button(monkeypatch):
 
     rows = [[button.text for button in row] for row in captured["keyboard"]]
     assert ["📋 活动列表"] in rows
+    assert all("仅管理员" not in button for row in rows for button in row)
 
 
 @pytest.mark.asyncio

@@ -7,6 +7,7 @@ from telegram import ChatPermissions, Update
 from telegram.ext import ContextTypes
 
 from backend.features.invite.services.invite_service import track_and_award_invite
+from backend.features.group_ops.services.group_daily_stats import record_group_join_event
 from backend.features.verification.verification_admin import (
     admin_verification_menu_callback,
     admin_verify_callback,
@@ -175,6 +176,7 @@ async def new_members_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
                 language_code=u.language_code,
             )
             await _upsert_chat_member_join(session, chat.id, u)
+        await record_group_join_event(session, chat.id, len(new_members))
         await session.flush()
 
         if await _handle_join_burst_guard(context, session, chat, new_members, settings):

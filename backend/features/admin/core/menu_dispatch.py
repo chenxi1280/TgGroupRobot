@@ -23,7 +23,7 @@ ADMIN_MENU_HANDLERS = {
     "renewal": "_show_renewal_menu",
     "health": "_show_health_menu",
     "control": "_show_control_permission_menu",
-    "closegroup": "_show_group_lock_menu",
+    "closegroup": "_show_night_mode_menu",
     "renamewatch": "_show_rename_monitor_menu",
     "forcesub": "_show_force_subscribe_menu",
     "newmem": "_show_new_member_limit_menu",

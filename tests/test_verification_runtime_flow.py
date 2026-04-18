@@ -80,6 +80,8 @@ def _settings(**overrides):
 
 @pytest.mark.asyncio
 async def test_burst_guard_stops_spam_and_verification(monkeypatch):
+    recorded: list[tuple[int, int]] = []
+
     async def fake_get_chat_settings(session, chat_id: int):
         return _settings()
 
@@ -92,6 +94,9 @@ async def test_burst_guard_stops_spam_and_verification(monkeypatch):
     async def fake_burst_guard(*args, **kwargs):
         return True
 
+    async def fake_record_join(session, chat_id: int, count: int = 1):
+        recorded.append((chat_id, count))
+
     async def fail_join_spam_guard(*args, **kwargs):
         raise AssertionError("burst guard should stop spam guard")
 
@@ -102,6 +107,7 @@ async def test_burst_guard_stops_spam_and_verification(monkeypatch):
     monkeypatch.setattr(verification_handler, "get_chat_settings", fake_get_chat_settings)
     monkeypatch.setattr(verification_handler, "ensure_user", fake_noop)
     monkeypatch.setattr(verification_handler, "_upsert_chat_member_join", fake_noop)
+    monkeypatch.setattr(verification_handler, "record_group_join_event", fake_record_join)
     monkeypatch.setattr(verification_handler.WelcomeService, "send_for_mode", fail_send_for_mode)
     monkeypatch.setattr(verification_handler, "_handle_join_burst_guard", fake_burst_guard)
     monkeypatch.setattr(verification_handler, "_handle_join_spam_guard", fail_join_spam_guard)
@@ -110,6 +116,8 @@ async def test_burst_guard_stops_spam_and_verification(monkeypatch):
     context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}), bot=_Bot(), user_data={})
 
     await verification_handler.new_members_handler(_join_update(), context)
+
+    assert recorded == [(-100123, 1)]
 
 
 @pytest.mark.asyncio
@@ -141,6 +149,7 @@ async def test_spam_guard_stops_self_review_when_verification_disabled(monkeypat
     monkeypatch.setattr(verification_handler, "get_chat_settings", fake_get_chat_settings)
     monkeypatch.setattr(verification_handler, "ensure_user", fake_noop)
     monkeypatch.setattr(verification_handler, "_upsert_chat_member_join", fake_noop)
+    monkeypatch.setattr(verification_handler, "record_group_join_event", fake_noop)
     monkeypatch.setattr(verification_handler.WelcomeService, "send_for_mode", fail_send_for_mode)
     monkeypatch.setattr(verification_handler, "_handle_join_burst_guard", fake_burst_guard)
     monkeypatch.setattr(verification_handler, "_handle_join_spam_guard", fake_join_spam_guard)

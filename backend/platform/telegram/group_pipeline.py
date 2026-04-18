@@ -97,7 +97,9 @@ class GroupMessageHandler:
 
         # 业务功能（按顺序执行）
         for name, handler in self._get_business_handlers():
-            await self._safe_execute(handler, update, context, name)
+            if await self._safe_execute(handler, update, context, name):
+                log.info("group_business_handler_consumed", chat_id=chat.id, user_id=user.id, handler=name)
+                return True
         return False
 
     async def _safe_execute(

@@ -5,6 +5,7 @@ from telegram import Update
 from telegram.ext import ContextTypes, filters
 
 from backend.platform.db.runtime.session import Database
+from backend.features.group_ops.services.group_daily_stats import record_group_leave_event
 from backend.shared.services.module_settings_service import ModuleSettingsService
 
 log = structlog.get_logger(__name__)
@@ -31,6 +32,9 @@ async def auto_delete_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             chat_type=chat.type,
             title=chat.title,
         )
+
+        if message.left_chat_member:
+            await record_group_leave_event(session, chat.id)
 
         # 检查是否开启自动删除
         if not settings.auto_delete_enabled:

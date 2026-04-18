@@ -2,10 +2,7 @@ name: tggrouprobot
 
 services:
   bot:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: tggrouprobot-bot:latest
+    image: ${TGGROUPROBOT_BOT_IMAGE:-tggrouprobot-bot:latest}
     container_name: tggrouprobot-bot
     restart: unless-stopped
     environment:

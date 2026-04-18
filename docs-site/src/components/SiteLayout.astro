@@ -1,0 +1,46 @@
+---
+import '../styles/custom.css';
+
+const {
+  title = 'TgGroupRobot 功能手册',
+  description = 'Telegram 群组管理机器人功能介绍、配置步骤和常见问题。'
+} = Astro.props;
+---
+
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content={description} />
+    <title>{title}</title>
+  </head>
+  <body>
+    <div class="site-shell">
+      <header class="site-header">
+        <a class="site-brand" href="/" aria-label="返回 TgGroupRobot 功能手册首页">
+          <span class="site-brand__mark">TG</span>
+          <span>
+            <strong>TgGroupRobot</strong>
+            <small>功能手册</small>
+          </span>
+        </a>
+        <nav class="site-nav" aria-label="主导航">
+          <a href="/">首页</a>
+          <a href="/quick-start/">快速开始</a>
+          <a href="/features/">功能总览</a>
+          <a href="/audit/">文档说明</a>
+        </nav>
+      </header>
+
+      <main class="site-main">
+        <slot />
+      </main>
+
+      <footer class="site-footer">
+        <span>功能页由当前真值表和 Telegram 回调流程生成。</span>
+        <a href="/features/">查看全部功能</a>
+      </footer>
+    </div>
+  </body>
+</html>

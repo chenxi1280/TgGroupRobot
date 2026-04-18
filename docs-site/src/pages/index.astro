@@ -1,14 +1,14 @@
 ---
-import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
+import SiteLayout from '../components/SiteLayout.astro';
 import FeatureIndex from '../components/FeatureIndex.astro';
 
-const frontmatter = {
+const page = {
   title: 'TgGroupRobot 功能手册',
   description: '按功能查看 Telegram 群组管理机器人的配置步骤和常见问题。'
 };
 ---
 
-<StarlightPage frontmatter={frontmatter}>
+<SiteLayout title={page.title} description={page.description}>
   <section class="manual-landing">
     <div class="manual-landing__copy">
       <p class="eyebrow">功能使用手册</p>
@@ -48,4 +48,4 @@ const frontmatter = {
   </section>
 
   <FeatureIndex compact />
-</StarlightPage>
+</SiteLayout>

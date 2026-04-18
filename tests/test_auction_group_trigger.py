@@ -42,7 +42,7 @@ def _context() -> SimpleNamespace:
     )
 
 
-def _group_update(*, text: str, reply_to_message_id: int | None):
+def _group_update(*, text: str, reply_to_message_id: int | None, message_id: int = 123):
     replies: list[tuple[str, str | None, object | None]] = []
 
     async def fake_reply_text(text: str, parse_mode=None, reply_markup=None):
@@ -58,6 +58,7 @@ def _group_update(*, text: str, reply_to_message_id: int | None):
         effective_message=SimpleNamespace(
             text=text,
             caption=None,
+            message_id=message_id,
             reply_to_message=reply_to_message,
             reply_text=fake_reply_text,
         ),
@@ -97,22 +98,99 @@ async def test_auction_create_trigger_accepts_money_label(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_auction_create_trigger_without_reply_shows_usage(monkeypatch):
+async def test_auction_create_trigger_without_reply_asks_for_item(monkeypatch):
+    saved_state: list[tuple[str, dict]] = []
+
     async def fake_get_or_create_setting(session, chat_id: int):
         return SimpleNamespace(enabled=True, create_permission="all", pin_message_enabled=False)
 
     async def fake_get_user_state(session, chat_id: int, user_id: int):
         return None
 
+    async def fake_set_user_state(session, chat_id: int, user_id: int, state_type: str, state_data: dict):
+        saved_state.append((state_type, state_data))
+
     monkeypatch.setattr(auction_handler, "get_or_create_setting", fake_get_or_create_setting)
     monkeypatch.setattr(auction_handler, "get_user_state", fake_get_user_state)
+    monkeypatch.setattr(auction_handler, "set_user_state", fake_set_user_state)
 
     update, replies = _group_update(text="拍卖", reply_to_message_id=None)
 
     result = await auction_handler.auction_group_message_handler(update, _context())
 
     assert result is True
-    assert replies and "请先回复要拍卖的消息" in replies[0][0]
+    assert saved_state == [
+        (
+            ConversationStateType.auction_wait_title.value,
+            {"awaiting_item": True},
+        )
+    ]
+    assert replies and "请回复拍卖的物品" in replies[0][0]
+
+
+@pytest.mark.asyncio
+async def test_auction_create_trigger_ignores_legacy_admin_permission(monkeypatch):
+    saved_state: list[tuple[str, dict]] = []
+
+    async def fake_get_or_create_setting(session, chat_id: int):
+        return SimpleNamespace(enabled=True, create_permission="admin", pin_message_enabled=False)
+
+    async def fake_get_user_state(session, chat_id: int, user_id: int):
+        return None
+
+    async def fake_set_user_state(session, chat_id: int, user_id: int, state_type: str, state_data: dict):
+        saved_state.append((state_type, state_data))
+
+    monkeypatch.setattr(auction_handler, "get_or_create_setting", fake_get_or_create_setting)
+    monkeypatch.setattr(auction_handler, "get_user_state", fake_get_user_state)
+    monkeypatch.setattr(auction_handler, "set_user_state", fake_set_user_state)
+
+    update, replies = _group_update(text="拍卖", reply_to_message_id=None)
+
+    result = await auction_handler.auction_group_message_handler(update, _context())
+
+    assert result is True
+    assert saved_state == [
+        (
+            ConversationStateType.auction_wait_title.value,
+            {"awaiting_item": True},
+        )
+    ]
+    assert replies and "请回复拍卖的物品" in replies[0][0]
+
+
+@pytest.mark.asyncio
+async def test_auction_item_reply_after_trigger_uses_message_as_source(monkeypatch):
+    saved_state: list[tuple[str, dict]] = []
+
+    async def fake_get_or_create_setting(session, chat_id: int):
+        return SimpleNamespace(enabled=True, create_permission="all", pin_message_enabled=False)
+
+    async def fake_get_user_state(session, chat_id: int, user_id: int):
+        return SimpleNamespace(
+            state_type=ConversationStateType.auction_wait_title.value,
+            state_data={"awaiting_item": True},
+        )
+
+    async def fake_set_user_state(session, chat_id: int, user_id: int, state_type: str, state_data: dict):
+        saved_state.append((state_type, state_data))
+
+    monkeypatch.setattr(auction_handler, "get_or_create_setting", fake_get_or_create_setting)
+    monkeypatch.setattr(auction_handler, "get_user_state", fake_get_user_state)
+    monkeypatch.setattr(auction_handler, "set_user_state", fake_set_user_state)
+
+    update, replies = _group_update(text="洋芋一袋", reply_to_message_id=None, message_id=456)
+
+    result = await auction_handler.auction_group_message_handler(update, _context())
+
+    assert result is True
+    assert saved_state == [
+        (
+            ConversationStateType.auction_wait_start_price.value,
+            {"source_message_id": 456, "title": "洋芋一袋"},
+        )
+    ]
+    assert replies and "请输入起拍价" in replies[0][0]
 
 
 @pytest.mark.asyncio

@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+from backend.features.group_ops.services.group_daily_stats import (
+    ANNOUNCEMENT_LINK_TEXT,
+    AdminMenuStats,
+)
+
 
 def format_verification_menu_text(
     chat_title: str,
@@ -32,5 +37,27 @@ def format_verification_menu_text(
     return text
 
 
-def format_admin_main_menu_text(chat_title: str) -> str:
-    return f"🎛️ 群组管理\n\n📍 当前群组: {chat_title}\n\n请选择要管理的内容："
+def _format_day_line(label: str, counts) -> str:
+    return f"{label}：加入({counts.joins}) 离开({counts.leaves}) 签到({counts.signs})"
+
+
+def format_admin_main_menu_text(chat_title: str, menu_stats: AdminMenuStats | None = None) -> str:
+    if menu_stats is None:
+        return f"🎛️ 群组管理\n\n📍 当前群组: {chat_title}\n\n请选择要管理的内容："
+
+    return "\n".join(
+        [
+            "🎛️ 群组管理",
+            "",
+            f"正在管理【{chat_title}】",
+            "",
+            _format_day_line("今日", menu_stats.today),
+            _format_day_line("昨日", menu_stats.yesterday),
+            "",
+            ANNOUNCEMENT_LINK_TEXT,
+            "",
+            f"有效期至：{menu_stats.expires_at_text}",
+            "",
+            "请选择要管理的内容：",
+        ]
+    )

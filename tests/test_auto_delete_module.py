@@ -176,6 +176,48 @@ async def test_auto_delete_handler_uses_module_settings_and_deletes_matching_mes
     assert session.commits == 1
 
 
+@pytest.mark.asyncio
+async def test_auto_delete_handler_records_left_member_even_when_auto_delete_disabled(monkeypatch):
+    settings = SimpleNamespace(
+        auto_delete_enabled=False,
+        auto_delete_join=False,
+        auto_delete_left=False,
+        auto_delete_pinned=False,
+        auto_delete_anonymous=False,
+        auto_delete_title=False,
+        auto_delete_avatar=False,
+    )
+    session = _Session()
+    db = SimpleNamespace(session_factory=_SessionFactory(session))
+    recorded: list[int] = []
+
+    message = SimpleNamespace(
+        message_id=10,
+        new_chat_members=None,
+        left_chat_member=SimpleNamespace(id=2),
+    )
+    update = SimpleNamespace(
+        effective_chat=SimpleNamespace(id=-100123, type="supergroup", title="Group"),
+        effective_message=message,
+    )
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": db}))
+
+    async def fake_ensure(*args, **kwargs):
+        return settings
+
+    async def fake_record(session_arg, chat_id: int):
+        assert session_arg is session
+        recorded.append(chat_id)
+
+    monkeypatch.setattr(auto_delete_handler.ModuleSettingsService, "ensure", fake_ensure)
+    monkeypatch.setattr(auto_delete_handler, "record_group_leave_event", fake_record)
+
+    await auto_delete_handler.auto_delete_handler(update, context)
+
+    assert recorded == [-100123]
+    assert session.commits == 1
+
+
 def test_auto_delete_keyboard_matches_document_layout():
     settings = SimpleNamespace(
         auto_delete_enabled=False,

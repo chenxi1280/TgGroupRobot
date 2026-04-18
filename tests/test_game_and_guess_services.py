@@ -7,7 +7,9 @@ from types import SimpleNamespace
 import pytest
 
 from backend.features.activity import game_panels
+from backend.features.admin import admin_handler
 from backend.shared.services.base import ValidationError
+from backend.shared.callback_parser import CallbackParser
 from backend.features.activity.services.game_service import (
     classify_k3_result,
     format_blackjack_help,
@@ -63,6 +65,46 @@ class _PanelSession:
 class _PanelDb:
     def __init__(self) -> None:
         self.session_factory = lambda: _PanelSession()
+
+
+class _GuessPublishSession:
+    def __init__(self) -> None:
+        self.commits = 0
+        self.rollbacks = 0
+
+    async def commit(self) -> None:
+        self.commits += 1
+
+    async def rollback(self) -> None:
+        self.rollbacks += 1
+
+
+class _GuessPublishSessionContext:
+    def __init__(self, session: _GuessPublishSession) -> None:
+        self.session = session
+
+    async def __aenter__(self):
+        return self.session
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+
+class _GuessPublishDb:
+    def __init__(self, session: _GuessPublishSession) -> None:
+        self.session = session
+
+    def session_factory(self):
+        return _GuessPublishSessionContext(self.session)
+
+
+class _GuessPublishBot:
+    def __init__(self) -> None:
+        self.sent: list[dict] = []
+
+    async def send_message(self, **kwargs):
+        self.sent.append(kwargs)
+        return SimpleNamespace(message_id=99)
 
 
 def test_game_ratio_parsing():
@@ -280,6 +322,65 @@ async def test_guess_admin_cover_input_accepts_photo_and_image_document(monkeypa
     assert saved[1]["cover_file_id"] == "doc-image"
     assert photo_message.replies == []
     assert document_message.replies == []
+
+
+@pytest.mark.asyncio
+async def test_guess_publish_uses_default_command_keyword(monkeypatch):
+    created: list[dict] = []
+    cleared: list[tuple[int, int]] = []
+    shown: list[tuple[int, int]] = []
+    answered: list[str] = []
+
+    async def fake_get_user_state(session, chat_id: int, user_id: int):
+        return SimpleNamespace(
+            state_type="guess_wait_title",
+            state_data={
+                "target_chat_id": -1001,
+                "title": "周末竞猜",
+                "options": [{"key": "1", "label": "主胜"}, {"key": "2", "label": "客胜"}],
+                "deadline_at": (dt.datetime.now(dt.UTC) + dt.timedelta(hours=1)).isoformat(),
+            },
+        )
+
+    async def fake_create_guess_event(session, chat_id: int, creator_user_id: int, draft: dict):
+        created.append(dict(draft))
+        return SimpleNamespace(id=7, announcement_message_id=None)
+
+    async def fake_clear_private_admin_state(session, *, target_chat_id: int, user_id: int) -> None:
+        cleared.append((target_chat_id, user_id))
+
+    async def fake_show_guess_event_detail(update, context, chat_id: int, event_id: int) -> None:
+        shown.append((chat_id, event_id))
+
+    async def fake_answer(update, text: str, show_alert: bool = False):
+        answered.append(text)
+
+    monkeypatch.setattr("backend.features.admin.activity.guess.get_user_state", fake_get_user_state)
+    monkeypatch.setattr("backend.features.admin.activity.guess.create_guess_event", fake_create_guess_event)
+    monkeypatch.setattr("backend.features.admin.activity.guess.clear_private_admin_state", fake_clear_private_admin_state)
+    monkeypatch.setattr("backend.features.admin.activity.guess.format_event_runtime", lambda event: "runtime text")
+    monkeypatch.setattr("backend.features.admin.activity.guess.answer_callback_query_safely", fake_answer)
+    monkeypatch.setattr(admin_handler._admin_handler, "_show_guess_event_detail", fake_show_guess_event_detail)
+
+    session = _GuessPublishSession()
+    bot = _GuessPublishBot()
+    update = SimpleNamespace(effective_user=SimpleNamespace(id=42))
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _GuessPublishDb(session)}), bot=bot)
+
+    await admin_handler._admin_handler._handle_guess(
+        update,
+        context,
+        -1001,
+        CallbackParser.parse("guess:create:-1001:publish"),
+    )
+
+    assert created and created[0]["command_keyword"] == "竞猜"
+    assert bot.sent == [{"chat_id": -1001, "text": "runtime text", "parse_mode": "Markdown"}]
+    assert cleared == [(-1001, 42)]
+    assert shown == [(-1001, 7)]
+    assert answered == []
+    assert session.commits == 1
+    assert session.rollbacks == 0
 
 
 def test_guess_preview_uses_waiting_placeholders():

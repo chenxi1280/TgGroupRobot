@@ -21,8 +21,9 @@
 
 ## 维护约定
 
-1. 生产环境只发布 `tggrouprobot-bot` 容器。
+1. 生产环境只长期运行 `tggrouprobot-bot` 容器。
 2. 数据库由独立的 `infra-compose` 提供，不在本项目中创建 PostgreSQL。
 3. 服务器环境变量统一放在 `/data/tggrouprobot/shared/.env`。
 4. 数据库结构初始化与更新由本项目自己的 `sql/init.sql` 负责。
-5. 用户功能手册站点不随生产部署发布。
+5. 生产部署不在服务器构建镜像，只拉取 GitHub Actions 推送到 GHCR 的指定 tag。
+6. 用户功能手册在 GitHub Actions 中构建为 docs-site 镜像，服务器只释放静态产物到 `/data/infra/www/robot.telema.cn`，由宿主机 Nginx 托管。

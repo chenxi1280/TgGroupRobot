@@ -1,0 +1,33 @@
+---
+import { getCollection } from 'astro:content';
+import FeatureManual from '../../components/FeatureManual.astro';
+import SiteLayout from '../../components/SiteLayout.astro';
+
+export async function getStaticPaths() {
+  const flowModules = import.meta.glob('../../content/flows/*.json', { eager: true });
+  const flowBySlug = new Map(
+    Object.entries(flowModules).map(([path, module]) => {
+      const slug = path.split('/').pop()?.replace('.json', '') ?? '';
+      return [slug, (module as { default: unknown }).default];
+    })
+  );
+  const entries = await getCollection('features');
+  return entries.map((entry) => {
+    const feature = entry.data;
+    const flow = flowBySlug.get(feature.slug);
+    if (!flow) {
+      throw new Error(`Feature flow not found: ${feature.slug}`);
+    }
+    return {
+      params: { slug: feature.slug },
+      props: { feature, flow }
+    };
+  });
+}
+
+const { feature, flow } = Astro.props;
+---
+
+<SiteLayout title={`${feature.title} - TgGroupRobot 功能手册`} description={feature.summary}>
+  <FeatureManual slug={feature.slug} feature={feature} flow={flow} />
+</SiteLayout>

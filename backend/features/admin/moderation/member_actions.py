@@ -10,6 +10,24 @@ from backend.shared.time_ui import (
 )
 
 
+def _build_force_subscribe_delete_after_keyboard(chat_id: int, current_seconds: int) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    option_rows = [
+        FORCE_SUBSCRIBE_DELETE_AFTER_VALUES[:3],
+        FORCE_SUBSCRIBE_DELETE_AFTER_VALUES[3:],
+    ]
+    for option_row in option_rows:
+        rows.append([
+            InlineKeyboardButton(
+                f"{'✅ ' if seconds == current_seconds else ''}{seconds}秒",
+                callback_data=f"adm:fs:{chat_id}:delete_after:{seconds}",
+            )
+            for seconds in option_row
+        ])
+    rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:forcesub:{chat_id}")])
+    return InlineKeyboardMarkup(rows)
+
+
 class ModerationMemberActionsMixin:
     async def _handle_force_subscribe(
         self,
@@ -79,20 +97,27 @@ class ModerationMemberActionsMixin:
                 settings = await get_chat_settings(session, chat_id)
                 await session.commit()
             text = "👀 强制关注 | 预览效果\n\n这是用户未关注频道/群组时会收到的提示样式预览。"
-            reply_markup = _build_force_subscribe_preview_markup(settings, chat_id)
+            reply_markup = await _build_force_subscribe_preview_markup_async(settings, chat_id, context)
             await self.message_helper.safe_edit(update, text, reply_markup=reply_markup)
             return
 
         if op in {"delete_after", "cycle_delete_after"}:
             seconds = callback_data.get_int_optional(4)
-            options = [15, 30, 60, 90, 120, 300]
             async with db.session_factory() as session:
                 settings = await get_chat_settings(session, chat_id)
                 current = int(getattr(settings, "force_subscribe_delete_warn_after_seconds", 60) or 60)
                 if seconds is None:
-                    next_seconds = options[(options.index(current) + 1) % len(options)] if current in options else 60
-                else:
-                    next_seconds = seconds
+                    await session.commit()
+                    await self.message_helper.safe_edit(
+                        update,
+                        "🕘 强制关注 | 删除提示消息\n\n请选择提示消息发送后多久自动删除。",
+                        reply_markup=_build_force_subscribe_delete_after_keyboard(chat_id, current),
+                    )
+                    return
+                if seconds not in FORCE_SUBSCRIBE_DELETE_AFTER_VALUES:
+                    await answer_callback_query_safely(update, "请选择列表中的时间", show_alert=True)
+                    return
+                next_seconds = seconds
                 settings.force_subscribe_delete_warn_after_seconds = next_seconds
                 await session.commit()
             await self._show_force_subscribe_menu(update, context, chat_id)
@@ -233,13 +258,15 @@ class ModerationMemberActionsMixin:
         if op == "toggle":
             field_map = {
                 "enabled": "night_mode_enabled",
+                "lock_schedule": "group_lock_schedule_enabled",
+                "lock_phrase": "group_lock_phrase_enabled",
                 "exempt_admin": "night_mode_exempt_admin",
                 "delete_message": "night_mode_delete_message",
                 "warn_enabled": "night_mode_warn_enabled",
             }
             field = field_map.get(arg)
             if field is None:
-                await answer_callback_query_safely(update, "未识别的夜间模式配置项，请返回后重试", show_alert=True)
+                await answer_callback_query_safely(update, "未识别的夜间管控配置项，请返回后重试", show_alert=True)
                 return
             async with db.session_factory() as session:
                 settings = await get_chat_settings(session, chat_id)
@@ -249,9 +276,23 @@ class ModerationMemberActionsMixin:
             await self._show_night_mode_menu(update, context, chat_id)
             return
 
+        if op == "notice":
+            from backend.platform.db.schema.models.enums import GroupLockDeleteNoticeMode
+
+            mode = callback_data.get(4)
+            if mode not in {GroupLockDeleteNoticeMode.delete.value, GroupLockDeleteNoticeMode.keep.value}:
+                await answer_callback_query_safely(update, "无效通知策略", show_alert=True)
+                return
+            async with db.session_factory() as session:
+                settings = await get_chat_settings(session, chat_id)
+                settings.group_lock_delete_notice_mode = mode
+                await session.commit()
+            await self._show_night_mode_menu(update, context, chat_id)
+            return
+
         if op == "input":
-            if arg not in {"start", "end", "warn_text", "whitelist"}:
-                await answer_callback_query_safely(update, "未识别的夜间模式输入项，请返回后重试", show_alert=True)
+            if arg not in {"start", "end", "warn_text", "whitelist", "open_phrase", "close_phrase"}:
+                await answer_callback_query_safely(update, "未识别的夜间管控输入项，请返回后重试", show_alert=True)
                 return
             await self._start_text_input_state(
                 context,
@@ -263,11 +304,13 @@ class ModerationMemberActionsMixin:
             prompt_map = {
                 "warn_text": "👉 请输入提示文案：",
                 "whitelist": "👉 请输入白名单用户ID（用空格/逗号分隔，或输入“清空”）：",
+                "open_phrase": "👉 请输入开群词：",
+                "close_phrase": "👉 请输入关群词：",
             }
             if arg in {"start", "end"}:
                 sample_text = next_top_of_hour_hhmm(hours_offset=0 if arg == "start" else 8)
-                title = "🌙 夜间模式 | 编辑开始时间" if arg == "start" else "🌙 夜间模式 | 编辑结束时间"
-                hint = "👉 请输入开始时间（格式 HH:MM）： " if arg == "start" else "👉 请输入结束时间（格式 HH:MM）： "
+                title = "🌙 夜间管控 | 编辑开始时间" if arg == "start" else "🌙 夜间管控 | 编辑结束时间"
+                hint = "👉 请输入管控开始时间（格式 HH:MM）： " if arg == "start" else "👉 请输入管控结束时间（格式 HH:MM）： "
                 await self.message_helper.safe_edit(
                     update,
                     build_hhmm_prompt_text(

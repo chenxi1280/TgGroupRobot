@@ -782,7 +782,7 @@ def build_flows() -> dict[str, dict[str, Any]]:
                     [
                         [
                             button("入群刷号开关", f"adm:vfy_home:{CHAT}:spam:toggle:enabled", "toggle", "result", "已切换入群刷号检测。"),
-                            button("动作", f"adm:vfy_home:{CHAT}:spam:cycle:action", "toggle", "result", "已切换处理动作。"),
+                            button("禁言可疑成员", f"adm:vfy_home:{CHAT}:spam:toggle:mute", "toggle", "result", "已切换可疑成员禁言。"),
                         ],
                         [button("返回验证首页", f"adm:menu:verification:{CHAT}", "back", "home", "已返回验证首页。")],
                     ],
@@ -830,7 +830,7 @@ def build_flows() -> dict[str, dict[str, Any]]:
                 button("判定模式", f"adm:fs:{CHAT}:cycle_check_mode", "toggle", "result", "已切换判定模式。"),
                 button("处理动作", f"adm:fs:{CHAT}:cycle_action", "toggle", "result", "已切换处理动作。"),
             ],
-            [button("删除延迟", f"adm:fs:{CHAT}:cycle_delete_after", "toggle", "result", "已切换删除延迟。")],
+            [button("删除延迟", f"adm:fs:{CHAT}:delete_after", "toggle", "result", "请选择删除延迟。")],
         ],
         ["force_subscribe_channel_1_input", "force_subscribe_channel_2_input", "force_subscribe_text_input", "force_subscribe_cover_input", "force_subscribe_buttons_input"],
         ["backend/features/admin/module_settings/force_subscribe_inputs.py", "backend/features/admin/moderation/member_actions.py", "backend/features/group_ops/group_hooks/control_force_subscribe.py"],
@@ -894,7 +894,7 @@ def build_flows() -> dict[str, dict[str, Any]]:
                         button("删除词条", f"banned_word_delete_12:{CHAT}", "confirm", "result", "已删除词条。"),
                     ],
                     [button("取消输入", f"keywords:cancel:{CHAT}", "back", "home", "已取消输入。")],
-                    [button("返回主菜单", f"adm:back_to_menu:{CHAT}", "back", "entry", "已返回主菜单。")],
+                    [button("返回主菜单", f"adm:menu:main:{CHAT}", "back", "entry", "已返回主菜单。")],
                 ],
                 ["当前群组：演示群"],
             ),
@@ -1340,8 +1340,8 @@ def build_flows() -> dict[str, dict[str, Any]]:
                             button("结束时间", f"sm:edit:{CHAT}:{TASK}:end_at", "input", "end_input", "请输入结束时间。"),
                         ],
                         [
-                            button("每 60 分钟", f"sm:set:{CHAT}:{TASK}:interval_minutes:60", "toggle", "result", "发送频率已设为 60 分钟。"),
-                            button("置顶", f"sm:set:{CHAT}:{TASK}:pin:1", "toggle", "result", "置顶已开启。"),
+                            button("每 60 分钟", f"sm:set:{CHAT}:{TASK}:repeat:60", "toggle", "result", "发送频率已设为 60 分钟。"),
+                            button("置顶", f"sm:set:{CHAT}:{TASK}:pin_message:1", "toggle", "result", "置顶已开启。"),
                             button("删除上条", f"sm:set:{CHAT}:{TASK}:delete_previous:1", "toggle", "result", "删除上条已开启。"),
                         ],
                         [
@@ -1498,38 +1498,6 @@ def build_flows() -> dict[str, dict[str, Any]]:
         ],
     )
 
-    flows["group-lock"] = admin_menu_button_flow(
-        "group-lock",
-        "关群设置",
-        "closegroup",
-        ["adm:gl:"],
-        ["通过关键词或定时计划开关群。"],
-        [
-            [
-                button("关键词关群", f"adm:gl:{CHAT}:set:phrase:1", "toggle", "result", "关键词关群已开启。"),
-                button("关闭关键词", f"adm:gl:{CHAT}:set:phrase:0", "toggle", "result", "关键词关群已关闭。"),
-            ],
-            [
-                button("开群词", f"adm:gl:{CHAT}:input:open_phrase", "input", "open_phrase_input", "请输入开群词。"),
-                button("关群词", f"adm:gl:{CHAT}:input:close_phrase", "input", "close_phrase_input", "请输入关群词。"),
-            ],
-            [
-                button("定时开关", f"adm:gl:{CHAT}:set:schedule:1", "toggle", "result", "定时开关已开启。"),
-                button("开群时间", f"adm:gl:{CHAT}:input:open_time", "input", "open_time_input", "请输入开群时间。"),
-                button("关群时间", f"adm:gl:{CHAT}:input:close_time", "input", "close_time_input", "请输入关群时间。"),
-            ],
-            [button("保留通知", f"adm:gl:{CHAT}:notice:keep", "toggle", "result", "开关群通知会保留。"), button("删除通知", f"adm:gl:{CHAT}:notice:delete", "toggle", "result", "开关群通知会删除。")],
-        ],
-        ["group_lock_open_keyword_input", "group_lock_close_keyword_input", "group_lock_open_time_input", "group_lock_close_time_input"],
-        ["backend/features/admin/module_settings/group_control_inputs.py", "backend/features/group_ops/group_hooks/control_lock.py", "backend/platform/scheduler/tasks/group_lock_task.py"],
-        [
-            input_screen("open_phrase_input", "设置开群词", "发送开群关键词", "开群", f"adm:menu:closegroup:{CHAT}", examples=[("开群词", "开群", "result")]),
-            input_screen("close_phrase_input", "设置关群词", "发送关群关键词", "关群", f"adm:menu:closegroup:{CHAT}", examples=[("关群词", "关群", "result")]),
-            input_screen("open_time_input", "设置开群时间", "格式 HH:MM", "09:00", f"adm:menu:closegroup:{CHAT}", examples=[("开群时间", "09:00", "result")], clear=None),
-            input_screen("close_time_input", "设置关群时间", "格式 HH:MM", "23:00", f"adm:menu:closegroup:{CHAT}", examples=[("关群时间", "23:00", "result")], clear=None),
-        ],
-    )
-
     flows["rename-monitor"] = admin_menu_button_flow(
         "rename-monitor",
         "改名监控",
@@ -1676,12 +1644,12 @@ def build_flows() -> dict[str, dict[str, Any]]:
         [
             [
                 button("开启车评", f"crv:toggle:{CHAT}:1", "toggle", "result", "车评已开启。"),
-                button("投稿命令", f"crv:submit_command:{CHAT}", "input", "submit_command_input", "请输入投稿命令。"),
-                button("排行命令", f"crv:rank_command:{CHAT}", "input", "rank_command_input", "请输入排行命令。"),
+                button("投稿命令", f"crv:submit_cmd:edit:{CHAT}", "input", "submit_command_input", "请输入投稿命令。"),
+                button("排行命令", f"crv:rank_cmd:edit:{CHAT}", "input", "rank_command_input", "请输入排行命令。"),
             ],
             [
-                button("审批人", f"crv:approver:{CHAT}", "input", "approver_input", "请输入审批人。"),
-                button("模板", f"crv:template:{CHAT}", "input", "template_input", "请输入模板。"),
+                button("审批人", f"crv:approver:set:{CHAT}", "input", "approver_input", "请输入审批人。"),
+                button("模板", f"crv:template:edit:{CHAT}", "input", "template_input", "请输入模板。"),
                 button("报告列表", f"crv:reports:{CHAT}:a", "goto", "reports", "已打开报告列表。"),
             ],
         ],
@@ -1699,15 +1667,23 @@ def build_flows() -> dict[str, dict[str, Any]]:
 
     flows["night-mode"] = admin_menu_button_flow(
         "night-mode",
-        "夜间模式",
+        "夜间管控",
         "night",
         ["adm:night:"],
-        ["按时间段限制夜间发言，并支持管理员豁免和提示文本。"],
+        ["按统一时间段限制夜间发言，并支持提示、白名单、全员禁言和口令开关群。"],
         [
             [
-                button("开启/关闭", f"adm:night:{CHAT}:toggle:enabled", "toggle", "result", "夜间模式已切换。"),
-                button("开始时间", f"adm:night:{CHAT}:input:start", "input", "start_input", "请输入开始时间。"),
-                button("结束时间", f"adm:night:{CHAT}:input:end", "input", "end_input", "请输入结束时间。"),
+                button("消息拦截", f"adm:night:{CHAT}:toggle:enabled", "toggle", "result", "消息拦截已切换。"),
+                button("管控开始", f"adm:night:{CHAT}:input:start", "input", "start_input", "请输入管控开始时间。"),
+                button("管控结束", f"adm:night:{CHAT}:input:end", "input", "end_input", "请输入管控结束时间。"),
+            ],
+            [
+                button("全员禁言模式", f"adm:night:{CHAT}:toggle:lock_schedule", "toggle", "result", "全员禁言模式已切换。"),
+                button("口令开关群", f"adm:night:{CHAT}:toggle:lock_phrase", "toggle", "result", "口令开关群已切换。"),
+            ],
+            [
+                button("开群词", f"adm:night:{CHAT}:input:open_phrase", "input", "open_phrase_input", "请输入开群词。"),
+                button("关群词", f"adm:night:{CHAT}:input:close_phrase", "input", "close_phrase_input", "请输入关群词。"),
             ],
             [
                 button("管理员豁免", f"adm:night:{CHAT}:toggle:exempt_admin", "toggle", "result", "管理员豁免已切换。"),
@@ -1715,14 +1691,17 @@ def build_flows() -> dict[str, dict[str, Any]]:
                 button("提示开关", f"adm:night:{CHAT}:toggle:warn_enabled", "toggle", "result", "提示已切换。"),
             ],
             [button("白名单", f"adm:night:{CHAT}:input:whitelist", "input", "whitelist_input", "请输入白名单。"), button("提示文本", f"adm:night:{CHAT}:input:warn_text", "input", "warn_input", "请输入提示文本。"), button("提示删除", f"adm:night:{CHAT}:cycle:warn_delete", "toggle", "result", "已切换提示删除时间。")],
+            [button("删除口令通知", f"adm:night:{CHAT}:notice:delete", "toggle", "result", "口令通知会删除。"), button("保留口令通知", f"adm:night:{CHAT}:notice:keep", "toggle", "result", "口令通知会保留。")],
         ],
         ["night_mode_text_input"],
-        ["backend/features/admin/module_settings/group_control_inputs.py", "backend/features/group_ops/group_hooks/control_night.py"],
+        ["backend/features/admin/module_settings/limit_night_command_inputs.py", "backend/features/group_ops/group_hooks/control_night.py", "backend/features/group_ops/group_hooks/control_lock.py", "backend/platform/scheduler/tasks/group_lock_task.py"],
         [
-            input_screen("start_input", "设置开始时间", "格式 HH:MM", "23:00", f"adm:menu:night:{CHAT}", examples=[("开始", "23:00", "result")], clear=None),
-            input_screen("end_input", "设置结束时间", "格式 HH:MM", "08:00", f"adm:menu:night:{CHAT}", examples=[("结束", "08:00", "result")], clear=None),
+            input_screen("start_input", "设置管控开始时间", "格式 HH:MM", "23:00", f"adm:menu:night:{CHAT}", examples=[("开始", "23:00", "result")], clear=None),
+            input_screen("end_input", "设置管控结束时间", "格式 HH:MM", "08:00", f"adm:menu:night:{CHAT}", examples=[("结束", "08:00", "result")], clear=None),
             input_screen("whitelist_input", "设置夜间白名单", "发送用户 ID、用户名或关键词", "@trusted_user", f"adm:menu:night:{CHAT}", examples=[("白名单", "@trusted_user", "result")]),
-            input_screen("warn_input", "设置夜间提示", "发送提示文本", "现在是夜间模式，请明天再发言。", f"adm:menu:night:{CHAT}", examples=[("提示", "现在是夜间模式，请明天再发言。", "result")]),
+            input_screen("warn_input", "设置夜间提示", "发送提示文本", "现在是夜间管控，请明天再发言。", f"adm:menu:night:{CHAT}", examples=[("提示", "现在是夜间管控，请明天再发言。", "result")]),
+            input_screen("open_phrase_input", "设置开群词", "发送开群关键词", "开群", f"adm:menu:night:{CHAT}", examples=[("开群词", "开群", "result")]),
+            input_screen("close_phrase_input", "设置关群词", "发送关群关键词", "关群", f"adm:menu:night:{CHAT}", examples=[("关群词", "关群", "result")]),
         ],
     )
 
@@ -1936,7 +1915,7 @@ def build_flows() -> dict[str, dict[str, Any]]:
         "拍卖",
         "auction",
         ["auc:"],
-        ["配置拍卖开关、权限、积分模式和拍卖项目。"],
+        ["配置拍卖开关、积分模式和拍卖项目。群成员发送“拍卖”后，机器人会提示回复拍卖物品。"],
         [
             [
                 button("开启拍卖", f"auc:toggle:{CHAT}:enabled:1", "toggle", "result", "拍卖已开启。"),
@@ -1944,8 +1923,8 @@ def build_flows() -> dict[str, dict[str, Any]]:
                 button("自动延时", f"auc:toggle:{CHAT}:auto_extend:1", "toggle", "result", "自动延时已开启。"),
             ],
             [
-                button("管理员发起", f"auc:perm:{CHAT}:admin", "toggle", "result", "仅管理员可发起。"),
-                button("积分模式", f"auc:points_mode:{CHAT}:group_points", "toggle", "result", "已使用群积分。"),
+                button("不关联积分", f"auc:points_mode:{CHAT}:none", "toggle", "result", "已关闭积分关联。"),
+                button("主积分", f"auc:points_mode:{CHAT}:group_points", "toggle", "result", "已使用群积分。"),
                 button("拍卖列表", f"auc:list:{CHAT}:0", "goto", "list", "打开拍卖列表。"),
             ],
         ],

@@ -1,6 +1,6 @@
 {
   "slug": "night-mode",
-  "title": "夜间模式",
+  "title": "夜间管控",
   "status": "已闭环",
   "category": "群组扩展",
   "entryScreen": "entry",
@@ -15,10 +15,12 @@
     ],
     "sourceFiles": [
       "backend/features/admin/core/menu_dispatch.py",
-      "backend/features/admin/module_settings/group_control_inputs.py",
+      "backend/features/admin/module_settings/limit_night_command_inputs.py",
       "backend/features/admin/runtime.py",
       "backend/features/admin/ui/admin_main_keyboards.py",
-      "backend/features/group_ops/group_hooks/control_night.py"
+      "backend/features/group_ops/group_hooks/control_lock.py",
+      "backend/features/group_ops/group_hooks/control_night.py",
+      "backend/platform/scheduler/tasks/group_lock_task.py"
     ],
     "alignmentStatus": "ok",
     "alignmentSummary": "真实回调审计通过。"
@@ -29,16 +31,16 @@
       "title": "管理员主菜单",
       "message": [
         "发送 /start 后点击管理入口，按按钮选择当前群组。",
-        "点击「夜间模式」进入配置页。"
+        "点击「夜间管控」进入配置页。"
       ],
       "keyboard": [
         [
           {
-            "label": "夜间模式",
+            "label": "夜间管控",
             "callbackData": "adm:menu:night:{chat_id}",
             "action": "goto",
             "target": "home",
-            "feedback": "已进入「夜间模式」。",
+            "feedback": "已进入「夜间管控」。",
             "highlight": true
           }
         ],
@@ -109,11 +111,11 @@
       "keyboard": [
         [
           {
-            "label": "夜间模式",
+            "label": "夜间管控",
             "callbackData": "adm:menu:night:{chat_id}",
             "action": "goto",
             "target": "home",
-            "feedback": "已进入「夜间模式」。",
+            "feedback": "已进入「夜间管控」。",
             "highlight": true
           }
         ]
@@ -121,32 +123,64 @@
     },
     {
       "id": "home",
-      "title": "夜间模式",
+      "title": "夜间管控",
       "message": [
-        "按时间段限制夜间发言，并支持管理员豁免和提示文本。"
+        "按统一时间段限制夜间发言，并支持提示、白名单、全员禁言和口令开关群。"
       ],
       "keyboard": [
         [
           {
-            "label": "开启/关闭",
+            "label": "消息拦截",
             "callbackData": "adm:night:{chat_id}:toggle:enabled",
             "action": "toggle",
             "target": "home",
-            "feedback": "夜间模式已切换。"
+            "feedback": "消息拦截已切换。"
           },
           {
-            "label": "开始时间",
+            "label": "管控开始",
             "callbackData": "adm:night:{chat_id}:input:start",
             "action": "input",
             "target": "start_input",
-            "feedback": "请输入开始时间。"
+            "feedback": "请输入管控开始时间。"
           },
           {
-            "label": "结束时间",
+            "label": "管控结束",
             "callbackData": "adm:night:{chat_id}:input:end",
             "action": "input",
             "target": "end_input",
-            "feedback": "请输入结束时间。"
+            "feedback": "请输入管控结束时间。"
+          }
+        ],
+        [
+          {
+            "label": "全员禁言模式",
+            "callbackData": "adm:night:{chat_id}:toggle:lock_schedule",
+            "action": "toggle",
+            "target": "home",
+            "feedback": "全员禁言模式已切换。"
+          },
+          {
+            "label": "口令开关群",
+            "callbackData": "adm:night:{chat_id}:toggle:lock_phrase",
+            "action": "toggle",
+            "target": "home",
+            "feedback": "口令开关群已切换。"
+          }
+        ],
+        [
+          {
+            "label": "开群词",
+            "callbackData": "adm:night:{chat_id}:input:open_phrase",
+            "action": "input",
+            "target": "open_phrase_input",
+            "feedback": "请输入开群词。"
+          },
+          {
+            "label": "关群词",
+            "callbackData": "adm:night:{chat_id}:input:close_phrase",
+            "action": "input",
+            "target": "close_phrase_input",
+            "feedback": "请输入关群词。"
           }
         ],
         [
@@ -197,6 +231,22 @@
         ],
         [
           {
+            "label": "删除口令通知",
+            "callbackData": "adm:night:{chat_id}:notice:delete",
+            "action": "toggle",
+            "target": "home",
+            "feedback": "口令通知会删除。"
+          },
+          {
+            "label": "保留口令通知",
+            "callbackData": "adm:night:{chat_id}:notice:keep",
+            "action": "toggle",
+            "target": "home",
+            "feedback": "口令通知会保留。"
+          }
+        ],
+        [
+          {
             "label": "返回主菜单",
             "callbackData": "adm:menu:main:{chat_id}",
             "action": "back",
@@ -211,7 +261,7 @@
     },
     {
       "id": "start_input",
-      "title": "设置开始时间",
+      "title": "设置管控开始时间",
       "message": [
         "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
       ],
@@ -245,7 +295,7 @@
     },
     {
       "id": "end_input",
-      "title": "设置结束时间",
+      "title": "设置管控结束时间",
       "message": [
         "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
       ],
@@ -332,14 +382,84 @@
       "input": {
         "type": "text",
         "prompt": "发送提示文本",
-        "placeholder": "现在是夜间模式，请明天再发言。",
+        "placeholder": "现在是夜间管控，请明天再发言。",
         "clearCommand": "/clear",
         "examples": [
           {
             "label": "提示",
-            "value": "现在是夜间模式，请明天再发言。",
+            "value": "现在是夜间管控，请明天再发言。",
             "target": "result",
             "feedback": "已填入：提示。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "open_phrase_input",
+      "title": "设置开群词",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:menu:night:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "发送开群关键词",
+        "placeholder": "开群",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "开群词",
+            "value": "开群",
+            "target": "result",
+            "feedback": "已填入：开群词。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
+    },
+    {
+      "id": "close_phrase_input",
+      "title": "设置关群词",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:menu:night:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "发送关群关键词",
+        "placeholder": "关群",
+        "clearCommand": "/clear",
+        "examples": [
+          {
+            "label": "关群词",
+            "value": "关群",
+            "target": "result",
+            "feedback": "已填入：关群词。"
           }
         ],
         "errors": [

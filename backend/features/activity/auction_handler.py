@@ -20,7 +20,6 @@ from backend.features.activity.services.auction_service import (
     refresh_auction_message,
 )
 from backend.shared.services.base import ValidationError
-from backend.shared.services.permission_service import is_user_admin
 from backend.platform.state.state_service import clear_user_state, get_user_state, set_user_state
 from backend.shared.time_ui import build_copy_options_keyboard, build_minutes_or_hhmm_prompt_text, next_top_of_hour_hhmm
 
@@ -37,6 +36,20 @@ def _is_auction_create_trigger(text: str) -> bool:
     if normalized.startswith("💰"):
         normalized = normalized[1:]
     return normalized == "拍卖"
+
+
+async def _check_auction_create_allowed(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    setting,
+    chat_id: int,
+    user_id: int,
+) -> bool:
+    del context, chat_id, user_id
+    if not setting.enabled:
+        await _reply(update, "❌ 拍卖功能未开启，请先在后台开启后再创建。")
+        return False
+    return True
 
 
 async def _reply(update: Update, text: str, *, parse_mode: str = "Markdown", reply_markup: InlineKeyboardMarkup | None = None) -> None:
@@ -65,6 +78,15 @@ async def auction_group_message_handler(update: Update, context: ContextTypes.DE
         if state is not None and state.state_type.startswith("auction_wait_"):
             data = dict(state.state_data or {})
             if state.state_type == ConversationStateType.auction_wait_title.value:
+                if data.get("awaiting_item") and _is_auction_create_trigger(text):
+                    await _reply(update, "💰 请回复拍卖的物品或者拍卖的东西。")
+                    return True
+                source_message_id = data.get("source_message_id") or getattr(message, "message_id", None)
+                if source_message_id is None:
+                    await _reply(update, "❌ 未能读取拍卖物品消息，请重新发送 `拍卖` 后再回复拍卖物品。")
+                    return True
+                data["source_message_id"] = int(source_message_id)
+                data.pop("awaiting_item", None)
                 data["title"] = text[:255]
                 await set_user_state(
                     session,
@@ -175,26 +197,26 @@ async def auction_group_message_handler(update: Update, context: ContextTypes.DE
 
         is_create_trigger = _is_auction_create_trigger(text)
 
-        if is_create_trigger and message.reply_to_message is None:
-            await _reply(update, "💰 请先回复要拍卖的消息，再发送 `拍卖` 进入创建流程。")
-            return True
-
-        if message.reply_to_message is not None and is_create_trigger:
-            if not setting.enabled:
-                await _reply(update, "❌ 拍卖功能未开启，请先在后台开启后再创建。")
+        if is_create_trigger:
+            if not await _check_auction_create_allowed(update, context, setting, chat.id, user.id):
                 return True
-            if setting.create_permission == "admin" and not await is_user_admin(context, chat.id, user.id):
-                await _reply(update, "❌ 当前仅管理员可以创建拍卖。")
-                return True
+            state_data = (
+                {"source_message_id": message.reply_to_message.message_id}
+                if message.reply_to_message is not None
+                else {"awaiting_item": True}
+            )
             await set_user_state(
                 session,
                 chat.id,
                 user.id,
                 ConversationStateType.auction_wait_title.value,
-                {"source_message_id": message.reply_to_message.message_id},
+                state_data,
             )
             await session.commit()
-            await _reply(update, "💰 请输入拍卖标题：")
+            if message.reply_to_message is not None:
+                await _reply(update, "💰 请输入拍卖标题：")
+            else:
+                await _reply(update, "💰 请回复拍卖的物品或者拍卖的东西。")
             return True
 
         if message.reply_to_message is not None:

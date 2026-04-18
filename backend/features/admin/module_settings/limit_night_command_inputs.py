@@ -77,11 +77,13 @@ async def handle_night_mode_input(
             await update.effective_message.reply_text("时间格式错误，请使用 HH:MM，例如 22:00")
             return
         settings.night_mode_start_time = text_value
+        settings.group_lock_close_time = text_value
     elif field == "end":
         if not is_valid_hhmm(text_value):
             await update.effective_message.reply_text("时间格式错误，请使用 HH:MM，例如 07:00")
             return
         settings.night_mode_end_time = text_value
+        settings.group_lock_open_time = text_value
     elif field == "warn_text":
         if not text_value:
             await update.effective_message.reply_text("提示文案不能为空。")
@@ -102,8 +104,18 @@ async def handle_night_mode_input(
                     return
                 ids.append(int(item))
             settings.night_mode_whitelist_user_ids = ids
+    elif field == "open_phrase":
+        if not text_value:
+            await update.effective_message.reply_text("开群词不能为空。")
+            return
+        settings.group_lock_open_phrase = text_value
+    elif field == "close_phrase":
+        if not text_value:
+            await update.effective_message.reply_text("关群词不能为空。")
+            return
+        settings.group_lock_close_phrase = text_value
     else:
-        await update.effective_message.reply_text("夜间模式配置状态已失效，请重新进入。")
+        await update.effective_message.reply_text("夜间管控配置状态已失效，请重新进入。")
         return
 
     await clear_admin_input_state(session, target_chat_id=target_chat_id, user_id=update.effective_user.id)

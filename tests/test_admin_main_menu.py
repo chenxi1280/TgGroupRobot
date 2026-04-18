@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from backend.features.admin.ui.admin_main import admin_main_menu
+from backend.features.admin.ui.admin_main_text import format_admin_main_menu_text
+from backend.features.group_ops.services.group_daily_stats import AdminMenuStats, GroupDayCounts
 
 
 def test_private_admin_main_menu_routes_real_and_todo_features():
@@ -22,7 +24,7 @@ def test_private_admin_main_menu_routes_real_and_todo_features():
     assert buttons["📡频道同步"] == "adm:menu:sync:-100123"
     assert buttons["⚡快捷发布"] == "adm:menu:qpub:-100123"
     assert buttons["🧑‍🍼新成员限制"] == "adm:menu:newmem:-100123"
-    assert buttons["🌙夜间模式"] == "adm:menu:night:-100123"
+    assert buttons["🌙夜间管控"] == "adm:menu:night:-100123"
     assert buttons["⌨️命令配置"] == "adm:menu:gcmd:-100123"
     assert buttons["📥导入设置"] == "adm:menu:import:-100123"
     assert buttons["📋克隆"] == "adm:menu:clone:-100123"
@@ -40,3 +42,20 @@ def test_private_admin_main_menu_groups_buttons_three_per_row():
         "adm:menu:renewal:-100123",
         "adm:menu:control:-100123",
     ]
+
+
+def test_admin_main_menu_text_includes_daily_stats_and_subscription() -> None:
+    text = format_admin_main_menu_text(
+        "桩基俱乐部",
+        AdminMenuStats(
+            today=GroupDayCounts(joins=11, leaves=0, signs=3),
+            yesterday=GroupDayCounts(joins=0, leaves=2, signs=1),
+            expires_at_text="2026-04-22 23:59",
+        ),
+    )
+
+    assert "正在管理【桩基俱乐部】" in text
+    assert "今日：加入(11) 离开(0) 签到(3)" in text
+    assert "昨日：加入(0) 离开(2) 签到(1)" in text
+    assert "保安公告栏 👉 点击关注 (https://t.me/abaoantips)" in text
+    assert "有效期至：2026-04-22 23:59" in text

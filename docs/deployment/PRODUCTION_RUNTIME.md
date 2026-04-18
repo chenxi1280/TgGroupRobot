@@ -11,7 +11,7 @@
 - GitHub Actions
 - SSH 发布到服务器
 - release 目录 + `current` 软链
-- `deploy/compose-up.sh` 串行构建并启动 bot 服务
+- GitHub Actions 构建 Docker Image，服务器只 pull 指定镜像并启动 bot
 
 发布链路：
 
@@ -21,7 +21,7 @@
 4. 调用 `deploy/server-install-release.sh`
 5. 切换 `/data/tggrouprobot/current`
 6. 执行数据库检查与 `sql/init.sql`
-7. 启动 `tggrouprobot-bot`
+7. 拉取 bot 镜像、释放 docs-site 静态文件并启动 `tggrouprobot-bot`
 
 ## 2. 当前线上目录
 
@@ -55,6 +55,9 @@
 BOT_TOKEN=...
 DATABASE_URL=postgresql+psycopg://<db_user>:<db_password>@postgres:5432/tggrouprobot
 INFRA_NETWORK_NAME=infra_default
+GHCR_USERNAME=<github_user>
+GHCR_TOKEN=<github_pat_with_read_packages>
+TGGROUPROBOT_DOCS_STATIC_BASE_DIR=/data/infra/www/robot.telema.cn
 ```
 
 数据库处理流程：
@@ -74,7 +77,7 @@ INFRA_NETWORK_NAME=infra_default
 - 日志默认留在容器标准输出
 - 日常检查依赖 `docker logs`
 
-用户功能手册站点不随生产部署发布，生产 compose 只保留 bot 服务。
+用户功能手册站点随生产部署发布。GitHub Actions 构建 docs-site 镜像；服务器从镜像中释放 `/usr/share/nginx/html` 到 `/data/infra/www/robot.telema.cn/current`，不安装 Node，不执行 `npm run build`，也不长期运行 docs-site 容器。
 
 ## 5. 当前实际 vs 目标架构
 
@@ -96,6 +99,8 @@ INFRA_NETWORK_NAME=infra_default
 docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 docker logs --tail 80 tggrouprobot-bot
 docker inspect tggrouprobot-bot --format '{{json .Mounts}}'
+test -f /data/infra/www/robot.telema.cn/current/index.html
+curl -fsS -H 'Host: robot.telema.cn' http://127.0.0.1/healthz
 readlink -f /data/tggrouprobot/current
 ```
 
@@ -103,6 +108,7 @@ readlink -f /data/tggrouprobot/current
 
 - `tggrouprobot-bot` 处于 `Up`
 - 日志持续出现任务执行完成或 Telegram `HTTP/1.1 200 OK`
+- `robot.telema.cn` 静态目录已发布，宿主机 Nginx `/healthz` 返回 `ok`
 - `current` 指向最新 release
 
 ## 7. 常用运维命令

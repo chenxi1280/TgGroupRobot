@@ -13,7 +13,12 @@ from backend.features.admin.module_settings.input_runtime import (
     target_chat_id_from_state,
 )
 from backend.features.automation.services.scheduled_message_service import ScheduledMessageService
-from backend.features.group_ops.group_hooks.control_force_subscribe import _normalize_force_subscribe_target
+from backend.features.group_ops.group_hooks.control_force_subscribe import (
+    _build_force_subscribe_channel_button,
+    _build_resolved_force_subscribe_channel_button,
+    _normalize_force_subscribe_target,
+    _resolve_force_subscribe_target_label,
+)
 from backend.shared.services.base import ValidationError
 from backend.shared.ui.button_input import is_clear_button_input, parse_button_rows
 
@@ -23,19 +28,13 @@ def parse_force_subscribe_buttons_input(raw_text: str) -> list[list[dict]]:
 
 
 def _build_force_subscribe_channel_button_preview(value: str | None) -> InlineKeyboardButton | None:
+    return _build_force_subscribe_channel_button(value)
+
+
+async def describe_force_subscribe_target(context: ContextTypes.DEFAULT_TYPE, value: str | None) -> str:
     if not value:
-        return None
-    normalized = value.strip()
-    if not normalized:
-        return None
-    if normalized.startswith("@"):
-        return InlineKeyboardButton(normalized, url=f"https://t.me/{normalized[1:]}")
-    if normalized.startswith("https://t.me/") or normalized.startswith("http://t.me/"):
-        parsed = urlparse(normalized)
-        if parsed.query or parsed.fragment:
-            return None
-        return InlineKeyboardButton(normalized, url=normalized)
-    return None
+        return "未绑定"
+    return await _resolve_force_subscribe_target_label(context, value)
 
 
 def build_force_subscribe_preview_markup(
@@ -60,6 +59,35 @@ def build_force_subscribe_preview_markup(
             _build_force_subscribe_channel_button_preview(getattr(settings, "force_subscribe_bound_channel_2", None)),
         ]
         rows.extend([[button] for button in fallback_buttons if button is not None])
+    rows.append([InlineKeyboardButton("🔙 返回", callback_data=back_callback or f"adm:menu:forcesub:{chat_id}")])
+    return InlineKeyboardMarkup(rows)
+
+
+async def build_force_subscribe_preview_markup_async(
+    settings,
+    chat_id: int,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    back_callback: str | None = None,
+) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    custom_enabled = bool(getattr(settings, "force_subscribe_custom_buttons_enabled", False))
+    custom_buttons = getattr(settings, "force_subscribe_buttons", None) or []
+    if custom_enabled and custom_buttons:
+        try:
+            normalized = ScheduledMessageService.normalize_buttons_config(custom_buttons)
+            for row in normalized:
+                rows.append([InlineKeyboardButton(item["text"], url=item["url"]) for item in row])
+        except Exception:
+            rows = []
+    if not rows:
+        for value in (
+            getattr(settings, "force_subscribe_bound_channel_1", None),
+            getattr(settings, "force_subscribe_bound_channel_2", None),
+        ):
+            button = await _build_resolved_force_subscribe_channel_button(context, value)
+            if button is not None:
+                rows.append([button])
     rows.append([InlineKeyboardButton("🔙 返回", callback_data=back_callback or f"adm:menu:forcesub:{chat_id}")])
     return InlineKeyboardMarkup(rows)
 

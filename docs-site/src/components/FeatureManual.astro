@@ -5,14 +5,15 @@ import TelegramFlow from './TelegramFlow.astro';
 const { slug, flow } = Astro.props as {
   slug: string;
   flow: any;
+  feature?: any;
 };
 
-const entry = await getEntry('features', slug);
-if (!entry) {
+const entry = Astro.props.feature ? null : await getEntry('features', slug);
+if (!Astro.props.feature && !entry) {
   throw new Error(`Feature catalog entry not found: ${slug}`);
 }
 
-const feature = entry.data;
+const feature = Astro.props.feature ?? entry?.data;
 const isPaused = feature.status === '暂时关闭';
 const replayLabel = flow.coverage?.alignmentStatus === 'needsReview'
   ? '真实回调待对账'

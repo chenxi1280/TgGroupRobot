@@ -358,11 +358,11 @@
             "feedback": "已切换入群刷号检测。"
           },
           {
-            "label": "禁言",
+            "label": "禁言可疑成员",
             "callbackData": "adm:vfy_home:{chat_id}:spam:toggle:mute",
             "action": "toggle",
             "target": "spam",
-            "feedback": "已切换禁言处理。"
+            "feedback": "已切换可疑成员禁言。"
           }
         ],
         [

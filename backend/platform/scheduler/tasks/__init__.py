@@ -8,6 +8,7 @@ from backend.platform.scheduler.tasks.cleanup_task import CleanupTask
 from backend.platform.scheduler.tasks.verification_timeout_task import VerificationTimeoutTask
 from backend.platform.scheduler.tasks.scheduled_message_task import ScheduledMessageTaskRunner
 from backend.platform.scheduler.tasks.group_lock_task import GroupLockTask
+from backend.platform.scheduler.tasks.rename_monitor_task import RenameMonitorTask
 from backend.platform.scheduler.tasks.auction_task import AuctionTask
 from backend.platform.scheduler.tasks.bottom_button_task import BottomButtonTask
 from backend.platform.scheduler.tasks.engagement_task import EngagementTask
@@ -24,6 +25,7 @@ __all__ = [
     "VerificationTimeoutTask",
     "ScheduledMessageTaskRunner",
     "GroupLockTask",
+    "RenameMonitorTask",
     "AuctionTask",
     "BottomButtonTask",
     "EngagementTask",

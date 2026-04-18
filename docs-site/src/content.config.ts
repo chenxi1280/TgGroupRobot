@@ -1,8 +1,6 @@
 import { defineCollection } from 'astro:content';
 import { file } from 'astro/loaders';
 import { z } from 'astro/zod';
-import { docsLoader } from '@astrojs/starlight/loaders';
-import { docsSchema } from '@astrojs/starlight/schema';
 
 const stepSchema = z.object({
   title: z.string(),
@@ -59,7 +57,6 @@ const featureSchema = z.object({
 });
 
 export const collections = {
-  docs: defineCollection({ loader: docsLoader(), schema: docsSchema() }),
   features: defineCollection({
     loader: file('src/content/features/catalog.json', {
       parser: (text) => JSON.parse(text).features.map((feature: { slug: string }) => ({ id: feature.slug, ...feature }))

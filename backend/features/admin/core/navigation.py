@@ -114,7 +114,13 @@ class CoreNavigationMixin:
         """显示主菜单"""
         db: Database = context.application.bot_data["db"]
         chat_title = await self._get_chat_title(db, chat_id)
-        text = format_admin_main_menu_text(chat_title)
+        from backend.features.group_ops.services.group_daily_stats import get_admin_menu_stats
+
+        async with db.session_factory() as session:
+            menu_stats = await get_admin_menu_stats(session, chat_id)
+            await session.commit()
+
+        text = format_admin_main_menu_text(chat_title, menu_stats)
         keyboard = admin_main_menu(chat_id)
 
         await self.message_helper.safe_edit(

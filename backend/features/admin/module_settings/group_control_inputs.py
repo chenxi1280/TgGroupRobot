@@ -36,15 +36,17 @@ async def handle_group_lock_text_input(
             await update.effective_message.reply_text("时间格式错误，请使用 HH:MM，例如 08:00")
             return
         settings.group_lock_open_time = value
+        settings.night_mode_end_time = value
     elif state.state_type == "group_lock_close_time_input":
         value = message_text.strip()
         if not is_valid_hhmm(value):
             await update.effective_message.reply_text("时间格式错误，请使用 HH:MM，例如 02:00")
             return
         settings.group_lock_close_time = value
+        settings.night_mode_start_time = value
     await clear_admin_input_state(session, target_chat_id=target_chat_id, user_id=update.effective_user.id)
     await session.commit()
-    await admin_handler_instance()._show_group_lock_menu(update, context, target_chat_id)
+    await admin_handler_instance()._show_night_mode_menu(update, context, target_chat_id)
 
 
 async def handle_rename_monitor_text_input(

@@ -79,6 +79,50 @@ async def test_force_subscribe_menu_shows_action_row(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_force_subscribe_menu_resolves_link_target_title(monkeypatch):
+    rendered: list[tuple[str, object]] = []
+    settings = SimpleNamespace(
+        force_subscribe_enabled=True,
+        force_subscribe_bound_channel_1="https://t.me/group_a",
+        force_subscribe_bound_channel_2=None,
+        force_subscribe_delete_warn_after_seconds=60,
+        force_subscribe_guide_text="请先订阅",
+        force_subscribe_cover_file_id=None,
+        force_subscribe_custom_buttons_enabled=False,
+        force_subscribe_buttons=[],
+        force_subscribe_not_subscribed_action="warn_only",
+        force_subscribe_check_mode="all",
+    )
+
+    async def fake_set_current_chat(db, user_id: int, chat_id: int):
+        return None
+
+    async def fake_get_chat_settings(session, chat_id: int):
+        return settings
+
+    async def fake_safe_edit(update, text, reply_markup):
+        rendered.append((text, reply_markup))
+
+    class _Bot:
+        async def get_chat(self, *, chat_id):
+            assert chat_id == "@group_a"
+            return SimpleNamespace(type="supergroup", title="官方群组")
+
+    monkeypatch.setattr(admin_handler._admin_handler, "_set_current_chat", fake_set_current_chat)
+    monkeypatch.setattr(admin_handler, "get_chat_settings", fake_get_chat_settings)
+    monkeypatch.setattr(admin_handler._admin_handler.message_helper, "safe_edit", fake_safe_edit)
+
+    update = SimpleNamespace(effective_user=SimpleNamespace(id=7))
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}), bot=_Bot())
+
+    await admin_handler._admin_handler._show_force_subscribe_menu(update, context, -100123)
+
+    text, keyboard = rendered[0]
+    assert "📡 绑定频道/群组1: 官方群组" in text
+    assert keyboard.inline_keyboard[1][1].text == "官方群组"
+
+
+@pytest.mark.asyncio
 async def test_force_subscribe_cycle_action_updates_setting(monkeypatch):
     settings = SimpleNamespace(
         force_subscribe_not_subscribed_action="delete_and_warn",
@@ -138,7 +182,7 @@ async def test_force_subscribe_cycle_check_mode_updates_setting(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_force_subscribe_preview_uses_channel_buttons(monkeypatch):
+async def test_force_subscribe_preview_uses_resolved_channel_buttons(monkeypatch):
     rendered: list[tuple[str, object]] = []
     settings = SimpleNamespace(
         force_subscribe_custom_buttons_enabled=False,
@@ -153,11 +197,19 @@ async def test_force_subscribe_preview_uses_channel_buttons(monkeypatch):
     async def fake_safe_edit(update, text, reply_markup):
         rendered.append((text, reply_markup))
 
+    class _Bot:
+        async def get_chat(self, *, chat_id):
+            titles = {
+                "@channel_a": "频道 A",
+                "@channel_b": "频道 B",
+            }
+            return SimpleNamespace(type="channel", title=titles[chat_id])
+
     monkeypatch.setattr(admin_handler, "get_chat_settings", fake_get_chat_settings)
     monkeypatch.setattr(admin_handler._admin_handler.message_helper, "safe_edit", fake_safe_edit)
 
     update = SimpleNamespace(effective_user=SimpleNamespace(id=1))
-    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}))
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}), bot=_Bot())
 
     await admin_handler._admin_handler._handle_force_subscribe(
         update,
@@ -169,9 +221,74 @@ async def test_force_subscribe_preview_uses_channel_buttons(monkeypatch):
     assert rendered
     text, keyboard = rendered[0]
     assert "预览效果" in text
-    assert keyboard.inline_keyboard[0][0].text == "@channel_a"
-    assert keyboard.inline_keyboard[1][0].text == "https://t.me/channel_b"
+    assert keyboard.inline_keyboard[0][0].text == "频道 A"
+    assert keyboard.inline_keyboard[1][0].text == "频道 B"
     assert keyboard.inline_keyboard[-1][0].callback_data == "adm:menu:forcesub:-100123"
+
+
+@pytest.mark.asyncio
+async def test_force_subscribe_delete_after_opens_selection(monkeypatch):
+    settings = SimpleNamespace(force_subscribe_delete_warn_after_seconds=90)
+    rendered: list[tuple[str, object]] = []
+    shown: list[int] = []
+
+    async def fake_get_chat_settings(session, chat_id: int):
+        return settings
+
+    async def fake_safe_edit(update, text, reply_markup):
+        rendered.append((text, reply_markup))
+
+    async def fake_show(update, context, chat_id: int):
+        shown.append(chat_id)
+
+    monkeypatch.setattr(admin_handler, "get_chat_settings", fake_get_chat_settings)
+    monkeypatch.setattr(admin_handler._admin_handler.message_helper, "safe_edit", fake_safe_edit)
+    monkeypatch.setattr(admin_handler._admin_handler, "_show_force_subscribe_menu", fake_show)
+
+    update = SimpleNamespace(effective_user=SimpleNamespace(id=1))
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}))
+
+    await admin_handler._admin_handler._handle_force_subscribe(
+        update,
+        context,
+        -100123,
+        CallbackParser.parse("adm:fs:-100123:cycle_delete_after"),
+    )
+
+    assert settings.force_subscribe_delete_warn_after_seconds == 90
+    assert shown == []
+    text, keyboard = rendered[0]
+    assert "请选择提示消息发送后多久自动删除" in text
+    assert [button.text for button in keyboard.inline_keyboard[1]] == ["✅ 90秒", "120秒", "300秒"]
+    assert keyboard.inline_keyboard[1][0].callback_data == "adm:fs:-100123:delete_after:90"
+
+
+@pytest.mark.asyncio
+async def test_force_subscribe_delete_after_selection_updates_setting(monkeypatch):
+    settings = SimpleNamespace(force_subscribe_delete_warn_after_seconds=60)
+    shown: list[int] = []
+
+    async def fake_get_chat_settings(session, chat_id: int):
+        return settings
+
+    async def fake_show(update, context, chat_id: int):
+        shown.append(chat_id)
+
+    monkeypatch.setattr(admin_handler, "get_chat_settings", fake_get_chat_settings)
+    monkeypatch.setattr(admin_handler._admin_handler, "_show_force_subscribe_menu", fake_show)
+
+    update = SimpleNamespace(effective_user=SimpleNamespace(id=1))
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}))
+
+    await admin_handler._admin_handler._handle_force_subscribe(
+        update,
+        context,
+        -100123,
+        CallbackParser.parse("adm:fs:-100123:delete_after:120"),
+    )
+
+    assert settings.force_subscribe_delete_warn_after_seconds == 120
+    assert shown == [-100123]
 
 
 @pytest.mark.asyncio

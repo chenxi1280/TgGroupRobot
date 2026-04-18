@@ -242,9 +242,10 @@ class VerificationHomeActionsMixin:
             await self.message_helper.safe_edit(
                 update,
                 "👀 强制关注 | 预览效果\n\n这是用户未关注频道/群组时会收到的提示样式预览。",
-                reply_markup=_build_force_subscribe_preview_markup(
+                reply_markup=await _build_force_subscribe_preview_markup_async(
                     settings,
                     chat_id,
+                    context,
                     back_callback=f"adm:vfy_home:{chat_id}:self_review",
                 ),
             )

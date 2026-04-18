@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[2]
 DOCS_SITE = ROOT / "docs-site"
 CATALOG_PATH = DOCS_SITE / "src/content/features/catalog.json"
 FLOWS_DIR = DOCS_SITE / "src/content/flows"
-FEATURE_PAGES_DIR = DOCS_SITE / "src/content/docs/features"
+FEATURE_ROUTE_PATH = DOCS_SITE / "src/pages/features/[slug].astro"
 TRUTH_TABLE_PATH = ROOT / "docs/setup/06_feature_truth_table.md"
 MENU_KEYBOARD_PATH = ROOT / "backend/features/admin/ui/admin_main_keyboards.py"
 MENU_DISPATCH_PATH = ROOT / "backend/features/admin/core/menu_dispatch.py"
@@ -147,11 +147,8 @@ def validate_flow(feature: dict, source_text: str, menu_keys: set[str], adm_acti
     errors: list[str] = []
     slug = feature.get("slug", "<unknown>")
     title = feature.get("title", slug)
-    mdx_path = FEATURE_PAGES_DIR / f"{slug}.mdx"
     flow_path = FLOWS_DIR / f"{slug}.json"
 
-    if not mdx_path.exists():
-        errors.append(f"{title} 缺少 MDX 页面: {mdx_path.relative_to(DOCS_SITE)}")
     if not flow_path.exists():
         errors.append(f"{title} 缺少 flow 数据: {flow_path.relative_to(DOCS_SITE)}")
         return errors
@@ -248,6 +245,9 @@ def validate() -> list[str]:
     source_text = backend_source_text()
     menu_keys = (menu_keys_from_keyboard() | menu_keys_from_dispatch()) - set(IGNORED_MENU_KEYS)
     adm_actions = adm_actions_from_runtime()
+
+    if not FEATURE_ROUTE_PATH.exists():
+        errors.append(f"缺少动态功能页路由: {FEATURE_ROUTE_PATH.relative_to(DOCS_SITE)}")
 
     duplicates = {slug for slug in slugs if slugs.count(slug) > 1}
     if duplicates:

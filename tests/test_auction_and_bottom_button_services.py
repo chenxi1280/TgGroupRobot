@@ -4,7 +4,7 @@ import datetime as dt
 
 import pytest
 
-from backend.platform.db.schema.models.expansion import AuctionItem, BottomButtonLayout
+from backend.platform.db.schema.models.expansion import AuctionItem, AuctionSetting, BottomButtonLayout
 from backend.features.activity.services.auction_service import format_auction_announcement, parse_auction_end_at, parse_bid_amount
 from backend.shared.services.base import ValidationError
 from backend.features.group_ops.services import bottom_button_service
@@ -43,6 +43,10 @@ def test_format_auction_announcement_contains_icons():
     assert "💰 拍卖" in text
     assert "🟢 进行中" in text
     assert "当前领先" in text
+
+
+def test_auction_setting_defaults_allow_group_members_to_create():
+    assert AuctionSetting.__table__.c.create_permission.default.arg == "all"
 
 
 def test_bottom_button_runtime_markup_supports_send_and_fill():
