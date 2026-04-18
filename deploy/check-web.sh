@@ -178,8 +178,15 @@ check_host_nginx() {
     check_url "docs via host nginx https" "https://${WEB_HOST}/" --resolve "${WEB_HOST}:443:127.0.0.1"
 
   if is_admin_enabled; then
-    run_with_retries "admin via host nginx https" \
-      check_url "admin via host nginx https" "https://${WEB_HOST}/admin/" --resolve "${WEB_HOST}:443:127.0.0.1"
+    if ! run_with_retries "admin via host nginx https" \
+      check_url "admin via host nginx https" "https://${WEB_HOST}/admin/" --resolve "${WEB_HOST}:443:127.0.0.1"; then
+      cat >&2 <<EOF
+Hint: local admin is reachable but host Nginx is not proxying /admin/ for ${WEB_HOST}.
+Deploy the updated infra-compose host Nginx config, then rerun:
+  bash ${APP_DIR}/deploy/check-web.sh
+EOF
+      return 1
+    fi
   else
     echo "SKIP admin host nginx check: ADMIN_WEB_ENABLED=${ADMIN_WEB_ENABLED:-false}"
   fi
