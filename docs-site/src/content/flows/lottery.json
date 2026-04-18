@@ -9,7 +9,10 @@
     "callbackPrefixes": [
       "lot:create_menu",
       "lot:mode_menu:",
+      "lot:draw_cond:",
       "lot:create:",
+      "lot:wiz:",
+      "lottery:cancel:",
       "lot:list:",
       "lot:detail:",
       "lot:settings",
@@ -175,23 +178,23 @@
       "id": "create_menu",
       "title": "创建抽奖",
       "message": [
-        "选择普通抽奖、积分抽奖或邀请抽奖模式。"
+        "先选择通用、积分、邀请或群活跃抽奖类型。"
       ],
       "keyboard": [
         [
           {
             "label": "普通抽奖",
-            "callbackData": "lot:create:{chat_id}:common",
-            "action": "input",
-            "target": "create_input",
-            "feedback": "请输入抽奖内容。"
+            "callbackData": "lot:draw_cond:{chat_id}:c:t",
+            "action": "goto",
+            "target": "draw_condition",
+            "feedback": "选择通用抽奖开奖条件。"
           },
           {
             "label": "积分抽奖",
-            "callbackData": "lot:create:{chat_id}:points",
-            "action": "input",
-            "target": "create_input",
-            "feedback": "请输入积分抽奖内容。"
+            "callbackData": "lot:draw_cond:{chat_id}:p:t",
+            "action": "goto",
+            "target": "draw_condition",
+            "feedback": "选择积分抽奖开奖条件。"
           }
         ],
         [
@@ -201,6 +204,13 @@
             "action": "goto",
             "target": "invite_mode",
             "feedback": "选择邀请抽奖模式。"
+          },
+          {
+            "label": "群活跃抽奖",
+            "callbackData": "lot:mode_menu:{chat_id}:activity",
+            "action": "goto",
+            "target": "activity_mode",
+            "feedback": "选择群活跃抽奖模式。"
           }
         ],
         [
@@ -218,16 +228,97 @@
       "id": "invite_mode",
       "title": "邀请抽奖模式",
       "message": [
-        "邀请抽奖支持按邀请门槛参与。"
+        "邀请抽奖支持达标随机，也支持按排行入围后随机。"
       ],
       "keyboard": [
         [
           {
-            "label": "门槛随机",
-            "callbackData": "lot:create:{chat_id}:invite:threshold_random",
+            "label": "达标随机",
+            "callbackData": "lot:draw_cond:{chat_id}:i:t",
+            "action": "goto",
+            "target": "draw_condition",
+            "feedback": "选择邀请抽奖开奖条件。"
+          }
+        ],
+        [
+          {
+            "label": "排名入围随机",
+            "callbackData": "lot:draw_cond:{chat_id}:i:r",
+            "action": "goto",
+            "target": "draw_condition",
+            "feedback": "选择邀请排行抽奖开奖条件。"
+          }
+        ],
+        [
+          {
+            "label": "返回创建",
+            "callbackData": "lot:create_menu:{chat_id}",
+            "action": "back",
+            "target": "create_menu",
+            "feedback": "已返回创建菜单。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "activity_mode",
+      "title": "群活跃抽奖模式",
+      "message": [
+        "群活跃抽奖支持按发言门槛参与，也支持按活跃排行入围后随机。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "达标随机",
+            "callbackData": "lot:draw_cond:{chat_id}:a:t",
+            "action": "goto",
+            "target": "draw_condition",
+            "feedback": "选择群活跃抽奖开奖条件。"
+          }
+        ],
+        [
+          {
+            "label": "排名入围随机",
+            "callbackData": "lot:draw_cond:{chat_id}:a:r",
+            "action": "goto",
+            "target": "draw_condition",
+            "feedback": "选择群活跃排行抽奖开奖条件。"
+          }
+        ],
+        [
+          {
+            "label": "返回创建",
+            "callbackData": "lot:create_menu:{chat_id}",
+            "action": "back",
+            "target": "create_menu",
+            "feedback": "已返回创建菜单。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "draw_condition",
+      "title": "选择开奖条件",
+      "message": [
+        "选择满人开奖或定时开奖，之后进入分步创建向导。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "满人开奖",
+            "callbackData": "lot:create:{chat_id}:{lottery_type_code}:{selection_mode_code}:f",
             "action": "input",
             "target": "create_input",
-            "feedback": "请输入邀请门槛。"
+            "feedback": "进入抽奖创建向导。"
+          }
+        ],
+        [
+          {
+            "label": "定时开奖",
+            "callbackData": "lot:create:{chat_id}:{lottery_type_code}:{selection_mode_code}:d",
+            "action": "input",
+            "target": "create_input",
+            "feedback": "进入抽奖创建向导。"
           }
         ],
         [
@@ -304,36 +395,63 @@
     },
     {
       "id": "create_input",
-      "title": "输入抽奖内容",
+      "title": "创建抽奖向导",
       "message": [
-        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+        "管理员按提示依次填写抽奖名称、奖品名称、中奖人数、开奖参数、积分抽奖扣除的积分类型和数量、邀请/活跃门槛，最后确认内定中奖人后发布到群。"
       ],
       "keyboard": [
         [
           {
-            "label": "返回",
-            "callbackData": "lot:create_menu:{chat_id}",
+            "label": "积分",
+            "callbackData": "lot:wiz:{chat_id}:pt:0",
+            "action": "input",
+            "target": "create_input",
+            "feedback": "已选择主积分。"
+          }
+        ],
+        [
+          {
+            "label": "添加/修改内定中奖人",
+            "callbackData": "lot:wiz:{chat_id}:preset",
+            "action": "input",
+            "target": "create_input",
+            "feedback": "请输入 Telegram 数字用户 ID。"
+          }
+        ],
+        [
+          {
+            "label": "确认发布抽奖",
+            "callbackData": "lot:wiz:{chat_id}:publish",
+            "action": "confirm",
+            "target": "result",
+            "feedback": "抽奖已发布到群组。"
+          }
+        ],
+        [
+          {
+            "label": "取消创建",
+            "callbackData": "lottery:cancel:{chat_id}",
             "action": "back",
             "target": "create_menu",
-            "feedback": "已返回上一层。"
+            "feedback": "已取消创建。"
           }
         ]
       ],
       "input": {
         "type": "text",
-        "prompt": "发送奖品、人数和条件",
-        "placeholder": "奖品：会员；人数：3",
+        "prompt": "按 Bot 当前提示逐项回复；内定中奖人使用 Telegram 数字用户 ID",
+        "placeholder": "春季抽奖\n1USDT\n1\n100\n123456789,987654321",
         "clearCommand": "/clear",
         "examples": [
           {
-            "label": "抽奖内容",
-            "value": "奖品：会员；人数：3",
+            "label": "满人开奖向导输入",
+            "value": "春季抽奖|祝大家好运\n1USDT\n1\n100\n123456789",
             "target": "result",
-            "feedback": "已填入：抽奖内容。"
+            "feedback": "已按向导完成创建。"
           }
         ],
         "errors": [
-          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+          "单项输入不符合要求时，Bot 会停留在当前步骤并提示重新输入。"
         ]
       }
     },

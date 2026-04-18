@@ -7,6 +7,11 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from backend.features.automation.services.scheduled_message_service_validation import ScheduledMessageValidationMixin
+from backend.features.moderation.auto_reply_buttons import (
+    AUTO_REPLY_TEXT_TRIGGER,
+    normalize_auto_reply_button_rows,
+    sanitize_text_trigger_payload,
+)
 from backend.platform.db.runtime.session import Database
 from backend.platform.state.conversation_state_service import ConversationStateService
 from backend.platform.telegram.errors import answer_callback_query_safely
@@ -18,6 +23,7 @@ from backend.shared.ui.button_input import is_clear_button_input
 MAX_BUTTON_COLS = 4
 TEXT_INPUT_STATE = "button_editor_text_input"
 URL_INPUT_STATE = "button_editor_url_input"
+PAYLOAD_INPUT_STATE = "button_editor_payload_input"
 
 ButtonCell = dict[str, str] | None
 ButtonGrid = list[list[ButtonCell]]
@@ -47,13 +53,13 @@ class ButtonLayoutEditorService:
         return ScheduledMessageValidationMixin._normalize_button_url(str(value or "").strip())
 
     @classmethod
-    def to_grid(cls, buttons: list | None) -> ButtonGrid:
-        normalized = cls._normalize_existing_buttons(buttons or [])
+    def to_grid(cls, buttons: list | None, *, module_type: str | None = None) -> ButtonGrid:
+        normalized = cls._normalize_existing_buttons(buttons or [], module_type=module_type)
         if not normalized:
             return [[]]
         grid: ButtonGrid = []
         for row in normalized:
-            grid.append([{"text": item["text"], "url": item["url"]} for item in row])
+            grid.append([cls._cell_from_button(item) for item in row])
         return cls._trim_grid(grid)
 
     @classmethod
@@ -89,7 +95,7 @@ class ButtonLayoutEditorService:
         cell = row[col_index]
         if cell is None:
             return None
-        return {"text": str(cell.get("text", "")), "url": str(cell.get("url", ""))}
+        return cls._clone_cell(cell)
 
     @classmethod
     def update_button(
@@ -100,6 +106,8 @@ class ButtonLayoutEditorService:
         *,
         text: str | None = None,
         url: str | None = None,
+        action_type: str | None = None,
+        payload: str | None = None,
     ) -> ButtonGrid:
         draft = cls._clone_grid(grid)
         cell = cls.get_cell(draft, row_index, col_index)
@@ -109,6 +117,10 @@ class ButtonLayoutEditorService:
             cell["text"] = text
         if url is not None:
             cell["url"] = url
+        if action_type is not None:
+            cell["action_type"] = action_type
+        if payload is not None:
+            cell["payload"] = payload
         cls._set_cell(draft, row_index, col_index, cell)
         return cls._trim_grid(draft)
 
@@ -156,7 +168,12 @@ class ButtonLayoutEditorService:
         return trimmed, row_index, col_index, False
 
     @classmethod
-    def export_complete_buttons(cls, grid: ButtonGrid) -> list[list[dict[str, str]]]:
+    def export_complete_buttons(
+        cls,
+        grid: ButtonGrid,
+        *,
+        module_type: str | None = None,
+    ) -> list[list[dict[str, str]]]:
         rows: list[list[dict[str, str]]] = []
         for row in grid:
             exported_row: list[dict[str, str]] = []
@@ -165,6 +182,17 @@ class ButtonLayoutEditorService:
                     continue
                 text = str(cell.get("text", "")).strip()
                 raw_url = str(cell.get("url", "")).strip()
+                action_type = str(cell.get("action_type", "")).strip()
+                raw_payload = str(cell.get("payload", "")).strip()
+                if module_type == "auto_reply" and action_type == AUTO_REPLY_TEXT_TRIGGER:
+                    if not text or not raw_payload:
+                        continue
+                    exported_row.append({
+                        "text": cls.sanitize_button_text(text),
+                        "action_type": AUTO_REPLY_TEXT_TRIGGER,
+                        "payload": sanitize_text_trigger_payload(raw_payload),
+                    })
+                    continue
                 if not text or not raw_url:
                     continue
                 exported_row.append({
@@ -224,9 +252,17 @@ class ButtonLayoutEditorService:
         return len(draft), 0
 
     @classmethod
-    def _normalize_existing_buttons(cls, buttons: list) -> list[list[dict[str, str]]]:
+    def _normalize_existing_buttons(
+        cls,
+        buttons: list,
+        *,
+        module_type: str | None = None,
+    ) -> list[list[dict[str, str]]]:
         try:
-            normalized = ScheduledMessageValidationMixin.normalize_buttons_config(buttons)
+            if module_type == "auto_reply":
+                normalized = normalize_auto_reply_button_rows(buttons)
+            else:
+                normalized = ScheduledMessageValidationMixin.normalize_buttons_config(buttons)
         except ValidationError:
             normalized = []
             for raw_row in buttons if isinstance(buttons, list) else []:
@@ -237,6 +273,16 @@ class ButtonLayoutEditorService:
                     if not isinstance(raw_cell, dict):
                         continue
                     text = str(raw_cell.get("text", "")).strip()
+                    action_type = str(raw_cell.get("action_type", "")).strip()
+                    payload = str(raw_cell.get("payload", "")).strip()
+                    if module_type == "auto_reply" and action_type == AUTO_REPLY_TEXT_TRIGGER:
+                        if text and payload:
+                            row.append({
+                                "text": text,
+                                "action_type": AUTO_REPLY_TEXT_TRIGGER,
+                                "payload": payload,
+                            })
+                        continue
                     url = str(raw_cell.get("url", raw_cell.get("link", ""))).strip()
                     if not text or not url:
                         continue
@@ -257,9 +303,35 @@ class ButtonLayoutEditorService:
     @staticmethod
     def _clone_grid(grid: ButtonGrid) -> ButtonGrid:
         return [
-            [None if cell is None else {"text": str(cell.get("text", "")), "url": str(cell.get("url", ""))} for cell in row]
+            [None if cell is None else ButtonLayoutEditorService._clone_cell(cell) for cell in row]
             for row in grid
         ]
+
+    @staticmethod
+    def _clone_cell(cell: dict[str, str]) -> dict[str, str]:
+        cloned = {
+            "text": str(cell.get("text", "")),
+            "url": str(cell.get("url", "")),
+        }
+        action_type = str(cell.get("action_type", "")).strip()
+        payload = str(cell.get("payload", "")).strip()
+        if action_type:
+            cloned["action_type"] = action_type
+        if payload:
+            cloned["payload"] = payload
+        return cloned
+
+    @staticmethod
+    def _cell_from_button(item: dict[str, str]) -> dict[str, str]:
+        cell = {
+            "text": str(item.get("text", "")),
+            "url": str(item.get("url", "")),
+        }
+        if item.get("action_type") == AUTO_REPLY_TEXT_TRIGGER:
+            cell["action_type"] = AUTO_REPLY_TEXT_TRIGGER
+            cell["payload"] = str(item.get("payload", ""))
+            cell["url"] = ""
+        return cell
 
     @classmethod
     def _trim_grid(cls, grid: ButtonGrid) -> ButtonGrid:
@@ -436,7 +508,7 @@ async def _ensure_draft(
     key = _draft_key(editor_ctx)
     if key not in drafts:
         buttons = await _load_buttons_for_module(session, editor_ctx)
-        drafts[key] = ButtonLayoutEditorService.to_grid(buttons)
+        drafts[key] = ButtonLayoutEditorService.to_grid(buttons, module_type=editor_ctx.module_type)
     return ButtonLayoutEditorService._clone_grid(drafts[key])
 
 
@@ -455,7 +527,7 @@ async def _persist_draft(
     grid: ButtonGrid,
 ) -> None:
     _save_draft_to_memory(context, editor_ctx, grid)
-    buttons = ButtonLayoutEditorService.export_complete_buttons(grid)
+    buttons = ButtonLayoutEditorService.export_complete_buttons(grid, module_type=editor_ctx.module_type)
     await _save_buttons_for_module(session, editor_ctx, buttons)
 
 
@@ -490,17 +562,25 @@ def build_detail_keyboard(editor_ctx: ButtonEditorContext) -> InlineKeyboardMark
     row = editor_ctx.row_index or 0
     col = editor_ctx.col_index or 0
     prefix = f"btned"
-    return InlineKeyboardMarkup([
-        [
+    first_row = [
+        InlineKeyboardButton(
+            "编辑按钮文字",
+            callback_data=f"{prefix}:text:{editor_ctx.module_type}:{editor_ctx.target_chat_id}:{editor_ctx.entity_id}:{row}:{col}",
+        ),
+        InlineKeyboardButton(
+            "编辑跳转链接",
+            callback_data=f"{prefix}:url:{editor_ctx.module_type}:{editor_ctx.target_chat_id}:{editor_ctx.entity_id}:{row}:{col}",
+        ),
+    ]
+    rows = [first_row]
+    if editor_ctx.module_type == "auto_reply":
+        rows.append([
             InlineKeyboardButton(
-                "编辑按钮文字",
-                callback_data=f"{prefix}:text:{editor_ctx.module_type}:{editor_ctx.target_chat_id}:{editor_ctx.entity_id}:{row}:{col}",
-            ),
-            InlineKeyboardButton(
-                "编辑跳转链接",
-                callback_data=f"{prefix}:url:{editor_ctx.module_type}:{editor_ctx.target_chat_id}:{editor_ctx.entity_id}:{row}:{col}",
-            ),
-        ],
+                "编辑触发文字",
+                callback_data=f"{prefix}:payload:{editor_ctx.module_type}:{editor_ctx.target_chat_id}:{editor_ctx.entity_id}:{row}:{col}",
+            )
+        ])
+    rows.extend([
         [InlineKeyboardButton("⬆️ 上移", callback_data=f"{prefix}:move:{editor_ctx.module_type}:{editor_ctx.target_chat_id}:{editor_ctx.entity_id}:{row}:{col}:up")],
         [
             InlineKeyboardButton("⬅️ 左移", callback_data=f"{prefix}:move:{editor_ctx.module_type}:{editor_ctx.target_chat_id}:{editor_ctx.entity_id}:{row}:{col}:left"),
@@ -512,6 +592,7 @@ def build_detail_keyboard(editor_ctx: ButtonEditorContext) -> InlineKeyboardMark
         ],
         [InlineKeyboardButton("🔙 返回", callback_data=f"{prefix}:open:{editor_ctx.module_type}:{editor_ctx.target_chat_id}:{editor_ctx.entity_id}")],
     ])
+    return InlineKeyboardMarkup(rows)
 
 
 async def show_layout_menu(
@@ -569,9 +650,12 @@ async def show_button_detail(
         text = (
             f"{_module_title(editor_ctx.module_type)} | 编辑按钮信息\n\n"
             f"按钮文字：{cell.get('text') or '未配置'}\n"
-            f"按钮链接：{cell.get('url') or '未配置'}\n\n"
+            f"按钮类型：{'触发文字' if cell.get('action_type') == AUTO_REPLY_TEXT_TRIGGER else '跳转链接'}\n"
+            f"按钮链接：{cell.get('url') or '未配置'}\n"
+            f"触发文字：{cell.get('payload') or '未配置'}\n\n"
             "💡 为了按钮美观，建议按钮文字不超过 4 个字\n"
-            "🔗 链接请填写完整，自己最好点击访问一下，注意半角全角符号！"
+            "🔗 链接请填写完整；触发文字可填写“签到”“积分”“积分排行”等群内文字入口。\n"
+            "提示：填写“签到”时依赖积分中心开启签到；未开启时用户点击会提示“本群未开启签到”。"
         )
         keyboard = build_detail_keyboard(editor_ctx)
         if update.callback_query is not None:
@@ -659,8 +743,12 @@ async def button_layout_editor_callback(update: Update, context: ContextTypes.DE
                 await session.commit()
                 return
 
-            if action in {"text", "url"}:
-                state_type = TEXT_INPUT_STATE if action == "text" else URL_INPUT_STATE
+            if action in {"text", "url", "payload"}:
+                state_type = {
+                    "text": TEXT_INPUT_STATE,
+                    "url": URL_INPUT_STATE,
+                    "payload": PAYLOAD_INPUT_STATE,
+                }[action]
                 await ConversationStateService.start(
                     session,
                     chat_id=update.effective_chat.id,
@@ -675,7 +763,15 @@ async def button_layout_editor_callback(update: Update, context: ContextTypes.DE
                     },
                 )
                 await session.commit()
-                prompt = "👉 请输入按钮文字；发送“清空”可暂时留空。" if action == "text" else "👉 请输入跳转链接；发送“清空”可暂时留空。"
+                if action == "text":
+                    prompt = "👉 请输入按钮文字；发送“清空”可暂时留空。"
+                elif action == "payload":
+                    prompt = (
+                        "👉 请输入触发文字，例如：签到、积分、积分排行、积分商城。发送“清空”可暂时留空。\n\n"
+                        "提示：如果填写“签到”，需要先在积分中心开启签到；未开启时用户点击会提示“本群未开启签到”。"
+                    )
+                else:
+                    prompt = "👉 请输入跳转链接；发送“清空”可暂时留空。"
                 await q.edit_message_text(
                     text=f"{_module_title(editor_ctx.module_type)} | 编辑按钮信息\n\n{prompt}",
                     reply_markup=InlineKeyboardMarkup([[
@@ -792,6 +888,21 @@ async def handle_button_layout_editor_input(
                 int(editor_ctx.row_index or 0),
                 int(editor_ctx.col_index or 0),
                 url=value,
+                action_type="",
+                payload="",
+            )
+        elif state.state_type == PAYLOAD_INPUT_STATE:
+            if editor_ctx.module_type != "auto_reply":
+                await update.effective_message.reply_text("当前模块不支持触发文字。")
+                return
+            value = "" if is_clear_button_input(normalized_text) else sanitize_text_trigger_payload(normalized_text)
+            next_grid = ButtonLayoutEditorService.update_button(
+                draft,
+                int(editor_ctx.row_index or 0),
+                int(editor_ctx.col_index or 0),
+                url="",
+                action_type=AUTO_REPLY_TEXT_TRIGGER if value else "",
+                payload=value,
             )
         else:
             await update.effective_message.reply_text("当前状态不支持按钮编辑。")

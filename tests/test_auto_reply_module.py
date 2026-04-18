@@ -6,6 +6,7 @@ import pytest
 from telegram.error import BadRequest
 
 from backend.features.moderation import auto_reply_handler
+from backend.features.moderation import auto_reply_button_actions
 from backend.features.moderation.auto_reply_detail_actions import auto_reply_preview_action
 from backend.features.moderation.auto_reply_handler import (
     _extract_auto_reply_list_page,
@@ -124,6 +125,28 @@ async def test_create_auto_reply_rule_sets_sort_and_delete_config(monkeypatch) -
 
 
 @pytest.mark.asyncio
+async def test_create_auto_reply_rule_accepts_text_trigger_button(monkeypatch) -> None:
+    session = _FakeSession()
+
+    async def fake_get_next_sort_order(session, chat_id: int) -> int:
+        return 1
+
+    monkeypatch.setattr(auto_reply_service, "get_next_sort_order", fake_get_next_sort_order)
+
+    result = await auto_reply_service.create_auto_reply_rule(
+        session,
+        chat_id=-100123,
+        created_by_user_id=42,
+        keywords=["签到入口"],
+        reply_content="点击下面按钮签到",
+        buttons=[[{"text": "签到", "action_type": "text_trigger", "payload": "签到"}]],
+    )
+
+    assert result.success is True
+    assert result.entity.buttons == [[{"text": "签到", "action_type": "text_trigger", "payload": "签到"}]]
+
+
+@pytest.mark.asyncio
 async def test_create_auto_reply_rule_rejects_negative_delete_delay() -> None:
     session = _FakeSession()
 
@@ -173,6 +196,34 @@ async def test_update_auto_reply_rule_uses_chat_scope_when_provided(monkeypatch)
 
     assert result is rule
     assert updates == [{"keywords": ["hello", "world"], "reply_content": "new reply"}]
+
+
+@pytest.mark.asyncio
+async def test_update_auto_reply_rule_accepts_text_trigger_button(monkeypatch) -> None:
+    session = _FakeSession()
+    rule = SimpleNamespace(id=7, chat_id=-100123, buttons=[])
+    updates: list[dict] = []
+
+    async def fake_get_scoped_rule(session, chat_id: int, rule_id: int):
+        return rule
+
+    async def fake_update_entity(session, entity, payload):
+        updates.append(payload)
+        for key, value in payload.items():
+            setattr(entity, key, value)
+
+    monkeypatch.setattr(auto_reply_service, "get_auto_reply_rule_in_chat", fake_get_scoped_rule)
+    monkeypatch.setattr(auto_reply_service.ServiceBase, "_update_entity", fake_update_entity)
+
+    result = await auto_reply_service.update_auto_reply_rule(
+        session,
+        7,
+        chat_id=-100123,
+        buttons=[[{"text": "签到", "action_type": "text_trigger", "payload": "签到"}]],
+    )
+
+    assert result is rule
+    assert updates == [{"buttons": [[{"text": "签到", "action_type": "text_trigger", "payload": "签到"}]]}]
 
 
 @pytest.mark.asyncio
@@ -388,6 +439,20 @@ def test_parse_auto_reply_buttons_input_wraps_json_rows_to_four_buttons() -> Non
     ]
 
 
+def test_parse_auto_reply_buttons_input_accepts_text_trigger_json() -> None:
+    buttons = _parse_auto_reply_buttons_input(
+        '[['
+        '{"text":"官网","url":"https://example.com"},'
+        '{"text":"签到","action_type":"text_trigger","payload":"签到"}'
+        ']]'
+    )
+
+    assert buttons == [[
+        {"text": "官网", "url": "https://example.com"},
+        {"text": "签到", "action_type": "text_trigger", "payload": "签到"},
+    ]]
+
+
 def test_build_auto_reply_markup_preserves_url_button_rows() -> None:
     rule = SimpleNamespace(
         buttons=[
@@ -405,6 +470,23 @@ def test_build_auto_reply_markup_preserves_url_button_rows() -> None:
     assert [[button.text for button in row] for row in markup.inline_keyboard] == [["官网", "帮助"], ["联系"]]
     assert markup.inline_keyboard[0][0].url == "https://example.com"
     assert markup.inline_keyboard[1][0].url == "https://t.me/demo"
+
+
+def test_build_auto_reply_markup_renders_text_trigger_callback() -> None:
+    rule = SimpleNamespace(
+        id=9,
+        chat_id=-100456,
+        buttons=[[
+            {"text": "官网", "url": "https://example.com"},
+            {"text": "签到", "action_type": "text_trigger", "payload": "签到"},
+        ]],
+    )
+
+    markup = build_auto_reply_markup(rule)
+
+    assert markup is not None
+    assert markup.inline_keyboard[0][0].url == "https://example.com"
+    assert markup.inline_keyboard[0][1].callback_data == "arbtn:text:-100456:9:0:1"
 
 
 def test_build_auto_reply_markup_wraps_legacy_rows_to_four_buttons() -> None:
@@ -441,6 +523,64 @@ async def test_send_auto_reply_payload_sends_url_buttons() -> None:
     markup = bot.calls[0][1]["reply_markup"]
     assert markup.inline_keyboard[0][0].text == "官网"
     assert markup.inline_keyboard[0][0].url == "https://example.com"
+
+
+@pytest.mark.asyncio
+async def test_auto_reply_text_button_callback_runs_points_trigger(monkeypatch) -> None:
+    session = _FakeSession()
+    q = _FakeCallbackQuery("arbtn:text:-100456:9:0:0")
+    message = SimpleNamespace(replies=[], reply_text=lambda text, **kwargs: None)
+    update = SimpleNamespace(
+        callback_query=q,
+        effective_chat=SimpleNamespace(id=-100456, type="supergroup", title="群"),
+        effective_user=SimpleNamespace(id=42),
+        effective_message=message,
+    )
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(session)}))
+    rule = SimpleNamespace(
+        id=9,
+        chat_id=-100456,
+        buttons=[[{"text": "签到", "action_type": "text_trigger", "payload": "签到"}]],
+    )
+    triggers: list[str] = []
+
+    async def fake_get_rule(session, chat_id: int, rule_id: int):
+        assert (chat_id, rule_id) == (-100456, 9)
+        return rule
+
+    async def fake_points_trigger(update, context, trigger_text: str):
+        triggers.append((update.effective_user.id, trigger_text))
+        return True
+
+    monkeypatch.setattr(auto_reply_button_actions, "get_auto_reply_rule_in_chat", fake_get_rule)
+    monkeypatch.setattr(auto_reply_button_actions, "points_text_trigger_handler", fake_points_trigger)
+
+    await auto_reply_button_actions.auto_reply_text_button_callback(update, context)
+
+    assert triggers == [(42, "签到")]
+    assert q.answers == [("已触发：签到", False)]
+
+
+@pytest.mark.asyncio
+async def test_auto_reply_text_button_callback_reports_stale_button(monkeypatch) -> None:
+    session = _FakeSession()
+    q = _FakeCallbackQuery("arbtn:text:-100456:9:0:0")
+    update = SimpleNamespace(
+        callback_query=q,
+        effective_chat=SimpleNamespace(id=-100456, type="supergroup", title="群"),
+        effective_user=SimpleNamespace(id=42),
+        effective_message=SimpleNamespace(),
+    )
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(session)}))
+
+    async def fake_get_rule(session, chat_id: int, rule_id: int):
+        return None
+
+    monkeypatch.setattr(auto_reply_button_actions, "get_auto_reply_rule_in_chat", fake_get_rule)
+
+    await auto_reply_button_actions.auto_reply_text_button_callback(update, context)
+
+    assert q.answers == [("按钮已失效", True)]
 
 
 @pytest.mark.asyncio

@@ -11,6 +11,7 @@ class ParsedLotteryConfig:
     title: str
     description: str | None
     draw_time: dt.datetime
+    draw_trigger: str
     min_points: int
     participation_cost: int
     max_participants: int
@@ -20,7 +21,10 @@ class ParsedLotteryConfig:
     required_activity_count: int
     finalist_limit: int
     selection_mode: str
+    preset_winner_ids: list[int]
     prizes: list[dict]
+    point_type_id: int | None = None
+    point_type_name: str | None = None
 
 
 @dataclass

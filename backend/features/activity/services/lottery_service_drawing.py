@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import html
 import random
 
 import structlog
@@ -15,6 +16,20 @@ from backend.platform.db.schema.models.expansion import EngagementChatStat
 from backend.platform.db.schema.models.core import InviteTracking
 
 log = structlog.get_logger(__name__)
+
+
+def _build_prize_slots(prizes: list[dict]) -> list[dict]:
+    prize_list = []
+    for prize in prizes:
+        for _ in range(prize.get("quantity", 1)):
+            prize_list.append(
+                {
+                    "prize_index": len(prize_list),
+                    "name": prize["name"],
+                    "points_reward": prize.get("points_reward", 0),
+                }
+            )
+    return prize_list
 
 
 async def build_ranked_finalists(session: AsyncSession, lottery: Lottery) -> list[LotteryParticipant]:
@@ -84,34 +99,50 @@ async def perform_random_draw(session: AsyncSession, lottery: Lottery) -> list[L
     qualification_rules = lottery.qualification_rules or {}
     if qualification_rules.get("selection_mode") == "ranking_random" and lottery.lottery_type in {"invite", "activity"}:
         participants = await build_ranked_finalists(session, lottery)
-    if not participants:
-        return []
 
-    user_ids = [p.user_id for p in participants]
-    result = await session.execute(select(TgUser).where(TgUser.id.in_(user_ids)))
-    users = {u.id: u for u in result.scalars().all()}
-
-    prize_list = []
-    for prize in lottery.prizes:
-        for _ in range(prize.get("quantity", 1)):
-            prize_list.append(
-                {
-                    "prize_index": len(prize_list),
-                    "name": prize["name"],
-                    "points_reward": prize.get("points_reward", 0),
-                }
-            )
+    prize_list = _build_prize_slots(lottery.prizes or [])
+    preset_winner_ids = []
+    for user_id in qualification_rules.get("preset_winner_ids") or qualification_rules.get("fixed_winner_ids") or []:
+        try:
+            user_id_int = int(user_id)
+        except (TypeError, ValueError):
+            continue
+        if user_id_int > 0 and user_id_int not in preset_winner_ids:
+            preset_winner_ids.append(user_id_int)
     if not prize_list:
+        return []
+    if not participants and not preset_winner_ids:
         return []
 
     winners = []
+    used_user_ids: set[int] = set()
+    remaining_prizes = prize_list.copy()
+    if preset_winner_ids:
+        from backend.shared.services.user_service import ensure_user
+
+        for user_id in preset_winner_ids:
+            if not remaining_prizes:
+                break
+            prize = remaining_prizes.pop(0)
+            await ensure_user(session, user_id, None, None, None, None)
+            winner = LotteryWinner(
+                lottery_id=lottery.id,
+                user_id=user_id,
+                prize_name=prize["name"],
+                prize_index=prize["prize_index"],
+                points_reward=prize["points_reward"],
+            )
+            session.add(winner)
+            winners.append(winner)
+            used_user_ids.add(user_id)
+
     available_participants = participants.copy()
+    available_participants = [p for p in available_participants if p.user_id not in used_user_ids]
     random.shuffle(available_participants)
-    for prize in prize_list:
+    for prize in remaining_prizes:
         if not available_participants:
             break
         participant = available_participants.pop()
-        user = users.get(participant.user_id)
         winner = LotteryWinner(
             lottery_id=lottery.id,
             user_id=participant.user_id,
@@ -126,18 +157,20 @@ async def perform_random_draw(session: AsyncSession, lottery: Lottery) -> list[L
 
 
 def generate_lottery_announcement(lottery: Lottery, winners: list[LotteryWinner], users: dict[int, TgUser]) -> str:
-    text = f"🎉 {lottery_type_label(lottery.lottery_type)}【{lottery.title}】开奖结果\n\n"
+    text = f"🎉 {html.escape(lottery_type_label(lottery.lottery_type))}【{html.escape(lottery.title)}】开奖结果\n\n"
     text += "🎁 中奖名单：\n"
     for winner in winners:
         user = users.get(winner.user_id)
+        prize_name = html.escape(winner.prize_name)
         if user:
-            mention = f"[{user.full_name or user.username or '用户'}](tg://user?id={winner.user_id})"
-            text += f"• {winner.prize_name}: {mention}"
+            label = html.escape(user.full_name or user.username or "用户")
+            mention = f'<a href="tg://user?id={winner.user_id}">{label}</a>'
+            text += f"• {prize_name}: {mention}"
             if winner.points_reward > 0:
                 text += f" （+{winner.points_reward}积分）"
             text += "\n"
         else:
-            text += f"• {winner.prize_name}: 用户{winner.user_id}\n"
+            text += f"• {prize_name}: 用户{winner.user_id}\n"
     return text
 
 

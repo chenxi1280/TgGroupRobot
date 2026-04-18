@@ -15,6 +15,7 @@ from backend.features.activity.services.lottery_service import (
     get_or_create_lottery_setting,
 )
 from backend.features.activity.ui.lottery import (
+    lottery_draw_condition_keyboard,
     lottery_menu_keyboard,
     lottery_mode_keyboard,
     lottery_type_keyboard,
@@ -111,6 +112,32 @@ class LotteryMenuMixin:
             reply_markup=lottery_mode_keyboard(target_chat_id, lottery_type),
         )
 
+    async def show_draw_condition_menu(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        target_chat_id: int,
+        lottery_type: str,
+        selection_mode: str,
+    ) -> None:
+        mode_label = "🏆 排名入围随机" if selection_mode == "ranking_random" else "🎯 达标随机"
+        text = "\n".join(
+            [
+                f"{_lottery_type_title(lottery_type)} | {mode_label}",
+                "",
+                "请选择开奖条件：",
+                *([] if selection_mode == "ranking_random" else ["• 满人开奖：参与人数达到配置的最大人数后立即开奖"]),
+                "• 定时开奖：到配置的开奖时间后截止并开奖",
+                "",
+                "可在配置里填写内定中奖人。",
+            ]
+        )
+        await self.message_helper.safe_edit(
+            update,
+            text=text,
+            reply_markup=lottery_draw_condition_keyboard(target_chat_id, lottery_type, selection_mode),
+        )
+
     async def show_activity_list(
         self,
         update: Update,
@@ -145,10 +172,11 @@ class LotteryMenuMixin:
                 rules = lottery.qualification_rules or {}
                 mode = rules.get("selection_mode", "threshold_random")
                 mode_label = "🏆 排名入围随机" if mode == "ranking_random" else "🎯 达标随机"
+                trigger_label = "满人开奖" if rules.get("draw_trigger") == "full_participants" else lottery.draw_time.strftime("%m-%d %H:%M")
                 lines.append(
                     f"• #{lottery.id} {_lottery_type_title(lottery.lottery_type)} | "
                     f"{mode_label} | {lottery.title} | {lottery.status} | "
-                    f"{lottery.draw_time.strftime('%m-%d %H:%M')}"
+                    f"{trigger_label}"
                 )
 
         keyboard_rows = []
@@ -242,6 +270,8 @@ class LotteryMenuMixin:
 
         rules = lottery.qualification_rules or {}
         selection_mode = rules.get("selection_mode", "threshold_random")
+        draw_trigger = rules.get("draw_trigger", "time_deadline")
+        trigger_label = "👥 满人开奖" if draw_trigger == "full_participants" else "⏰ 定时开奖"
         lines = [
             f"{_lottery_type_title(lottery.lottery_type)} | 活动详情",
             "",
@@ -249,10 +279,12 @@ class LotteryMenuMixin:
             f"📢 标题：{lottery.title}",
             f"📌 状态：{lottery.status}",
             f"🎛 玩法：{'🏆 排名入围随机' if selection_mode == 'ranking_random' else '🎯 达标随机'}",
-            f"🕒 开奖时间：{lottery.draw_time.strftime('%Y-%m-%d %H:%M')}",
+            f"🎚 开奖条件：{trigger_label}",
             f"👥 参与人数：{participant_count}",
             f"🎁 奖品数：{sum(int(item.get('quantity', 1)) for item in (lottery.prizes or []))}",
         ]
+        if draw_trigger != "full_participants":
+            lines.append(f"🕒 截止开奖时间：{lottery.draw_time.strftime('%Y-%m-%d %H:%M')}")
         if lottery.min_points > 0:
             lines.append(f"💰 最低积分：{lottery.min_points}")
         if lottery.participation_cost > 0:
@@ -263,6 +295,8 @@ class LotteryMenuMixin:
             lines.append(f"🔥 活跃门槛：{rules['required_activity_count']}（最近 {rules.get('window_days', 7)} 天）")
         if selection_mode == "ranking_random":
             lines.append(f"🏆 入围人数：前 {int(rules.get('finalist_limit') or 0)} 名")
+        if rules.get("preset_winner_ids"):
+            lines.append(f"🔒 内定中奖人：{len(rules.get('preset_winner_ids') or [])} 人")
 
         keyboard_rows = []
         if lottery.status == "pending":

@@ -18,7 +18,7 @@ class LotteryTask(ScheduledTask):
 
     async def execute(self, app) -> None:
         """执行开奖逻辑"""
-        from sqlalchemy import select
+        from sqlalchemy import or_, select
         from backend.platform.db.schema.models.core import Lottery, TgUser
         from backend.features.activity.services.lottery_service import (
             perform_random_draw,
@@ -36,7 +36,11 @@ class LotteryTask(ScheduledTask):
             now = dt.datetime.now(dt.UTC)
             stmt = select(Lottery).where(
                 Lottery.status == "pending",
-                Lottery.draw_time <= now
+                Lottery.draw_time <= now,
+                or_(
+                    Lottery.qualification_rules["draw_trigger"].astext.is_(None),
+                    Lottery.qualification_rules["draw_trigger"].astext == "time_deadline",
+                ),
             )
             result = await session.execute(stmt)
             lotteries = result.scalars().all()
@@ -53,22 +57,15 @@ class LotteryTask(ScheduledTask):
                         user_result = await session.execute(user_stmt)
                         users = {u.id: u for u in user_result.scalars().all()}
 
-                        # 发放积分奖励
                         await distribute_lottery_rewards(session, lottery, winners)
 
-                        # 更新抽奖状态
-                        lottery.status = "completed"
-                        lottery.drawn_at = now
-
-                        # 生成开奖公告
                         announcement = generate_lottery_announcement(lottery, winners, users)
 
-                        # 发送开奖通知到群组
                         try:
                             await app.bot.send_message(
                                 chat_id=lottery.chat_id,
                                 text=announcement,
-                                parse_mode="Markdown"
+                                parse_mode="HTML"
                             )
                             log.info(
                                 "auto_draw_lottery_success",
@@ -78,11 +75,13 @@ class LotteryTask(ScheduledTask):
                             )
                         except Exception as e:
                             log.error("auto_draw_announcement_failed", lottery_id=lottery.id, error=str(e))
+                            await session.rollback()
+                            continue
 
-                    else:
-                        # 没有参与者，标记为已完成
                         lottery.status = "completed"
                         lottery.drawn_at = now
+
+                    else:
                         try:
                             await app.bot.send_message(
                                 chat_id=lottery.chat_id,
@@ -90,6 +89,10 @@ class LotteryTask(ScheduledTask):
                             )
                         except Exception as e:
                             log.error("auto_draw_no_participants_failed", lottery_id=lottery.id, error=str(e))
+                            await session.rollback()
+                            continue
+                        lottery.status = "completed"
+                        lottery.drawn_at = now
 
                     await session.commit()
                     log.info("auto_draw_lottery_success", lottery_id=lottery.id)

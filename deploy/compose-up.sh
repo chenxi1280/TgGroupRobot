@@ -111,11 +111,14 @@ docker_login_ghcr
 echo "==> Pulling bot image"
 compose pull bot
 
-echo "==> Pulling docs-site static artifact image"
-docker pull "$TGGROUPROBOT_DOCS_SITE_IMAGE"
+echo "==> Ensuring application database exists"
+bash "$SCRIPT_DIR/ensure-database.sh"
 
 echo "==> Applying project schema"
 bash "$SCRIPT_DIR/apply-schema.sh"
+
+echo "==> Pulling docs-site static artifact image"
+docker pull "$TGGROUPROBOT_DOCS_SITE_IMAGE"
 
 publish_static_from_image \
   "$TGGROUPROBOT_DOCS_SITE_IMAGE" \

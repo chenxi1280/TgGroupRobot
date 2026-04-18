@@ -165,7 +165,7 @@ def build_private_config_handlers() -> dict[str, ConfigHandler]:
     )
     _register_states(
         handlers,
-        ["button_editor_text_input", "button_editor_url_input"],
+        ["button_editor_text_input", "button_editor_url_input", "button_editor_payload_input"],
         full_args_handler("backend.shared.button_layout_editor", "handle_button_layout_editor_input"),
     )
     _register_states(

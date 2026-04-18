@@ -202,8 +202,8 @@ async def manual_draw_complete_callback_impl(
         lottery.drawn_at = dt.datetime.now(dt.UTC)
         announcement = generate_lottery_announcement_fn(lottery, winners_list, users)
         await clear_user_state_fn(session, chat.id, user.id)
+        await handler.message_helper.safe_edit(update, text=announcement, parse_mode="HTML")
         await session.commit()
-        await handler.message_helper.safe_edit(update, text=announcement, parse_mode="Markdown")
 
 
 async def manual_draw_winner_page_callback_impl(

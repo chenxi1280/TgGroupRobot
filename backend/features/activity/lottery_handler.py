@@ -9,13 +9,14 @@ from backend.features.activity.lottery_admin_callbacks import (
     lottery_admin_draw_callback_impl,
     lottery_create_menu_callback_impl,
     lottery_detail_callback_impl,
+    lottery_draw_condition_callback_impl,
     lottery_list_callback_impl,
     lottery_menu_callback_impl,
     lottery_mode_menu_callback_impl,
     lottery_setting_toggle_callback_impl,
     lottery_settings_callback_impl,
 )
-from backend.features.activity.lottery_creation import LotteryCreationMixin
+from backend.features.activity.lottery_creation import LotteryCreationMixin, handle_lottery_wizard_callback
 from backend.features.activity.lottery_drawing import LotteryDrawMixin
 from backend.features.activity.lottery_manual_draw_callbacks import (
     manual_draw_complete_callback_impl,
@@ -56,6 +57,7 @@ from backend.features.activity.services.lottery_service import (
 )
 from backend.features.activity.ui.lottery import (
     lottery_menu_keyboard,
+    lottery_draw_condition_keyboard,
     lottery_mode_keyboard,
     lottery_type_keyboard,
     manual_draw_prize_keyboard,
@@ -105,6 +107,10 @@ async def lottery_mode_menu_callback(update: Update, context: ContextTypes.DEFAU
     await lottery_mode_menu_callback_impl(update, context, handler=_lottery_handler)
 
 
+async def lottery_draw_condition_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await lottery_draw_condition_callback_impl(update, context, handler=_lottery_handler)
+
+
 async def lottery_list_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await lottery_list_callback_impl(update, context, handler=_lottery_handler)
 
@@ -132,6 +138,10 @@ async def lottery_admin_draw_callback(update: Update, context: ContextTypes.DEFA
 
 async def lottery_create_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await lottery_create_start_impl(update, context, handler=_lottery_handler, is_user_admin_fn=is_user_admin)
+
+
+async def lottery_wizard_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await handle_lottery_wizard_callback(update, context)
 
 
 async def lottery_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

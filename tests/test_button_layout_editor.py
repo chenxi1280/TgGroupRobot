@@ -9,6 +9,7 @@ from backend.shared.button_layout_editor import (
     ButtonEditorContext,
     ButtonLayoutEditorService,
     button_layout_editor_callback,
+    build_detail_keyboard,
     build_layout_keyboard,
     handle_button_layout_editor_input,
 )
@@ -90,6 +91,30 @@ def test_button_layout_editor_wraps_existing_rows_to_four_buttons() -> None:
 
     assert ButtonLayoutEditorService.get_cell(grid, 0, 3) == {"text": "D", "url": "https://d.com"}
     assert ButtonLayoutEditorService.get_cell(grid, 1, 0) == {"text": "E", "url": "https://e.com"}
+
+
+def test_button_layout_editor_preserves_auto_reply_text_trigger() -> None:
+    grid = ButtonLayoutEditorService.to_grid(
+        [[{"text": "签到", "action_type": "text_trigger", "payload": "签到"}]],
+        module_type="auto_reply",
+    )
+
+    assert ButtonLayoutEditorService.get_cell(grid, 0, 0) == {
+        "text": "签到",
+        "url": "",
+        "action_type": "text_trigger",
+        "payload": "签到",
+    }
+    assert ButtonLayoutEditorService.export_complete_buttons(grid, module_type="auto_reply") == [[
+        {"text": "签到", "action_type": "text_trigger", "payload": "签到"},
+    ]]
+
+
+def test_button_layout_editor_auto_reply_detail_exposes_trigger_editor() -> None:
+    keyboard = build_detail_keyboard(ButtonEditorContext("auto_reply", -1001, 10, 0, 0))
+
+    assert keyboard.inline_keyboard[1][0].text == "编辑触发文字"
+    assert keyboard.inline_keyboard[1][0].callback_data == "btned:payload:auto_reply:-1001:10:0:0"
 
 
 def test_button_layout_editor_move_supports_horizontal_and_vertical() -> None:
@@ -252,3 +277,55 @@ async def test_button_layout_editor_input_persists_complete_buttons(monkeypatch,
 
     assert saved == [[{"text": "新按钮", "url": "https://t.me/demo"}]]
     assert shown and shown[0].module_type == module_type
+
+
+@pytest.mark.asyncio
+async def test_button_layout_editor_input_saves_auto_reply_text_trigger(monkeypatch) -> None:
+    saved: list[list[dict[str, str]]] = []
+
+    async def fake_save_buttons(session, editor_ctx, buttons):
+        saved[:] = buttons
+
+    async def fake_clear(session, chat_id: int, user_id: int):
+        return None
+
+    async def fake_show_button_detail(update, context, editor_ctx, *, session=None):
+        return None
+
+    async def fake_require_manage(_context, chat_id: int, user_id: int, capability: str = "manage"):
+        return True, None
+
+    monkeypatch.setattr(button_layout_editor, "_save_buttons_for_module", fake_save_buttons)
+    monkeypatch.setattr(button_layout_editor.ConversationStateService, "clear", fake_clear)
+    monkeypatch.setattr(button_layout_editor, "show_button_detail", fake_show_button_detail)
+    monkeypatch.setattr(button_layout_editor.PermissionPolicyService, "require_manage", fake_require_manage)
+
+    state = SimpleNamespace(
+        state_type="button_editor_payload_input",
+        chat_id=10001,
+        state_data={
+            "module_type": "auto_reply",
+            "target_chat_id": -1001,
+            "entity_id": 10,
+            "row_index": 0,
+            "col_index": 0,
+        },
+    )
+    context = SimpleNamespace(
+        user_data={
+            "button_editor_drafts": {
+                "auto_reply:-1001:10": [[{"text": "签到", "url": "https://example.com"}]],
+            }
+        },
+    )
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=42),
+        effective_message=SimpleNamespace(reply_text=lambda text: None),
+    )
+
+    async def fake_commit():
+        return None
+
+    await handle_button_layout_editor_input(update, context, SimpleNamespace(commit=fake_commit), state, "签到")
+
+    assert saved == [[{"text": "签到", "action_type": "text_trigger", "payload": "签到"}]]

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 import re
+from types import SimpleNamespace
 from telegram import Update
 from telegram.ext import ContextTypes
 from sqlalchemy.orm import selectinload
@@ -124,9 +125,9 @@ class PointsHandler(BaseHandler):
         self,
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
-    ) -> None:
+    ) -> bool:
         """处理发言积分"""
-        await handle_message_points_action(
+        return await handle_message_points_action(
             update,
             context,
             ensure_chat_func=ensure_chat,
@@ -146,6 +147,45 @@ class PointsHandler(BaseHandler):
             required_level_permission_func=_required_level_permission,
             should_send_level_block_notice_func=self._should_send_level_block_notice,
             show_mall_catalog_func=self.show_mall_catalog,
+        )
+
+    async def handle_text_trigger(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        trigger_text: str,
+    ) -> bool:
+        """按点击者身份执行安全的群文字触发能力。"""
+        trigger_update = SimpleNamespace(
+            callback_query=None,
+            effective_chat=update.effective_chat,
+            effective_user=update.effective_user,
+            effective_message=update.effective_message,
+        )
+        return await handle_message_points_action(
+            trigger_update,
+            context,
+            ensure_chat_func=ensure_chat,
+            ensure_user_func=ensure_user,
+            get_chat_settings_func=get_chat_settings,
+            points_extended_service=PointsExtendedService,
+            change_points_func=change_points,
+            sign_in_func=sign_in,
+            get_balance_func=get_balance,
+            get_user_rank_func=get_user_rank,
+            get_leaderboard_func=get_leaderboard,
+            format_sign_in_success_message_func=format_sign_in_success_message,
+            format_sign_in_already_message_func=format_sign_in_already_message,
+            format_balance_message_func=format_balance_message,
+            format_leaderboard_message_func=format_leaderboard_message,
+            add_message_points_func=add_message_points,
+            required_level_permission_func=_required_level_permission,
+            should_send_level_block_notice_func=self._should_send_level_block_notice,
+            show_mall_catalog_func=self.show_mall_catalog,
+            text_override=trigger_text,
+            allow_admin_adjustment=False,
+            allow_level_checks=False,
+            allow_message_points=False,
         )
 
     async def show_mall_catalog(
@@ -211,9 +251,13 @@ async def points_rank_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     await _points_handler.handle_leaderboard(update, context)
 
 
-async def message_points_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def message_points_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     """发言积分处理器"""
-    await _points_handler.handle_message_points(update, context)
+    return await _points_handler.handle_message_points(update, context)
+
+
+async def points_text_trigger_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, trigger_text: str) -> bool:
+    return await _points_handler.handle_text_trigger(update, context, trigger_text)
 
 
 async def mall_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

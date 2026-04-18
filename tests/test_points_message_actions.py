@@ -145,7 +145,7 @@ async def _call(update, session: _Session, settings, **overrides):
     )
     deps.update(overrides)
     context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db(session)}))
-    await handle_message_points_action(update, context, **deps)
+    return await handle_message_points_action(update, context, **deps)
 
 
 @pytest.mark.asyncio
@@ -156,10 +156,11 @@ async def test_plain_sign_text_triggers_sign_in() -> None:
     async def sign_in(*args, **kwargs):
         return SimpleNamespace(success=True, balance=5, consecutive_days=1, bonus_points=0)
 
-    await _call(update, session, _settings(), sign_in_func=sign_in)
+    handled = await _call(update, session, _settings(), sign_in_func=sign_in)
 
     assert replies == ["签到成功"]
     assert session.commits == 1
+    assert handled is True
 
 
 @pytest.mark.asyncio
@@ -218,4 +219,61 @@ async def test_reply_admin_deduct_points_reports_insufficient_balance() -> None:
     await _call(update, session, _settings(), change_points_func=change_points)
 
     assert replies == ["目标用户积分不足，无法扣除。"]
+    assert session.commits == 1
+
+
+@pytest.mark.asyncio
+async def test_text_trigger_sign_does_not_add_message_points() -> None:
+    session = _Session()
+    update, replies = _update("原自动回复消息")
+    added = False
+
+    async def add_message_points(*args, **kwargs):
+        nonlocal added
+        added = True
+
+    async def sign_in(*args, **kwargs):
+        return SimpleNamespace(success=True, balance=5, consecutive_days=1, bonus_points=0)
+
+    handled = await _call(
+        update,
+        session,
+        _settings(),
+        sign_in_func=sign_in,
+        add_message_points_func=add_message_points,
+        text_override="签到",
+        allow_admin_adjustment=False,
+        allow_level_checks=False,
+        allow_message_points=False,
+    )
+
+    assert handled is True
+    assert replies == ["签到成功"]
+    assert added is False
+
+
+@pytest.mark.asyncio
+async def test_text_trigger_unknown_returns_false_without_message_points() -> None:
+    session = _Session()
+    update, replies = _update("原自动回复消息")
+    added = False
+
+    async def add_message_points(*args, **kwargs):
+        nonlocal added
+        added = True
+
+    handled = await _call(
+        update,
+        session,
+        _settings(),
+        add_message_points_func=add_message_points,
+        text_override="未支持入口",
+        allow_admin_adjustment=False,
+        allow_level_checks=False,
+        allow_message_points=False,
+    )
+
+    assert handled is False
+    assert replies == []
+    assert added is False
     assert session.commits == 1

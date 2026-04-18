@@ -136,17 +136,21 @@ async def handle_message_points_action(
     should_send_level_block_notice_func,
     show_mall_catalog_func,
     require_manage_func=PermissionPolicyService.require_manage,
-) -> None:
+    text_override: str | None = None,
+    allow_admin_adjustment: bool = True,
+    allow_level_checks: bool = True,
+    allow_message_points: bool = True,
+) -> bool:
     if update.effective_chat is None or update.effective_user is None or update.effective_message is None:
-        return
+        return False
     if update.effective_chat.type not in ["group", "supergroup"]:
-        return
+        return False
 
     db: Database = context.application.bot_data["db"]
     chat = update.effective_chat
     user = update.effective_user
     message = update.effective_message
-    text = (message.text or "").strip()
+    text = (text_override if text_override is not None else message.text or "").strip()
 
     async with db.session_factory() as session:
         await ensure_chat_func(session, chat_id=chat.id, chat_type=chat.type, title=chat.title)
@@ -160,20 +164,21 @@ async def handle_message_points_action(
         )
         settings = await get_chat_settings_func(session, chat.id)
 
-        handled_adjustment = await _handle_admin_adjustment(
-            update,
-            context,
-            session,
-            chat=chat,
-            operator=user,
-            message=message,
-            text=text,
-            ensure_user_func=ensure_user_func,
-            change_points_func=change_points_func,
-            require_manage_func=require_manage_func,
-        )
-        if handled_adjustment:
-            return
+        if allow_admin_adjustment:
+            handled_adjustment = await _handle_admin_adjustment(
+                update,
+                context,
+                session,
+                chat=chat,
+                operator=user,
+                message=message,
+                text=text,
+                ensure_user_func=ensure_user_func,
+                change_points_func=change_points_func,
+                require_manage_func=require_manage_func,
+            )
+            if handled_adjustment:
+                return True
 
         if text == "签到":
             sign_enabled = bool(getattr(settings, "sign_enabled", False))
@@ -181,7 +186,7 @@ async def handle_message_points_action(
             if not sign_enabled:
                 await session.commit()
                 await update.effective_message.reply_text("本群未开启签到。")
-                return
+                return True
             result = await sign_in_func(
                 session,
                 chat_id=chat.id,
@@ -204,7 +209,7 @@ async def handle_message_points_action(
                     consecutive_days=result.consecutive_days,
                 )
             await update.effective_message.reply_text(msg)
-            return
+            return True
 
         points_rank_alias = getattr(settings, "points_rank_alias", "积分排行")
         points_alias = getattr(settings, "points_alias", "积分")
@@ -213,14 +218,14 @@ async def handle_message_points_action(
             leaderboard = await get_leaderboard_func(session, chat.id, limit=10)
             await session.commit()
             await update.effective_message.reply_text(format_leaderboard_message_func(leaderboard))
-            return
+            return True
 
         if text == points_alias:
             balance = await get_balance_func(session, chat.id, user.id)
             rank = await get_user_rank_func(session, chat.id, user.id)
             await session.commit()
             await update.effective_message.reply_text(format_balance_message_func(balance, rank))
-            return
+            return True
 
         mall_setting = await points_extended_service.get_or_create_mall_setting(session, chat.id)
         level_setting = await points_extended_service.get_or_create_level_setting(session, chat.id)
@@ -230,9 +235,9 @@ async def handle_message_points_action(
             await session.commit()
             if not products:
                 await update.effective_message.reply_text("积分商城暂时没有可兑换商品。")
-                return
+                return True
             await show_mall_catalog_func(update, context, chat.id, products=products)
-            return
+            return True
 
         if text:
             custom_types = await points_extended_service.list_custom_point_types(session, chat.id)
@@ -240,7 +245,7 @@ async def handle_message_points_action(
             if matched_type is not None and not matched_type.enabled:
                 await session.commit()
                 await update.effective_message.reply_text(f"{matched_type.name} 已关闭。")
-                return
+                return True
             if matched_type is not None:
                 rows = await points_extended_service.get_custom_point_leaderboard(
                     session,
@@ -251,19 +256,23 @@ async def handle_message_points_action(
                 await session.commit()
                 if not rows:
                     await update.effective_message.reply_text(f"{matched_type.name} 暂无排行数据。")
-                    return
+                    return True
                 lines = [f"🌐 {matched_type.name} 排行", ""]
                 for index, (rank_user_id, balance) in enumerate(rows, start=1):
                     lines.append(f"{index}. {rank_user_id}｜{balance}")
                 await update.effective_message.reply_text("\n".join(lines))
-                return
+                return True
+
+        if not allow_level_checks:
+            await session.commit()
+            return False
 
         if level_setting.enabled:
             if level_setting.exclude_teacher_enabled:
                 teacher_exempt = await points_extended_service.is_teacher_exempt(session, chat.id, user.id)
                 if teacher_exempt:
                     await session.commit()
-                    return
+                    return True
             level = await points_extended_service.resolve_user_level(session, chat.id, user.id)
             required_perm = required_level_permission_func(message)
             if required_perm is not None:
@@ -279,11 +288,11 @@ async def handle_message_points_action(
                             await update.effective_chat.send_message("当前积分等级不足，无法发送此类消息。")
                         except Exception:
                             pass
-                    return
+                    return True
 
-        if not text or not settings.message_points_enabled:
+        if not text or not settings.message_points_enabled or not allow_message_points:
             await session.commit()
-            return
+            return False
 
         await add_message_points_func(
             session,
@@ -295,3 +304,4 @@ async def handle_message_points_action(
             message_length=len(text),
         )
         await session.commit()
+        return True

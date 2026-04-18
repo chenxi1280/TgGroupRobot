@@ -11,6 +11,8 @@ from backend.features.activity.lottery_handler import (
     lottery_create_start,
     lottery_create_menu_callback,
     lottery_detail_callback,
+    lottery_draw_condition_callback,
+    lottery_wizard_callback,
     lottery_list_callback,
     lottery_mode_menu_callback,
     lottery_message_handler,
@@ -41,7 +43,9 @@ class LotteryRouter(BaseRouter):
         # 回调处理器
         app.add_handler(CallbackQueryHandler(lottery_create_menu_callback, pattern=r"^lot:create_menu"))
         app.add_handler(CallbackQueryHandler(lottery_mode_menu_callback, pattern=r"^lot:mode_menu:"))
+        app.add_handler(CallbackQueryHandler(lottery_draw_condition_callback, pattern=r"^lot:draw_cond:"))
         app.add_handler(CallbackQueryHandler(lottery_create_start, pattern=r"^lot:create"))
+        app.add_handler(CallbackQueryHandler(lottery_wizard_callback, pattern=r"^lot:wiz:"))
         app.add_handler(CallbackQueryHandler(lottery_list_callback, pattern=r"^lot:list:"))
         app.add_handler(CallbackQueryHandler(lottery_detail_callback, pattern=r"^lot:detail:"))
         app.add_handler(CallbackQueryHandler(lottery_settings_callback, pattern=r"^lot:settings"))

@@ -4,6 +4,7 @@
 """
 from backend.features.activity.ui.lottery import (
     get_join_keyboard,
+    lottery_draw_condition_keyboard,
     lottery_menu_keyboard,
     manual_draw_prize_keyboard,
     manual_draw_summary_keyboard,
@@ -20,6 +21,7 @@ from backend.features.activity.ui.solitaire import (
 __all__ = [
     # Lottery
     "lottery_menu_keyboard",
+    "lottery_draw_condition_keyboard",
     "manual_draw_prize_keyboard",
     "manual_draw_summary_keyboard",
     "manual_draw_summary_keyboard_with_winners",

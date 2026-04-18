@@ -4,6 +4,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from backend.platform.db.runtime.session import Database
+from backend.features.activity.services.lottery_service_parsing import decode_lottery_type, decode_selection_mode
 from backend.shared.callback_parser import CallbackParser
 
 
@@ -49,10 +50,24 @@ async def lottery_mode_menu_callback_impl(update: Update, context: ContextTypes.
     await q.answer()
     cb = CallbackParser.parse(q.data or "")
     target_chat_id = cb.get_int_optional(2)
-    lottery_type = cb.get(3, "invite") or "invite"
+    lottery_type = decode_lottery_type(cb.get(3, "invite") or "invite")
     if target_chat_id is None:
         return
     await handler.show_mode_menu(update, context, target_chat_id, lottery_type)
+
+
+async def lottery_draw_condition_callback_impl(update: Update, context: ContextTypes.DEFAULT_TYPE, *, handler) -> None:
+    if update.callback_query is None:
+        return
+    q = update.callback_query
+    await q.answer()
+    cb = CallbackParser.parse(q.data or "")
+    target_chat_id = cb.get_int_optional(2)
+    lottery_type = decode_lottery_type(cb.get(3, "common") or "common")
+    selection_mode = decode_selection_mode(cb.get(4, "threshold_random") or "threshold_random")
+    if target_chat_id is None:
+        return
+    await handler.show_draw_condition_menu(update, context, target_chat_id, lottery_type, selection_mode)
 
 
 async def lottery_list_callback_impl(update: Update, context: ContextTypes.DEFAULT_TYPE, *, handler) -> None:

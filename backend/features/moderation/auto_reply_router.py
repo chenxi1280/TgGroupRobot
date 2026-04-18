@@ -1,6 +1,7 @@
 from __future__ import annotations
 import structlog
 from telegram.ext import Application, CallbackQueryHandler, MessageHandler, filters
+from backend.features.moderation.auto_reply_button_actions import auto_reply_text_button_callback
 from backend.features.moderation.auto_reply_handler import (
     auto_reply_cancel_callback,
     auto_reply_config_handler,
@@ -35,6 +36,7 @@ class AutoReplyRouter(BaseRouter):
         log.debug(f"Registering {self.name} router")
         
         # 回调处理器
+        app.add_handler(CallbackQueryHandler(auto_reply_text_button_callback, pattern=r"^arbtn:"))
         app.add_handler(CallbackQueryHandler(auto_reply_create_start, pattern=r"^auto_reply:create"))
         app.add_handler(CallbackQueryHandler(auto_reply_cancel_callback, pattern=r"^autoreply:cancel:"))
         app.add_handler(CallbackQueryHandler(auto_reply_list_callback, pattern=r"^auto_reply:list"))

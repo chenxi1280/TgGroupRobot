@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import datetime as dt
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.features.activity.services.lottery_service_queries import get_lottery
 from backend.features.activity.services.lottery_service_types import JoinResult
 from backend.platform.db.schema.models.core import InviteTracking, Lottery, LotteryParticipant
 from backend.platform.db.schema.models.expansion import EngagementChatStat
@@ -90,11 +90,17 @@ async def join_lottery(
     points_balance: int,
     member_joined_at: dt.datetime | None = None,
 ) -> JoinResult:
-    lottery = await get_lottery(session, lottery_id)
+    result = await session.execute(select(Lottery).where(Lottery.id == lottery_id).with_for_update())
+    lottery = result.scalar_one_or_none()
     if not lottery:
         return JoinResult(success=False, reason="lottery_not_found")
     result = await can_join_lottery(session, lottery, user_id, points_balance, member_joined_at)
     if not result.success:
         return result
     session.add(LotteryParticipant(lottery_id=lottery_id, user_id=user_id, points_balance=points_balance))
+    try:
+        await session.flush()
+    except IntegrityError:
+        await session.rollback()
+        return JoinResult(success=False, reason="already_joined")
     return JoinResult(success=True, reason="ok")

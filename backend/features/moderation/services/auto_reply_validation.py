@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from backend.features.automation.services.scheduled_message_service import ScheduledMessageService
+from backend.features.moderation.auto_reply_buttons import normalize_auto_reply_button_rows
 from backend.platform.db.schema.models.enums import AutoReplyMatchType
 from backend.shared.services.result import CreateResult
 
@@ -27,7 +27,7 @@ def validate_create_inputs(
     normalized_buttons: list[list[dict[str, str]]] = []
     if buttons:
         try:
-            normalized_buttons = ScheduledMessageService.normalize_buttons_config(buttons)
+            normalized_buttons = normalize_auto_reply_button_rows(buttons)
         except Exception:
             return CreateResult(success=False, reason="invalid_buttons"), [], []
 
@@ -64,6 +64,6 @@ def normalize_update_payload(updates: dict) -> dict:
             raise ValueError("延迟删除必须大于等于 0")
 
     if "buttons" in normalized and normalized["buttons"] is not None:
-        normalized["buttons"] = ScheduledMessageService.normalize_buttons_config(normalized["buttons"])
+        normalized["buttons"] = normalize_auto_reply_button_rows(normalized["buttons"])
 
     return normalized

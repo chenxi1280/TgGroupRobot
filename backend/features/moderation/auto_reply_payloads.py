@@ -1,20 +1,29 @@
 from __future__ import annotations
 
+import json
+
 import structlog
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
+from backend.features.moderation.auto_reply_buttons import (
+    AUTO_REPLY_TEXT_TRIGGER,
+    normalize_auto_reply_button_rows,
+)
 from backend.shared.services.base import ValidationError
-from backend.shared.ui.button_input import normalize_button_rows, parse_button_rows
+from backend.shared.ui.button_input import parse_button_rows
 
 log = structlog.get_logger(__name__)
 
 
 def parse_auto_reply_buttons_input(raw_text: str) -> list[list[dict[str, str]]]:
     try:
+        raw = (raw_text or "").strip()
+        if raw.startswith("["):
+            return normalize_auto_reply_button_rows(json.loads(raw))
         return parse_button_rows(raw_text, allow_empty=False)
-    except ValidationError as exc:
+    except (ValidationError, json.JSONDecodeError) as exc:
         raise ValueError(str(exc)) from exc
 
 
@@ -23,19 +32,33 @@ def build_auto_reply_markup(rule) -> InlineKeyboardMarkup | None:
     if not raw_buttons:
         return None
     try:
-        normalized = normalize_button_rows(raw_buttons)
+        normalized = normalize_auto_reply_button_rows(raw_buttons)
     except Exception:
         return None
 
     keyboard_rows: list[list[InlineKeyboardButton]] = []
-    for row in normalized:
+    rule_id = getattr(rule, "id", None)
+    chat_id = getattr(rule, "chat_id", None)
+    for row_index, row in enumerate(normalized):
         button_row: list[InlineKeyboardButton] = []
-        for item in row:
+        for col_index, item in enumerate(row):
             text = str(item.get("text") or "").strip()
             url = str(item.get("url") or "").strip()
             callback_data = str(item.get("callback_data") or "").strip()
             if text and url:
                 button_row.append(InlineKeyboardButton(text, url=url))
+            elif (
+                text
+                and item.get("action_type") == AUTO_REPLY_TEXT_TRIGGER
+                and rule_id is not None
+                and chat_id is not None
+            ):
+                button_row.append(
+                    InlineKeyboardButton(
+                        text,
+                        callback_data=f"arbtn:text:{chat_id}:{rule_id}:{row_index}:{col_index}",
+                    )
+                )
             elif text and callback_data:
                 button_row.append(InlineKeyboardButton(text, callback_data=callback_data))
         if button_row:

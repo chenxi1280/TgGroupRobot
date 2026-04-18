@@ -45,7 +45,9 @@ class LotteryDrawMixin:
                 return
 
             participants = await get_lottery_participants(session, lottery_id)
-            if not participants:
+            qualification_rules = lottery.qualification_rules or {}
+            preset_winner_ids = qualification_rules.get("preset_winner_ids") or qualification_rules.get("fixed_winner_ids") or []
+            if not participants and not preset_winner_ids:
                 await self.message_helper.safe_edit(update, "没有人参与抽奖。")
                 await session.commit()
                 return
@@ -93,17 +95,18 @@ class LotteryDrawMixin:
                 lottery.drawn_at = dt.datetime.now(dt.timezone.utc)
                 announcement = generate_lottery_announcement(lottery, winners, users)
 
-                await session.commit()
                 if target_chat_id is not None and update.effective_chat and update.effective_chat.type == "private":
-                    sent = await context.bot.send_message(chat_id=lottery.chat_id, text=announcement, parse_mode="Markdown")
+                    sent = await context.bot.send_message(chat_id=lottery.chat_id, text=announcement, parse_mode="HTML")
                     if setting.result_pin_enabled:
                         try:
                             await context.bot.pin_chat_message(chat_id=lottery.chat_id, message_id=sent.message_id)
                         except Exception:
                             pass
+                    await session.commit()
                     await self.message_helper.safe_edit(update, text="✅ 已在群内完成开奖并发布结果。")
                 else:
-                    await self.message_helper.safe_edit(update, text=announcement, parse_mode="Markdown")
+                    await self.message_helper.safe_edit(update, text=announcement, parse_mode="HTML")
+                    await session.commit()
             else:
                 await self.message_helper.safe_edit(update, "没有人参与抽奖。")
                 await session.commit()

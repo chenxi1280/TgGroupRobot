@@ -1800,17 +1800,18 @@ def build_flows() -> dict[str, dict[str, Any]]:
 
     flows["lottery"] = flow(
         "lottery",
-        coverage(["lot:create_menu", "lot:mode_menu:", "lot:create:", "lot:list:", "lot:detail:", "lot:settings", "lot:setting:", "lot:draw:", "join_lottery_"], ["lottery_create"], ["backend/features/activity/lottery_router.py", "backend/features/activity/lottery_menus.py", "backend/features/activity/lottery_creation.py"]),
+        coverage(["lot:create_menu", "lot:mode_menu:", "lot:draw_cond:", "lot:create:", "lot:wiz:", "lottery:cancel:", "lot:list:", "lot:detail:", "lot:settings", "lot:setting:", "lot:draw:", "join_lottery_"], ["lottery_create"], ["backend/features/activity/lottery_router.py", "backend/features/activity/lottery_menus.py", "backend/features/activity/lottery_creation.py"]),
         [
             admin_entry("抽奖", f"lot:list:{CHAT}:all:all:0"),
             common_select_group(f"lot:list:{CHAT}:all:all:0", "entry"),
             common_main_menu("抽奖", f"lot:list:{CHAT}:all:all:0"),
             screen("home", "抽奖列表", ["抽奖列表支持创建、筛选、详情和开奖。"], [[button("创建抽奖", f"lot:create_menu:{CHAT}", "goto", "create_menu", "打开创建菜单。", True), button("抽奖设置", f"lot:settings:{CHAT}", "goto", "settings", "打开抽奖设置。")], [button("抽奖详情", f"lot:detail:{CHAT}:{LOTTERY}", "goto", "detail", "已打开抽奖详情。")], [button("返回主菜单", f"adm:menu:main:{CHAT}", "back", "entry", "已返回主菜单。")]]),
-            screen("create_menu", "创建抽奖", ["选择普通抽奖、积分抽奖或邀请抽奖模式。"], [[button("普通抽奖", f"lot:create:{CHAT}:common", "input", "create_input", "请输入抽奖内容。"), button("积分抽奖", f"lot:create:{CHAT}:points", "input", "create_input", "请输入积分抽奖内容。")], [button("邀请抽奖", f"lot:mode_menu:{CHAT}:invite", "goto", "invite_mode", "选择邀请抽奖模式。")], [button("返回列表", f"lot:list:{CHAT}:all:all:0", "back", "home", "已返回列表。")]]),
-            screen("invite_mode", "邀请抽奖模式", ["邀请抽奖支持按邀请门槛参与。"], [[button("门槛随机", f"lot:create:{CHAT}:invite:threshold_random", "input", "create_input", "请输入邀请门槛。")], [button("返回创建", f"lot:create_menu:{CHAT}", "back", "create_menu", "已返回创建菜单。")]]),
+            screen("create_menu", "创建抽奖", ["选择普通抽奖、积分抽奖、邀请抽奖或群活跃抽奖。"], [[button("普通抽奖", f"lot:draw_cond:{CHAT}:c:t", "goto", "draw_condition", "选择开奖方式。"), button("积分抽奖", f"lot:draw_cond:{CHAT}:p:t", "goto", "draw_condition", "选择开奖方式。")], [button("邀请抽奖", f"lot:mode_menu:{CHAT}:invite", "goto", "invite_mode", "选择邀请抽奖玩法。"), button("群活跃抽奖", f"lot:mode_menu:{CHAT}:activity", "goto", "invite_mode", "选择群活跃抽奖玩法。")], [button("返回列表", f"lot:list:{CHAT}:all:all:0", "back", "home", "已返回列表。")]]),
+            screen("invite_mode", "邀请/活跃抽奖玩法", ["邀请抽奖和群活跃抽奖支持达标随机或排名入围随机。"], [[button("达标随机", f"lot:draw_cond:{CHAT}:i:t", "goto", "draw_condition", "选择开奖方式。")], [button("排名入围随机", f"lot:draw_cond:{CHAT}:i:r", "goto", "draw_condition", "选择开奖方式。")], [button("返回创建", f"lot:create_menu:{CHAT}", "back", "create_menu", "已返回创建菜单。")]]),
+            screen("draw_condition", "选择开奖条件", ["选择满人开奖或定时开奖，之后进入分步创建向导。"], [[button("满人开奖", f"lot:create:{CHAT}:c:t:f", "input", "create_input", "进入抽奖创建向导。")], [button("定时开奖", f"lot:create:{CHAT}:c:t:d", "input", "create_input", "进入抽奖创建向导。")], [button("返回创建", f"lot:create_menu:{CHAT}", "back", "create_menu", "已返回创建菜单。")]]),
             screen("settings", "抽奖设置", ["抽奖设置可切换发布后置顶等选项。"], [[button("发布后置顶", f"lot:setting:{CHAT}:publish_pin:1", "toggle", "result", "发布后置顶已开启。")], [button("返回列表", f"lot:list:{CHAT}:all:all:0", "back", "home", "已返回列表。")]]),
             screen("detail", "抽奖详情", ["详情页可手动开奖，用户运行时可点击参与。"], [[button("立即开奖", f"lot:draw:{CHAT}:{LOTTERY}", "confirm", "result", "已发起开奖。"), button("用户参与", f"join_lottery_{LOTTERY}", "goto", "result", "用户已参与抽奖。")], [button("返回列表", f"lot:list:{CHAT}:all:all:0", "back", "home", "已返回列表。")]]),
-            input_screen("create_input", "输入抽奖内容", "发送奖品、人数和条件", "奖品：会员；人数：3", f"lot:create_menu:{CHAT}", "create_menu", examples=[("抽奖内容", "奖品：会员；人数：3", "result")]),
+            input_screen("create_input", "创建抽奖向导", "按提示依次回复抽奖名称、奖品、中奖人数、开奖参数、积分类型、内定中奖人", "春季抽奖\n1USDT\n1\n100\n123456789", f"lottery:cancel:{CHAT}", "create_menu", examples=[("满人开奖向导输入", "春季抽奖|祝大家好运\n1USDT\n1\n100\n123456789", "result")]),
             screen("result", "抽奖操作结果", ["保存或开奖后 Bot 会回到列表或详情页。"], [[button("返回列表", f"lot:list:{CHAT}:all:all:0", "back", "home", "已返回列表。")]]),
         ],
     )

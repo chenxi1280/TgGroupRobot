@@ -52,6 +52,42 @@ load_base_env() {
   set +a
 }
 
+parse_database_url_from_image() {
+  local image="$1"
+
+  if [[ -z "$image" ]]; then
+    echo "Missing image variable for parsing DATABASE_URL" >&2
+    return 1
+  fi
+
+  if ! docker image inspect "$image" >/dev/null 2>&1; then
+    echo "Missing release image: ${image}. Pull the current release image first." >&2
+    return 1
+  fi
+
+  DATABASE_URL="$DATABASE_URL" docker run --rm -i --entrypoint python -e DATABASE_URL "$image" - <<'PY'
+import os
+import shlex
+from urllib.parse import unquote, urlsplit
+
+url = os.environ["DATABASE_URL"]
+parts = urlsplit(url)
+user = unquote(parts.username or "")
+password = unquote(parts.password or "")
+database = (parts.path or "").lstrip("/")
+
+if not user or not password or not database:
+    raise SystemExit("DATABASE_URL must include username, password, and database name")
+
+for key, value in {
+    "app_db_user": user,
+    "app_db_password": password,
+    "app_db_name": database,
+}.items():
+    print(f"{key}={shlex.quote(value)}")
+PY
+}
+
 ensure_runtime_env() {
   load_base_env
 

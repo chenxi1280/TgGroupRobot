@@ -7,34 +7,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/docker-env.sh"
 
 ensure_runtime_env
-require_command python3
 
 INFRA_POSTGRES_CONTAINER_NAME="${INFRA_POSTGRES_CONTAINER_NAME:-app-infra-postgres}"
 INFRA_POSTGRES_MAINTENANCE_DB="${INFRA_POSTGRES_MAINTENANCE_DB:-postgres}"
 
-eval "$(
-  DATABASE_URL="$DATABASE_URL" python3 <<'PY'
-import os
-import shlex
-from urllib.parse import unquote, urlsplit
-
-url = os.environ["DATABASE_URL"]
-parts = urlsplit(url)
-user = unquote(parts.username or "")
-password = unquote(parts.password or "")
-database = (parts.path or "").lstrip("/")
-
-if not user or not password or not database:
-    raise SystemExit("DATABASE_URL must include username, password, and database name")
-
-for key, value in {
-    "app_db_user": user,
-    "app_db_password": password,
-    "app_db_name": database,
-}.items():
-    print(f"{key}={shlex.quote(value)}")
-PY
-)"
+eval "$(parse_database_url_from_image "${TGGROUPROBOT_BOT_IMAGE:-}")"
 
 status="$(docker inspect "$INFRA_POSTGRES_CONTAINER_NAME" --format '{{.State.Status}}' 2>/dev/null || true)"
 if [[ "$status" != "running" ]]; then
