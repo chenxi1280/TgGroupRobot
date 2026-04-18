@@ -16,7 +16,8 @@ if [[ ! -f "$SQL_FILE" ]]; then
   exit 1
 fi
 
-eval "$(parse_database_url_from_image "${TGGROUPROBOT_BOT_IMAGE:-}")"
+db_env="$(parse_database_url_from_image "${TGGROUPROBOT_BOT_IMAGE:-}")" || exit 1
+eval "$db_env"
 
 echo "==> Applying project SQL schema: $SQL_FILE"
 docker exec -i \

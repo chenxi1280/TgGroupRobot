@@ -11,7 +11,8 @@ ensure_runtime_env
 INFRA_POSTGRES_CONTAINER_NAME="${INFRA_POSTGRES_CONTAINER_NAME:-app-infra-postgres}"
 INFRA_POSTGRES_MAINTENANCE_DB="${INFRA_POSTGRES_MAINTENANCE_DB:-postgres}"
 
-eval "$(parse_database_url_from_image "${TGGROUPROBOT_BOT_IMAGE:-}")"
+db_env="$(parse_database_url_from_image "${TGGROUPROBOT_BOT_IMAGE:-}")" || exit 1
+eval "$db_env"
 
 status="$(docker inspect "$INFRA_POSTGRES_CONTAINER_NAME" --format '{{.State.Status}}' 2>/dev/null || true)"
 if [[ "$status" != "running" ]]; then

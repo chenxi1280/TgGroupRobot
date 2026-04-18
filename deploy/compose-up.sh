@@ -12,9 +12,6 @@ echo "==> Release directory: $APP_DIR"
 echo "==> Compose file: $COMPOSE_FILE"
 echo "==> Env file: $ENV_FILE"
 
-echo "==> Ensuring application database exists"
-bash "$SCRIPT_DIR/ensure-database.sh"
-
 export COMPOSE_PARALLEL_LIMIT="${COMPOSE_PARALLEL_LIMIT:-1}"
 
 require_image() {

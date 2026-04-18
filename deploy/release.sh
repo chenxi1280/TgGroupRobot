@@ -209,14 +209,28 @@ run_with_retries "Installing remote release" \
   ssh "${SSH_OPTS[@]}" "${USER_NAME}@${HOST}" "\
 set -euo pipefail && \
 mkdir -p '${BASE_DIR}/incoming' '${BASE_DIR}/releases' && \
+existing_image_env='' && \
+if [[ -f '${remote_release_dir}/.image.env' ]]; then \
+  existing_image_env=\"\$(mktemp '/tmp/tggrouprobot-existing-image-env.XXXXXX')\" && \
+  cp '${remote_release_dir}/.image.env' \"\${existing_image_env}\"; \
+fi && \
 if [[ -f '${remote_tmp_archive}' ]]; then mv -f '${remote_tmp_archive}' '${remote_archive}'; fi && \
 if [[ -f '${remote_archive}' ]]; then \
   rm -rf '${remote_release_dir}' && \
   mkdir -p '${remote_release_dir}' && \
   tar -xzf '${remote_archive}' -C '${remote_release_dir}'; \
 fi && \
-mv -f '${remote_image_env}' '${remote_release_dir}/.image.env' && \
 test -d '${remote_release_dir}' && \
+if [[ -f '${remote_image_env}' ]]; then \
+  mv -f '${remote_image_env}' '${remote_release_dir}/.image.env'; \
+elif [[ -n \"\${existing_image_env}\" && -f \"\${existing_image_env}\" ]]; then \
+  mv -f \"\${existing_image_env}\" '${remote_release_dir}/.image.env'; \
+elif [[ -f '${remote_release_dir}/.image.env' ]]; then \
+  :; \
+else \
+  echo 'Missing release image env: ${remote_image_env}' >&2; \
+  exit 1; \
+fi && \
 ${remote_env_prefix} bash '${remote_release_dir}/deploy/server-install-release.sh' \
   --base-dir '${BASE_DIR}' \
   --release-dir '${remote_release_dir}' \
