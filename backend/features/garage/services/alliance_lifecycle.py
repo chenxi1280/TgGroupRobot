@@ -5,6 +5,7 @@ import datetime as dt
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.features.garage.services.garage_auth_service import GarageAuthService
 from backend.platform.db.schema.models.alliance import GroupAlliance, GroupAllianceMember
 from backend.shared.services.base import NotFoundError, ValidationError
 
@@ -115,6 +116,12 @@ class AllianceLifecycleMixin:
         if int(count_result.scalar_one() or 0) >= 50:
             raise ValidationError("联盟成员数量已达上限。")
 
+        await GarageAuthService.merge_local_certified_teachers_into_pool(
+            session,
+            source_chat_id=chat_id,
+            pool_chat_id=alliance.owner_chat_id,
+            operator_user_id=operator_user_id,
+        )
         session.add(
             GroupAllianceMember(
                 alliance_id=alliance.alliance_id,
@@ -161,6 +168,12 @@ class AllianceLifecycleMixin:
             operator_user_id=operator_user_id,
             payload={"left": True},
         )
+        if alliance.owner_chat_id != chat_id:
+            await GarageAuthService.sync_local_certified_teachers_from_effective_pool(
+                session,
+                chat_id=chat_id,
+                operator_user_id=operator_user_id,
+            )
         member.status = "left"
         setting = await cls.get_setting(session, chat_id)
         if setting is not None:

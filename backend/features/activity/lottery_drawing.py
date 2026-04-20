@@ -105,7 +105,10 @@ class LotteryDrawMixin:
                     await session.commit()
                     await self.message_helper.safe_edit(update, text="✅ 已在群内完成开奖并发布结果。")
                 else:
-                    await self.message_helper.safe_edit(update, text=announcement, parse_mode="HTML")
+                    sent = await self.message_helper.safe_edit(update, text=announcement, parse_mode="HTML")
+                    if not sent:
+                        await session.rollback()
+                        return
                     await session.commit()
             else:
                 await self.message_helper.safe_edit(update, "没有人参与抽奖。")

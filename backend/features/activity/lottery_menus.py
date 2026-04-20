@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import datetime as dt
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 from sqlalchemy import select
@@ -38,6 +40,14 @@ def _lottery_status_title(status: str) -> str:
         "completed": "已开奖",
         "cancelled": "已取消",
     }.get(status, "活动")
+
+
+def _format_local_time(value) -> str:
+    if value is None:
+        return "-"
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=dt.timezone.utc)
+    return value.astimezone(dt.timezone(dt.timedelta(hours=8))).strftime("%Y-%m-%d %H:%M")
 
 
 class LotteryMenuMixin:
@@ -128,8 +138,6 @@ class LotteryMenuMixin:
                 "请选择开奖条件：",
                 *([] if selection_mode == "ranking_random" else ["• 满人开奖：参与人数达到配置的最大人数后立即开奖"]),
                 "• 定时开奖：到配置的开奖时间后截止并开奖",
-                "",
-                "可在配置里填写内定中奖人。",
             ]
         )
         await self.message_helper.safe_edit(
@@ -172,7 +180,7 @@ class LotteryMenuMixin:
                 rules = lottery.qualification_rules or {}
                 mode = rules.get("selection_mode", "threshold_random")
                 mode_label = "🏆 排名入围随机" if mode == "ranking_random" else "🎯 达标随机"
-                trigger_label = "满人开奖" if rules.get("draw_trigger") == "full_participants" else lottery.draw_time.strftime("%m-%d %H:%M")
+                trigger_label = "满人开奖" if rules.get("draw_trigger") == "full_participants" else _format_local_time(lottery.draw_time)[5:]
                 lines.append(
                     f"• #{lottery.id} {_lottery_type_title(lottery.lottery_type)} | "
                     f"{mode_label} | {lottery.title} | {lottery.status} | "
@@ -284,7 +292,7 @@ class LotteryMenuMixin:
             f"🎁 奖品数：{sum(int(item.get('quantity', 1)) for item in (lottery.prizes or []))}",
         ]
         if draw_trigger != "full_participants":
-            lines.append(f"🕒 截止开奖时间：{lottery.draw_time.strftime('%Y-%m-%d %H:%M')}")
+            lines.append(f"🕒 截止开奖时间：{_format_local_time(lottery.draw_time)}")
         if lottery.min_points > 0:
             lines.append(f"💰 最低积分：{lottery.min_points}")
         if lottery.participation_cost > 0:
@@ -295,7 +303,8 @@ class LotteryMenuMixin:
             lines.append(f"🔥 活跃门槛：{rules['required_activity_count']}（最近 {rules.get('window_days', 7)} 天）")
         if selection_mode == "ranking_random":
             lines.append(f"🏆 入围人数：前 {int(rules.get('finalist_limit') or 0)} 名")
-        if rules.get("preset_winner_ids"):
+        is_private_context = bool(update.effective_chat and update.effective_chat.type == "private")
+        if is_private_context and rules.get("preset_winner_ids"):
             lines.append(f"🔒 内定中奖人：{len(rules.get('preset_winner_ids') or [])} 人")
 
         keyboard_rows = []

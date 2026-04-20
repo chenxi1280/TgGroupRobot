@@ -3,7 +3,7 @@
 # 任务配置
 TASK_CONFIG = {
     "lottery": {
-        "interval": 300,  # 5分钟
+        "interval": 60,  # 1分钟，保障定时开奖、提前提醒更接近真实时间点
         "enabled": True,
         "max_consecutive_failures": 10,
     },

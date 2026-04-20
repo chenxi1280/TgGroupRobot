@@ -5,10 +5,10 @@ import datetime as dt
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.features.garage.services.garage_auth_service import GarageAuthService
 from backend.features.points.services.points_extended_custom import PointsExtendedCustomMixin
 from backend.features.points.services.points_service import get_balance
 from backend.platform.db.schema.models.core import PointsLevel, PointsLevelSetting
-from backend.platform.db.schema.models.garage_features import GarageCertifiedTeacher, TeacherProfile
 from backend.shared.services.base import ValidationError
 
 
@@ -151,20 +151,4 @@ class PointsExtendedLevelsMixin:
 
     @staticmethod
     async def is_teacher_exempt(session: AsyncSession, chat_id: int, user_id: int) -> bool:
-        certified_result = await session.execute(
-            select(GarageCertifiedTeacher.id).where(
-                GarageCertifiedTeacher.chat_id == chat_id,
-                GarageCertifiedTeacher.user_id == user_id,
-                GarageCertifiedTeacher.enabled.is_(True),
-            )
-        )
-        if certified_result.scalar_one_or_none() is not None:
-            return True
-
-        profile_result = await session.execute(
-            select(TeacherProfile.id).where(
-                TeacherProfile.chat_id == chat_id,
-                TeacherProfile.user_id == user_id,
-            )
-        )
-        return profile_result.scalar_one_or_none() is not None
+        return await GarageAuthService.has_effective_teacher_profile(session, chat_id, user_id)

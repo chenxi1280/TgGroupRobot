@@ -16,6 +16,7 @@ from backend.shared.services.base import ValidationError
 CLEAR_VALUES = {"清空", "无"}
 DELEGATE_TARGET_STATE = "teacher_delegate_target_input"
 DELEGATE_LOCATION_STATE = "teacher_delegate_location_input"
+MEMBER_LOCATION_STATE = "teacher_member_location_input"
 ATTENDANCE_TARGET_STATE = "teacher_attend_target_input"
 ATTENDANCE_KEYWORD_STATES = {
     "teacher_att_open_input": "open",
@@ -39,6 +40,10 @@ def _delegate_location_prompt() -> str:
 
 def _delegate_location_retry_prompt() -> str:
     return "请通过回形针 → 位置 发送地点，或粘贴 Google 地图定位链接。"
+
+
+def _member_location_retry_prompt() -> str:
+    return "请发送 Telegram 位置或共享地点，也可以粘贴 Google 地图定位链接。"
 
 
 def _coordinate_pair(latitude_raw: str, longitude_raw: str) -> tuple[float, float] | None:
@@ -122,6 +127,16 @@ async def _parse_coordinates_from_map_link(text: str) -> tuple[float, float] | N
     return None
 
 
+async def _extract_location_pair_from_message(message, text_value: str) -> tuple[float, float] | None:
+    location = getattr(message, "location", None)
+    if location is None:
+        venue = getattr(message, "venue", None)
+        location = getattr(venue, "location", None) if venue is not None else None
+    if location is not None:
+        return float(location.latitude), float(location.longitude)
+    return await _parse_coordinates_from_map_link(text_value)
+
+
 async def handle_teacher_search_feature_input(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -162,6 +177,76 @@ async def handle_teacher_search_feature_input(
         return True
 
     return False
+
+
+async def handle_teacher_member_location_input(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    session,
+    state,
+    message_text: str,
+) -> None:
+    from backend.features.garage.services.garage_features_service import GarageAuthService, TeacherSearchService
+    from backend.platform.db.schema.models.garage_features import TeacherSearchSetting
+    from backend.platform.state.conversation_state_service import SELECTED_CHAT_STATE
+    from backend.platform.state.state_service import clear_user_state, set_user_state
+
+    if update.effective_user is None or update.effective_message is None:
+        return
+
+    async def clear_location_state() -> None:
+        await clear_user_state(session, chat_id=state.chat_id, user_id=update.effective_user.id)
+        previous_selected_chat_id = (state.state_data or {}).get("previous_selected_chat_id")
+        if isinstance(previous_selected_chat_id, int):
+            await set_user_state(
+                session,
+                chat_id=update.effective_user.id,
+                user_id=update.effective_user.id,
+                state_type=SELECTED_CHAT_STATE,
+                state_data={"managed_chat_id": previous_selected_chat_id},
+            )
+
+    state_data = state.state_data or {}
+    target_chat_id = state_data.get("target_chat_id")
+    if not isinstance(target_chat_id, int):
+        await clear_location_state()
+        await session.commit()
+        await update.effective_message.reply_text(
+            "定位状态异常，请回群重新点击“私聊更新定位”。",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        return
+
+    setting = await session.get(TeacherSearchSetting, target_chat_id)
+    if setting is None or not setting.nearby_search_enabled:
+        await clear_location_state()
+        await session.commit()
+        await update.effective_message.reply_text("该群暂未启用附近搜索。", reply_markup=ReplyKeyboardRemove())
+        return
+
+    location_pair = await _extract_location_pair_from_message(update.effective_message, message_text)
+    if location_pair is None:
+        await update.effective_message.reply_text(
+            _member_location_retry_prompt(),
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        return
+
+    latitude, longitude = location_pair
+    await TeacherSearchService.upsert_member_location(
+        session,
+        chat_id=target_chat_id,
+        user_id=update.effective_user.id,
+        latitude=latitude,
+        longitude=longitude,
+        operator_user_id=update.effective_user.id,
+    )
+    await clear_location_state()
+    await session.commit()
+    await update.effective_message.reply_text(
+        "✅ 定位已更新。回到群里发送“附近”即可查询附近老师。",
+        reply_markup=ReplyKeyboardRemove(),
+    )
 
 
 def _is_clear_input(value: str) -> bool:

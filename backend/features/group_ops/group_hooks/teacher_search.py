@@ -1,10 +1,26 @@
 from __future__ import annotations
 
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
 from backend.features.garage.services.garage_features_service import TeacherSearchService
 
 from .common import _reply_garage_feedback
+
+TEACHER_SEARCH_HELP_TEXT = (
+    "标签搜索：\n"
+    "发送“老师搜索 关键词”，可按老师名、车牌名称、地址、价格、服务标签查询。\n\n"
+    "附近搜索：\n"
+    "发送“附近”，按你最近保存的位置查询附近老师。\n\n"
+    "开课老师：\n"
+    "发送“开课老师”，查看今天已开课打卡的老师。"
+)
+
+LOCATION_UPDATE_PROMPT = (
+    "还没有你的定位。\n"
+    "为了保护隐私，请点下面按钮到私聊更新定位。\n"
+    "更新后回到本群发送“附近”，就能查询附近老师。"
+)
 
 
 async def _process_teacher_search_features(
@@ -103,12 +119,32 @@ async def _process_teacher_search_features(
             context,
             chat_id=chat.id,
             message_id=message.message_id,
-            text="请继续发送关键词，或发送“附近”“开课老师”查询。",
+            text=TEACHER_SEARCH_HELP_TEXT,
             delete_mode=delete_mode,
         )
         return True
 
     return False
+
+
+def _build_private_location_markup(context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> InlineKeyboardMarkup | None:
+    bot = getattr(context, "bot", None)
+    bot_username = getattr(bot, "username", None)
+    if not bot_username:
+        return None
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("私聊更新定位", url=f"https://t.me/{bot_username}?start=tloc_{chat_id}")],
+    ])
+
+
+def _build_private_teacher_location_markup(context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> InlineKeyboardMarkup | None:
+    bot = getattr(context, "bot", None)
+    bot_username = getattr(bot, "username", None)
+    if not bot_username:
+        return None
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("私聊更新定位", url=f"https://t.me/{bot_username}?start=tselfloc_{chat_id}")],
+    ])
 
 
 def _resolve_attendance_keyword_status(text: str, teacher_setting) -> str | None:
@@ -219,9 +255,10 @@ async def _block_teacher_without_location(
         message_id=message.message_id,
         text=(
             "请先发送开课位置后再发言。\n"
-            "手机端可以直接发送位置；桌面端请点输入框旁的回形针 → 位置 → 在地图上选择/搜索地点后发送，"
-            "也可以粘贴 Google 地图定位链接。"
+            "为了保护隐私，也可以点下面按钮到私聊更新定位。\n"
+            "更新后回到本群即可正常使用。"
         ),
+        reply_markup=_build_private_teacher_location_markup(context, chat.id),
         delete_mode="delete",
     )
     return True
@@ -322,23 +359,14 @@ async def _reply_nearby_teachers(
         )
         return
     location = await TeacherSearchService.get_member_location(session, chat.id, user.id)
-    if teacher_setting.force_location_enabled and location is None:
-        await session.commit()
-        await _reply_garage_feedback(
-            context,
-            chat_id=chat.id,
-            message_id=message.message_id,
-            text="请先发送位置后再使用附近搜索。",
-            delete_mode=delete_mode,
-        )
-        return
     if location is None:
         await session.commit()
         await _reply_garage_feedback(
             context,
             chat_id=chat.id,
             message_id=message.message_id,
-            text="还没有记录到你的位置，请先发送位置。",
+            text=LOCATION_UPDATE_PROMPT,
+            reply_markup=_build_private_location_markup(context, chat.id),
             delete_mode=delete_mode,
         )
         return

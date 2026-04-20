@@ -42,6 +42,43 @@ def _clean_required_keyword(value: str, *, label: str) -> str:
     return cleaned
 
 
+def _clean_teacher_profile_text(
+    value: str | None,
+    *,
+    label: str,
+    max_length: int = 128,
+) -> str | None:
+    cleaned = _clean_optional_value(value)
+    if cleaned is not None and len(cleaned) > max_length:
+        raise ValidationError(f"{label}过长，请控制在 {max_length} 个字符以内。")
+    return cleaned
+
+
+def _clean_teacher_profile_labels(value: str | list[str] | None) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        raw_items = re.split(r"[,\n/，、\s]+", value.strip())
+    else:
+        raw_items = list(value)
+
+    labels: list[str] = []
+    seen: set[str] = set()
+    for raw in raw_items:
+        cleaned = _clean_optional_value(raw)
+        if cleaned is None:
+            continue
+        if len(cleaned) > 16:
+            raise ValidationError("服务标签过长，请控制在 16 个字符以内。")
+        if cleaned in seen:
+            continue
+        if len(labels) >= 10:
+            raise ValidationError("服务标签最多可设置 10 个。")
+        seen.add(cleaned)
+        labels.append(cleaned)
+    return labels
+
+
 def _footer_config_from_setting(setting: TeacherSearchSetting) -> TeacherSearchFooterButtonConfig:
     return TeacherSearchFooterButtonConfig(
         button_text=(setting.footer_button_label or "").strip() or None,
@@ -54,6 +91,22 @@ def _teacher_search_biz_date() -> dt.date:
 
 
 class TeacherSearchSettingsMixin:
+    @staticmethod
+    async def ensure_teacher_profile(
+        session: AsyncSession,
+        chat_id: int,
+        user_id: int,
+    ) -> TeacherProfile:
+        result = await session.execute(
+            select(TeacherProfile).where(TeacherProfile.chat_id == chat_id, TeacherProfile.user_id == user_id)
+        )
+        item = result.scalar_one_or_none()
+        if item is None:
+            item = TeacherProfile(chat_id=chat_id, user_id=user_id)
+            session.add(item)
+            await session.flush()
+        return item
+
     @staticmethod
     async def ensure_setting(session: AsyncSession, chat_id: int) -> TeacherSearchSetting:
         setting = await session.get(TeacherSearchSetting, chat_id)
@@ -191,24 +244,53 @@ class TeacherSearchSettingsMixin:
         latitude: float,
         longitude: float,
     ) -> TeacherProfile:
-        result = await session.execute(
-            select(TeacherProfile).where(TeacherProfile.chat_id == chat_id, TeacherProfile.user_id == user_id)
-        )
-        item = result.scalar_one_or_none()
-        if item is None:
-            item = TeacherProfile(
-                chat_id=chat_id,
-                user_id=user_id,
-                latitude=Decimal(str(latitude)),
-                longitude=Decimal(str(longitude)),
-                last_location_at=dt.datetime.now(dt.UTC),
-            )
-            session.add(item)
-        else:
-            item.latitude = Decimal(str(latitude))
-            item.longitude = Decimal(str(longitude))
-            item.last_location_at = dt.datetime.now(dt.UTC)
-            item.updated_at = dt.datetime.now(dt.UTC)
+        item = await TeacherSearchSettingsMixin.ensure_teacher_profile(session, chat_id, user_id)
+        item.latitude = Decimal(str(latitude))
+        item.longitude = Decimal(str(longitude))
+        item.last_location_at = dt.datetime.now(dt.UTC)
+        item.updated_at = dt.datetime.now(dt.UTC)
+        await session.flush()
+        return item
+
+    @staticmethod
+    async def update_teacher_region_text(
+        session: AsyncSession,
+        *,
+        chat_id: int,
+        user_id: int,
+        region_text: str | None,
+    ) -> TeacherProfile:
+        item = await TeacherSearchSettingsMixin.ensure_teacher_profile(session, chat_id, user_id)
+        item.region_text = _clean_teacher_profile_text(region_text, label="地区/地址")
+        item.updated_at = dt.datetime.now(dt.UTC)
+        await session.flush()
+        return item
+
+    @staticmethod
+    async def update_teacher_price_text(
+        session: AsyncSession,
+        *,
+        chat_id: int,
+        user_id: int,
+        price_text: str | None,
+    ) -> TeacherProfile:
+        item = await TeacherSearchSettingsMixin.ensure_teacher_profile(session, chat_id, user_id)
+        item.price_text = _clean_teacher_profile_text(price_text, label="价格")
+        item.updated_at = dt.datetime.now(dt.UTC)
+        await session.flush()
+        return item
+
+    @staticmethod
+    async def update_teacher_labels(
+        session: AsyncSession,
+        *,
+        chat_id: int,
+        user_id: int,
+        labels: str | list[str] | None,
+    ) -> TeacherProfile:
+        item = await TeacherSearchSettingsMixin.ensure_teacher_profile(session, chat_id, user_id)
+        item.labels = _clean_teacher_profile_labels(labels)
+        item.updated_at = dt.datetime.now(dt.UTC)
         await session.flush()
         return item
 
@@ -240,9 +322,6 @@ class TeacherSearchSettingsMixin:
         chat_id: int,
         user_id: int,
     ) -> bool:
-        member_location = await TeacherSearchSettingsMixin.get_member_location(session, chat_id, user_id)
-        if member_location is not None:
-            return True
         profile = await TeacherSearchSettingsMixin.get_teacher_profile(session, chat_id, user_id)
         return bool(profile and profile.latitude is not None and profile.longitude is not None)
 
@@ -298,13 +377,7 @@ class TeacherSearchSettingsMixin:
         else:
             item.status = status
             item.source_message_id = source_message_id
-        result = await session.execute(
-            select(TeacherProfile).where(TeacherProfile.chat_id == chat_id, TeacherProfile.user_id == user_id)
-        )
-        profile = result.scalar_one_or_none()
-        if profile is None:
-            profile = TeacherProfile(chat_id=chat_id, user_id=user_id)
-            session.add(profile)
+        profile = await TeacherSearchSettingsMixin.ensure_teacher_profile(session, chat_id, user_id)
         profile.open_course_today = status != "rest"
         profile.open_course_status = status
         profile.updated_at = dt.datetime.now(dt.UTC)

@@ -159,9 +159,18 @@ class GarageAuthViewsMixin:
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
             rows = await GarageAuthService.list_certified_teachers(session, chat_id)
+            pool_info = await GarageAuthService.get_teacher_pool_info(session, chat_id)
             await session.commit()
 
-        lines = ["🚗 车库认证 | 手动添加认证老师", "", "可以人工设置用户为认证老师，发言也会有认证图标", ""]
+        lines = [
+            "🚗 车库认证 | 手动添加认证老师",
+            "",
+            "可以人工设置用户为认证老师，发言也会有认证图标",
+            f"当前认证池：{pool_info.display_text}",
+        ]
+        if pool_info.shared_via_alliance:
+            lines.append("当前修改会同步影响联盟内使用该认证池的群。")
+        lines.append("")
         if not rows:
             lines.append("数据为空")
         else:

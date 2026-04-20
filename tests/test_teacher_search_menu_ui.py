@@ -5,15 +5,23 @@ from types import SimpleNamespace
 import pytest
 
 from backend.features.admin import admin_handler
-from backend.features.admin.garage.teacher_search_inputs import handle_teacher_search_feature_input
+from backend.features.admin.garage.teacher_self import (
+    handle_teacher_self_input,
+    teacher_self_callback,
+)
+from backend.features.admin.garage.teacher_search_inputs import (
+    handle_teacher_member_location_input,
+    handle_teacher_search_feature_input,
+)
 from backend.features.garage.services.garage_features_service import GarageAuthService, TeacherSearchFooterButtonConfig, TeacherSearchService
 from backend.shared.callback_parser import CallbackParser
 from backend.shared.services.base import ValidationError
 
 
 class _SessionContext:
-    def __init__(self) -> None:
+    def __init__(self, get_map=None) -> None:
         self.commits = 0
+        self.get_map = dict(get_map or {})
 
     async def __aenter__(self):
         return self
@@ -23,6 +31,9 @@ class _SessionContext:
 
     async def commit(self):
         self.commits += 1
+
+    async def get(self, model, key):
+        return self.get_map.get((model, key))
 
 
 class _FakeDb:
@@ -682,6 +693,352 @@ async def test_teacher_search_footer_link_input_updates_url(monkeypatch):
     assert captured["cleared"] == (-1001, 123)
     assert session.commits == 1
     assert captured["replies"] == ["已设置底部按钮链接：https://example.com/h5/teacher-search"]
+    assert captured["shown"] == -1001
+
+
+@pytest.mark.asyncio
+async def test_teacher_location_start_sets_private_location_state(monkeypatch):
+    from backend.features.group_ops import start_handler
+    from backend.platform.db.schema.models.core import TgChat
+    from backend.platform.db.schema.models.garage_features import TeacherSearchSetting
+
+    captured: dict[str, object] = {"replies": []}
+    session = _SessionContext(
+        get_map={
+            (TgChat, -1001): SimpleNamespace(id=-1001, title="测试群"),
+            (TeacherSearchSetting, -1001): SimpleNamespace(nearby_search_enabled=True),
+        }
+    )
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(session)}))
+
+    class _Message:
+        async def reply_text(self, text, **kwargs):
+            captured["replies"].append(text)
+            captured["reply_markup"] = kwargs.get("reply_markup")
+
+    update = SimpleNamespace(effective_user=SimpleNamespace(id=123), effective_message=_Message())
+
+    async def fake_set_user_state(session, chat_id, user_id, state_type, state_data):
+        captured["state"] = (chat_id, user_id, state_type, state_data)
+
+    async def fake_get_user_state(*args, **kwargs):
+        return SimpleNamespace(
+            state_type="selected_chat",
+            state_data={"managed_chat_id": -2002},
+        )
+
+    monkeypatch.setattr(start_handler, "set_user_state", fake_set_user_state)
+    monkeypatch.setattr(start_handler, "get_user_state", fake_get_user_state)
+
+    handled = await start_handler._handle_teacher_location_start(update, context, "tloc_-1001")
+
+    assert handled is True
+    assert captured["state"] == (
+        123,
+        123,
+        "teacher_member_location_input",
+        {"target_chat_id": -1001, "previous_selected_chat_id": -2002},
+    )
+    assert session.commits == 1
+    assert "目标群：测试群" in captured["replies"][0]
+    assert "不会在群里公开" in captured["replies"][0]
+
+
+@pytest.mark.asyncio
+async def test_teacher_self_location_start_sets_teacher_service_state(monkeypatch):
+    from backend.features.group_ops import start_handler
+    from backend.platform.db.schema.models.core import TgChat
+
+    captured: dict[str, object] = {"replies": []}
+    session = _SessionContext(
+        get_map={
+            (TgChat, -1001): SimpleNamespace(id=-1001, title="测试群"),
+        }
+    )
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(session)}))
+
+    class _Message:
+        async def reply_text(self, text, **kwargs):
+            captured["replies"].append(text)
+            captured["reply_markup"] = kwargs.get("reply_markup")
+
+    update = SimpleNamespace(effective_user=SimpleNamespace(id=123), effective_message=_Message())
+
+    async def fake_set_user_state(session, chat_id, user_id, state_type, state_data):
+        captured["state"] = (chat_id, user_id, state_type, state_data)
+
+    async def fake_is_teacher(session, chat_id: int, user_id: int):
+        return True
+
+    monkeypatch.setattr(start_handler, "set_user_state", fake_set_user_state)
+    monkeypatch.setattr(GarageAuthService, "is_effective_certified_teacher", fake_is_teacher)
+
+    handled = await start_handler._handle_teacher_self_location_start(update, context, "tselfloc_-1001")
+
+    assert handled is True
+    assert captured["state"] == (
+        123,
+        123,
+        "teacher_self_location_input",
+        {"target_chat_id": -1001},
+    )
+    assert session.commits == 1
+    assert "目标群：测试群" in captured["replies"][0]
+    assert "不会覆盖你的群友附近查询定位" in captured["replies"][0]
+
+
+@pytest.mark.asyncio
+async def test_teacher_member_location_input_only_saves_member_location(monkeypatch):
+    from backend.platform.db.schema.models.garage_features import TeacherSearchSetting
+
+    captured: dict[str, object] = {"replies": [], "calls": []}
+    session = _SessionContext(
+        get_map={(TeacherSearchSetting, -1001): SimpleNamespace(nearby_search_enabled=True)}
+    )
+    context = SimpleNamespace()
+
+    class _Message:
+        message_id = 9
+        location = SimpleNamespace(latitude=31.2, longitude=121.4)
+        venue = None
+
+        async def reply_text(self, text, **kwargs):
+            captured["replies"].append(text)
+            captured["reply_markup"] = kwargs.get("reply_markup")
+
+    update = SimpleNamespace(effective_user=SimpleNamespace(id=123), effective_message=_Message())
+    state = SimpleNamespace(
+        chat_id=123,
+        state_type="teacher_member_location_input",
+        state_data={"target_chat_id": -1001, "previous_selected_chat_id": -2002},
+    )
+
+    async def fake_upsert_member_location(session, **kwargs):
+        captured["calls"].append(("member", kwargs))
+
+    async def fake_clear_user_state(session, chat_id, user_id):
+        captured["cleared"] = (chat_id, user_id)
+
+    async def fake_set_user_state(session, chat_id, user_id, state_type, state_data):
+        captured["restored"] = (chat_id, user_id, state_type, state_data)
+
+    monkeypatch.setattr(TeacherSearchService, "upsert_member_location", fake_upsert_member_location)
+    monkeypatch.setattr("backend.platform.state.state_service.clear_user_state", fake_clear_user_state)
+    monkeypatch.setattr("backend.platform.state.state_service.set_user_state", fake_set_user_state)
+
+    await handle_teacher_member_location_input(update, context, session, state, "")
+
+    assert captured["cleared"] == (123, 123)
+    assert captured["restored"] == (123, 123, "selected_chat", {"managed_chat_id": -2002})
+    assert session.commits == 1
+    assert captured["calls"] == [
+        (
+            "member",
+            {
+                "chat_id": -1001,
+                "user_id": 123,
+                "latitude": 31.2,
+                "longitude": 121.4,
+                "operator_user_id": 123,
+            },
+        ),
+    ]
+    assert captured["replies"] == ["✅ 定位已更新。回到群里发送“附近”即可查询附近老师。"]
+
+
+@pytest.mark.asyncio
+async def test_teacher_self_callback_shows_group_list(monkeypatch):
+    captured: dict[str, object] = {}
+    session = _SessionContext()
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(session)}))
+
+    async def fake_list_teacher_self_chats(session, user_id: int):
+        return [
+            (
+                SimpleNamespace(id=-1001, title="测试群"),
+                SimpleNamespace(display_text="本群认证池"),
+            )
+        ]
+
+    async def fake_safe_edit(update, text, reply_markup=None):
+        captured["text"] = text
+        captured["reply_markup"] = reply_markup
+
+    monkeypatch.setattr(GarageAuthService, "list_teacher_self_service_chats", fake_list_teacher_self_chats)
+    monkeypatch.setattr(admin_handler._admin_handler.message_helper, "safe_edit", fake_safe_edit)
+
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=123),
+        effective_chat=SimpleNamespace(type="private"),
+        callback_query=SimpleNamespace(data="teacher:self:list"),
+    )
+
+    await teacher_self_callback(update, context)
+
+    assert "老师资料维护" in captured["text"]
+    keyboard = captured["reply_markup"].inline_keyboard
+    assert keyboard[0][0].callback_data == "teacher:self:home:-1001"
+
+
+@pytest.mark.asyncio
+async def test_teacher_self_home_button_shows_group_profile(monkeypatch):
+    captured: dict[str, object] = {}
+    session = _SessionContext()
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(session)}))
+
+    async def fake_is_teacher(session, chat_id: int, user_id: int):
+        return True
+
+    async def fake_get_teacher_profile(session, chat_id: int, user_id: int):
+        return SimpleNamespace(
+            latitude=31.2,
+            longitude=121.4,
+            region_text="浦东",
+            price_text="300",
+            labels=["热门", "夜课"],
+        )
+
+    async def fake_get_pool_info(session, chat_id: int):
+        return SimpleNamespace(display_text="本群认证池")
+
+    async def fake_resolve_chat_title(context, chat_id: int):
+        return "测试群"
+
+    async def fake_safe_edit(update, text, reply_markup=None):
+        captured["text"] = text
+        captured["reply_markup"] = reply_markup
+
+    monkeypatch.setattr(GarageAuthService, "is_effective_certified_teacher", fake_is_teacher)
+    monkeypatch.setattr(TeacherSearchService, "get_teacher_profile", fake_get_teacher_profile)
+    monkeypatch.setattr(GarageAuthService, "get_teacher_pool_info", fake_get_pool_info)
+    monkeypatch.setattr("backend.features.admin.garage.teacher_self._resolve_chat_title", fake_resolve_chat_title)
+    monkeypatch.setattr(admin_handler._admin_handler.message_helper, "safe_edit", fake_safe_edit)
+
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=123),
+        effective_chat=SimpleNamespace(type="private"),
+        callback_query=SimpleNamespace(data="teacher:self:home:-1001"),
+    )
+
+    await teacher_self_callback(update, context)
+
+    assert "群组：测试群" in captured["text"]
+    assert "服务定位：已设置" in captured["text"]
+    callbacks = [button.callback_data for row in captured["reply_markup"].inline_keyboard for button in row]
+    assert "teacher:self:location:-1001" in callbacks
+    assert "teacher:self:region:-1001" in callbacks
+    assert "teacher:self:price:-1001" in callbacks
+    assert "teacher:self:labels:-1001" in callbacks
+
+
+@pytest.mark.asyncio
+async def test_teacher_self_location_button_starts_location_state(monkeypatch):
+    captured: dict[str, object] = {}
+    session = _SessionContext()
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(session)}))
+
+    async def fake_is_teacher(session, chat_id: int, user_id: int):
+        return True
+
+    async def fake_start_text_input_state(context, chat_id: int, user_id: int, state_type: str, state_data: dict):
+        captured["state"] = (chat_id, user_id, state_type, state_data)
+
+    async def fake_safe_edit(update, text, reply_markup=None):
+        captured["text"] = text
+        captured["reply_markup"] = reply_markup
+
+    monkeypatch.setattr(GarageAuthService, "is_effective_certified_teacher", fake_is_teacher)
+    monkeypatch.setattr(admin_handler._admin_handler, "_start_text_input_state", fake_start_text_input_state)
+    monkeypatch.setattr(admin_handler._admin_handler.message_helper, "safe_edit", fake_safe_edit)
+
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=123),
+        effective_chat=SimpleNamespace(type="private"),
+        callback_query=SimpleNamespace(data="teacher:self:location:-1001"),
+    )
+
+    await teacher_self_callback(update, context)
+
+    assert captured["state"] == (
+        123,
+        123,
+        "teacher_self_location_input",
+        {"target_chat_id": -1001},
+    )
+    assert "更新服务定位" in captured["text"]
+    assert captured["reply_markup"].inline_keyboard[0][0].callback_data == "teacher:self:home:-1001"
+
+
+@pytest.mark.asyncio
+async def test_start_private_home_markup_adds_teacher_entry(monkeypatch):
+    from backend.features.group_ops import start_handler
+
+    async def fake_list_teacher_self_chats(context, user_id: int):
+        return [(SimpleNamespace(id=-1001, title="测试群"), SimpleNamespace())]
+
+    monkeypatch.setattr(start_handler, "_list_teacher_self_chats", fake_list_teacher_self_chats)
+
+    markup = await start_handler._build_private_home_markup(
+        SimpleNamespace(),
+        user_id=123,
+        chats=[(-2001, "管理群", True)],
+        current_chat_id=-2001,
+    )
+
+    labels = [button.text for row in markup.inline_keyboard for button in row]
+    callbacks = [button.callback_data for row in markup.inline_keyboard for button in row]
+    assert "👩‍🏫 老师资料维护" in labels
+    assert "teacher:self:list" in callbacks
+
+
+@pytest.mark.asyncio
+async def test_teacher_self_location_input_updates_teacher_profile_only(monkeypatch):
+    captured: dict[str, object] = {"replies": []}
+    session = _SessionContext()
+    context = SimpleNamespace()
+
+    class _Message:
+        location = SimpleNamespace(latitude=31.2, longitude=121.4)
+        venue = None
+
+        async def reply_text(self, text, **kwargs):
+            captured["replies"].append(text)
+
+    update = SimpleNamespace(effective_user=SimpleNamespace(id=123), effective_message=_Message())
+    state = SimpleNamespace(
+        chat_id=123,
+        state_type="teacher_self_location_input",
+        state_data={"target_chat_id": -1001},
+    )
+
+    async def fake_is_teacher(session, chat_id: int, user_id: int):
+        return True
+
+    async def fake_upsert_teacher_profile(session, **kwargs):
+        captured["teacher_profile"] = kwargs
+
+    async def fake_clear_user_state(session, chat_id: int, user_id: int):
+        captured["cleared"] = (chat_id, user_id)
+
+    async def fake_show_home(update, context, chat_id: int):
+        captured["shown"] = chat_id
+
+    monkeypatch.setattr(GarageAuthService, "is_effective_certified_teacher", fake_is_teacher)
+    monkeypatch.setattr(TeacherSearchService, "upsert_teacher_profile_from_location", fake_upsert_teacher_profile)
+    monkeypatch.setattr("backend.features.admin.garage.teacher_self.clear_user_state", fake_clear_user_state)
+    monkeypatch.setattr("backend.features.admin.garage.teacher_self.show_teacher_self_home", fake_show_home)
+
+    await handle_teacher_self_input(update, context, session, state, "")
+
+    assert captured["teacher_profile"] == {
+        "chat_id": -1001,
+        "user_id": 123,
+        "latitude": 31.2,
+        "longitude": 121.4,
+    }
+    assert captured["cleared"] == (123, 123)
+    assert session.commits == 1
+    assert captured["replies"] == ["✅ 已更新该群的服务定位。"]
     assert captured["shown"] == -1001
 
 

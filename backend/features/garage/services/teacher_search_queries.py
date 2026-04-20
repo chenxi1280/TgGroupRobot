@@ -5,6 +5,7 @@ import datetime as dt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.features.garage.services.garage_auth_service import GarageAuthService
 from backend.features.nearby.services.nearby_profile_service import build_user_display_name, format_distance, haversine_distance_km
 from backend.platform.db.schema.models.core import TgUser
 from backend.platform.db.schema.models.garage_features import TeacherDailyAttendance, TeacherProfile, TeacherSearchSetting
@@ -12,6 +13,18 @@ from backend.shared.time_helper import LOCAL_TIMEZONE
 
 
 class TeacherSearchQueryMixin:
+    @staticmethod
+    async def _filter_effective_teacher_rows(
+        session: AsyncSession,
+        chat_id: int,
+        rows: list[tuple[TeacherProfile, TgUser | None]],
+    ) -> list[tuple[TeacherProfile, TgUser | None]]:
+        filtered: list[tuple[TeacherProfile, TgUser | None]] = []
+        for profile, user in rows:
+            if await GarageAuthService.is_effective_certified_teacher(session, chat_id, profile.user_id):
+                filtered.append((profile, user))
+        return filtered
+
     @staticmethod
     async def get_attendance_source_chat_id(session: AsyncSession, chat_id: int) -> int:
         setting = await session.get(TeacherSearchSetting, chat_id)
@@ -43,7 +56,7 @@ class TeacherSearchQueryMixin:
             .where(TeacherDailyAttendance.status.in_(["open", "full"]))
             .order_by(TeacherProfile.updated_at.desc())
         )
-        return list(result.all())
+        return await TeacherSearchQueryMixin._filter_effective_teacher_rows(session, chat_id, list(result.all()))
 
     @staticmethod
     async def search_teachers_by_keyword(
@@ -62,25 +75,34 @@ class TeacherSearchQueryMixin:
         rows = (
             await TeacherSearchService.list_open_course_teachers(session, chat_id)
             if only_open_course
-            else list(
-                (
-                    await session.execute(
-                        select(TeacherProfile, TgUser)
-                        .join(TgUser, TgUser.id == TeacherProfile.user_id, isouter=True)
-                        .where(TeacherProfile.chat_id == chat_id)
-                        .order_by(TeacherProfile.updated_at.desc())
-                    )
-                ).all()
+            else await TeacherSearchQueryMixin._filter_effective_teacher_rows(
+                session,
+                chat_id,
+                list(
+                    (
+                        await session.execute(
+                            select(TeacherProfile, TgUser)
+                            .join(TgUser, TgUser.id == TeacherProfile.user_id, isouter=True)
+                            .where(TeacherProfile.chat_id == chat_id)
+                            .order_by(TeacherProfile.updated_at.desc())
+                        )
+                    ).all()
+                ),
             )
         )
         matches: list[tuple[TeacherProfile, TgUser | None]] = []
         for profile, user in rows:
+            first_name = (user.first_name or "") if user else ""
+            last_name = (getattr(user, "last_name", None) or "") if user else ""
             parts = [
                 profile.region_text or "",
                 profile.price_text or "",
                 " ".join(profile.labels or []),
                 user.username or "" if user else "",
-                user.first_name or "" if user else "",
+                first_name,
+                last_name,
+                "".join([first_name, last_name]),
+                " ".join(part for part in [first_name, last_name] if part),
             ]
             if normalized in " ".join(parts).lower():
                 matches.append((profile, user))
@@ -101,15 +123,19 @@ class TeacherSearchQueryMixin:
         rows = (
             await TeacherSearchService.list_open_course_teachers(session, chat_id)
             if only_open_course
-            else list(
-                (
-                    await session.execute(
-                        select(TeacherProfile, TgUser)
-                        .join(TgUser, TgUser.id == TeacherProfile.user_id, isouter=True)
-                        .where(TeacherProfile.chat_id == chat_id)
-                        .order_by(TeacherProfile.updated_at.desc())
-                    )
-                ).all()
+            else await TeacherSearchQueryMixin._filter_effective_teacher_rows(
+                session,
+                chat_id,
+                list(
+                    (
+                        await session.execute(
+                            select(TeacherProfile, TgUser)
+                            .join(TgUser, TgUser.id == TeacherProfile.user_id, isouter=True)
+                            .where(TeacherProfile.chat_id == chat_id)
+                            .order_by(TeacherProfile.updated_at.desc())
+                        )
+                    ).all()
+                ),
             )
         )
         items: list[dict] = []

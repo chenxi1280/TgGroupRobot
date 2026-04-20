@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import html
 
 import structlog
 from telegram import Update
@@ -15,6 +16,37 @@ from backend.features.points.services.points_service import change_points, get_b
 from backend.features.points.services.points_extended_service import PointsExtendedService
 
 log = structlog.get_logger(__name__)
+
+
+def _user_mention(user) -> str:
+    label = (
+        getattr(user, "full_name", None)
+        or " ".join(
+            part
+            for part in (
+                getattr(user, "first_name", None),
+                getattr(user, "last_name", None),
+            )
+            if part
+        ).strip()
+        or getattr(user, "username", None)
+        or "用户"
+    )
+    return f'<a href="tg://user?id={getattr(user, "id")}">{html.escape(label)}</a>'
+
+
+def _format_join_success_message(*, user, lottery, participant_count: int, full_draw_completed: bool) -> str:
+    title = html.escape(getattr(lottery, "title", "") or "抽奖")
+    max_participants = int(getattr(lottery, "max_participants", 0) or 0)
+    count_label = f"{participant_count}/{max_participants}" if max_participants > 0 else str(participant_count)
+    lines = [
+        f"✅ {_user_mention(user)} 已参与抽奖",
+        f"🎁 抽奖：{title}",
+        f"👥 当前参与人数：{count_label}",
+    ]
+    if full_draw_completed:
+        lines.append("🎉 已满员，系统已自动开奖。")
+    return "\n".join(lines)
 
 
 class LotteryParticipationMixin:
@@ -39,6 +71,7 @@ class LotteryParticipationMixin:
         result_pin_enabled = False
         result_chat_id = None
         result_message_id = None
+        joined_lottery = None
 
         async with db.session_factory() as session:
             lottery = await get_lottery(session, lottery_id)
@@ -123,6 +156,7 @@ class LotteryParticipationMixin:
                                 await session.rollback()
 
                 if not error_msg:
+                    joined_lottery = lottery
                     participant_count = await get_lottery_participant_count(session, lottery_id)
                     rules = lottery.qualification_rules or {}
                     if (
@@ -170,6 +204,7 @@ class LotteryParticipationMixin:
         if error_msg:
             await q.answer(error_msg, show_alert=True)
         else:
+            full_draw_completed = bool(draw_announcement and result_chat_id is not None)
             if draw_announcement and result_chat_id is not None:
                 if result_pin_enabled and result_message_id is not None:
                     try:
@@ -179,3 +214,19 @@ class LotteryParticipationMixin:
                 await q.answer(f"🎉 参与成功！当前人数: {participant_count}，已满员开奖！", show_alert=True)
             else:
                 await q.answer(f"🎉 参与成功！当前人数: {participant_count}", show_alert=True)
+            if joined_lottery is not None:
+                try:
+                    await context.bot.send_message(
+                        chat_id=chat.id,
+                        text=_format_join_success_message(
+                            user=user,
+                            lottery=joined_lottery,
+                            participant_count=participant_count,
+                            full_draw_completed=full_draw_completed,
+                        ),
+                        parse_mode="HTML",
+                        reply_to_message_id=getattr(q.message, "message_id", None),
+                        allow_sending_without_reply=True,
+                    )
+                except Exception as exc:
+                    log.error("lottery_join_success_message_failed", lottery_id=lottery_id, error=str(exc))

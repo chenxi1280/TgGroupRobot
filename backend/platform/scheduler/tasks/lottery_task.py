@@ -1,7 +1,125 @@
 """抽奖自动开奖任务"""
 
+from __future__ import annotations
+
+import datetime as dt
+import html
+
+import structlog
+from sqlalchemy import func, or_, select
+
 from backend.platform.scheduler.core.core import ScheduledTask
 from backend.platform.scheduler.core.task_config import TASK_CONFIG
+
+log = structlog.get_logger(__name__)
+
+REMINDER_ONE_HOUR = "1h"
+REMINDER_FIVE_MINUTES = "5m"
+REMINDER_WINDOWS: tuple[tuple[str, dt.timedelta, str], ...] = (
+    (REMINDER_FIVE_MINUTES, dt.timedelta(minutes=5), "5 分钟内"),
+    (REMINDER_ONE_HOUR, dt.timedelta(hours=1), "1 小时内"),
+)
+
+
+def _format_local_time(value: dt.datetime) -> str:
+    return value.astimezone(dt.timezone(dt.timedelta(hours=8))).strftime("%Y-%m-%d %H:%M")
+
+
+def _time_deadline_reminder_key(lottery, now: dt.datetime) -> tuple[str, str] | None:
+    remaining = lottery.draw_time - now
+    if remaining <= dt.timedelta(0):
+        return None
+    for key, window, label in REMINDER_WINDOWS:
+        if remaining <= window:
+            return key, label
+    return None
+
+
+def _is_time_deadline_lottery(lottery) -> bool:
+    rules = lottery.qualification_rules or {}
+    return rules.get("draw_trigger") in {None, "time_deadline"}
+
+
+def _get_sent_reminders(lottery) -> set[str]:
+    rules = lottery.qualification_rules or {}
+    raw = rules.get("time_reminders_sent") or []
+    if isinstance(raw, str):
+        return {raw}
+    return {str(item) for item in raw}
+
+
+def _mark_reminder_sent(lottery, key: str) -> None:
+    rules = dict(lottery.qualification_rules or {})
+    sent = sorted(_get_sent_reminders(lottery) | {key})
+    rules["time_reminders_sent"] = sent
+    lottery.qualification_rules = rules
+
+
+def _format_deadline_reminder(lottery, *, participant_count: int, label: str) -> str:
+    title = html.escape(lottery.title or "抽奖")
+    deadline = html.escape(_format_local_time(lottery.draw_time))
+    count_label = str(participant_count)
+    if int(lottery.max_participants or 0) > 0:
+        count_label = f"{participant_count}/{int(lottery.max_participants)}"
+    return "\n".join(
+        [
+            f"⏰ 抽奖【{title}】将在 {html.escape(label)} 开奖",
+            f"截止时间：<code>{deadline}</code>",
+            f"当前参与人数：{html.escape(count_label)}",
+            "",
+            "还没参与的成员请尽快点击原抽奖按钮参与。",
+        ]
+    )
+
+
+def _format_no_participants_announcement(lottery) -> str:
+    title = html.escape(lottery.title or "抽奖")
+    return "\n".join(
+        [
+            "⏰ 抽奖已截止，已停止参与。",
+            "",
+            f"🎉 抽奖【{title}】开奖结果",
+            "",
+            "😔 因无人参与，本次抽奖流拍。",
+        ]
+    )
+
+
+def _format_draw_result_with_close_notice(announcement: str) -> str:
+    return "⏰ 抽奖已截止，已停止参与。\n\n" + announcement
+
+
+async def _participant_count(session, lottery_id: int) -> int:
+    from backend.platform.db.schema.models.core import LotteryParticipant
+
+    result = await session.execute(
+        select(func.count(LotteryParticipant.id)).where(LotteryParticipant.lottery_id == lottery_id)
+    )
+    return int(result.scalar() or 0)
+
+
+async def _send_lottery_message(app, lottery, text: str):
+    kwargs = {
+        "chat_id": lottery.chat_id,
+        "text": text,
+        "parse_mode": "HTML",
+    }
+    if lottery.message_id:
+        kwargs["reply_to_message_id"] = lottery.message_id
+        kwargs["allow_sending_without_reply"] = True
+    return await app.bot.send_message(**kwargs)
+
+
+async def _lock_pending_lottery(session, lottery_model, lottery_id: int):
+    result = await session.execute(
+        select(lottery_model)
+        .where(
+            lottery_model.id == lottery_id,
+            lottery_model.status == "pending",
+        )
+        .with_for_update()
+    )
+    return result.scalar_one_or_none()
 
 
 class LotteryTask(ScheduledTask):
@@ -18,25 +136,21 @@ class LotteryTask(ScheduledTask):
 
     async def execute(self, app) -> None:
         """执行开奖逻辑"""
-        from sqlalchemy import or_, select
-        from backend.platform.db.schema.models.core import Lottery, TgUser
         from backend.features.activity.services.lottery_service import (
-            perform_random_draw,
-            generate_lottery_announcement,
             distribute_lottery_rewards,
+            generate_lottery_announcement,
+            perform_random_draw,
         )
-        import datetime as dt
-        import structlog
+        from backend.platform.db.schema.models.core import Lottery, TgUser
 
-        log = structlog.get_logger(__name__)
         db = app.bot_data["db"]
 
         async with db.session_factory() as session:
-            # 查找待开奖且已过期的抽奖
             now = dt.datetime.now(dt.UTC)
+            reminder_horizon = now + dt.timedelta(hours=1)
             stmt = select(Lottery).where(
                 Lottery.status == "pending",
-                Lottery.draw_time <= now,
+                Lottery.draw_time <= reminder_horizon,
                 or_(
                     Lottery.qualification_rules["draw_trigger"].astext.is_(None),
                     Lottery.qualification_rules["draw_trigger"].astext == "time_deadline",
@@ -47,57 +161,99 @@ class LotteryTask(ScheduledTask):
 
             for lottery in lotteries:
                 try:
-                    # 执行随机开奖
-                    winners = await perform_random_draw(session, lottery)
-
-                    if winners:
-                        # 获取中奖用户信息
-                        user_ids = [w.user_id for w in winners]
-                        user_stmt = select(TgUser).where(TgUser.id.in_(user_ids))
-                        user_result = await session.execute(user_stmt)
-                        users = {u.id: u for u in user_result.scalars().all()}
-
-                        await distribute_lottery_rewards(session, lottery, winners)
-
-                        announcement = generate_lottery_announcement(lottery, winners, users)
-
-                        try:
-                            await app.bot.send_message(
-                                chat_id=lottery.chat_id,
-                                text=announcement,
-                                parse_mode="HTML"
-                            )
-                            log.info(
-                                "auto_draw_lottery_success",
-                                lottery_id=lottery.id,
-                                chat_id=lottery.chat_id,
-                                winners_count=len(winners),
-                            )
-                        except Exception as e:
-                            log.error("auto_draw_announcement_failed", lottery_id=lottery.id, error=str(e))
-                            await session.rollback()
-                            continue
-
-                        lottery.status = "completed"
-                        lottery.drawn_at = now
-
-                    else:
-                        try:
-                            await app.bot.send_message(
-                                chat_id=lottery.chat_id,
-                                text=f"🎉 抽奖【{lottery.title}】开奖结果\n\n😔 因无人参与，本次抽奖流拍。"
-                            )
-                        except Exception as e:
-                            log.error("auto_draw_no_participants_failed", lottery_id=lottery.id, error=str(e))
-                            await session.rollback()
-                            continue
-                        lottery.status = "completed"
-                        lottery.drawn_at = now
-
-                    await session.commit()
-                    log.info("auto_draw_lottery_success", lottery_id=lottery.id)
-
-                except Exception as e:
-                    log.error("auto_draw_lottery_failed", lottery_id=lottery.id, error=str(e))
+                    if lottery.draw_time > now:
+                        await self._send_due_reminder(app, session, lottery, now)
+                        continue
+                    await self._draw_due_lottery(
+                        app,
+                        session,
+                        lottery,
+                        now=now,
+                        perform_random_draw=perform_random_draw,
+                        generate_lottery_announcement=generate_lottery_announcement,
+                        distribute_lottery_rewards=distribute_lottery_rewards,
+                        lottery_model=Lottery,
+                        user_model=TgUser,
+                    )
+                except Exception as exc:
+                    log.error("auto_draw_lottery_failed", lottery_id=lottery.id, error=str(exc))
                     await session.rollback()
-                    continue  # 继续处理下一个抽奖
+                    continue
+
+    async def _send_due_reminder(self, app, session, lottery, now: dt.datetime) -> None:
+        locked_lottery = await _lock_pending_lottery(session, lottery.__class__, lottery.id)
+        if locked_lottery is None or not _is_time_deadline_lottery(locked_lottery):
+            return
+        lottery = locked_lottery
+        if lottery.draw_time <= now:
+            return
+        reminder = _time_deadline_reminder_key(lottery, now)
+        if reminder is None:
+            return
+        key, label = reminder
+        if key in _get_sent_reminders(lottery):
+            return
+
+        participant_total = await _participant_count(session, lottery.id)
+        text = _format_deadline_reminder(lottery, participant_count=participant_total, label=label)
+        try:
+            await _send_lottery_message(app, lottery, text)
+        except Exception as exc:
+            log.error("lottery_deadline_reminder_failed", lottery_id=lottery.id, reminder=key, error=str(exc))
+            await session.rollback()
+            return
+
+        _mark_reminder_sent(lottery, key)
+        await session.commit()
+        log.info("lottery_deadline_reminder_sent", lottery_id=lottery.id, reminder=key)
+
+    async def _draw_due_lottery(
+        self,
+        app,
+        session,
+        lottery,
+        *,
+        now: dt.datetime,
+        perform_random_draw,
+        generate_lottery_announcement,
+        distribute_lottery_rewards,
+        lottery_model,
+        user_model,
+    ) -> None:
+        locked_lottery = await _lock_pending_lottery(session, lottery_model, lottery.id)
+        if locked_lottery is None or not _is_time_deadline_lottery(locked_lottery):
+            return
+        if locked_lottery.draw_time > now:
+            return
+        lottery = locked_lottery
+        winners = await perform_random_draw(session, lottery)
+
+        if winners:
+            user_ids = [winner.user_id for winner in winners]
+            user_stmt = select(user_model).where(user_model.id.in_(user_ids))
+            user_result = await session.execute(user_stmt)
+            users = {user.id: user for user in user_result.scalars().all()}
+
+            await distribute_lottery_rewards(session, lottery, winners)
+            announcement = _format_draw_result_with_close_notice(
+                generate_lottery_announcement(lottery, winners, users)
+            )
+        else:
+            announcement = _format_no_participants_announcement(lottery)
+
+        try:
+            await _send_lottery_message(app, lottery, announcement)
+        except Exception as exc:
+            log.error("auto_draw_announcement_failed", lottery_id=lottery.id, error=str(exc))
+            await session.rollback()
+            return
+
+        lottery.status = "completed"
+        lottery.drawn_at = now
+        await session.commit()
+        log.info(
+            "auto_draw_lottery_success",
+            lottery_id=lottery.id,
+            chat_id=lottery.chat_id,
+            winners_count=len(winners),
+        )

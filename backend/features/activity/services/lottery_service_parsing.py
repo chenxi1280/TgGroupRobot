@@ -36,6 +36,20 @@ CONFIG_FIELD_NAMES = {
     "统计天数",
     "入围人数",
 }
+DIRECT_USER_ID_LINK_PATTERNS = (
+    re.compile(r"tg://user\?id=(\d+)", flags=re.IGNORECASE),
+    re.compile(r"tg://openmessage\?user_id=(\d+)", flags=re.IGNORECASE),
+    re.compile(r"(?:https?://)?(?:t\.me|telegram\.me)/user\?id=(\d+)", flags=re.IGNORECASE),
+)
+USERNAME_REFERENCE_PATTERNS = (
+    re.compile(r"(?<![\w/])@([A-Za-z][A-Za-z0-9_]{4,31})"),
+    re.compile(
+        r"(?:https?://)?(?:t\.me|telegram\.me)/(?!user\?id=|c/|joinchat/|\+)(@?[A-Za-z][A-Za-z0-9_]{4,31})(?:[/?#]|$)",
+        flags=re.IGNORECASE,
+    ),
+    re.compile(r"tg://resolve\?domain=([A-Za-z][A-Za-z0-9_]{4,31})", flags=re.IGNORECASE),
+)
+CLEAR_WINNER_MARKERS = ("可选", "无", "不设置", "留空", "跳过", "0")
 
 
 def encode_lottery_type(lottery_type: str) -> str:
@@ -112,6 +126,62 @@ def _is_winner_field(line: str) -> bool:
     return key in WINNER_FIELD_PREFIXES
 
 
+def parse_direct_winner_ids(value: str) -> list[int]:
+    ids: list[int] = []
+    for pattern in DIRECT_USER_ID_LINK_PATTERNS:
+        for match in pattern.finditer(value):
+            user_id = int(match.group(1))
+            if user_id > 0 and user_id not in ids:
+                ids.append(user_id)
+    for raw_token in re.split(r"[\s,，、;；\n]+", value):
+        token = raw_token.strip().strip("<>()[]{}，,。.;；")
+        if re.fullmatch(r"\d+", token):
+            user_id = int(token)
+            if user_id > 0 and user_id not in ids:
+                ids.append(user_id)
+    return ids
+
+
+def extract_winner_usernames(value: str) -> list[str]:
+    usernames: list[str] = []
+    seen: set[str] = set()
+    for pattern in USERNAME_REFERENCE_PATTERNS:
+        for match in pattern.finditer(value):
+            username = match.group(1).lstrip("@")
+            normalized = username.lower()
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            usernames.append(username)
+    return usernames
+
+
+def collect_winner_reference_values(text: str) -> list[str]:
+    values: list[str] = []
+    winner_block = False
+    for raw_line in text.strip().split("\n")[1:]:
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line == "奖品:":
+            winner_block = False
+            continue
+        split_line = _split_config_line(line)
+        if _is_winner_field(line):
+            field_value = split_line[1]
+            if field_value:
+                values.append(field_value)
+            else:
+                winner_block = True
+            continue
+        if winner_block:
+            if split_line is None or split_line[0] not in CONFIG_FIELD_NAMES:
+                values.append(line)
+                continue
+            winner_block = False
+    return values
+
+
 def _parse_future_time(value: str) -> dt.datetime:
     time_pattern = r"(\d{4})-(\d{1,2})-(\d{1,2})\s+(\d{1,2}):(\d{1,2})"
     match = re.search(time_pattern, value)
@@ -133,13 +203,13 @@ def _parse_non_negative_int(value: str, field_name: str) -> int:
         raise ValueError(f"{field_name}必须是有效数字")
 
 
-def _parse_winner_ids(value: str) -> list[int]:
-    ids: list[int] = []
-    for raw in re.findall(r"\d+", value):
-        user_id = int(raw)
-        if user_id > 0 and user_id not in ids:
-            ids.append(user_id)
-    if value.strip() and not ids and not any(marker in value for marker in ("可选", "无", "不设置", "留空")):
+def _parse_winner_ids(value: str, *, allow_unresolved_refs: bool = False) -> list[int]:
+    ids = parse_direct_winner_ids(value)
+    usernames = extract_winner_usernames(value)
+    has_content = bool(value.strip()) and not any(marker in value for marker in CLEAR_WINNER_MARKERS)
+    if usernames and not allow_unresolved_refs:
+        raise ValueError("内定中奖人如使用 @用户名或用户链接，请通过分步创建发送，或填写数字用户ID")
+    if has_content and not ids and not usernames and not allow_unresolved_refs:
         raise ValueError("内定中奖人请填写 Telegram 数字用户ID，多个ID用逗号分隔")
     return ids
 
@@ -149,6 +219,7 @@ def parse_lottery_config_text(
     lottery_type: str = "common",
     selection_mode: str = "threshold_random",
     draw_trigger: str = "time_deadline",
+    allow_unresolved_winner_refs: bool = False,
 ) -> ParsedLotteryConfig:
     lines = text.strip().split("\n")
     if len(lines) < 4:
@@ -194,7 +265,14 @@ def parse_lottery_config_text(
         split_line = _split_config_line(line)
         if winner_block:
             if split_line is None or split_line[0] not in CONFIG_FIELD_NAMES:
-                preset_winner_ids.extend(user_id for user_id in _parse_winner_ids(line) if user_id not in preset_winner_ids)
+                preset_winner_ids.extend(
+                    user_id
+                    for user_id in _parse_winner_ids(
+                        line,
+                        allow_unresolved_refs=allow_unresolved_winner_refs,
+                    )
+                    if user_id not in preset_winner_ids
+                )
                 continue
             winner_block = False
         else:
@@ -222,7 +300,14 @@ def parse_lottery_config_text(
         elif field_name == "入围人数":
             finalist_limit = _parse_non_negative_int(field_value, "入围人数")
         elif field_name in WINNER_FIELD_PREFIXES:
-            preset_winner_ids.extend(user_id for user_id in _parse_winner_ids(field_value) if user_id not in preset_winner_ids)
+            preset_winner_ids.extend(
+                user_id
+                for user_id in _parse_winner_ids(
+                    field_value,
+                    allow_unresolved_refs=allow_unresolved_winner_refs,
+                )
+                if user_id not in preset_winner_ids
+            )
 
     prizes = []
     prize_start = False

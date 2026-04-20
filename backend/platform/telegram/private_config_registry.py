@@ -184,6 +184,21 @@ def build_private_config_handlers() -> dict[str, ConfigHandler]:
     )
     _register_states(
         handlers,
+        ["teacher_member_location_input"],
+        full_args_handler("backend.features.admin.garage.teacher_search_inputs", "handle_teacher_member_location_input"),
+    )
+    _register_states(
+        handlers,
+        [
+            "teacher_self_location_input",
+            "teacher_self_region_input",
+            "teacher_self_price_input",
+            "teacher_self_labels_input",
+        ],
+        full_args_handler("backend.features.admin.garage.teacher_self", "handle_teacher_self_input"),
+    )
+    _register_states(
+        handlers,
         [
             "garage_badge_input",
             "garage_teacher_input",

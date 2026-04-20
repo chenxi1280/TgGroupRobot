@@ -91,6 +91,7 @@ def test_teacher_search_attendance_states_registered_for_private_input() -> None
     assert ConversationStateType.teacher_search_attendance_open_input.value in handlers
     assert ConversationStateType.teacher_search_attendance_full_input.value in handlers
     assert ConversationStateType.teacher_search_attendance_rest_input.value in handlers
+    assert ConversationStateType.teacher_search_member_location_input.value in handlers
 
 
 def test_conversation_state_types_are_registered_or_classified() -> None:

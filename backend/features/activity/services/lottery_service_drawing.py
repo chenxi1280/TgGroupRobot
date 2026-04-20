@@ -170,7 +170,8 @@ def generate_lottery_announcement(lottery: Lottery, winners: list[LotteryWinner]
                 text += f" （+{winner.points_reward}积分）"
             text += "\n"
         else:
-            text += f"• {prize_name}: 用户{winner.user_id}\n"
+            mention = f'<a href="tg://user?id={winner.user_id}">用户{winner.user_id}</a>'
+            text += f"• {prize_name}: {mention}\n"
     return text
 
 

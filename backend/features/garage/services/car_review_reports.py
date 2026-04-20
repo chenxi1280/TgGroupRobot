@@ -2,16 +2,16 @@ from __future__ import annotations
 
 import datetime as dt
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
+from backend.features.garage.services.garage_auth_service import GarageAuthService
 from backend.features.nearby.services.nearby_profile_service import build_user_display_name
 from backend.platform.db.schema.models.core import TgUser
 from backend.platform.db.schema.models.garage_features import (
     CarReviewAuditLog,
     CarReviewReport,
-    GarageCertifiedTeacher,
     TeacherProfile,
 )
 
@@ -329,24 +329,18 @@ class CarReviewReportMixin:
             .join(
                 TeacherProfile,
                 and_(TeacherProfile.chat_id == chat_id, TeacherProfile.user_id == TgUser.id),
-                isouter=True,
-            )
-            .join(
-                GarageCertifiedTeacher,
-                and_(
-                    GarageCertifiedTeacher.chat_id == chat_id,
-                    GarageCertifiedTeacher.user_id == TgUser.id,
-                    GarageCertifiedTeacher.enabled.is_(True),
-                ),
-                isouter=True,
             )
             .where(
                 func.lower(TgUser.username) == normalized,
-                or_(TeacherProfile.id.is_not(None), GarageCertifiedTeacher.id.is_not(None)),
             )
             .limit(1)
         )
-        return result.scalar_one_or_none()
+        user = result.scalar_one_or_none()
+        if user is None:
+            return None
+        if not await GarageAuthService.has_effective_teacher_profile(session, chat_id, user.id):
+            return None
+        return user
 
     @staticmethod
     async def list_lookup_teachers(
@@ -360,23 +354,17 @@ class CarReviewReportMixin:
             .join(
                 TeacherProfile,
                 and_(TeacherProfile.chat_id == chat_id, TeacherProfile.user_id == TgUser.id),
-                isouter=True,
-            )
-            .join(
-                GarageCertifiedTeacher,
-                and_(
-                    GarageCertifiedTeacher.chat_id == chat_id,
-                    GarageCertifiedTeacher.user_id == TgUser.id,
-                    GarageCertifiedTeacher.enabled.is_(True),
-                ),
-                isouter=True,
             )
             .where(TgUser.username.is_not(None))
-            .where(or_(TeacherProfile.id.is_not(None), GarageCertifiedTeacher.id.is_not(None)))
             .order_by(TgUser.username.asc())
             .limit(limit)
         )
-        return list(result.scalars().all())
+        users = list(result.scalars().all())
+        filtered: list[TgUser] = []
+        for user in users:
+            if await GarageAuthService.has_effective_teacher_profile(session, chat_id, user.id):
+                filtered.append(user)
+        return filtered
 
 
 def _normalize_lookup_username(value: str) -> str:

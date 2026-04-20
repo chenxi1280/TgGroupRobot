@@ -17,6 +17,9 @@ class _FakeResult:
     def scalar_one_or_none(self):
         return self._value
 
+    def scalar_one(self):
+        return self._value
+
 
 class _FakeSession:
     def __init__(self, *, execute_value=None) -> None:
@@ -102,6 +105,109 @@ async def test_leave_alliance_deletes_orphan_owner_alliance(monkeypatch):
     assert setting in session.deleted
     assert alliance in session.deleted
     assert session.flush_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_join_alliance_merges_local_teachers_into_owner_pool(monkeypatch):
+    alliance = SimpleNamespace(alliance_id=9, owner_chat_id=-10001, invite_code_expire_at=None)
+    session = _FakeSession(execute_value=None)
+    added: list[object] = []
+
+    async def fake_get_member(inner_session, chat_id):
+        return None
+
+    async def fake_execute(stmt):
+        text = str(stmt)
+        if "FROM bot.group_alliances" in text:
+            return _FakeResult(alliance)
+        return _FakeResult(0)
+
+    async def fake_ensure_setting(*args, **kwargs):
+        return None
+
+    async def fake_append_audit(*args, **kwargs):
+        return None
+
+    async def fake_merge(*args, **kwargs):
+        added.append(kwargs)
+        return 2
+
+    session.execute = fake_execute  # type: ignore[method-assign]
+    session.add = added.append  # type: ignore[attr-defined]
+    monkeypatch.setattr(AllianceService, "get_member", fake_get_member)
+    monkeypatch.setattr(AllianceService, "ensure_setting", fake_ensure_setting)
+    monkeypatch.setattr(AllianceService, "append_audit", fake_append_audit)
+    monkeypatch.setattr(
+        "backend.features.garage.services.alliance_lifecycle.GarageAuthService.merge_local_certified_teachers_into_pool",
+        fake_merge,
+    )
+
+    result = await AllianceService.join_alliance(
+        session,
+        chat_id=-10002,
+        operator_user_id=7,
+        invite_code="JOINCODE",
+    )
+
+    assert result is alliance
+    assert added[0] == {
+        "source_chat_id": -10002,
+        "pool_chat_id": -10001,
+        "operator_user_id": 7,
+    }
+
+
+@pytest.mark.asyncio
+async def test_leave_alliance_syncs_shared_teachers_back_to_local_pool(monkeypatch):
+    alliance = SimpleNamespace(alliance_id=9, owner_chat_id=-10001, updated_at=None)
+    member = SimpleNamespace(alliance_id=9, chat_id=-10002, status="active")
+    setting = SimpleNamespace(chat_id=-10002, alliance_id=9)
+    session = _FakeSession()
+
+    async def fake_get_member(inner_session, chat_id):
+        return member
+
+    async def fake_list_members(inner_session, alliance_id):
+        return [
+            (SimpleNamespace(chat_id=-10001, status="active"), SimpleNamespace(id=-10001, title="Owner Chat")),
+            (member, SimpleNamespace(id=-10002, title="Member Chat")),
+        ]
+
+    async def fake_get_setting(inner_session, chat_id):
+        return setting
+
+    async def fake_append_audit(*args, **kwargs):
+        return None
+
+    async def fake_session_get(model, key):
+        return alliance
+
+    sync_calls: list[dict] = []
+
+    async def fake_sync(*args, **kwargs):
+        sync_calls.append(kwargs)
+        return 3
+
+    session.get = fake_session_get  # type: ignore[method-assign]
+    monkeypatch.setattr(AllianceService, "get_member", fake_get_member)
+    monkeypatch.setattr(AllianceService, "list_members", fake_list_members)
+    monkeypatch.setattr(AllianceService, "get_setting", fake_get_setting)
+    monkeypatch.setattr(AllianceService, "append_audit", fake_append_audit)
+    monkeypatch.setattr(
+        "backend.features.garage.services.alliance_lifecycle.GarageAuthService.sync_local_certified_teachers_from_effective_pool",
+        fake_sync,
+    )
+
+    await AllianceService.leave_alliance(
+        session,
+        chat_id=-10002,
+        operator_user_id=7,
+    )
+
+    assert sync_calls == [{"chat_id": -10002, "operator_user_id": 7}]
+    assert member.status == "left"
+    assert setting in session.deleted
+    assert alliance.updated_at is not None
 
 
 def test_garage_forward_should_forward_matches_mode_rules():

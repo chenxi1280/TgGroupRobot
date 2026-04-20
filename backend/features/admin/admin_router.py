@@ -2,6 +2,7 @@ from __future__ import annotations
 import structlog
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, MessageHandler, filters
 from backend.features.admin.admin_handler import admin_callback
+from backend.features.admin.garage.teacher_self import teacher_self_callback
 from backend.features.invite.account_inherit_handler import account_inherit_callback, account_inherit_command
 from backend.features.garage.garage_forward_handler import garage_forward_channel_post_handler
 from backend.shared.button_layout_editor import button_layout_editor_callback
@@ -25,6 +26,7 @@ class AdminRouter(BaseRouter):
         
         # 回调处理器（管理后台与联盟/车库转发）
         app.add_handler(CallbackQueryHandler(button_layout_editor_callback, pattern=r"^btned:"))
+        app.add_handler(CallbackQueryHandler(teacher_self_callback, pattern=r"^teacher:"))
         app.add_handler(CallbackQueryHandler(admin_callback, pattern=r"^(adm|ali|gfw|grg|tsearch|crv|auc|btm|gm|guess|act|qpub):"))
         app.add_handler(CallbackQueryHandler(account_inherit_callback, pattern=r"^inh:"))
 

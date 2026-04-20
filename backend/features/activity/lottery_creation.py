@@ -4,10 +4,12 @@ import datetime as dt
 import re
 import structlog
 
+from sqlalchemy import func, select
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from backend.platform.db.runtime.session import Database
+from backend.platform.db.schema.models.core import TgUser
 from backend.platform.db.schema.models.enums import ConversationStateType
 from backend.shared.services.chat_service import ensure_chat
 from backend.platform.state.state_service import clear_user_state, set_user_state
@@ -18,7 +20,12 @@ from backend.features.activity.services.lottery_service import (
     get_or_create_lottery_setting,
     parse_lottery_config_text,
 )
-from backend.features.activity.services.lottery_service_parsing import lottery_draw_trigger_label
+from backend.features.activity.services.lottery_service_parsing import (
+    collect_winner_reference_values,
+    extract_winner_usernames,
+    lottery_draw_trigger_label,
+    parse_direct_winner_ids,
+)
 
 log = structlog.get_logger(__name__)
 
@@ -36,6 +43,7 @@ LOTTERY_CREATE_STEPS = {
     "preset_confirm",
     "preset_winners",
 }
+PRESET_CLEAR_WORDS = {"无", "不设置", "跳过", "0", "可选", "留空"}
 
 
 def _lottery_type_title(lottery_type: str) -> str:
@@ -53,6 +61,11 @@ def _prize_slot_count(prizes: list[dict]) -> int:
 
 def _format_local_time(value: dt.datetime) -> str:
     return value.astimezone(dt.timezone(dt.timedelta(hours=8))).strftime("%Y-%m-%d %H:%M")
+
+
+def _default_deadline_text() -> str:
+    local_tz = dt.timezone(dt.timedelta(hours=8))
+    return (dt.datetime.now(local_tz) + dt.timedelta(hours=24)).strftime("%Y-%m-%d %H:%M")
 
 
 def _parse_positive_int(value: str, field_name: str) -> int:
@@ -87,18 +100,126 @@ def _parse_future_time(value: str) -> dt.datetime:
     return draw_time
 
 
-def _parse_preset_winner_ids(value: str) -> list[int]:
+def _add_unique_user_id(user_ids: list[int], user_id: int | None) -> None:
+    if isinstance(user_id, int) and user_id > 0 and user_id not in user_ids:
+        user_ids.append(user_id)
+
+
+def _message_entity_text(message: object, entity: object) -> str:
+    parse_entity = getattr(message, "parse_entity", None)
+    if callable(parse_entity):
+        try:
+            return parse_entity(entity)
+        except Exception:
+            pass
+    text = getattr(message, "text", None) or getattr(message, "caption", None) or ""
+    offset = int(getattr(entity, "offset", 0) or 0)
+    length = int(getattr(entity, "length", 0) or 0)
+    return text[offset : offset + length]
+
+
+async def _resolve_username_to_user_id(session, context: ContextTypes.DEFAULT_TYPE, username: str) -> int | None:
+    normalized = username.strip().lstrip("@").lower()
+    if not normalized:
+        return None
+    result = await session.execute(
+        select(TgUser)
+        .where(func.lower(TgUser.username) == normalized)
+        .order_by(TgUser.updated_at.desc())
+        .limit(1)
+    )
+    stored_user = result.scalars().first()
+    if stored_user is not None:
+        return int(stored_user.id)
+    bot = getattr(context, "bot", None)
+    if bot is None:
+        return None
+    try:
+        target_chat = await bot.get_chat(f"@{normalized}")
+    except Exception:
+        return None
+    target_id = getattr(target_chat, "id", None)
+    if isinstance(target_id, int) and target_id > 0:
+        return target_id
+    return None
+
+
+async def _parse_preset_winner_ids_from_message(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    session,
+    value: str,
+    *,
+    include_message_entities: bool = True,
+) -> list[int]:
     normalized = value.strip()
-    if not normalized or normalized in {"无", "不设置", "跳过", "0"}:
+    if not normalized or normalized in PRESET_CLEAR_WORDS:
         return []
-    if re.sub(r"[\d,\s，、]+", "", normalized):
-        raise ValueError("内定中奖人只支持 Telegram 数字用户ID，多个ID用逗号分隔")
-    winner_ids: list[int] = []
-    for raw in re.findall(r"\d+", normalized):
-        user_id = int(raw)
-        if user_id > 0 and user_id not in winner_ids:
-            winner_ids.append(user_id)
+
+    winner_ids = parse_direct_winner_ids(normalized)
+    usernames = extract_winner_usernames(normalized)
+    if include_message_entities:
+        message = getattr(update, "effective_message", None)
+        for entity in getattr(message, "entities", None) or []:
+            entity_type = getattr(
+                getattr(entity, "type", None),
+                "value",
+                getattr(entity, "type", None),
+            )
+            if entity_type == "text_mention" and getattr(entity, "user", None) is not None:
+                _add_unique_user_id(winner_ids, getattr(entity.user, "id", None))
+                continue
+            if entity_type == "text_link":
+                entity_value = getattr(entity, "url", "") or ""
+            elif entity_type in {"mention", "url"}:
+                entity_value = _message_entity_text(message, entity)
+            else:
+                continue
+            for user_id in parse_direct_winner_ids(entity_value):
+                _add_unique_user_id(winner_ids, user_id)
+            for username in extract_winner_usernames(entity_value):
+                if username.lower() not in {item.lower() for item in usernames}:
+                    usernames.append(username)
+
+    unresolved_usernames: list[str] = []
+    for username in usernames:
+        user_id = await _resolve_username_to_user_id(session, context, username)
+        if user_id is None:
+            unresolved_usernames.append(username)
+            continue
+        _add_unique_user_id(winner_ids, user_id)
+
+    if unresolved_usernames:
+        raise ValueError(
+            "无法识别内定中奖人："
+            + "、".join(f"@{username}" for username in unresolved_usernames)
+            + "。请确认用户已在群内出现过，或改发数字ID / tg://user?id= 链接"
+        )
+    if not winner_ids:
+        raise ValueError("内定中奖人请发送数字ID、@用户名或用户链接，多个用户用逗号分隔")
     return winner_ids
+
+
+async def _resolve_preset_winner_refs_from_config_text(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    session,
+    text: str,
+) -> list[int] | None:
+    values = collect_winner_reference_values(text)
+    if not values:
+        return None
+    merged_ids: list[int] = []
+    for value in values:
+        for user_id in await _parse_preset_winner_ids_from_message(
+            update,
+            context,
+            session,
+            value,
+            include_message_entities=False,
+        ):
+            _add_unique_user_id(merged_ids, user_id)
+    return merged_ids
 
 
 def _state_data(state: object) -> dict:
@@ -361,7 +482,10 @@ async def _reply_next_prompt(update: Update, session, state: object, data: dict,
         if data.get("draw_trigger") == "full_participants":
             await update.effective_message.reply_text("请输入满员开奖人数，例如：100")
         else:
-            await update.effective_message.reply_text("请输入截止开奖时间，格式：YYYY-MM-DD HH:MM")
+            await update.effective_message.reply_text(
+                f"请输入截止开奖时间，直接复制：<code>{_default_deadline_text()}</code>",
+                parse_mode="HTML",
+            )
     elif next_step == "participation_cost":
         point_name = data.get("point_type_name") or "积分"
         await update.effective_message.reply_text(f"请输入每人参与需要扣除多少 {point_name}，0 表示不扣。")
@@ -448,7 +572,7 @@ async def _handle_lottery_wizard_message(update: Update, context: ContextTypes.D
             data["finalist_limit"] = _parse_positive_int(text, "入围人数")
             await _reply_next_prompt(update, session, state, data, "preset_confirm")
         elif step == "preset_winners":
-            preset_ids = _parse_preset_winner_ids(text)
+            preset_ids = await _parse_preset_winner_ids_from_message(update, context, session, text)
             if len(preset_ids) > _prize_slot_count(list(data.get("prizes") or [])):
                 raise ValueError("内定中奖人数不能超过中奖人数")
             data["preset_winner_ids"] = preset_ids
@@ -534,7 +658,14 @@ async def parse_lottery_config_message(update: Update, context: ContextTypes.DEF
             lottery_type=lottery_type,
             selection_mode=selection_mode,
             draw_trigger=draw_trigger,
+            allow_unresolved_winner_refs=True,
         )
+        resolved_preset_ids = await _resolve_preset_winner_refs_from_config_text(update, context, session, text)
+        if resolved_preset_ids is not None:
+            prize_slot_count = _prize_slot_count(config.prizes)
+            if len(resolved_preset_ids) > prize_slot_count:
+                raise ValueError("内定中奖人数不能超过奖品总数量")
+            config.preset_winner_ids = resolved_preset_ids
 
         target_chat_id = state.state_data.get("target_chat_id") or update.effective_chat.id
         lottery = await _create_and_publish_lottery(
@@ -648,8 +779,8 @@ async def handle_lottery_wizard_callback(update: Update, context: ContextTypes.D
                 _save_state_data(state, data)
                 await session.commit()
                 await q.edit_message_text(
-                    "请发送内定中奖人 Telegram 数字用户ID，多个ID用逗号分隔。\n"
-                    "例如：123456789,987654321\n\n"
+                    "请发送内定中奖人，支持数字ID、@用户名、用户资料链接，多个用户用逗号分隔。\n"
+                    "例如：123456789,@alice,tg://user?id=987654321\n\n"
                     "发送“无”可清空内定名单。"
                 )
                 return
@@ -672,7 +803,10 @@ async def handle_lottery_wizard_callback(update: Update, context: ContextTypes.D
                     if data.get("draw_trigger") == "full_participants":
                         await q.edit_message_text("请输入满员开奖人数，例如：100")
                     else:
-                        await q.edit_message_text("请输入截止开奖时间，格式：YYYY-MM-DD HH:MM")
+                        await q.edit_message_text(
+                            f"请输入截止开奖时间，直接复制：<code>{_default_deadline_text()}</code>",
+                            parse_mode="HTML",
+                        )
                     return
                 await q.answer("奖品操作参数无效", show_alert=True)
                 await session.commit()

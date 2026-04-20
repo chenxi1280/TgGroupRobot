@@ -30,12 +30,14 @@ async def _reply_garage_feedback(
     message_id: int,
     text: str,
     delete_mode: str = "none",
+    reply_markup=None,
 ) -> None:
     await PublishService.reply(
         context,
         chat_id=chat_id,
         text=text,
         reply_to_message_id=message_id,
+        reply_markup=reply_markup,
     )
     await _maybe_delete_trigger_message(
         context,

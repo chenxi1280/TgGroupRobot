@@ -150,6 +150,11 @@ class ConversationStateType(str, enum.Enum):
     teacher_search_attendance_rest_input = "teacher_att_rest_input"  # 老师搜索休息词
     teacher_search_delegate_target_input = "teacher_delegate_target_input"  # 老师搜索代录目标
     teacher_search_delegate_location_input = "teacher_delegate_location_input"  # 老师搜索代录定位
+    teacher_search_member_location_input = "teacher_member_location_input"  # 老师搜索私聊定位
+    teacher_self_location_input = "teacher_self_location_input"  # 老师自助定位
+    teacher_self_region_input = "teacher_self_region_input"  # 老师自助地区
+    teacher_self_price_input = "teacher_self_price_input"  # 老师自助价格
+    teacher_self_labels_input = "teacher_self_labels_input"  # 老师自助标签
     car_review_submit_command_input = "car_review_submit_command_input"  # 车评提交指令
     car_review_rank_command_input = "car_review_rank_command_input"  # 车评排行指令
     car_review_approver_input = "car_review_approver_input"  # 车评审核人
