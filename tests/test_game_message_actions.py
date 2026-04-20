@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from backend.features.activity import game_message_actions
+from backend.features.activity import game_message_actions, game_runtime_actions
 
 
 class _Session:
@@ -21,6 +21,16 @@ class _Session:
 class _Db:
     def __init__(self) -> None:
         self.session_factory = lambda: _Session()
+
+
+class _CallbackQuery:
+    def __init__(self, data: str) -> None:
+        self.data = data
+        self.id = f"cb-{data}"
+        self.answers: list[dict] = []
+
+    async def answer(self, text: str = "", show_alert: bool = False) -> None:
+        self.answers.append({"text": text, "show_alert": show_alert})
 
 
 def _group_update(text: str):
@@ -81,3 +91,26 @@ async def test_game_tip_commands_are_handled_and_reply(monkeypatch, command: str
     assert replies[0][2] == 99
     assert expected_text in replies[0][1]
     assert "抽水比例" not in replies[0][1]
+
+
+@pytest.mark.asyncio
+async def test_game_runtime_refresh_callback_returns_visible_feedback(monkeypatch):
+    shown: list[int] = []
+
+    async def fake_show_k3_panel(context, db, chat_id: int):
+        shown.append(chat_id)
+
+    monkeypatch.setattr(game_runtime_actions, "show_k3_panel", fake_show_k3_panel)
+
+    query = _CallbackQuery("gmrun:k3:refresh:-1001")
+    update = SimpleNamespace(
+        callback_query=query,
+        effective_chat=SimpleNamespace(id=-1001, type="supergroup"),
+        effective_user=SimpleNamespace(id=42),
+    )
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}))
+
+    await game_runtime_actions.handle_game_runtime_callback(update, context)
+
+    assert shown == [-1001]
+    assert query.answers == [{"text": "已刷新快三面板", "show_alert": False}]

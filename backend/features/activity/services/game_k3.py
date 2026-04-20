@@ -118,6 +118,13 @@ def k3_result_label(dice: list[int]) -> str:
     return "、".join(labels) if labels else "未命中"
 
 
+def is_k3_round_joinable(round_obj: GameRound, current_time=None) -> bool:
+    settle_at = round_obj.settle_at
+    if settle_at is None:
+        return False
+    return settle_at > (current_time or now_utc())
+
+
 def format_k3_help(enabled: bool, rake_ratio: str | None) -> str:
     if not enabled:
         return "🎮 快三当前未开启。"
@@ -135,6 +142,8 @@ async def get_active_k3_round(session: AsyncSession, chat_id: int) -> GameRound 
             GameRound.chat_id == chat_id,
             GameRound.game_type == "k3",
             GameRound.status == "pending",
+            GameRound.settle_at.is_not(None),
+            GameRound.settle_at > now_utc(),
         )
         .order_by(GameRound.created_at.desc())
     )
@@ -154,6 +163,8 @@ async def create_or_join_k3_round(
     normalized_guess = normalize_k3_guess(guess)
     round_obj = await get_active_k3_round(session, chat_id)
     round_points_chat_id = int(points_chat_id or chat_id)
+    if round_obj is not None and not is_k3_round_joinable(round_obj):
+        round_obj = None
     if round_obj is None:
         import datetime as dt
 

@@ -10,10 +10,12 @@ from backend.features.activity import game_panels
 from backend.features.admin import admin_handler
 from backend.shared.services.base import ValidationError
 from backend.shared.callback_parser import CallbackParser
+from backend.features.activity.services import game_blackjack
 from backend.features.activity.services.game_service import (
     classify_k3_result,
     format_blackjack_help,
     format_k3_help,
+    is_k3_round_joinable,
     k3_guess_label,
     parse_blackjack_bet,
     parse_k3_command,
@@ -107,6 +109,14 @@ class _GuessPublishBot:
         return SimpleNamespace(message_id=99)
 
 
+class _FlushSession:
+    def __init__(self) -> None:
+        self.flushes = 0
+
+    async def flush(self) -> None:
+        self.flushes += 1
+
+
 def test_game_ratio_parsing():
     assert parse_game_ratio("0.1") == "0.1"
     with pytest.raises(ValidationError):
@@ -134,6 +144,112 @@ def test_k3_result_classifies_extended_plays():
     assert set(classify_k3_result([1, 2, 3])["winning_keys"]) == {"small", "even", "straight"}
     assert set(classify_k3_result([1, 3, 5])["winning_keys"]) == {"small", "odd", "misc_six"}
     assert classify_k3_result([6, 6, 6])["winning_keys"] == ["triple"]
+
+
+def test_k3_round_joinable_requires_future_deadline():
+    now = dt.datetime(2026, 1, 1, 12, 0, tzinfo=dt.UTC)
+
+    assert is_k3_round_joinable(SimpleNamespace(settle_at=now + dt.timedelta(seconds=1)), now)
+    assert not is_k3_round_joinable(SimpleNamespace(settle_at=now), now)
+    assert not is_k3_round_joinable(SimpleNamespace(settle_at=now - dt.timedelta(seconds=1)), now)
+    assert not is_k3_round_joinable(SimpleNamespace(settle_at=None), now)
+
+
+@pytest.mark.asyncio
+async def test_blackjack_natural_beats_dealer_drawn_twenty_one(monkeypatch):
+    point_changes: list[tuple[int, int, int, str]] = []
+
+    async def fake_setting(session, chat_id: int):
+        return SimpleNamespace(rake_ratio="0", rake_owner_user_id=None)
+
+    async def fake_change_points(
+        session,
+        chat_id: int,
+        user_id: int,
+        amount: int,
+        txn_type: str,
+        reason: str | None = None,
+    ):
+        point_changes.append((chat_id, user_id, amount, reason or ""))
+        return True, amount
+
+    monkeypatch.setattr(game_blackjack, "get_or_create_setting", fake_setting)
+    monkeypatch.setattr(game_blackjack, "change_points", fake_change_points)
+
+    round_obj = SimpleNamespace(
+        chat_id=-1001,
+        status="player_turn",
+        settle_at=dt.datetime.now(dt.UTC),
+        result_data={
+            "player_cards": [1, 10],
+            "dealer_cards": [7, 7],
+            "deck": [7],
+            "points_chat_id": -1001,
+        },
+    )
+    participant = SimpleNamespace(
+        user_id=42,
+        bet_points=100,
+        status="active",
+        payout_points=0,
+        choice_data={"player_cards": [1, 10], "dealer_cards": [7, 7], "points_chat_id": -1001},
+    )
+
+    outcome = await game_blackjack.finalize_blackjack_round(_FlushSession(), round_obj, participant, "stand")
+
+    assert participant.status == "won"
+    assert participant.payout_points == 250
+    assert "获得 250 积分" in outcome
+    assert round_obj.result_data["dealer_cards"] == [7, 7]
+    assert point_changes == [(-1001, 42, 250, "黑杰克获胜")]
+
+
+@pytest.mark.asyncio
+async def test_blackjack_dealer_natural_beats_player_non_natural_twenty_one(monkeypatch):
+    point_changes: list[tuple[int, int, int, str]] = []
+
+    async def fake_setting(session, chat_id: int):
+        return SimpleNamespace(rake_ratio="0", rake_owner_user_id=None)
+
+    async def fake_change_points(
+        session,
+        chat_id: int,
+        user_id: int,
+        amount: int,
+        txn_type: str,
+        reason: str | None = None,
+    ):
+        point_changes.append((chat_id, user_id, amount, reason or ""))
+        return True, amount
+
+    monkeypatch.setattr(game_blackjack, "get_or_create_setting", fake_setting)
+    monkeypatch.setattr(game_blackjack, "change_points", fake_change_points)
+
+    round_obj = SimpleNamespace(
+        chat_id=-1001,
+        status="player_turn",
+        settle_at=dt.datetime.now(dt.UTC),
+        result_data={
+            "player_cards": [10, 5, 6],
+            "dealer_cards": [1, 10],
+            "deck": [],
+            "points_chat_id": -1001,
+        },
+    )
+    participant = SimpleNamespace(
+        user_id=42,
+        bet_points=100,
+        status="active",
+        payout_points=0,
+        choice_data={"player_cards": [10, 5, 6], "dealer_cards": [1, 10], "points_chat_id": -1001},
+    )
+
+    outcome = await game_blackjack.finalize_blackjack_round(_FlushSession(), round_obj, participant, "stand")
+
+    assert participant.status == "lost"
+    assert participant.payout_points == 0
+    assert outcome == "❌ 本局失败"
+    assert point_changes == []
 
 
 def test_group_game_help_hides_admin_rake_ratio():

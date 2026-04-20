@@ -28,7 +28,7 @@ from backend.features.points.services.points_service import change_points
 from backend.platform.db.runtime.session import Database
 from backend.platform.db.schema.models.enums import PointsTxnType
 from backend.platform.db.schema.models.expansion import GameParticipant, GameRound
-from backend.platform.telegram.errors import answer_callback_query_safely, mark_callback_query_answered
+from backend.platform.telegram.errors import answer_callback_query_safely
 from backend.shared.callback_parser import CallbackParser
 from backend.shared.services.base import ValidationError
 from backend.shared.services.user_service import ensure_user
@@ -45,14 +45,12 @@ async def handle_game_runtime_callback(update: Update, context: ContextTypes.DEF
     if chat_id is None:
         await answer_callback_query_safely(update, "参数错误", show_alert=True)
         return
-    await query.answer()
-    mark_callback_query_answered(update)
     db: Database = context.application.bot_data["db"]
     user = update.effective_user
 
     if game == "k3" and action == "refresh":
         await show_k3_panel(context, db, chat_id)
-        await answer_callback_query_safely(update, "已刷新快三面板")
+        await answer_callback_query_safely(update, "已刷新快三面板", show_alert=False)
         return
     if game == "bj" and action == "refresh":
         await show_blackjack_panel(context, db, chat_id)
@@ -69,7 +67,7 @@ async def handle_game_runtime_callback(update: Update, context: ContextTypes.DEF
                 )
             except Exception:
                 pass
-        await answer_callback_query_safely(update, "已刷新黑杰克面板")
+        await answer_callback_query_safely(update, "已刷新黑杰克面板", show_alert=False)
         return
 
     if game == "k3" and action == "bet":
@@ -119,7 +117,11 @@ async def handle_game_runtime_callback(update: Update, context: ContextTypes.DEF
             participant_count = int(count_result.scalar() or 0)
             await session.commit()
         await show_k3_panel(context, db, chat_id)
-        await answer_callback_query_safely(update, f"下注成功：{k3_guess_label(guess)} {bet_points}，本局 {participant_count} 人")
+        await answer_callback_query_safely(
+            update,
+            f"下注成功：{k3_guess_label(guess)} {bet_points}，本局 {participant_count} 人",
+            show_alert=False,
+        )
         return
 
     if game == "bj" and action == "start":
@@ -175,7 +177,7 @@ async def handle_game_runtime_callback(update: Update, context: ContextTypes.DEF
                 stored_round.announcement_message_id = sent.message_id
             await session.commit()
         await show_blackjack_panel(context, db, chat_id)
-        await answer_callback_query_safely(update, f"黑杰克开局成功：{bet_points}")
+        await answer_callback_query_safely(update, f"黑杰克开局成功：{bet_points}", show_alert=False)
         return
 
     if game == "bj" and action in {"hit", "stand"}:
@@ -201,7 +203,7 @@ async def handle_game_runtime_callback(update: Update, context: ContextTypes.DEF
             except Exception:
                 pass
         await show_blackjack_panel(context, db, chat_id)
-        await answer_callback_query_safely(update, "已更新当前对局")
+        await answer_callback_query_safely(update, "已更新当前对局", show_alert=False)
         return
 
     await answer_callback_query_safely(update, "暂不支持该操作", show_alert=True)
