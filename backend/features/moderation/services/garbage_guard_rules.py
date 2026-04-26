@@ -269,6 +269,8 @@ def save_garbage_config(settings: ChatSettings, config: dict[str, Any]) -> None:
     raw_rules = getattr(settings, "anti_spam_rules", None) or {}
     if not isinstance(raw_rules, dict):
         raw_rules = {}
+    else:
+        raw_rules = copy.deepcopy(raw_rules)
     normalized = copy.deepcopy(DEFAULT_GARBAGE_CONFIG)
     normalized["global_whitelist_user_ids"] = _normalize_int_list(config.get("global_whitelist_user_ids", []))
     raw_rule_config = config.get("rules") if isinstance(config.get("rules"), dict) else {}

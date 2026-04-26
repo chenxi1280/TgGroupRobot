@@ -59,6 +59,7 @@ def test_banned_word_keyboards_use_explicit_admin_back_targets() -> None:
     listing = banned_word_list_keyboard(words, -100123)
 
     assert menu.inline_keyboard[-1][0].callback_data == "adm:menu:main:-100123"
+    assert listing.inline_keyboard[0][0].callback_data == "banned_word:add:-100123"
     assert listing.inline_keyboard[-1][0].callback_data == "adm:menu:keywords:-100123"
 
 

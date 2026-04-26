@@ -10,6 +10,7 @@ from backend.features.admin.activity import game as game_admin_module
 from backend.features.admin.ui.antispam import garbage_guard_home_keyboard, garbage_guard_rule_keyboard
 from backend.features.moderation import garbage_guard_config_handler
 from backend.features.moderation.anti_spam_config_handler import format_anti_spam_menu_text
+from backend.features.moderation.services.garbage_guard_rules import RULE_ORDER, set_rule_config
 from backend.shared.callback_parser import CallbackParser
 
 
@@ -283,6 +284,34 @@ def test_garbage_rule_keyboard_hides_dependent_rows_until_enabled() -> None:
     assert "⚙️ 警告次数:" in labels
     assert "⚙️ 禁言时长:" in labels
     assert "⚙️ 提示删除:" in labels
+
+
+def test_garbage_guard_banned_words_rule_exposes_add_entry() -> None:
+    settings = SimpleNamespace(anti_spam_rules={}, anti_flood_enabled=False)
+    keyboard = garbage_guard_rule_keyboard(settings, -100123, "banned_words")
+    rows = [[button.text for button in row] for row in keyboard.inline_keyboard]
+    callbacks = [button.callback_data for row in keyboard.inline_keyboard for button in row]
+
+    assert ["➕ 添加违禁词"] in rows
+    assert "banned_word:add:-100123" in callbacks
+
+
+def test_all_garbage_guard_rules_can_enable_with_tracked_json_assignment() -> None:
+    original_rules = {}
+    settings = SimpleNamespace(
+        anti_spam_rules=original_rules,
+        anti_flood_enabled=False,
+        anti_flood_messages=5,
+        anti_flood_seconds=5,
+        anti_flood_mute_duration=3600,
+    )
+
+    for rule_id in RULE_ORDER:
+        set_rule_config(settings, rule_id, {"enabled": True})
+
+    assert settings.anti_spam_rules is not original_rules
+    saved_rules = settings.anti_spam_rules["garbage_guard"]["rules"]
+    assert all(saved_rules[rule_id]["enabled"] is True for rule_id in RULE_ORDER)
 
 
 @pytest.mark.asyncio

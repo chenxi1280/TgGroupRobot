@@ -46,6 +46,8 @@ def banned_word_list_keyboard(
         chat_id: 群组 ID，用于在私聊中操作群组时指定目标群组
     """
     buttons = []
+    add_callback = f"banned_word:add:{chat_id}" if chat_id else "banned_word:add"
+    buttons.append([InlineKeyboardButton("➕ 添加违禁词", callback_data=add_callback)])
 
     for word in words:
         status_icon = StatusIcons.active(word.is_active)

@@ -95,7 +95,8 @@ def _condition_rows(settings, chat_id: int, rule_id: str, banned_word_count: int
             [
                 InlineKeyboardButton("⚙️ 检测条件:", callback_data=f"banned_word:list:{chat_id}"),
                 InlineKeyboardButton(f"{banned_word_count} 个违禁词", callback_data=f"banned_word:list:{chat_id}"),
-            ]
+            ],
+            [InlineKeyboardButton("➕ 添加违禁词", callback_data=f"banned_word:add:{chat_id}")],
         ]
     if rule_id == "long_message":
         return [
