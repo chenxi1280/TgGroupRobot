@@ -288,15 +288,13 @@ class TeacherSearchViewsMixin:
             await session.commit()
 
         button_text = config.button_text or "【未配置】"
-        button_url = config.button_url or "【未配置】"
         text = (
             "🔍 老师搜索 | 底部按钮\n\n"
             f"按钮文字：{button_text}\n"
-            f"按钮链接：{button_url}"
+            "点击底部按钮会直接发送这个文字，并打开老师搜索说明。"
         )
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("修改文字", callback_data=f"tsearch:footer:text:{chat_id}")],
-            [InlineKeyboardButton("修改链接", callback_data=f"tsearch:footer:link:{chat_id}")],
             [InlineKeyboardButton("⬅️ 返回", callback_data=f"tsearch:home:{chat_id}")],
         ])
         await self.message_helper.safe_edit(update, text, reply_markup=keyboard)

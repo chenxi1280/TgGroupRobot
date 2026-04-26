@@ -51,7 +51,7 @@ def test_teacher_search_footer_config_reports_configured_state():
 
     assert empty.is_configured is False
     assert by_text.is_configured is True
-    assert by_url.is_configured is True
+    assert by_url.is_configured is False
 
 
 @pytest.mark.asyncio
@@ -75,9 +75,23 @@ async def test_garage_clear_admin_input_state_preserves_private_selected_chat(mo
 
 
 @pytest.mark.asyncio
-async def test_teacher_search_footer_service_rejects_non_http_url():
-    with pytest.raises(ValidationError):
-        await TeacherSearchService.update_footer_button_url(object(), -1001, "ftp://example.com")
+async def test_teacher_search_footer_service_ignores_legacy_url(monkeypatch):
+    captured: dict[str, object] = {}
+
+    async def fake_update_setting(session, chat_id: int, **updates):
+        captured["updates"] = updates
+        return SimpleNamespace(footer_button_label="老师搜索", footer_button_url=updates.get("footer_button_url"))
+
+    monkeypatch.setattr(
+        "backend.features.garage.services.teacher_search_settings.TeacherSearchSettingsMixin.update_setting",
+        fake_update_setting,
+    )
+
+    config = await TeacherSearchService.update_footer_button_url(object(), -1001, "ftp://example.com")
+
+    assert captured["updates"] == {"footer_button_url": None}
+    assert config.button_text == "老师搜索"
+    assert config.button_url is None
 
 
 @pytest.mark.asyncio
@@ -286,7 +300,7 @@ async def test_teacher_search_attendance_mode_menu_shows_fixed_words(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_teacher_search_footer_menu_shows_text_and_link(monkeypatch):
+async def test_teacher_search_footer_menu_shows_text_without_link(monkeypatch):
     captured: dict[str, object] = {}
     session = _SessionContext()
     context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(session)}))
@@ -315,11 +329,11 @@ async def test_teacher_search_footer_menu_shows_text_and_link(monkeypatch):
     rows = [[button.text for button in row] for row in captured["keyboard"]]
     assert "🔍 老师搜索 | 底部按钮" in captured["text"]
     assert "按钮文字：老师搜索" in captured["text"]
-    assert "按钮链接：https://example.com/h5/teacher-search" in captured["text"]
-    assert rows == [["修改文字"], ["修改链接"], ["⬅️ 返回"]]
+    assert "按钮链接" not in captured["text"]
+    assert "点击底部按钮会直接发送这个文字" in captured["text"]
+    assert rows == [["修改文字"], ["⬅️ 返回"]]
     assert captured["keyboard"][0][0].callback_data == "tsearch:footer:text:-1001"
-    assert captured["keyboard"][1][0].callback_data == "tsearch:footer:link:-1001"
-    assert captured["keyboard"][2][0].callback_data == "tsearch:home:-1001"
+    assert captured["keyboard"][1][0].callback_data == "tsearch:home:-1001"
 
 
 @pytest.mark.asyncio
@@ -344,7 +358,7 @@ async def test_teacher_search_footer_menu_shows_unconfigured_values(monkeypatch)
     await admin_handler._admin_handler._show_teacher_search_footer_menu(update, context, -1001)
 
     assert "按钮文字：【未配置】" in captured["text"]
-    assert "按钮链接：【未配置】" in captured["text"]
+    assert "按钮链接" not in captured["text"]
 
 
 @pytest.mark.asyncio
@@ -381,20 +395,19 @@ async def test_teacher_search_footer_text_button_starts_text_state(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_teacher_search_footer_link_button_starts_link_state(monkeypatch):
+async def test_teacher_search_footer_link_button_returns_to_text_only_menu(monkeypatch):
     captured: dict[str, object] = {}
     context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(_SessionContext())}))
-    update = SimpleNamespace(effective_user=SimpleNamespace(id=123))
+    update = SimpleNamespace(effective_user=SimpleNamespace(id=123), callback_query=SimpleNamespace())
 
-    async def fake_start_text_input_state(context, user_id, state_chat_id, state_type, payload):
-        captured["state"] = (user_id, state_chat_id, state_type, payload)
+    async def fake_answer(update, text, **kwargs):
+        captured["answer"] = text
 
-    async def fake_safe_edit(update, text, reply_markup):
-        captured["text"] = text
-        captured["keyboard"] = reply_markup.inline_keyboard
+    async def fake_show_menu(update, context, chat_id):
+        captured["shown"] = chat_id
 
-    monkeypatch.setattr(admin_handler._admin_handler, "_start_text_input_state", fake_start_text_input_state)
-    monkeypatch.setattr(admin_handler._admin_handler.message_helper, "safe_edit", fake_safe_edit)
+    monkeypatch.setattr("backend.features.admin.garage.teacher_search_actions.answer_callback_query_safely", fake_answer)
+    monkeypatch.setattr(admin_handler._admin_handler, "_show_teacher_search_footer_menu", fake_show_menu)
 
     await admin_handler._admin_handler._handle_teacher_search(
         update,
@@ -403,14 +416,8 @@ async def test_teacher_search_footer_link_button_starts_link_state(monkeypatch):
         CallbackParser.parse("tsearch:footer:link:-1001"),
     )
 
-    assert captured["state"] == (
-        123,
-        -1001,
-        "teacher_footer_link_input",
-        {"target_chat_id": -1001},
-    )
-    assert "请输入 H5 页面链接" in captured["text"]
-    assert captured["keyboard"][0][0].callback_data == "tsearch:footer:menu:-1001"
+    assert captured["answer"] == "底部按钮不需要配置链接，点击后会直接触发老师搜索。"
+    assert captured["shown"] == -1001
 
 
 @pytest.mark.asyncio
@@ -650,7 +657,7 @@ async def test_teacher_search_footer_text_input_updates_label(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_teacher_search_footer_link_input_updates_url(monkeypatch):
+async def test_teacher_search_footer_link_input_clears_legacy_state(monkeypatch):
     captured: dict[str, object] = {"replies": []}
     session = _SessionContext()
     context = SimpleNamespace()
@@ -663,10 +670,6 @@ async def test_teacher_search_footer_link_input_updates_url(monkeypatch):
     update = SimpleNamespace(effective_user=SimpleNamespace(id=123), effective_message=_Message())
     state = SimpleNamespace(state_type="teacher_footer_link_input")
 
-    async def fake_update_footer_url(session, chat_id, button_url):
-        captured["setting"] = (chat_id, button_url)
-        return SimpleNamespace(button_text=None, button_url=button_url, is_configured=True)
-
     async def fake_clear_state(session, *, target_chat_id, user_id):
         captured["cleared"] = (target_chat_id, user_id)
 
@@ -675,7 +678,6 @@ async def test_teacher_search_footer_link_input_updates_url(monkeypatch):
 
     import backend.features.admin.garage.teacher_search_inputs as teacher_search_inputs
 
-    monkeypatch.setattr(TeacherSearchService, "update_footer_button_url", fake_update_footer_url)
     monkeypatch.setattr(teacher_search_inputs, "clear_admin_input_state", fake_clear_state)
     monkeypatch.setattr(admin_handler._admin_handler, "_show_teacher_search_footer_menu", fake_show_menu)
 
@@ -689,10 +691,9 @@ async def test_teacher_search_footer_link_input_updates_url(monkeypatch):
     )
 
     assert handled is True
-    assert captured["setting"] == (-1001, "https://example.com/h5/teacher-search")
     assert captured["cleared"] == (-1001, 123)
     assert session.commits == 1
-    assert captured["replies"] == ["已设置底部按钮链接：https://example.com/h5/teacher-search"]
+    assert captured["replies"] == ["底部按钮不需要配置链接，点击后会直接触发老师搜索。"]
     assert captured["shown"] == -1001
 
 
@@ -1103,22 +1104,28 @@ async def test_teacher_search_attendance_target_input_marks_teacher(monkeypatch)
 
 
 @pytest.mark.asyncio
-async def test_teacher_search_footer_link_input_rejects_invalid_url(monkeypatch):
+async def test_teacher_search_footer_link_input_ignores_invalid_url(monkeypatch):
     captured: dict[str, object] = {"replies": []}
     session = _SessionContext()
     context = SimpleNamespace()
 
     class _Message:
-        async def reply_text(self, text):
+        async def reply_text(self, text, **kwargs):
             captured["replies"].append(text)
 
     update = SimpleNamespace(effective_user=SimpleNamespace(id=123), effective_message=_Message())
     state = SimpleNamespace(state_type="teacher_footer_link_input")
 
-    async def fake_update_footer_url(session, chat_id, button_url):
-        raise ValidationError("按钮链接必须以 http:// 或 https:// 开头。")
+    async def fake_clear_state(session, *, target_chat_id, user_id):
+        captured["cleared"] = (target_chat_id, user_id)
 
-    monkeypatch.setattr(TeacherSearchService, "update_footer_button_url", fake_update_footer_url)
+    async def fake_show_menu(update, context, chat_id):
+        captured["shown"] = chat_id
+
+    import backend.features.admin.garage.teacher_search_inputs as teacher_search_inputs
+
+    monkeypatch.setattr(teacher_search_inputs, "clear_admin_input_state", fake_clear_state)
+    monkeypatch.setattr(admin_handler._admin_handler, "_show_teacher_search_footer_menu", fake_show_menu)
 
     handled = await handle_teacher_search_feature_input(
         update,
@@ -1130,8 +1137,10 @@ async def test_teacher_search_footer_link_input_rejects_invalid_url(monkeypatch)
     )
 
     assert handled is True
-    assert captured["replies"] == ["按钮链接必须以 http:// 或 https:// 开头。"]
-    assert session.commits == 0
+    assert captured["cleared"] == (-1001, 123)
+    assert captured["replies"] == ["底部按钮不需要配置链接，点击后会直接触发老师搜索。"]
+    assert captured["shown"] == -1001
+    assert session.commits == 1
 
 
 @pytest.mark.asyncio

@@ -160,24 +160,8 @@ class TeacherSearchActionsMixin:
             )
             return
         if action == "footer" and callback_data.get(2) == "link":
-            await self._start_text_input_state(
-                context,
-                update.effective_user.id,
-                chat_id,
-                ConversationStateType.teacher_search_footer_link_input.value,
-                {"target_chat_id": chat_id},
-            )
-            await self.message_helper.safe_edit(
-                update,
-                (
-                    "🔎 老师搜索 | 底部按钮链接\n\n"
-                    "👉 请输入 H5 页面链接，需要以 http:// 或 https:// 开头。\n"
-                    "输入 /clear 可清空按钮链接。"
-                ),
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🔙 返回", callback_data=f"tsearch:footer:menu:{chat_id}")]
-                ]),
-            )
+            await answer_callback_query_safely(update, "底部按钮不需要配置链接，点击后会直接触发老师搜索。")
+            await self._show_teacher_search_footer_menu(update, context, chat_id)
             return
         if action == "footer" and callback_data.get(2) == "clear":
             async with db.session_factory() as session:

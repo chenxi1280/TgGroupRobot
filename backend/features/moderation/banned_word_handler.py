@@ -11,6 +11,7 @@ from backend.features.moderation.banned_word_input import (
     banned_word_config_handler,
 )
 from backend.features.moderation.banned_word_menu import BannedWordMenuHandler, _banned_word_menu_handler
+from backend.features.moderation.banned_word_message import safe_edit_banned_word_message
 from backend.features.moderation.banned_word_toggle import BannedWordToggleHandler as _BannedWordToggleHandlerBase
 from backend.features.moderation.banned_word_views import build_banned_word_list_text
 from backend.features.moderation.banned_word_cancel import banned_word_cancel_callback
@@ -21,7 +22,7 @@ from backend.features.moderation.services.banned_word_service import (
     toggle_banned_word,
 )
 from backend.platform.db.runtime.session import Database
-from backend.platform.telegram.errors import mark_callback_query_answered
+from backend.platform.telegram.errors import answer_callback_query_safely, mark_callback_query_answered
 from backend.shared.callback_parser import CallbackParser
 from backend.shared.chat_context import PrivateChatContext
 from backend.shared.handlers.base.chat_resolver import ChatResolver
@@ -55,7 +56,7 @@ class BannedWordToggleHandler(_BannedWordToggleHandlerBase):
 
         text = build_banned_word_list_text(words, total_triggers)
         keyboard = self._get_list_keyboard(words, target_chat_id)
-        await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
+        await safe_edit_banned_word_message(update.callback_query, text, reply_markup=keyboard)
 
 
 _banned_word_toggle_handler = BannedWordToggleHandler()
@@ -70,16 +71,18 @@ async def banned_word_list_callback(update: Update, context: ContextTypes.DEFAUL
     if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
         return
     q = update.callback_query
-    await q.answer()
 
     cb = CallbackParser.parse(q.data or "")
     if update.effective_chat.type == "private":
         target_chat_id = cb.get_int_optional(2)
         if target_chat_id is None:
-            await q.answer("❌ 群组参数无效，请返回重试", show_alert=True)
+            await answer_callback_query_safely(update, "❌ 群组参数无效，请返回重试", show_alert=True)
             return
     else:
         target_chat_id = update.effective_chat.id
+
+    await q.answer()
+    mark_callback_query_answered(update)
 
     # 获取违禁词列表
     db: Database = context.application.bot_data["db"]
@@ -89,7 +92,8 @@ async def banned_word_list_callback(update: Update, context: ContextTypes.DEFAUL
         await session.commit()
 
     from backend.features.moderation.ui.banned_word import banned_word_list_keyboard
-    await q.edit_message_text(
+    await safe_edit_banned_word_message(
+        q,
         build_banned_word_list_text(words, total_triggers),
         reply_markup=banned_word_list_keyboard(words, target_chat_id),
     )
@@ -150,8 +154,7 @@ async def banned_word_delete_callback(update: Update, context: ContextTypes.DEFA
         await session.commit()
 
     if success:
-        await q.answer("违禁词已删除")
-        mark_callback_query_answered(update)
+        await answer_callback_query_safely(update, "违禁词已删除", show_alert=False)
         # 重新显示列表
         async with db.session_factory() as session:
             words = await get_chat_banned_words(session, target_chat_id)
@@ -159,7 +162,8 @@ async def banned_word_delete_callback(update: Update, context: ContextTypes.DEFA
             await session.commit()
 
         from backend.features.moderation.ui.banned_word import banned_word_list_keyboard
-        await q.edit_message_text(
+        await safe_edit_banned_word_message(
+            q,
             build_banned_word_list_text(words, total_triggers),
             reply_markup=banned_word_list_keyboard(words, target_chat_id),
         )

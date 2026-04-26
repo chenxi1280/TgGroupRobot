@@ -4,7 +4,6 @@ import datetime as dt
 import re
 from dataclasses import dataclass
 from decimal import Decimal
-from urllib.parse import urlparse
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,7 +22,7 @@ class TeacherSearchFooterButtonConfig:
 
     @property
     def is_configured(self) -> bool:
-        return bool(self.button_text or self.button_url)
+        return bool(self.button_text)
 
 
 def _clean_optional_value(value: str | None) -> str | None:
@@ -82,7 +81,7 @@ def _clean_teacher_profile_labels(value: str | list[str] | None) -> list[str]:
 def _footer_config_from_setting(setting: TeacherSearchSetting) -> TeacherSearchFooterButtonConfig:
     return TeacherSearchFooterButtonConfig(
         button_text=(setting.footer_button_label or "").strip() or None,
-        button_url=(getattr(setting, "footer_button_url", None) or "").strip() or None,
+        button_url=None,
     )
 
 
@@ -155,14 +154,7 @@ class TeacherSearchSettingsMixin:
         chat_id: int,
         button_url: str | None,
     ) -> TeacherSearchFooterButtonConfig:
-        url = _clean_optional_value(button_url)
-        if url is not None:
-            if len(url) > 512:
-                raise ValidationError("按钮链接过长，请控制在 512 个字符以内。")
-            parsed = urlparse(url)
-            if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-                raise ValidationError("按钮链接必须以 http:// 或 https:// 开头。")
-        setting = await TeacherSearchSettingsMixin.update_setting(session, chat_id, footer_button_url=url)
+        setting = await TeacherSearchSettingsMixin.update_setting(session, chat_id, footer_button_url=None)
         return _footer_config_from_setting(setting)
 
     @staticmethod

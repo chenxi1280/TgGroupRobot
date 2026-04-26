@@ -8,10 +8,15 @@ from backend.platform.db.runtime.session import Database
 from backend.platform.db.schema.models.core import TgChat
 from backend.platform.db.schema.models.enums import ConversationStateType
 from backend.platform.state.state_service import clear_user_state, get_user_state, set_user_state
+from backend.platform.telegram.errors import (
+    answer_callback_query_safely,
+    mark_callback_query_answered,
+)
 from backend.shared.callback_parser import CallbackParser
 from backend.shared.services.chat_service import ensure_chat
 from backend.shared.services.permission_service import is_user_admin
 from backend.shared.services.user_service import ensure_user
+from backend.features.moderation.banned_word_message import safe_edit_banned_word_message
 from sqlalchemy import select
 
 log = structlog.get_logger(__name__)
@@ -56,7 +61,6 @@ async def banned_word_add_start_impl(update: Update, context: ContextTypes.DEFAU
         return
 
     query = update.callback_query
-    await query.answer()
     chat = update.effective_chat
     user = update.effective_user
     data = query.data or ""
@@ -91,13 +95,20 @@ async def banned_word_add_start_impl(update: Update, context: ContextTypes.DEFAU
 
     except Exception as exc:
         log.exception("banned_word_add_start_error", error=str(exc))
-        await query.edit_message_text(f"❌ 启动失败: {str(exc)}")
+        await safe_edit_banned_word_message(query, f"❌ 启动失败: {str(exc)}")
         return
 
     keyboard = InlineKeyboardMarkup(
         [[InlineKeyboardButton("❌ 取消配置", callback_data=f"keywords:cancel:{target_chat_id}")]]
     )
-    await query.edit_message_text(BANNED_WORD_CREATE_PROMPT, parse_mode="Markdown", reply_markup=keyboard)
+    await query.answer()
+    mark_callback_query_answered(update)
+    await safe_edit_banned_word_message(
+        query,
+        BANNED_WORD_CREATE_PROMPT,
+        parse_mode="Markdown",
+        reply_markup=keyboard,
+    )
 
 
 async def _resolve_banned_word_target(update: Update, context: ContextTypes.DEFAULT_TYPE, data: str) -> tuple[int | None, str | None]:
@@ -107,7 +118,7 @@ async def _resolve_banned_word_target(update: Update, context: ContextTypes.DEFA
 
     if chat.type != "private":
         if not await is_user_admin(context, chat.id, user.id):
-            await update.callback_query.edit_message_text("需要管理员权限。")
+            await answer_callback_query_safely(update, "需要管理员权限。", show_alert=True)
             return None, None
         return chat.id, chat.title
 
@@ -115,10 +126,10 @@ async def _resolve_banned_word_target(update: Update, context: ContextTypes.DEFA
     if data.startswith("banned_word:add:"):
         target_chat_id = CallbackParser.parse(data).get_int(2)
     if target_chat_id == 0:
-        await update.callback_query.answer("❌ 群组参数无效，请返回重试", show_alert=True)
+        await answer_callback_query_safely(update, "❌ 群组参数无效，请返回重试", show_alert=True)
         return None, None
     if not await is_user_admin(context, target_chat_id, user.id):
-        await update.callback_query.edit_message_text("你没有该群组的管理权限")
+        await answer_callback_query_safely(update, "你没有该群组的管理权限", show_alert=True)
         return None, None
 
     async with db.session_factory() as session:

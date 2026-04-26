@@ -302,24 +302,13 @@ async def _handle_footer_button_link_input(
     target_chat_id: int,
     text_value: str,
 ) -> None:
-    from backend.features.garage.services.garage_features_service import TeacherSearchService
-
-    if update.effective_message is None:
+    if update.effective_message is None or update.effective_user is None:
         return
 
-    url = None if _is_clear_input(text_value) else text_value
-    try:
-        config = await TeacherSearchService.update_footer_button_url(session, target_chat_id, url)
-    except ValidationError as exc:
-        await update.effective_message.reply_text(str(exc))
-        return
-    await _finish_footer_input(
-        update,
-        context,
-        session,
-        target_chat_id,
-        f"已设置底部按钮链接：{config.button_url}" if config.button_url else "已清空底部按钮链接。",
-    )
+    await clear_admin_input_state(session, target_chat_id=target_chat_id, user_id=update.effective_user.id)
+    await session.commit()
+    await update.effective_message.reply_text("底部按钮不需要配置链接，点击后会直接触发老师搜索。")
+    await admin_handler_instance()._show_teacher_search_footer_menu(update, context, target_chat_id)
 
 
 async def _handle_delegate_target_input(

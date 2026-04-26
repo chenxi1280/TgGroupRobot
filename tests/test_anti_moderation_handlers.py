@@ -3,9 +3,12 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+from telegram.error import BadRequest
 from telegram.ext import ApplicationHandlerStop
 
 import backend.features.moderation.banned_word_handler as banned_word_handler
+import backend.features.moderation.banned_word_create as banned_word_create
+from backend.features.moderation.banned_word_message import safe_edit_banned_word_message
 import backend.features.moderation.anti_flood_handler as anti_flood_handler
 import backend.features.moderation.anti_spam_handler as anti_spam_handler
 from backend.features.moderation.services import banned_word_service
@@ -72,6 +75,130 @@ def _build_context(session: _Session):
         application=SimpleNamespace(bot_data={"db": db}),
         bot=SimpleNamespace(),
     )
+
+
+@pytest.mark.asyncio
+async def test_banned_word_safe_edit_ignores_not_modified() -> None:
+    class _Q:
+        data = "banned_word:list:-100123"
+
+        async def edit_message_text(self, text: str, **kwargs) -> None:
+            raise BadRequest(
+                "Message is not modified: specified new message content and reply markup are exactly the same"
+            )
+
+    await safe_edit_banned_word_message(_Q(), "same")
+
+
+@pytest.mark.asyncio
+async def test_banned_word_add_start_ignores_repeated_prompt_edit(monkeypatch) -> None:
+    session = _Session()
+    update = _build_update(chat_id=123)
+    update.effective_chat.type = "private"
+    context = _build_context(session)
+
+    class _Q:
+        data = "banned_word:add:-100123"
+
+        def __init__(self) -> None:
+            self.answers = 0
+
+        async def answer(self, *args, **kwargs) -> None:
+            self.answers += 1
+
+        async def edit_message_text(self, text: str, **kwargs) -> None:
+            raise BadRequest(
+                "Message is not modified: specified new message content and reply markup are exactly the same"
+            )
+
+    q = _Q()
+    update.callback_query = q
+
+    async def fake_resolve(*args, **kwargs):
+        return -100123, "Test Chat"
+
+    async def noop(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(banned_word_create, "_resolve_banned_word_target", fake_resolve)
+    monkeypatch.setattr(banned_word_create, "ensure_chat", noop)
+    monkeypatch.setattr(banned_word_create, "ensure_user", noop)
+    monkeypatch.setattr(banned_word_create, "clear_user_state", noop)
+    monkeypatch.setattr(banned_word_create, "set_user_state", noop)
+
+    await banned_word_create.banned_word_add_start_impl(update, context)
+
+    assert q.answers == 1
+
+
+@pytest.mark.asyncio
+async def test_banned_word_list_ignores_not_modified(monkeypatch) -> None:
+    session = _Session()
+    update = _build_update(chat_id=123)
+    update.effective_chat.type = "private"
+    context = _build_context(session)
+
+    class _Q:
+        data = "banned_word:list:-100123"
+
+        def __init__(self) -> None:
+            self.answers = 0
+
+        async def answer(self, *args, **kwargs) -> None:
+            self.answers += 1
+
+        async def edit_message_text(self, text: str, **kwargs) -> None:
+            raise BadRequest(
+                "Message is not modified: specified new message content and reply markup are exactly the same"
+            )
+
+    q = _Q()
+    update.callback_query = q
+
+    async def fake_get_chat_banned_words(*args, **kwargs):
+        return []
+
+    async def fake_get_trigger_stats(*args, **kwargs):
+        return 0
+
+    monkeypatch.setattr(banned_word_handler, "get_chat_banned_words", fake_get_chat_banned_words)
+    monkeypatch.setattr(banned_word_handler, "get_trigger_stats", fake_get_trigger_stats)
+
+    await banned_word_handler.banned_word_list_callback(update, context)
+
+    assert q.answers == 1
+
+
+@pytest.mark.asyncio
+async def test_banned_word_delete_failure_answers_without_name_error(monkeypatch) -> None:
+    session = _Session()
+    update = _build_update(chat_id=-100123)
+    context = _build_context(session)
+
+    class _Q:
+        data = "banned_word_delete_12:-100123"
+
+        def __init__(self) -> None:
+            self.answers: list[tuple[str, bool]] = []
+
+        async def answer(self, text: str = "", show_alert: bool = False) -> None:
+            self.answers.append((text, show_alert))
+
+    q = _Q()
+    update.callback_query = q
+
+    async def fake_delete_banned_word(*args, **kwargs):
+        return False
+
+    async def fake_is_user_admin(*args, **kwargs):
+        return True
+
+    monkeypatch.setattr(banned_word_handler, "delete_banned_word", fake_delete_banned_word)
+    monkeypatch.setattr(banned_word_handler, "is_user_admin", fake_is_user_admin)
+
+    await banned_word_handler.banned_word_delete_callback(update, context)
+
+    assert q.answers == [("删除失败", True)]
 
 
 @pytest.mark.asyncio

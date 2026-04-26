@@ -1004,7 +1004,7 @@ async def test_process_garage_features_footer_button_shows_teacher_search_guide(
             nearby_search_enabled=True,
             attendance_enabled=False,
             force_location_enabled=False,
-            footer_button_label="老师搜索",
+            footer_button_label=None,
             delete_mode="none",
         )
 

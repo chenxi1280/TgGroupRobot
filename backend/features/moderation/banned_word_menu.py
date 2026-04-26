@@ -34,9 +34,6 @@ class BannedWordMenuHandler(BaseHandler):
         target_chat_id: int,
     ) -> None:
         """处理违禁词菜单"""
-        q = update.callback_query
-        await q.answer()
-
         chat = update.effective_chat
 
         # 私聊场景：返回到管理面板
