@@ -24,10 +24,12 @@ from backend.features.activity.services.lottery_subscription import (
     get_lottery_subscribe_targets,
     requires_lottery_subscribe,
 )
+from backend.features.group_ops.group_hooks.common import _schedule_message_delete
 from backend.features.points.services.points_service import change_points, get_balance
 from backend.features.points.services.points_extended_service import PointsExtendedService
 
 log = structlog.get_logger(__name__)
+LOTTERY_SUBSCRIBE_NOTICE_DELETE_SECONDS = 30
 
 
 def _user_mention(user) -> str:
@@ -295,12 +297,18 @@ class LotteryParticipationMixin:
             await q.answer(error_msg, show_alert=True)
             if force_subscribe_notice_text and force_subscribe_notice_markup is not None:
                 try:
-                    await context.bot.send_message(
+                    sent_notice = await context.bot.send_message(
                         chat_id=chat.id,
                         text=force_subscribe_notice_text,
                         reply_markup=force_subscribe_notice_markup,
                         reply_to_message_id=getattr(q.message, "message_id", None),
                         allow_sending_without_reply=True,
+                    )
+                    _schedule_message_delete(
+                        context,
+                        sent_notice,
+                        LOTTERY_SUBSCRIBE_NOTICE_DELETE_SECONDS,
+                        name="activity.lottery_subscribe_notice_delete",
                     )
                 except Exception as exc:
                     log.warning("lottery_force_subscribe_notice_failed", lottery_id=lottery_id, error=str(exc))

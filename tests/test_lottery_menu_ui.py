@@ -9,6 +9,7 @@ from telegram.error import NetworkError
 
 from backend.features.activity import lottery_handler
 import backend.features.activity.lottery_drawing as lottery_drawing_module
+import backend.features.activity.lottery_participation as lottery_participation_module
 from backend.features.activity.lottery_message_callbacks import lottery_cancel_callback_impl
 from backend.features.activity.lottery_drawing import LotteryDrawMixin
 from backend.features.activity.lottery_creation import (
@@ -496,6 +497,80 @@ async def test_lottery_subscribe_membership_requires_target():
 
     assert allowed is False
     assert "缺少订阅目标" in reason
+
+
+@pytest.mark.asyncio
+async def test_lottery_subscribe_notice_auto_deletes_after_30_seconds(monkeypatch):
+    scheduled: list[tuple[object, int, str]] = []
+    sent_messages: list[dict] = []
+    answers: list[tuple[str, bool]] = []
+    lottery = SimpleNamespace(
+        id=55,
+        chat_id=-1001,
+        lottery_type="subscribe",
+        qualification_rules={
+            "requires_lottery_subscribe": True,
+            "subscribe_check_mode": "all",
+            "subscribe_targets": [{"target": "@channel_a", "label": "频道A", "url": "https://t.me/channel_a"}],
+        },
+    )
+
+    async def fake_get_lottery(session, lottery_id):
+        return lottery
+
+    def fake_schedule(context, message, seconds, *, name):
+        scheduled.append((message, seconds, name))
+
+    class _Session:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def rollback(self):
+            return None
+
+        async def commit(self):
+            return None
+
+    class _Db:
+        def session_factory(self):
+            return _Session()
+
+    sent_notice = SimpleNamespace(message_id=900)
+
+    class _Bot:
+        async def get_chat_member(self, chat_id, user_id):
+            assert (chat_id, user_id) == ("@channel_a", 42)
+            return SimpleNamespace(status="left")
+
+        async def send_message(self, **kwargs):
+            sent_messages.append(kwargs)
+            return sent_notice
+
+    class _Query:
+        message = SimpleNamespace(message_id=777)
+
+        async def answer(self, text, show_alert=False):
+            answers.append((text, show_alert))
+
+    monkeypatch.setattr(lottery_participation_module, "get_lottery", fake_get_lottery)
+    monkeypatch.setattr(lottery_participation_module, "_schedule_message_delete", fake_schedule)
+
+    handler = lottery_participation_module.LotteryParticipationMixin()
+    update = SimpleNamespace(
+        callback_query=_Query(),
+        effective_chat=SimpleNamespace(id=-1001, type="supergroup"),
+        effective_user=SimpleNamespace(id=42),
+    )
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}), bot=_Bot())
+
+    await handler.handle_join(update, context, lottery_id=55)
+
+    assert answers and answers[0][1] is True
+    assert sent_messages and sent_messages[0]["reply_markup"] is not None
+    assert scheduled == [(sent_notice, 30, "activity.lottery_subscribe_notice_delete")]
 
 
 def test_lottery_join_success_message_mentions_user_and_count_without_preset():

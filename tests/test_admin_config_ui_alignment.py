@@ -3,10 +3,12 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+from telegram.error import BadRequest
 
 from backend.features.admin import admin_handler
 from backend.features.admin.activity import game as game_admin_module
 from backend.features.admin.ui.antispam import garbage_guard_home_keyboard, garbage_guard_rule_keyboard
+from backend.features.moderation import garbage_guard_config_handler
 from backend.features.moderation.anti_spam_config_handler import format_anti_spam_menu_text
 from backend.shared.callback_parser import CallbackParser
 
@@ -218,6 +220,31 @@ def test_garbage_guard_home_keyboard_uses_screenshot_order() -> None:
     assert rows[3] == ["❌ 禁止转发引用", "❌ 禁止发言刷屏"]
     assert rows[4] == ["❌ 人工警告", "❌ 离群封禁"]
     assert rows[5][0].startswith("📄 总白名单管理")
+
+
+@pytest.mark.asyncio
+async def test_garbage_guard_config_edit_ignores_not_modified() -> None:
+    class Query:
+        async def edit_message_text(self, text, reply_markup=None):
+            raise BadRequest(
+                "Message is not modified: specified new message content and reply markup are exactly the same"
+            )
+
+    await garbage_guard_config_handler._edit_config_message(
+        Query(),
+        "same",
+        reply_markup=SimpleNamespace(),
+    )
+
+
+@pytest.mark.asyncio
+async def test_garbage_guard_config_edit_reraises_other_bad_request() -> None:
+    class Query:
+        async def edit_message_text(self, text, reply_markup=None):
+            raise BadRequest("message to edit not found")
+
+    with pytest.raises(BadRequest, match="message to edit not found"):
+        await garbage_guard_config_handler._edit_config_message(Query(), "text")
 
 
 def test_garbage_rule_keyboard_hides_dependent_rows_until_enabled() -> None:

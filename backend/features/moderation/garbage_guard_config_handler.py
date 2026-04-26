@@ -4,6 +4,7 @@ import re
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from telegram import Update
+from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 
 from backend.features.admin.ui.antispam import (
@@ -37,6 +38,14 @@ from backend.shared.services.permission_service import PermissionPolicyService
 _INT_RE = re.compile(r"-?\d+")
 
 
+async def _edit_config_message(q, text: str, reply_markup=None) -> None:
+    try:
+        await q.edit_message_text(text, reply_markup=reply_markup)
+    except BadRequest as exc:
+        if "Message is not modified" not in str(exc):
+            raise
+
+
 async def _get_chat_title(db: Database, chat_id: int) -> str:
     from backend.features.admin.admin_handler import AdminHandler
 
@@ -54,7 +63,8 @@ async def _render_home(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_
         settings = await get_chat_settings(session, chat_id)
         await session.commit()
     chat_title = await _get_chat_title(db, chat_id)
-    await q.edit_message_text(
+    await _edit_config_message(
+        q,
         format_garbage_guard_home_text(chat_title, settings),
         reply_markup=garbage_guard_home_keyboard(settings, chat_id),
     )
@@ -68,7 +78,8 @@ async def _render_rule(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_
         banned_word_count = await _count_banned_words(session, chat_id) if rule_id == "banned_words" else 0
         await session.commit()
     chat_title = await _get_chat_title(db, chat_id)
-    await q.edit_message_text(
+    await _edit_config_message(
+        q,
         format_garbage_rule_text(chat_title, settings, rule_id),
         reply_markup=garbage_guard_rule_keyboard(settings, chat_id, rule_id, banned_word_count=banned_word_count),
     )
@@ -81,7 +92,8 @@ async def _render_whitelist(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         settings = await get_chat_settings(session, chat_id)
         await session.commit()
     chat_title = await _get_chat_title(db, chat_id)
-    await q.edit_message_text(
+    await _edit_config_message(
+        q,
         format_garbage_whitelist_text(chat_title, settings),
         reply_markup=garbage_guard_whitelist_keyboard(chat_id),
     )
@@ -153,8 +165,9 @@ async def garbage_guard_config_callback(update: Update, context: ContextTypes.DE
                 state_data={"target_chat_id": chat_id},
             )
             await session.commit()
-        await q.edit_message_text(
-            "📄 总白名单管理\n\n请输入用户 ID，多个 ID 可用空格、逗号或换行分隔。\n发送“清空”可清空白名单。"
+        await _edit_config_message(
+            q,
+            "📄 总白名单管理\n\n请输入用户 ID，多个 ID 可用空格、逗号或换行分隔。\n发送“清空”可清空白名单。",
         )
         return
 
