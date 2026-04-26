@@ -406,6 +406,9 @@ def test_format_auto_reply_rule_detail_has_new_fields() -> None:
     assert "🎯 匹配: 包含" in text
     assert "🧹 删除来源: 删除" in text
     assert "🕘 延迟删除: 45秒后删除" in text
+    assert "必填完成: 2/2" in text
+    assert "下一步: 预览效果 → 启用" in text
+    assert "测试: 到目标群发送关键词确认触发结果" in text
 
 
 def test_parse_auto_reply_buttons_input_accepts_line_format() -> None:
@@ -630,6 +633,54 @@ async def test_auto_reply_preview_sends_text_rule_with_buttons() -> None:
         "text": "预览内容",
         "rule": rule,
     }]
+
+
+@pytest.mark.asyncio
+async def test_auto_reply_preview_without_text_returns_repairable_detail(monkeypatch) -> None:
+    q = _FakeCallbackQuery("auto_reply:preview:-100123:9")
+    update = SimpleNamespace(
+        callback_query=q,
+        effective_chat=SimpleNamespace(id=10001, type="private"),
+        effective_user=SimpleNamespace(id=42),
+    )
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(_FakeSession())}))
+    rule = SimpleNamespace(
+        id=9,
+        chat_id=-100123,
+        sort_order=1,
+        is_active=True,
+        match_type="contains",
+        delete_source=False,
+        delete_reply_delay_seconds=0,
+        keywords=["hello"],
+        reply_content="",
+        cover_media_type=None,
+        cover_media_file_id=None,
+        buttons=[],
+    )
+
+    async def fake_resolve_target_chat_id(update, context):
+        return -100123
+
+    async def fake_get_rule(session, chat_id: int, rule_id: int):
+        return rule
+
+    async def fake_send_payload(context, **kwargs):
+        raise AssertionError("preview payload should not be sent without text")
+
+    await auto_reply_preview_action(
+        update,
+        context,
+        ensure_callback_update_func=lambda update: True,
+        resolve_target_chat_id_func=fake_resolve_target_chat_id,
+        get_rule_in_chat_func=fake_get_rule,
+        send_auto_reply_payload_func=fake_send_payload,
+    )
+
+    assert q.answers == [("请先配置文本内容", True)]
+    assert len(q.edits) == 1
+    assert "预览失败" in q.edits[0]
+    assert "修改文本" in q.edits[0]
 
 
 @pytest.mark.asyncio

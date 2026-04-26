@@ -94,6 +94,31 @@ async def test_game_tip_commands_are_handled_and_reply(monkeypatch, command: str
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("command", "expected_text"),
+    [
+        ("快三 大 abc", "快三格式错误"),
+        ("黑杰克 一百", "黑杰克格式错误"),
+    ],
+)
+async def test_game_invalid_intent_commands_reply_with_format_hint(monkeypatch, command: str, expected_text: str):
+    replies: list[str] = []
+
+    async def fake_reply(context, *, chat_id: int, text: str, reply_to_message_id: int, **kwargs):
+        replies.append(text)
+        return SimpleNamespace(ok=True, message_id=100)
+
+    monkeypatch.setattr(game_message_actions.PublishService, "reply", fake_reply)
+
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}))
+
+    handled = await game_message_actions.handle_game_message(_group_update(command), context)
+
+    assert handled is True
+    assert replies and expected_text in replies[0]
+
+
+@pytest.mark.asyncio
 async def test_game_runtime_refresh_callback_returns_visible_feedback(monkeypatch):
     shown: list[int] = []
 

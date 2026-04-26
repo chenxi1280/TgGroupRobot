@@ -172,6 +172,10 @@
             "feedback": "已返回主菜单。"
           }
         ]
+      ],
+      "stateLines": [
+        "输入提示：抽奖的输入集中在 「创建抽奖向导」；按页面示例填写，填错可返回上一步重新输入。",
+        "异常恢复：配置「抽奖」时如果提示未开启、权限不足、无效或失败，先确认当前群组和机器人权限，再回到「抽奖列表」重新操作。"
       ]
     },
     {
@@ -397,7 +401,7 @@
       "id": "create_input",
       "title": "创建抽奖向导",
       "message": [
-        "管理员按提示依次填写抽奖名称、奖品名称、中奖人数、开奖参数、积分抽奖扣除的积分类型和数量、邀请/活跃门槛，最后确认内定中奖人后发布到群。"
+        "管理员按提示依次填写抽奖名称、奖品名称、中奖人数、开奖参数、积分抽奖扣除的积分类型和数量、邀请/活跃门槛，最后确认发布到群。"
       ],
       "keyboard": [
         [
@@ -407,15 +411,6 @@
             "action": "input",
             "target": "create_input",
             "feedback": "已选择主积分。"
-          }
-        ],
-        [
-          {
-            "label": "添加/修改内定中奖人",
-            "callbackData": "lot:wiz:{chat_id}:preset",
-            "action": "input",
-            "target": "create_input",
-            "feedback": "请输入 Telegram 数字用户 ID。"
           }
         ],
         [
@@ -439,13 +434,13 @@
       ],
       "input": {
         "type": "text",
-        "prompt": "按 Bot 当前提示逐项回复；内定中奖人使用 Telegram 数字用户 ID",
-        "placeholder": "春季抽奖\n1USDT\n1\n100\n123456789,987654321",
+        "prompt": "按 Bot 当前提示逐项回复抽奖名称、奖品、中奖人数、开奖参数和积分类型",
+        "placeholder": "春季抽奖\n1USDT\n1\n100",
         "clearCommand": "/clear",
         "examples": [
           {
             "label": "满人开奖向导输入",
-            "value": "春季抽奖|祝大家好运\n1USDT\n1\n100\n123456789",
+            "value": "春季抽奖|祝大家好运\n1USDT\n1\n100",
             "target": "result",
             "feedback": "已按向导完成创建。"
           }

@@ -47,7 +47,7 @@ async def _check_auction_create_allowed(
 ) -> bool:
     del context, chat_id, user_id
     if not setting.enabled:
-        await _reply(update, "❌ 拍卖功能未开启，请先在后台开启后再创建。")
+        await _reply(update, "❌ 拍卖功能未开启，请联系管理员开启后再创建。")
         return False
     return True
 

@@ -1811,7 +1811,7 @@ def build_flows() -> dict[str, dict[str, Any]]:
             screen("draw_condition", "选择开奖条件", ["选择满人开奖或定时开奖，之后进入分步创建向导。"], [[button("满人开奖", f"lot:create:{CHAT}:c:t:f", "input", "create_input", "进入抽奖创建向导。")], [button("定时开奖", f"lot:create:{CHAT}:c:t:d", "input", "create_input", "进入抽奖创建向导。")], [button("返回创建", f"lot:create_menu:{CHAT}", "back", "create_menu", "已返回创建菜单。")]]),
             screen("settings", "抽奖设置", ["抽奖设置可切换发布后置顶等选项。"], [[button("发布后置顶", f"lot:setting:{CHAT}:publish_pin:1", "toggle", "result", "发布后置顶已开启。")], [button("返回列表", f"lot:list:{CHAT}:all:all:0", "back", "home", "已返回列表。")]]),
             screen("detail", "抽奖详情", ["详情页可手动开奖，用户运行时可点击参与。"], [[button("立即开奖", f"lot:draw:{CHAT}:{LOTTERY}", "confirm", "result", "已发起开奖。"), button("用户参与", f"join_lottery_{LOTTERY}", "goto", "result", "用户已参与抽奖。")], [button("返回列表", f"lot:list:{CHAT}:all:all:0", "back", "home", "已返回列表。")]]),
-            input_screen("create_input", "创建抽奖向导", "按提示依次回复抽奖名称、奖品、中奖人数、开奖参数、积分类型、内定中奖人", "春季抽奖\n1USDT\n1\n100\n123456789", f"lottery:cancel:{CHAT}", "create_menu", examples=[("满人开奖向导输入", "春季抽奖|祝大家好运\n1USDT\n1\n100\n123456789", "result")]),
+            input_screen("create_input", "创建抽奖向导", "按提示依次回复抽奖名称、奖品、中奖人数、开奖参数和积分类型", "春季抽奖\n1USDT\n1\n100", f"lottery:cancel:{CHAT}", "create_menu", examples=[("满人开奖向导输入", "春季抽奖|祝大家好运\n1USDT\n1\n100", "result")]),
             screen("result", "抽奖操作结果", ["保存或开奖后 Bot 会回到列表或详情页。"], [[button("返回列表", f"lot:list:{CHAT}:all:all:0", "back", "home", "已返回列表。")]]),
         ],
     )

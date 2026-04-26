@@ -200,10 +200,14 @@ async def _list_teacher_self_chats(context: ContextTypes.DEFAULT_TYPE, user_id: 
     from backend.features.garage.services.garage_features_service import GarageAuthService
 
     db: Database = context.application.bot_data["db"]
-    async with db.session_factory() as session:
-        rows = await GarageAuthService.list_teacher_self_service_chats(session, user_id)
-        await session.commit()
-    return rows
+    try:
+        async with db.session_factory() as session:
+            rows = await GarageAuthService.list_teacher_self_service_chats(session, user_id)
+            await session.commit()
+        return rows
+    except Exception as exc:
+        log.warning("teacher_self_home_extension_failed", user_id=user_id, error=str(exc))
+        return []
 
 
 async def _build_private_home_markup(

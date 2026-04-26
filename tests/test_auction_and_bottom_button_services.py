@@ -45,6 +45,24 @@ def test_format_auction_announcement_contains_icons():
     assert "当前领先" in text
 
 
+def test_format_auction_final_announcement_guides_delivery():
+    item = AuctionItem(
+        id=1,
+        chat_id=-1001,
+        title="精品课程",
+        start_price=100,
+        current_price=188,
+        status="ended",
+        end_at=dt.datetime(2026, 3, 31, 15, 0, tzinfo=dt.UTC),
+        updated_at=dt.datetime(2026, 3, 31, 15, 0, tzinfo=dt.UTC),
+    )
+
+    text = format_auction_announcement(item, is_final=True, settlement_note="🏆 中标用户：42")
+
+    assert "买卖双方按群内约定完成交付" in text
+    assert "拍卖记录中复盘" not in text
+
+
 def test_auction_setting_defaults_allow_group_members_to_create():
     assert AuctionSetting.__table__.c.create_permission.default.arg == "all"
 

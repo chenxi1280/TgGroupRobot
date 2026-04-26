@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
+from backend.features.activity import engagement_handler
 from backend.features.activity.services.engagement_service import parse_egg_template, parse_reward_plan
 from backend.shared.services.base import ValidationError
 
@@ -102,3 +105,45 @@ def test_parse_egg_template_rejects_non_point_rewards():
     )
     with pytest.raises(ValidationError, match="只支持积分奖励"):
         parse_egg_template(raw)
+
+
+@pytest.mark.asyncio
+async def test_group_egg_template_with_answer_is_rejected_before_creation(monkeypatch):
+    replies: list[str] = []
+
+    async def fake_require_manage(context, chat_id: int, user_id: int, capability: str):
+        return True, None
+
+    async def fake_reply(context, *, chat_id: int, text: str, reply_to_message_id: int, **kwargs):
+        replies.append(text)
+        return SimpleNamespace(message_id=100)
+
+    async def fail_create(*args, **kwargs):
+        raise AssertionError("group answer template should not create an egg")
+
+    monkeypatch.setattr(engagement_handler.PermissionPolicyService, "require_manage", fake_require_manage)
+    monkeypatch.setattr(engagement_handler.PublishService, "reply", fake_reply)
+    monkeypatch.setattr(engagement_handler, "update_egg_event_from_template", fail_create)
+
+    update = SimpleNamespace(
+        effective_chat=SimpleNamespace(id=-1001, type="supergroup"),
+        effective_user=SimpleNamespace(id=42),
+        effective_message=SimpleNamespace(
+            message_id=9,
+            text="\n".join(
+                [
+                    "添加彩蛋",
+                    "【答案】爱情买卖",
+                    "【线索1】猜一首歌",
+                    "【线索1奖励】300积分",
+                    "【线索1时间】09:00",
+                ]
+            ),
+        ),
+    )
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": None}), bot=SimpleNamespace(username="bot"))
+
+    handled = await engagement_handler.engagement_message_handler(update, context)
+
+    assert handled is True
+    assert replies == ["⚠️ 彩蛋答案不能在群聊里配置。请到机器人私聊中复制模板并创建，避免群友提前看到答案。"]

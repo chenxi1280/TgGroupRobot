@@ -46,7 +46,27 @@ def _format_join_success_message(*, user, lottery, participant_count: int, full_
     ]
     if full_draw_completed:
         lines.append("🎉 已满员，系统已自动开奖。")
+    else:
+        lines.append("⏳ 请留意原抽奖公告，开奖前会按规则提醒或自动开奖。")
     return "\n".join(lines)
+
+
+def _join_error_message(reason: str, *, lottery, point_type_name: str) -> str:
+    required_points = (lottery.min_points or 0) + (lottery.participation_cost or 0)
+    error_messages = {
+        "already_joined": "你已经参与过此抽奖了，请等待开奖结果。",
+        "lottery_not_open": "抽奖尚未开始，请关注群内抽奖公告。",
+        "lottery_closed": "抽奖已结束，不能再参与。",
+        "lottery_completed": "抽奖已开奖，请查看群内开奖结果。",
+        "insufficient_points": f"{point_type_name}不足，需要至少 {required_points} {point_type_name}。请先获取积分后再参与。",
+        "insufficient_invites": "邀请人数未达标，暂时不能参与。请继续邀请新成员后再点击参与。",
+        "insufficient_activity": "最近活跃消息数未达标，暂时不能参与。请在群内继续发言互动后再试。",
+        "ranking_auto_selection": "本玩法无需手动参与；系统会在开奖时按邀请/活跃排行自动入围，再随机开奖。",
+        "max_participants_reached": "参与人数已满，请等待系统自动开奖或管理员开奖。",
+        "not_member_long_enough": f"入群天数不足，需要 {lottery.requirement_days} 天以上。满足天数后可再次参与。",
+        "outside_join_time": "不在参与时间内，请查看原抽奖公告的截止时间。",
+    }
+    return error_messages.get(reason, "无法参与抽奖，请联系管理员检查活动配置。")
 
 
 class LotteryParticipationMixin:
@@ -106,20 +126,7 @@ class LotteryParticipationMixin:
                     member_joined_at=member_joined_at,
                 )
                 if not result.success:
-                    error_messages = {
-                        "already_joined": "你已经参与过此抽奖了",
-                        "lottery_not_open": "抽奖尚未开始",
-                        "lottery_closed": "抽奖已结束",
-                        "lottery_completed": "抽奖已开奖",
-                        "insufficient_points": f"{point_type_name}不足，需要至少 {(lottery.min_points or 0) + (lottery.participation_cost or 0)} {point_type_name}",
-                        "insufficient_invites": "邀请人数未达标，暂时不能参与该抽奖",
-                        "insufficient_activity": "最近活跃消息数未达标，暂时不能参与该抽奖",
-                        "ranking_auto_selection": "本玩法无需手动参与，系统会在开奖时按排行自动生成入围名单",
-                        "max_participants_reached": "参与人数已满",
-                        "not_member_long_enough": f"入群天数不足，需要 {lottery.requirement_days} 天以上",
-                        "outside_join_time": "不在参与时间内",
-                    }
-                    error_msg = error_messages.get(result.reason, "无法参与抽奖")
+                    error_msg = _join_error_message(result.reason, lottery=lottery, point_type_name=point_type_name)
                 else:
                     if lottery.participation_cost > 0:
                         if point_type_id:

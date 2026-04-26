@@ -81,12 +81,17 @@ def _format_no_participants_announcement(lottery) -> str:
             f"🎉 抽奖【{title}】开奖结果",
             "",
             "😔 因无人参与，本次抽奖流拍。",
+            "可调整门槛后重新发起。",
         ]
     )
 
 
-def _format_draw_result_with_close_notice(announcement: str) -> str:
-    return "⏰ 抽奖已截止，已停止参与。\n\n" + announcement
+def _format_draw_result_with_close_notice(announcement: str, *, participant_count: int | None = None) -> str:
+    lines = ["⏰ 抽奖已截止，已停止参与。"]
+    if participant_count is not None:
+        lines.append(f"👥 本次参与人数：{participant_count}")
+    lines.append("🎁 奖励已按配置发放；如未收到奖励，请联系管理员核对积分记录。")
+    return "\n".join(lines) + "\n\n" + announcement
 
 
 async def _participant_count(session, lottery_id: int) -> int:
@@ -226,6 +231,7 @@ class LotteryTask(ScheduledTask):
         if locked_lottery.draw_time > now:
             return
         lottery = locked_lottery
+        participant_total = await _participant_count(session, lottery.id)
         winners = await perform_random_draw(session, lottery)
 
         if winners:
@@ -236,7 +242,8 @@ class LotteryTask(ScheduledTask):
 
             await distribute_lottery_rewards(session, lottery, winners)
             announcement = _format_draw_result_with_close_notice(
-                generate_lottery_announcement(lottery, winners, users)
+                generate_lottery_announcement(lottery, winners, users),
+                participant_count=participant_total,
             )
         else:
             announcement = _format_no_participants_announcement(lottery)

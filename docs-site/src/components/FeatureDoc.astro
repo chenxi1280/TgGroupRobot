@@ -16,7 +16,6 @@ const entryMeta = [
       <p>{feature.summary}</p>
     </div>
     <div class="feature-meta" aria-label="功能状态">
-      <span class:list={['status-badge', feature.status === '暂时关闭' && 'is-paused']}>{feature.status}</span>
       <span>{feature.entry.label}</span>
       {entryMeta.map((item) => <span>{item}</span>)}
     </div>

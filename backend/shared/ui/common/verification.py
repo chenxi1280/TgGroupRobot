@@ -49,5 +49,5 @@ def verification_timeout_help_keyboard(user_id: int) -> InlineKeyboardMarkup:
     """
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🙋 我是本人，申请解封", callback_data=f"vfy_help:appeal:{user_id}")],
-        [InlineKeyboardButton("🛡️ 管理员一键解封", callback_data=f"vfy_help:unmute:{user_id}")],
+        [InlineKeyboardButton("🛡️ 协助处理", callback_data=f"vfy_help:unmute:{user_id}")],
     ])

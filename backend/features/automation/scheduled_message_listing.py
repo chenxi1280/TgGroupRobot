@@ -13,6 +13,7 @@ from backend.shared.ui.message_config_panel import (
     WAITING_VALUE,
     PanelField,
     button_status,
+    format_completion_lines,
     format_panel,
     media_status,
     summarize_text,
@@ -137,6 +138,8 @@ class ScheduledMessageListMixin:
         title_value = str(task.title or "").strip()
         if not title_value or title_value == "定时消息":
             title_value = WAITING_VALUE
+        has_media = task.media_type != "none" and bool(task.media_file_id)
+        has_text = bool(str(task.text or "").strip())
         start_text = format_timestamp(task.start_at) if task.start_at else WAITING_VALUE
         end_text = format_timestamp(task.end_at) if task.end_at else WAITING_VALUE
         period_text = "全天" if task.day_start_hour == 0 and task.day_end_hour == 23 else (
@@ -150,12 +153,19 @@ class ScheduledMessageListMixin:
         ]
         if task.next_run_at:
             footer.append(f"⏭️ 下次: {format_timestamp(task.next_run_at)}")
+        footer.extend(
+            format_completion_lines(
+                [("文本或封面", has_text or has_media)],
+                next_step="预览效果 → 启用",
+                test_step="到目标群确认定时发送结果",
+            )
+        )
 
         return format_panel(
             "⏱️ 定时消息",
             [
                 PanelField("📮", "标题备注", title_value),
-                PanelField("🏞️", "封面设置", media_status(has_media=task.media_type != "none" and bool(task.media_file_id), media_type=task.media_type)),
+                PanelField("🏞️", "封面设置", media_status(has_media=has_media, media_type=task.media_type)),
                 PanelField("📄", "文本内容", summarize_text(task.text, limit=180)),
                 PanelField("⭕", "设置按钮", button_status(task.buttons)),
                 PanelField("⏰", "开始时间", start_text),

@@ -12,6 +12,7 @@ from backend.platform.db.schema.models.core import TgUser
 from backend.platform.db.schema.models.expansion import GameSetting
 from backend.shared.services.base import ValidationError
 from backend.shared.services.module_settings_service import ModuleSettingsService
+from backend.shared.ui.message_config_panel import format_completion_lines
 
 MAX_GAME_BET_POINTS = 500
 
@@ -142,21 +143,31 @@ def format_game_menu_text(
     delete_mode: str,
     points_chat_label: str = "本群分",
 ) -> str:
-    return "\n".join(
-        [
-            f"🎮 游戏 | {chat_title}",
-            "",
-            f"🎲 快三：{'✅ 启动' if k3_enabled else '❌ 关闭'}",
-            f"🃏 黑杰克：{'✅ 启动' if blackjack_enabled else '❌ 关闭'}",
-            f"🔗 关联积分：{points_chat_label}",
-            f"💧 抽水比例：{format_ratio(rake_ratio)}",
-            f"👤 抽水归属：{rake_owner}",
-            f"⏰ 定时启停：{'✅ 启动' if auto_schedule_enabled else '❌ 关闭'}",
-            f"🕒 启动时间：{auto_start_time or '未设置'}",
-            f"🌙 关停时间：{auto_stop_time or '未设置'}",
-            f"🧹 删除游戏消息：{'🗑 删除' if delete_mode == 'delete' else '💾 不删除'}",
-        ]
+    lines = [
+        f"🎮 游戏 | {chat_title}",
+        "",
+        f"🎲 快三：{'✅ 启动' if k3_enabled else '❌ 关闭'}",
+        f"🃏 黑杰克：{'✅ 启动' if blackjack_enabled else '❌ 关闭'}",
+        f"🔗 关联积分：{points_chat_label}",
+        f"💧 抽水比例：{format_ratio(rake_ratio)}",
+        f"👤 抽水归属：{rake_owner}",
+        f"⏰ 定时启停：{'✅ 启动' if auto_schedule_enabled else '❌ 关闭'}",
+        f"🕒 启动时间：{auto_start_time or '未设置'}",
+        f"🌙 关停时间：{auto_stop_time or '未设置'}",
+        f"🧹 删除游戏消息：{'🗑 删除' if delete_mode == 'delete' else '💾 不删除'}",
+    ]
+    lines.extend(
+        format_completion_lines(
+            [
+                ("至少开启一个玩法", bool(k3_enabled or blackjack_enabled)),
+                ("确认积分来源", bool(points_chat_label)),
+                ("查看指令帮助", True),
+            ],
+            next_step="开启玩法后到群里发送 快三/黑杰克 进行冷启动",
+            test_step="用测试账号下注 1 局，开奖后查看最近牌局",
+        )
     )
+    return "\n".join(lines)
 
 
 def parse_positive_int(raw: str, field_name: str) -> int:

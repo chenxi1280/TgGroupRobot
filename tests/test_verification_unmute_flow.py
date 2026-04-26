@@ -17,6 +17,7 @@ def test_timeout_help_keyboard_callback_data():
     second = keyboard.inline_keyboard[1][0]
 
     assert first.callback_data == "vfy_help:appeal:123456"
+    assert second.text == "🛡️ 协助处理"
     assert second.callback_data == "vfy_help:unmute:123456"
 
 

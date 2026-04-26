@@ -5,7 +5,11 @@ from types import SimpleNamespace
 import pytest
 from telegram import ChatMemberAdministrator, User
 
-from backend.features.group_ops.services.chat_group_service import get_user_managed_chats
+from backend.features.group_ops.services.chat_group_service import (
+    format_group_guide_message,
+    format_private_chat_current_title,
+    get_user_managed_chats,
+)
 
 
 class _FakeResult:
@@ -82,3 +86,21 @@ async def test_get_user_managed_chats_uses_db_title_without_extra_get_chat():
 
     assert member_calls == [(-1001, 42), (-1002, 42)]
     assert result == [(-1001, "测试群A", True), (-1002, "测试群B", True)]
+
+
+def test_private_current_chat_hint_points_to_health_check_and_test_loop():
+    text = format_private_chat_current_title("测试群")
+
+    assert "当前管理: 测试群" in text
+    assert "健康检查" in text
+    assert "先预览" in text
+    assert "群内测试一次" in text
+
+
+def test_group_guide_message_describes_admin_setup_flow():
+    text = format_group_guide_message("demo_bot")
+
+    assert "前往设置" in text
+    assert "健康检查" in text
+    assert "预览" in text
+    assert "测试账号触发一次" in text

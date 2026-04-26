@@ -81,6 +81,9 @@ def test_scheduled_message_detail_panel_marks_configured_fields() -> None:
     assert "📄 文本内容: 今日通知" in text
     assert "⭕ 设置按钮: 已设置 1 个" in text
     assert "⏰ 开始时间:" in text
+    assert "必填完成: 1/1" in text
+    assert "下一步: 预览效果 → 启用" in text
+    assert "测试: 到目标群确认定时发送结果" in text
     assert keyboard.inline_keyboard[1][0].text == "✅ 标题备注"
     assert keyboard.inline_keyboard[1][1].text == "✅ 设置封面"
     assert keyboard.inline_keyboard[2][0].text == "✅ 设置文本"

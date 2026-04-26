@@ -50,7 +50,40 @@ interface FlowData {
 
 const { flow } = Astro.props as { flow: FlowData };
 const initialScreen = flow.entryScreen || flow.screens[0]?.id;
-const isNeedsReview = flow.coverage?.alignmentStatus === 'needsReview';
+const inputScreens = flow.screens.filter((screen) => screen.input);
+const groupRuntimeScreens = flow.screens.filter((screen) =>
+  screen.message.some((line) => /群内|成员|发送|触发|入群|开奖|发布/.test(line))
+);
+const sensitiveTokens = ['内定', '指定中奖', '预设中奖'];
+const isSensitiveText = (value?: string) => sensitiveTokens.some((token) => String(value ?? '').includes(token));
+const cleanManualText = (value?: string) => String(value ?? '')
+  .replace('这里是后端进入私聊输入 state 后等待管理员发送内容的页面。', '请按照 Bot 提示在私聊发送内容。')
+  .replace('Bot 处理真实回调后会重新渲染当前功能页或返回上一级。', '操作完成后，Bot 会刷新当前页面或返回上一级。')
+  .replace(/，?最后确认内定中奖人后/g, '，最后确认发布后')
+  .replace(/内定中奖人使用 Telegram 数字用户 ID/g, '按页面提示填写开奖参数')
+  .replace(/内定中奖人/g, '开奖设置')
+  .replace(/真实回调/g, '按钮操作')
+  .replace(/后端/g, '系统');
+const visibleMessage = (screen: FlowScreen) => screen.message
+  .map(cleanManualText)
+  .filter((line) => line && !line.startsWith('审计：'));
+const visibleStateLines = (screen: FlowScreen) => (screen.stateLines ?? [])
+  .map(cleanManualText)
+  .filter((line) => line && !line.startsWith('审计：'));
+const isSensitiveButton = (button: FlowButton) => isSensitiveText(button.label) || isSensitiveText(button.feedback);
+const visibleRows = (screen: FlowScreen) => screen.keyboard
+  .map((row) => row.filter((button) => !isSensitiveButton(button)))
+  .filter((row) => row.length > 0);
+const inputPrompt = (screen: FlowScreen) => cleanManualText(screen.input?.prompt);
+const inputPlaceholder = (screen: FlowScreen) => cleanManualText(screen.input?.placeholder ?? '等待输入...');
+const inputExamples = (screen: FlowScreen) => (screen.input?.examples ?? [])
+  .filter((example) => !isSensitiveText(example.label) && !isSensitiveText(example.value) && !isSensitiveText(example.feedback))
+  .map((example) => ({
+    ...example,
+    label: cleanManualText(example.label),
+    value: cleanManualText(example.value),
+    feedback: cleanManualText(example.feedback ?? `已填入示例：${example.label}`),
+  }));
 const toggleMark = (label: string) => {
   if (/^[✅☑️✓✔]/.test(label.trim())) return 'on';
   if (/^[❌✖×]/.test(label.trim())) return 'off';
@@ -62,48 +95,45 @@ const toggleMark = (label: string) => {
   <div class="telegram-flow__head">
     <div>
       <p class="eyebrow">Telegram 操作流</p>
-      <h2 id="telegram-flow">按真实按钮操作</h2>
+      <h2 id="telegram-flow">跟着真实按钮操作</h2>
     </div>
-    <span class:list={['telegram-flow__badge', isNeedsReview && 'is-review']}>
-      {isNeedsReview ? '真实回调待对账' : '完整回调树'}
-    </span>
   </div>
-  {flow.coverage && (
-    <div class="telegram-flow__coverage" aria-label="覆盖范围">
-      <span>Callback：{flow.coverage.callbackPrefixes?.join('、') || '无公开回调'}</span>
-      <span>输入态：{flow.coverage.inputStates?.join('、') || '无输入态'}</span>
-      {isNeedsReview && <span>审计：当前 flow 可演示，真实 callback 仍需补齐</span>}
-    </div>
-  )}
+  <div class="telegram-flow__coverage" aria-label="用户操作摘要">
+    <span>入口：私聊 /start 后点击「{flow.title}」</span>
+    <span>页面：{flow.screens.length} 个</span>
+    <span>输入：{inputScreens.length ? `${inputScreens.length} 处需要填写` : '全程按钮操作'}</span>
+    <span>群内：{groupRuntimeScreens.length ? '需要回到群内验证效果' : '主要在私聊完成配置'}</span>
+  </div>
 
   <div class="telegram-flow__stage">
-    {flow.screens.map((screen) => (
+    {flow.screens.map((screen, index) => (
       <article
         class:list={['telegram-flow-screen', screen.id === initialScreen && 'is-active']}
         data-flow-screen={screen.id}
       >
         <div class="telegram-screen" aria-label={`${flow.title}: ${screen.title}`}>
+          <div class="telegram-screen-progress">第 {index + 1} / {flow.screens.length} 页</div>
           <div class="telegram-message">
             <div class="bot-name">@TgGroupRobot</div>
             <div class="message-title">{screen.title}</div>
-            {screen.message.map((line) => <p>{line}</p>)}
-            {screen.stateLines && screen.stateLines.length > 0 && (
+            {visibleMessage(screen).map((line) => <p>{line}</p>)}
+            {visibleStateLines(screen).length > 0 && (
               <div class="state-lines">
-                {screen.stateLines.map((line) => <span>{line}</span>)}
+                {visibleStateLines(screen).map((line) => <span>{line}</span>)}
               </div>
             )}
             {screen.input && (
               <div class="telegram-input-block" data-input-block>
-                <strong>{screen.input.prompt}</strong>
+                <strong>{inputPrompt(screen)}</strong>
                 <div class="telegram-input-box" data-input-value>
-                  {screen.input.placeholder ?? '等待输入...'}
+                  {inputPlaceholder(screen)}
                 </div>
                 {screen.input.clearCommand && (
                   <p class="tip">清空方式：{screen.input.clearCommand}</p>
                 )}
-                {screen.input.examples && screen.input.examples.length > 0 && (
+                {inputExamples(screen).length > 0 && (
                   <div class="telegram-input-examples">
-                    {screen.input.examples.map((example) => (
+                    {inputExamples(screen).map((example) => (
                       <button
                         type="button"
                         data-input-example={example.value}
@@ -126,7 +156,7 @@ const toggleMark = (label: string) => {
           </div>
 
           <div class="telegram-keyboard">
-            {screen.keyboard.map((row) => (
+            {visibleRows(screen).map((row) => (
               <div class="keyboard-row" style={`--keyboard-columns: ${row.length}`}>
                 {row.map((button) => (
                   <button
@@ -135,9 +165,8 @@ const toggleMark = (label: string) => {
                     data-flow-action={button.action}
                     data-flow-target={button.target}
                     data-feedback={button.feedback}
-                    data-callback-data={button.callbackData}
                     aria-pressed={button.action === 'toggle' ? 'false' : undefined}
-                    title={button.callbackData}
+                    title={button.feedback ?? button.label}
                   >
                     <span class="keyboard-button__label">
                       {button.action === 'toggle' && (
@@ -162,7 +191,7 @@ const toggleMark = (label: string) => {
   </div>
 
   <p class="telegram-feedback" data-flow-feedback aria-live="polite">
-    点击上方 Telegram 按钮开始。
+    点击上方 Telegram 按钮开始；手机端按页面顺序往下点即可。
   </p>
 </section>
 

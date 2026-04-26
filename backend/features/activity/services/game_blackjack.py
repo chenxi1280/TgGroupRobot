@@ -128,6 +128,8 @@ def format_blackjack_round_text(participant: GameParticipant, reveal_dealer: boo
     ]
     if outcome:
         lines.append(outcome)
+    else:
+        lines.append("操作：点击按钮或发送“要牌 / 停牌”，超时会自动停牌结算。")
     return "\n".join(lines)
 
 
@@ -269,21 +271,53 @@ async def finalize_blackjack_round(
 
 
 async def settle_due_blackjack_rounds(session: AsyncSession) -> list[dict]:
-    stmt = (
-        select(GameRound, GameParticipant)
-        .join(GameParticipant, GameParticipant.round_id == GameRound.id)
+    round_ids = await list_due_blackjack_round_ids(session)
+    summaries: list[dict] = []
+    for round_id in round_ids:
+        summary = await settle_blackjack_round(session, round_id)
+        if summary is not None:
+            summaries.append(summary)
+    await session.flush()
+    return summaries
+
+
+async def list_due_blackjack_round_ids(session: AsyncSession) -> list[int]:
+    stmt = select(GameRound.id).where(
+        GameRound.game_type == "blackjack",
+        GameRound.status == "player_turn",
+        GameRound.settle_at.is_not(None),
+        GameRound.settle_at <= now_utc(),
+    )
+    result = await session.execute(stmt)
+    return [int(round_id) for round_id in result.scalars().all()]
+
+
+async def settle_blackjack_round(session: AsyncSession, round_id: int) -> dict | None:
+    round_result = await session.execute(
+        select(GameRound)
         .where(
+            GameRound.id == round_id,
             GameRound.game_type == "blackjack",
             GameRound.status == "player_turn",
             GameRound.settle_at.is_not(None),
             GameRound.settle_at <= now_utc(),
+        )
+        .with_for_update()
+    )
+    round_obj = round_result.scalar_one_or_none()
+    if round_obj is None:
+        return None
+    participant_result = await session.execute(
+        select(GameParticipant)
+        .where(
+            GameParticipant.round_id == round_obj.id,
             GameParticipant.status == "active",
         )
+        .with_for_update()
     )
-    result = await session.execute(stmt)
-    summaries: list[dict] = []
-    for round_obj, participant in result.all():
-        outcome = await finalize_blackjack_round(session, round_obj, participant, "stand")
-        summaries.append({"round": round_obj, "participant": participant, "outcome": f"⏰ 超时自动停牌\n{outcome}"})
+    participant = participant_result.scalars().first()
+    if participant is None:
+        return None
+    outcome = await finalize_blackjack_round(session, round_obj, participant, "stand")
     await session.flush()
-    return summaries
+    return {"round": round_obj, "participant": participant, "outcome": f"⏰ 超时自动停牌\n{outcome}"}

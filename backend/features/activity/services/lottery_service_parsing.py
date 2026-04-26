@@ -411,7 +411,8 @@ def format_lottery_announcement_text(config: ParsedLotteryConfig) -> str:
     for prize in config.prizes:
         text += f"\n  • {prize['name']} x {prize['quantity']}"
     if config.selection_mode == "ranking_random":
-        text += "\n\n💡 本玩法会在开奖时按排行自动生成入围名单，再随机开奖。"
+        text += "\n\n💡 本玩法无需点击参与；系统会在开奖时按邀请/活跃排行生成入围名单，再随机开奖。"
+        text += "\n想提高中奖机会，请在截止前继续完成对应的邀请或活跃任务。"
     else:
-        text += "\n\n💡 点击下方按钮参与抽奖！"
+        text += "\n\n💡 点击下方按钮参与抽奖；参与成功后会在群内看到确认消息。"
     return text

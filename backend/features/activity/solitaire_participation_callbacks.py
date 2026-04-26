@@ -77,7 +77,7 @@ async def join_solitaire_callback(update: Update, context: ContextTypes.DEFAULT_
             await q.answer()
             await context.bot.send_message(
                 chat_id=update.effective_chat.id,
-                text=f"{user_mention} ❌ 你已经参与过这个接龙",
+                text=f"{user_mention} ❌ 你已经参与过这个接龙\n如需修改内容，请回复接龙消息发送新内容。",
                 parse_mode="HTML",
             )
             return
@@ -106,6 +106,13 @@ async def join_solitaire_callback(update: Update, context: ContextTypes.DEFAULT_
                         if "Message is not modified" not in str(exc):
                             pass
             await q.answer("参与成功！")
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=f"{user_mention} ✅ 已参与接龙\n如需填写具体内容，请回复接龙消息发送内容；再次回复可更新。",
+                parse_mode="HTML",
+                reply_to_message_id=getattr(q.message, "message_id", None),
+                allow_sending_without_reply=True,
+            )
         else:
             await q.answer()
             reason_map = {

@@ -54,34 +54,55 @@ async def _resolve_settlement_winner(
 
 
 async def settle_due_auctions(session: AsyncSession) -> list[AuctionSettlementResult]:
+    item_ids = await list_due_auction_ids(session)
+    settlements: list[AuctionSettlementResult] = []
+    for item_id in item_ids:
+        result = await settle_due_auction(session, item_id)
+        if result is not None:
+            settlements.append(result)
+    await session.flush()
+    return settlements
+
+
+async def list_due_auction_ids(session: AsyncSession) -> list[int]:
     now = now_utc()
-    stmt = select(AuctionItem).where(
+    stmt = select(AuctionItem.id).where(
         AuctionItem.status == "running",
         AuctionItem.end_at.is_not(None),
         AuctionItem.end_at <= now,
     )
     result = await session.execute(stmt)
-    items = list(result.scalars().all())
-    settlements: list[AuctionSettlementResult] = []
-    for item in items:
-        item = (await session.execute(
-            select(AuctionItem).where(AuctionItem.id == item.id).with_for_update()
-        )).scalar_one()
-        setting = await get_or_create_setting(session, item.chat_id)
-        winner_bid, note = await _resolve_settlement_winner(session, item=item, points_mode=setting.points_mode)
-        item.status = "ended"
-        item.updated_at = now
-        if winner_bid is not None:
-            item.winner_user_id = winner_bid.bid_user_id
-            item.winner_bid_id = winner_bid.id
-            item.current_price = winner_bid.bid_amount
-        settlements.append(
-            AuctionSettlementResult(
-                item=item,
-                winner_user_id=item.winner_user_id,
-                winning_amount=item.current_price,
-                note=note,
+    return [int(item_id) for item_id in result.scalars().all()]
+
+
+async def settle_due_auction(session: AsyncSession, item_id: int) -> AuctionSettlementResult | None:
+    now = now_utc()
+    item = (
+        await session.execute(
+            select(AuctionItem)
+            .where(
+                AuctionItem.id == item_id,
+                AuctionItem.status == "running",
+                AuctionItem.end_at.is_not(None),
+                AuctionItem.end_at <= now,
             )
+            .with_for_update()
         )
+    ).scalar_one_or_none()
+    if item is None:
+        return None
+    setting = await get_or_create_setting(session, item.chat_id)
+    winner_bid, note = await _resolve_settlement_winner(session, item=item, points_mode=setting.points_mode)
+    item.status = "ended"
+    item.updated_at = now
+    if winner_bid is not None:
+        item.winner_user_id = winner_bid.bid_user_id
+        item.winner_bid_id = winner_bid.id
+        item.current_price = winner_bid.bid_amount
     await session.flush()
-    return settlements
+    return AuctionSettlementResult(
+        item=item,
+        winner_user_id=item.winner_user_id,
+        winning_amount=item.current_price,
+        note=note,
+    )

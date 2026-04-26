@@ -52,6 +52,7 @@ from backend.shared.services.publish_service import PublishService
 from backend.shared.ui.message_config_panel import (
     PanelField,
     button_status,
+    format_completion_lines,
     format_panel,
     media_status,
     summarize_text,
@@ -146,6 +147,8 @@ def _format_ad_detail_text(ad: AdCampaign, rule=None) -> str:
     end_text = format_local_datetime(getattr(ad, "end_time", None), empty="【等待设置】")
     if getattr(ad, "end_time", None) is None:
         end_text = "【等待设置】"
+    has_content = bool(str(getattr(ad, "content", "") or "").strip())
+    has_media = bool(getattr(ad, "image_file_id", None))
     footer = [
         f"⚙️ 状态: {'✅ 启用' if ad.enabled else '❌ 关闭'}",
         f"🔁 轮播顺序: {getattr(ad, 'sort_order', 0)}",
@@ -154,12 +157,19 @@ def _format_ad_detail_text(ad: AdCampaign, rule=None) -> str:
         footer.append(f"⌛ 发送频率: {format_interval_seconds_label(getattr(rule, 'interval_seconds', 7200))}")
         footer.append(f"📌 轮播方式: {describe_rule_mode(rule)}")
         footer.append(f"🧹 删除规则: {describe_delete_policy(rule)}")
+    footer.extend(
+        format_completion_lines(
+            [("文本或封面", has_content or has_media)],
+            next_step="预览效果 → 启用",
+            test_step="到目标群确认轮播发送结果",
+        )
+    )
 
     return format_panel(
         "🎠 轮播消息",
         [
             PanelField("📮", "标题备注", summarize_text(getattr(ad, "title", None), limit=80)),
-            PanelField("🏞️", "封面设置", media_status(has_media=bool(getattr(ad, "image_file_id", None)))),
+            PanelField("🏞️", "封面设置", media_status(has_media=has_media)),
             PanelField("📄", "文本内容", summarize_text(getattr(ad, "content", None), limit=180)),
             PanelField("⭕", "设置按钮", button_status(getattr(ad, "buttons", None))),
             PanelField("⏰", "开始时间", start_text),
@@ -745,8 +755,8 @@ async def ads_item_input_callback(update: Update, context: ContextTypes.DEFAULT_
         await session.commit()
 
     prompt = {
-        "title": "👉 请输入标题备注。",
-        "text": "👉 请输入轮播文本内容。",
+        "title": "🎠 轮播消息 | 标题备注\n\n请输入标题备注，例如：周末活动通知。\n输入“清空”可恢复默认标题。",
+        "text": "🎠 轮播消息 | 文本内容\n\n请输入要轮播发送到群里的正文。\n可以直接发送多行文本，输入“清空”可清空文本。",
         "cover": "👉 请发送图片作为封面；发送“清空”可移除封面。",
         "order": "👉 请输入新的轮播顺序数字，例如 1。",
     }.get(field)

@@ -31,6 +31,13 @@ def _is_add_egg_command(text: str, bot_username: str | None) -> bool:
     return True
 
 
+def _contains_egg_answer_field(text: str) -> bool:
+    for line in (item.strip() for item in text.splitlines() if item.strip()):
+        if re.match(r"^(?:【\s*答案\s*】|答案\s*[=:：])", line):
+            return True
+    return False
+
+
 async def engagement_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     if update.effective_chat is None or update.effective_message is None or update.effective_user is None:
         return False
@@ -54,6 +61,14 @@ async def engagement_message_handler(update: Update, context: ContextTypes.DEFAU
                 context,
                 chat_id=update.effective_chat.id,
                 text=f"⚠️ {error_text or '需要管理员权限'}，无法添加彩蛋。",
+                reply_to_message_id=update.effective_message.message_id,
+            )
+            return True
+        if _contains_egg_answer_field(text):
+            await PublishService.reply(
+                context,
+                chat_id=update.effective_chat.id,
+                text="⚠️ 彩蛋答案不能在群聊里配置。请到机器人私聊中复制模板并创建，避免群友提前看到答案。",
                 reply_to_message_id=update.effective_message.message_id,
             )
             return True

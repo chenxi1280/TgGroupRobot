@@ -19,6 +19,7 @@ def format_auction_settings_text(chat_title: str, setting: AuctionSetting) -> st
             f"🪙 关联积分：{'🌑 主积分' if setting.points_mode == 'group_points' else '🚫 不关联'}",
             "",
             "群内发送“拍卖”即可进入创建流程，机器人会提示回复拍卖物品；也可回复任意消息发送“拍卖”快速创建。",
+            "流程：发布拍卖 → 群友回复拍卖公告出价 → 到点自动结算 → 按结果联系买家交付。",
         ]
     )
 
@@ -49,7 +50,7 @@ def format_auction_announcement(
     if is_final:
         lines.append(f"结束时间：{as_utc(item.updated_at).astimezone().strftime('%Y-%m-%d %H:%M:%S')}")
     if settlement_note:
-        lines.extend(["", settlement_note])
+        lines.extend(["", settlement_note, "", "下一步：买卖双方按群内约定完成交付。"])
     else:
         lines.extend(["", "回复本条消息发送数字即可出价，例如：`188`"])
     return "\n".join(lines)

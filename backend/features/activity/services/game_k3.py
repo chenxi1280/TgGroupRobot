@@ -203,66 +203,99 @@ async def create_or_join_k3_round(
 
 
 async def settle_due_k3_rounds(session: AsyncSession) -> list[dict]:
-    stmt = select(GameRound).where(
+    round_ids = await list_due_k3_round_ids(session)
+    summaries: list[dict] = []
+    for round_id in round_ids:
+        summary = await settle_k3_round(session, round_id)
+        if summary is not None:
+            summaries.append(summary)
+    await session.flush()
+    return summaries
+
+
+async def list_due_k3_round_ids(session: AsyncSession) -> list[int]:
+    stmt = select(GameRound.id).where(
         GameRound.game_type == "k3",
         GameRound.status == "pending",
         GameRound.settle_at.is_not(None),
         GameRound.settle_at <= now_utc(),
     )
     result = await session.execute(stmt)
-    rounds = list(result.scalars().all())
-    summaries: list[dict] = []
-    for round_obj in rounds:
-        participants_result = await session.execute(
-            select(GameParticipant).where(GameParticipant.round_id == round_obj.id)
+    return [int(round_id) for round_id in result.scalars().all()]
+
+
+async def settle_k3_round(session: AsyncSession, round_id: int) -> dict | None:
+    round_result = await session.execute(
+        select(GameRound)
+        .where(
+            GameRound.id == round_id,
+            GameRound.game_type == "k3",
+            GameRound.status == "pending",
+            GameRound.settle_at.is_not(None),
+            GameRound.settle_at <= now_utc(),
         )
-        participants = list(participants_result.scalars().all())
-        dice = [random.randint(1, 6) for _ in range(3)]
-        result = classify_k3_result(dice)
-        label = "、".join(result["labels"]) if result["labels"] else "未命中"
-        total = int(result["total"])
-        winning_keys = set(result["winning_keys"])
-        winners: list[dict] = []
-        points_chat_id = get_round_points_chat_id(round_obj, round_obj.chat_id)
-        round_obj.result_data = {
-            **(round_obj.result_data or {}),
-            "dice": dice,
-            "label": label,
-            "labels": result["labels"],
-            "winning_keys": result["winning_keys"],
-            "total": total,
-            "points_chat_id": points_chat_id,
-        }
-        round_obj.status = "finished"
-        setting = await get_or_create_setting(session, round_obj.chat_id)
-        rake_ratio = get_rake_ratio_value(setting)
-        for participant in participants:
-            guess = normalize_k3_guess(str((participant.choice_data or {}).get("guess") or ""))
-            multiplier = K3_OPTION_MULTIPLIERS.get(guess, Decimal("0")) if guess in winning_keys else Decimal("0")
-            gross_payout = int((Decimal(participant.bet_points) * multiplier).quantize(Decimal("1"))) if multiplier > 0 else 0
-            rake_amount = int((Decimal(gross_payout) * rake_ratio).quantize(Decimal("1"))) if gross_payout > 0 else 0
-            payout = max(0, gross_payout - rake_amount)
-            participant.payout_points = payout
-            participant.status = "won" if payout > 0 else "lost"
-            if payout > 0:
-                await change_points(
-                    session,
-                    points_chat_id,
-                    participant.user_id,
-                    payout,
-                    PointsTxnType.reward.value,
-                    reason=f"快三开奖：{label}",
-                )
-                winners.append({"user_id": participant.user_id, "guess": k3_guess_label(guess), "payout": payout})
-            if payout > 0 and rake_amount > 0 and setting.rake_owner_user_id:
-                await change_points(
-                    session,
-                    points_chat_id,
-                    setting.rake_owner_user_id,
-                    rake_amount,
-                    PointsTxnType.reward.value,
-                    reason="快三抽水",
-                )
-        summaries.append({"round": round_obj, "winners": winners})
+        .with_for_update()
+    )
+    round_obj = round_result.scalar_one_or_none()
+    if round_obj is None:
+        return None
+    participants_result = await session.execute(
+        select(GameParticipant).where(GameParticipant.round_id == round_obj.id).with_for_update()
+    )
+    participants = list(participants_result.scalars().all())
+    dice = [random.randint(1, 6) for _ in range(3)]
+    result = classify_k3_result(dice)
+    label = "、".join(result["labels"]) if result["labels"] else "未命中"
+    total = int(result["total"])
+    winning_keys = set(result["winning_keys"])
+    winners: list[dict] = []
+    points_chat_id = get_round_points_chat_id(round_obj, round_obj.chat_id)
+    round_obj.result_data = {
+        **(round_obj.result_data or {}),
+        "dice": dice,
+        "label": label,
+        "labels": result["labels"],
+        "winning_keys": result["winning_keys"],
+        "total": total,
+        "points_chat_id": points_chat_id,
+    }
+    round_obj.status = "finished"
+    setting = await get_or_create_setting(session, round_obj.chat_id)
+    rake_ratio = get_rake_ratio_value(setting)
+    for participant in participants:
+        guess = normalize_k3_guess(str((participant.choice_data or {}).get("guess") or ""))
+        multiplier = K3_OPTION_MULTIPLIERS.get(guess, Decimal("0")) if guess in winning_keys else Decimal("0")
+        gross_payout = int((Decimal(participant.bet_points) * multiplier).quantize(Decimal("1"))) if multiplier > 0 else 0
+        rake_amount = int((Decimal(gross_payout) * rake_ratio).quantize(Decimal("1"))) if gross_payout > 0 else 0
+        payout = max(0, gross_payout - rake_amount)
+        participant.payout_points = payout
+        participant.status = "won" if payout > 0 else "lost"
+        if payout > 0:
+            await change_points(
+                session,
+                points_chat_id,
+                participant.user_id,
+                payout,
+                PointsTxnType.reward.value,
+                reason=f"快三开奖：{label}",
+            )
+            winners.append(
+                {
+                    "user_id": participant.user_id,
+                    "guess": k3_guess_label(guess),
+                    "bet": participant.bet_points,
+                    "payout": payout,
+                    "net": payout - participant.bet_points,
+                }
+            )
+        if payout > 0 and rake_amount > 0 and setting.rake_owner_user_id:
+            await change_points(
+                session,
+                points_chat_id,
+                setting.rake_owner_user_id,
+                rake_amount,
+                PointsTxnType.reward.value,
+                reason="快三抽水",
+            )
     await session.flush()
-    return summaries
+    return {"round": round_obj, "winners": winners}

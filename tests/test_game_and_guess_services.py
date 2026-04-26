@@ -22,6 +22,7 @@ from backend.features.activity.services.game_service import (
     parse_ratio as parse_game_ratio,
     validate_hhmm,
     format_game_menu_text,
+    format_blackjack_round_text,
 )
 from backend.features.activity.services.guess_service import format_event_preview, parse_deadline, parse_options, parse_ratio as parse_guess_ratio
 from backend.features.activity.services.guess_service_runtime import build_settlement_plan
@@ -512,6 +513,9 @@ def test_guess_preview_uses_waiting_placeholders():
     assert "🔎 群内指令: 【等待设置】" in text
     assert "⏰ 截止时间: 【等待设置】" in text
     assert "🔗 重复下注: 禁止" in text
+    assert "配置进度:" in text
+    assert "必填完成: 0/3" in text
+    assert "下一步: 预览无误后发布到群" in text
 
 
 def test_formatters_include_icons():
@@ -527,6 +531,8 @@ def test_formatters_include_icons():
         delete_mode="keep",
     )
     assert "🎮 游戏" in game_text
+    assert "至少开启一个玩法" in game_text
+    assert "到群里发送 快三/黑杰克" in game_text
     guess_preview = format_event_preview(
         {
             "title": "周末竞猜",
@@ -540,3 +546,16 @@ def test_formatters_include_icons():
         }
     )
     assert "⚽ 竞猜" in guess_preview
+    assert "必填完成: 3/3" in guess_preview
+
+
+def test_blackjack_round_text_guides_next_action_when_active():
+    participant = SimpleNamespace(
+        bet_points=100,
+        choice_data={"player_cards": [10, 7], "dealer_cards": [6, 10]},
+    )
+
+    text = format_blackjack_round_text(participant)
+
+    assert "要牌 / 停牌" in text
+    assert "超时会自动停牌结算" in text

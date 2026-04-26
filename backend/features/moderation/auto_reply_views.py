@@ -9,7 +9,14 @@ from backend.features.moderation.services.auto_reply_service import (
     get_chat_auto_reply_rules,
 )
 from backend.platform.db.runtime.session import Database
-from backend.shared.ui.message_config_panel import PanelField, button_status, format_panel, media_status, summarize_text
+from backend.shared.ui.message_config_panel import (
+    PanelField,
+    button_status,
+    format_completion_lines,
+    format_panel,
+    media_status,
+    summarize_text,
+)
 
 
 def _format_keywords(keywords: list[str] | None) -> str:
@@ -33,7 +40,9 @@ def _format_delay_status(rule) -> str:
     return f"{delay}秒后删除" if delay else "不删除"
 
 
-def format_auto_reply_rule_detail(rule) -> str:
+def format_auto_reply_rule_detail(rule, *, toast: str | None = None) -> str:
+    has_keywords = bool(getattr(rule, "keywords", None))
+    has_content = bool(str(getattr(rule, "reply_content", "") or "").strip())
     return format_panel(
         "💬 自动回复",
         [
@@ -48,7 +57,12 @@ def format_auto_reply_rule_detail(rule) -> str:
             f"🧹 删除来源: {'删除' if getattr(rule, 'delete_source', False) else '保留'}",
             f"🕘 延迟删除: {_format_delay_status(rule)}",
             f"🔁 顺序: {getattr(rule, 'sort_order', 0)}",
-        ],
+        ] + format_completion_lines(
+            [("关键词", has_keywords), ("回复文本", has_content)],
+            next_step="预览效果 → 启用",
+            test_step="到目标群发送关键词确认触发结果",
+        ),
+        toast=toast,
     )
 
 

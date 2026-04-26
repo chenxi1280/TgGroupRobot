@@ -81,6 +81,16 @@ async def auto_reply_preview_action(
 
     if not str(getattr(rule, "reply_content", "") or "").strip():
         await q.answer("请先配置文本内容", show_alert=True)
+        from backend.features.moderation.auto_reply_views import format_auto_reply_rule_detail
+        from backend.features.moderation.ui.auto_reply import auto_reply_detail_keyboard
+
+        await q.edit_message_text(
+            format_auto_reply_rule_detail(
+                rule,
+                toast="❌ 预览失败：请先配置回复文本。下面可直接修改文本后再预览。",
+            ),
+            reply_markup=auto_reply_detail_keyboard(rule, target_chat_id),
+        )
         return
 
     await q.answer()

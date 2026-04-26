@@ -148,6 +148,14 @@ async def handle_game_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             reply_to_message_id=update.effective_message.message_id,
         )
         return True
+    if parsed_k3 is None and text.startswith(("快3", "快三")):
+        await PublishService.reply(
+            context,
+            chat_id=chat.id,
+            text="⚠️ 快三格式错误，请发送：`快三 大 100`。可选：大/小/单/双/豹子/对子/半顺/三连/杂六。",
+            reply_to_message_id=update.effective_message.message_id,
+        )
+        return True
     if parsed_k3 is not None:
         guess, bet_points = parsed_k3
         async with db.session_factory() as session:
@@ -272,6 +280,14 @@ async def handle_game_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             context,
             chat_id=chat.id,
             text=f"⚠️ {exc}",
+            reply_to_message_id=update.effective_message.message_id,
+        )
+        return True
+    if blackjack_bet is None and text.startswith("黑杰克"):
+        await PublishService.reply(
+            context,
+            chat_id=chat.id,
+            text="⚠️ 黑杰克格式错误，请发送：`黑杰克 100`。开局后可发送“要牌”或“停牌”。",
             reply_to_message_id=update.effective_message.message_id,
         )
         return True

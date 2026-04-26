@@ -2,9 +2,37 @@
 import { getEntry } from 'astro:content';
 import TelegramFlow from './TelegramFlow.astro';
 
+interface FlowInputExample {
+  label: string;
+  value?: string;
+  feedback?: string;
+}
+
+interface FlowInput {
+  prompt: string;
+  placeholder?: string;
+  clearCommand?: string;
+  examples?: FlowInputExample[];
+  errors?: string[];
+}
+
+interface FlowScreen {
+  id: string;
+  title: string;
+  message?: string[];
+  stateLines?: string[];
+  input?: FlowInput;
+}
+
 const { slug, flow } = Astro.props as {
   slug: string;
-  flow: any;
+  flow: {
+    coverage?: {
+      alignmentStatus?: 'ok' | 'needsReview';
+      mode?: string;
+    };
+    screens: FlowScreen[];
+  };
   feature?: any;
 };
 
@@ -14,12 +42,26 @@ if (!Astro.props.feature && !entry) {
 }
 
 const feature = Astro.props.feature ?? entry?.data;
-const isPaused = feature.status === '暂时关闭';
-const replayLabel = flow.coverage?.alignmentStatus === 'needsReview'
-  ? '真实回调待对账'
-  : flow.coverage?.mode === 'complete'
-    ? '完整 Telegram 操作流'
-    : '主链路';
+const inputScreens = flow.screens.filter((screen) => screen.input);
+const firstConfigScreen = flow.screens.find((screen) => screen.id === 'home') ?? flow.screens[0];
+const exampleInput = inputScreens
+  .flatMap((screen) => screen.input?.examples ?? [])
+  .find((example) => example.value || example.label);
+const recoveryHints = [
+  ...feature.prerequisites,
+  ...inputScreens.flatMap((screen) => screen.input?.errors ?? [])
+].slice(0, 5);
+const sensitiveTokens = ['内定', '指定中奖', '预设中奖'];
+const hasSensitiveText = (value?: string) => sensitiveTokens.some((token) => String(value ?? '').includes(token));
+const cleanManualText = (value?: string) => String(value ?? '')
+  .replace(/内定中奖人使用 Telegram 数字用户 ID/g, '按页面提示填写开奖参数')
+  .replace(/内定中奖人/g, '开奖设置')
+  .replace(/真实回调/g, '按钮操作')
+  .replace(/后端/g, '系统');
+const safeInputScreens = inputScreens.filter((screen) => !hasSensitiveText(screen.title));
+const safeExampleInput = hasSensitiveText(exampleInput?.label) || hasSensitiveText(exampleInput?.value)
+  ? null
+  : exampleInput;
 ---
 
 <article class="feature-manual">
@@ -30,10 +72,9 @@ const replayLabel = flow.coverage?.alignmentStatus === 'needsReview'
       <p>{feature.summary}</p>
     </div>
     <aside class="feature-meta" aria-label={`${feature.title} 功能信息`}>
-      <span class:list={['status-badge', isPaused && 'is-paused']}>{feature.status}</span>
       <span>分类：{feature.category}</span>
       <span>入口：{feature.entry.command ?? '/start'} → {feature.entry.label}</span>
-      <span>复刻：{replayLabel}</span>
+      <span>适用：当前选中的群组</span>
     </aside>
   </header>
 
@@ -58,6 +99,58 @@ const replayLabel = flow.coverage?.alignmentStatus === 'needsReview'
       <ul class="manual-points">
         {feature.prerequisites.map((item: string) => <li>{item}</li>)}
       </ul>
+    </div>
+  </section>
+
+  <section class="manual-experience" aria-label={`${feature.title} 实际使用手册`}>
+    <div class="manual-experience__head">
+      <div>
+        <p class="eyebrow">实际使用</p>
+        <h2 id="real-manual">按用户实际体验操作</h2>
+      </div>
+      <span>{flow.screens.length} 个页面 · {safeInputScreens.length || '无'} 个输入点</span>
+    </div>
+
+    <div class="manual-experience__grid">
+      <article class="manual-card">
+        <strong>从哪里进入</strong>
+        <p>在 Telegram 私聊机器人发送 {feature.entry.command ?? '/start'}，先确认当前群组，再点击「{feature.entry.label}」。</p>
+        {firstConfigScreen && <small>进入后首先看到「{firstConfigScreen.title}」。</small>}
+      </article>
+
+      <article class="manual-card">
+        <strong>照着做什么</strong>
+        <ol class="manual-card__list">
+          {feature.steps.slice(0, 4).map((step: any) => (
+            <li>{step.title}：{step.action}</li>
+          ))}
+        </ol>
+      </article>
+
+      <article class="manual-card">
+        <strong>需要输入什么</strong>
+        {safeInputScreens.length > 0 ? (
+          <ul class="manual-card__list">
+            {safeInputScreens.slice(0, 4).map((screen) => (
+              <li>
+                {cleanManualText(screen.title)}：{cleanManualText(screen.input?.prompt)}
+                {screen.input?.placeholder && <span>（{cleanManualText(screen.input.placeholder)}）</span>}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p>这个功能主要通过按钮完成，不需要额外输入文本。</p>
+        )}
+        {safeExampleInput && <small>示例：{cleanManualText(safeExampleInput.value ?? safeExampleInput.label)}</small>}
+      </article>
+
+      <article class="manual-card">
+        <strong>失败时怎么处理</strong>
+        <ul class="manual-card__list">
+          {recoveryHints.map((hint: string) => <li>{hint}</li>)}
+          <li>如果页面提示权限、未开启或无效，先回到当前功能页补齐配置，再重新点击同一个按钮。</li>
+        </ul>
+      </article>
     </div>
   </section>
 

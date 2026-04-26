@@ -85,9 +85,11 @@ class GuessAdminControllerMixin:
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
         draft: dict,
+        *,
+        toast: str | None = None,
     ) -> None:
         draft = _guess_draft_with_defaults(draft)
-        text = format_event_preview(draft)
+        text = format_event_preview(draft, toast=toast)
         keyboard = InlineKeyboardMarkup([
             [
                 InlineKeyboardButton("🏷️ 活动名字", callback_data=f"guess:create:{chat_id}:title"),
@@ -229,12 +231,12 @@ class GuessAdminControllerMixin:
                         "deadline": "guess_wait_deadline",
                     }
                     prompt_map = {
-                        "title": "⚽ 竞猜 | 活动名字\n\n👉 请输入活动名字：",
+                        "title": "⚽ 竞猜 | 活动名字\n\n👉 请输入活动名字：\n例如：世界杯决赛胜负",
                         "cover": "⚽ 竞猜 | 活动封面\n\n请发送图片，或发送“清空”移除封面。",
-                        "description": "⚽ 竞猜 | 活动说明\n\n👉 请输入活动说明：",
+                        "description": "⚽ 竞猜 | 活动说明\n\n👉 请输入活动说明：\n例如：90 分钟常规时间结果，不含加时。",
                         "banker": "⚽ 竞猜 | 本局庄家\n\n请输入用户名或用户ID，发送“清空”切回无庄模式。",
-                        "pool": "⚽ 竞猜 | 公共奖池\n\n👉 请输入公共奖池积分：",
-                        "options": "⚽ 竞猜 | 竞猜选项\n\n每行一个选项，支持 `编号:文案`。",
+                        "pool": "⚽ 竞猜 | 公共奖池\n\n👉 请输入公共奖池积分：\n例如：1000；不需要奖池可填 0。",
+                        "options": "⚽ 竞猜 | 竞猜选项\n\n每行一个选项，支持 `编号:文案`。\n例如：\nA:主胜\nB:平局\nC:客胜",
                         "command": "⚽ 竞猜 | 群内指令\n\n👉 请输入群内指令，例如：竞猜",
                     }
                     await _start_guess_input_state(session, user_id=update.effective_user.id, chat_id=chat_id, state_type=state_map[sub], draft=draft)
@@ -281,6 +283,13 @@ class GuessAdminControllerMixin:
                     if not required.issubset(set(draft.keys())):
                         await session.commit()
                         await answer_callback_query_safely(update, "❌ 请先补齐活动名字、竞猜选项和截止时间。", show_alert=True)
+                        await self._show_guess_create_menu(
+                            update,
+                            context,
+                            chat_id,
+                            draft,
+                            toast="❌ 发布失败：请先补齐活动名字、竞猜选项和截止时间。下面可以直接继续修改。",
+                        )
                         return
                     try:
                         event = await create_guess_event(session, chat_id, update.effective_user.id, draft)

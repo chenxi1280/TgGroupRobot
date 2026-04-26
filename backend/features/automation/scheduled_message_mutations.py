@@ -116,6 +116,13 @@ class ScheduledMessageMutationMixin:
                     if value == "1" and not _task_has_sendable_content(task):
                         await session.rollback()
                         await answer_callback_query_safely(update, "请先设置文本或封面", show_alert=True)
+                        await self.show_detail(
+                            update,
+                            context,
+                            target_chat_id,
+                            task_id,
+                            toast="❌ 启用失败：请先设置文本或封面。下面可直接补齐后再预览、启用。",
+                        )
                         return
                     task = await ScheduledMessageService.toggle_task_enabled(session, task_id, value == "1")
                 elif field == "delete_previous":
@@ -349,6 +356,13 @@ class ScheduledMessageMutationMixin:
 
         if not _task_has_sendable_content(task):
             await answer_callback_query_safely(update, "请先设置文本或封面", show_alert=True)
+            await self.show_detail(
+                update,
+                context,
+                target_chat_id,
+                task_id,
+                toast="❌ 预览失败：请先设置文本或封面。下面可直接补齐后再预览。",
+            )
             return
 
         reply_markup = _build_task_buttons(task.buttons)

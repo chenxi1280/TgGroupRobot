@@ -109,7 +109,7 @@ async def verification_timeout_help_callback_impl(update: Update, context: Conte
             ).verification_timeout_help_keyboard(target_user_id)
             await context.bot.send_message(
                 chat_id=chat.id,
-                text=f"🆘 {actor.mention_html()} 请求管理员协助解封。\n管理员可点击下方按钮直接解封。",
+                text=f"🆘 {actor.mention_html()} 请求协助解封，请等待管理员处理。",
                 parse_mode="HTML",
                 reply_markup=keyboard,
             )

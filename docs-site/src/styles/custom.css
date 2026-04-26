@@ -329,6 +329,59 @@ h3 {
   padding-top: 2rem;
 }
 
+.manual-experience {
+  border-top: 1px solid var(--manual-line);
+  margin: 2rem 0;
+  padding-top: 2rem;
+}
+
+.manual-experience__head {
+  align-items: end;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+.manual-experience__head h2 {
+  margin-top: 0;
+}
+
+.manual-experience__head span,
+.manual-card small {
+  color: var(--manual-muted);
+  font-weight: 700;
+}
+
+.manual-experience__grid {
+  display: grid;
+  gap: 0.85rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 1rem;
+}
+
+.manual-card {
+  border: 1px solid var(--manual-line);
+  border-radius: 8px;
+  display: grid;
+  gap: 0.65rem;
+  padding: 1rem;
+}
+
+.manual-card strong {
+  font-size: 1.02rem;
+}
+
+.manual-card p {
+  margin: 0;
+}
+
+.manual-card__list {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0;
+  padding-left: 1.15rem;
+}
+
 .manual-points,
 .manual-steps,
 .check-list,
@@ -614,6 +667,13 @@ h3 {
   margin: 0.5rem 0 1rem;
 }
 
+.telegram-flow__coverage span {
+  background: var(--manual-soft);
+  border: 1px solid var(--manual-line);
+  border-radius: 8px;
+  padding: 0.45rem 0.65rem;
+}
+
 .telegram-flow__stage {
   min-height: 28rem;
 }
@@ -624,6 +684,18 @@ h3 {
 
 .telegram-flow-screen.is-active {
   display: block;
+}
+
+.telegram-screen {
+  position: relative;
+}
+
+.telegram-screen-progress {
+  color: var(--manual-muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+  margin-bottom: 0.7rem;
+  text-align: right;
 }
 
 .telegram-input-block {
@@ -779,9 +851,38 @@ h3 {
 
   .manual-landing,
   .manual-intro,
+  .manual-experience__grid,
   .feature-hero,
   .step-panel {
     grid-template-columns: 1fr;
+  }
+
+  .manual-experience__head,
+  .telegram-flow__head {
+    align-items: start;
+    flex-direction: column;
+  }
+
+  .telegram-flow__coverage {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .telegram-screen {
+    padding: 0.85rem;
+  }
+
+  .telegram-message {
+    padding: 1rem;
+  }
+
+  .keyboard-row {
+    gap: 0.45rem;
+  }
+
+  .keyboard-button {
+    min-height: 3rem;
+    padding: 0.45rem 0.5rem;
   }
 
   .manual-landing__copy h1 {

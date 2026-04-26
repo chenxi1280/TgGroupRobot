@@ -18,8 +18,10 @@ from backend.features.activity.lottery_creation import (
     _prize_action_keyboard,
     _qualification_rules_from_config,
     _reply_next_prompt,
+    _reply_preset_confirm,
 )
 from backend.features.activity.lottery_participation import _format_join_success_message
+from backend.features.activity.lottery_participation import _join_error_message
 from backend.features.activity.lottery_menus import _format_local_time as _format_lottery_menu_local_time
 import backend.features.activity.services.lottery_service_drawing as lottery_service_drawing
 import backend.features.activity.services.lottery_service_participation as lottery_service_participation
@@ -199,11 +201,76 @@ def test_lottery_wizard_config_summary_includes_core_fields_and_preset():
     assert "中奖人数：1" in summary
     assert "扣除积分：10 出击分" in summary
     assert "内定中奖人：123456789" in summary
+    assert "配置进度:" in summary
+    assert "下一步: 确认无误后发布到群" in summary
+    assert "测试: 发布后用测试账号点击参与" in summary
 
     rules = _qualification_rules_from_config(config)
     assert rules["point_type_id"] == 7
     assert rules["point_type_name"] == "出击分"
     assert rules["preset_winner_ids"] == [123456789]
+
+
+def test_lottery_wizard_public_summary_hides_preset_winners():
+    config = _build_config_from_state(
+        {
+            "target_chat_id": -1001,
+            "lottery_type": "common",
+            "selection_mode": "threshold_random",
+            "draw_trigger": "full_participants",
+            "title": "公开抽奖",
+            "max_participants": 10,
+            "prizes": [{"name": "1USDT", "quantity": 1, "points_reward": 0}],
+            "preset_winner_ids": [123456789],
+        }
+    )
+
+    summary = _format_lottery_wizard_summary(config, include_sensitive=False)
+
+    assert "抽奖名称：公开抽奖" in summary
+    assert "中奖人数：1" in summary
+    assert "内定" not in summary
+    assert "123456789" not in summary
+
+
+@pytest.mark.asyncio
+async def test_lottery_wizard_group_confirm_does_not_echo_preset_winners():
+    replies: list[dict[str, object]] = []
+    state = SimpleNamespace(
+        state_data={
+            "target_chat_id": -1001,
+            "lottery_type": "common",
+            "selection_mode": "threshold_random",
+            "draw_trigger": "full_participants",
+            "title": "公开抽奖",
+            "max_participants": 10,
+            "prizes": [{"name": "1USDT", "quantity": 1, "points_reward": 0}],
+            "preset_winner_ids": [123456789],
+        }
+    )
+
+    class _Message:
+        async def reply_text(self, text, **kwargs):
+            replies.append({"text": text, **kwargs})
+
+    update = SimpleNamespace(
+        effective_chat=SimpleNamespace(id=-1001, type="supergroup"),
+        effective_message=_Message(),
+    )
+
+    await _reply_preset_confirm(update, state, state.state_data)
+
+    assert replies
+    assert "抽奖名称：公开抽奖" in replies[-1]["text"]
+    assert "内定" not in replies[-1]["text"]
+    assert "123456789" not in replies[-1]["text"]
+    button_texts = [
+        button.text
+        for row in replies[-1]["reply_markup"].inline_keyboard
+        for button in row
+    ]
+    assert "✅ 确认发布抽奖" in button_texts
+    assert all("内定" not in text for text in button_texts)
 
 
 def test_lottery_public_announcements_do_not_expose_preset_winners():
@@ -226,6 +293,27 @@ def test_lottery_public_announcements_do_not_expose_preset_winners():
     assert "123456789" not in announcement
 
 
+def test_lottery_ranking_announcement_explains_no_manual_join():
+    config = _build_config_from_state(
+        {
+            "target_chat_id": -1001,
+            "lottery_type": "invite",
+            "selection_mode": "ranking_random",
+            "draw_trigger": "time_deadline",
+            "title": "邀请榜抽奖",
+            "draw_time": "2099-12-31T12:00:00+00:00",
+            "required_invites": 0,
+            "finalist_limit": 10,
+            "prizes": [{"name": "1USDT", "quantity": 1, "points_reward": 0}],
+        }
+    )
+
+    announcement = format_lottery_announcement_text(config)
+
+    assert "无需点击参与" in announcement
+    assert "继续完成对应的邀请或活跃任务" in announcement
+
+
 def test_lottery_join_success_message_mentions_user_and_count_without_preset():
     message = _format_join_success_message(
         user=SimpleNamespace(id=42, full_name="Alice <A>", username=None),
@@ -237,7 +325,16 @@ def test_lottery_join_success_message_mentions_user_and_count_without_preset():
     assert '<a href="tg://user?id=42">Alice &lt;A&gt;</a>' in message
     assert "抽奖：测试 &lt;lottery&gt;" in message
     assert "当前参与人数：7/100" in message
+    assert "请留意原抽奖公告" in message
     assert "内定" not in message
+
+
+def test_lottery_join_errors_explain_recovery_actions():
+    lottery = SimpleNamespace(min_points=0, participation_cost=10, requirement_days=3)
+
+    assert "继续邀请新成员" in _join_error_message("insufficient_invites", lottery=lottery, point_type_name="积分")
+    assert "继续发言互动" in _join_error_message("insufficient_activity", lottery=lottery, point_type_name="积分")
+    assert "无需手动参与" in _join_error_message("ranking_auto_selection", lottery=lottery, point_type_name="积分")
 
 
 def test_manual_draw_keyboards_keep_target_chat_scope():
@@ -860,10 +957,14 @@ def test_lottery_deadline_reminders_are_idempotent_and_html_safe():
 def test_lottery_deadline_result_messages_include_close_notice():
     lottery = SimpleNamespace(title="A<B")
 
-    assert _format_draw_result_with_close_notice("开奖结果").startswith("⏰ 抽奖已截止，已停止参与。")
+    result_text = _format_draw_result_with_close_notice("开奖结果", participant_count=7)
+    assert result_text.startswith("⏰ 抽奖已截止，已停止参与。")
+    assert "本次参与人数：7" in result_text
+    assert "奖励已按配置发放" in result_text
     no_participants = _format_no_participants_announcement(lottery)
     assert "抽奖已截止，已停止参与" in no_participants
     assert "抽奖【A&lt;B】开奖结果" in no_participants
+    assert "调整门槛后重新发起" in no_participants
 
 
 def test_lottery_scheduler_runs_every_minute_for_deadline_accuracy():

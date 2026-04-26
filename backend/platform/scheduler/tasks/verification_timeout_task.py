@@ -174,11 +174,7 @@ async def check_verification_timeouts(app: Application) -> None:
                             )
                             await app.bot.send_message(
                                 chat_id=ch.chat_id,
-                                text=(
-                                    reason_text +
-                                    f"管理员可直接点击“管理员一键解封”，"
-                                    f"或回复该用户消息发送“解封”。"
-                                ),
+                                text=reason_text + "如需协助，请联系管理员处理。",
                                 parse_mode="HTML",
                                 reply_markup=verification_timeout_help_keyboard(ch.user_id),
                             )

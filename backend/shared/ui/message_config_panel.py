@@ -66,6 +66,30 @@ def action_button(label: str, callback_data: str, *, configured: bool = False) -
     return InlineKeyboardButton(mark_configured(label, configured), callback_data=callback_data)
 
 
+def format_completion_lines(
+    required_items: Iterable[tuple[str, bool]],
+    *,
+    next_step: str | None = None,
+    test_step: str | None = None,
+) -> list[str]:
+    """Build a compact completion guide for multi-step config pages."""
+    items = list(required_items)
+    if not items and not next_step and not test_step:
+        return []
+
+    lines = ["", "配置进度:"]
+    if items:
+        done_count = sum(1 for _, done in items if done)
+        lines.append(f"必填完成: {done_count}/{len(items)}")
+        for label, done in items:
+            lines.append(f"{'✅' if done else '❌'} {label}")
+    if next_step:
+        lines.append(f"下一步: {next_step}")
+    if test_step:
+        lines.append(f"测试: {test_step}")
+    return lines
+
+
 def format_panel(title: str, fields: Iterable[PanelField], *, footer: Iterable[str] | None = None, toast: str | None = None) -> str:
     lines: list[str] = []
     if toast:

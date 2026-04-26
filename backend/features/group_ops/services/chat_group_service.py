@@ -41,7 +41,12 @@ def format_private_chat_current_title(chat_title: str) -> str:
     Returns:
         格式化后的群组信息文本
     """
-    return f"👋 欢迎回来！\n\n📌 当前管理: {chat_title}\n\n可以选择其他群组或进入群组设置。"
+    return (
+        f"👋 欢迎回来！\n\n"
+        f"📌 当前管理: {chat_title}\n\n"
+        "新群或功能异常时，建议先点「健康检查」确认机器人权限和关键配置。\n"
+        "配置类功能完成后，请先预览，再到群内测试一次。"
+    )
 
 
 def format_private_chat_list(chat_count: int) -> str:
@@ -68,10 +73,12 @@ def format_group_guide_message(bot_username: str) -> str:
         格式化后的引导消息文本
     """
     return (
-        f"欢迎使用@{bot_username}:\n\n"
-        f"1) 点击下方按钮选择设置（仅限管理员）\n"
-        f"2) 点击机器人对话框底部[开始]按钮\n\n"
-        f"人员按下面的开始按钮调整到私聊机器界面进行管理群聊"
+        f"欢迎使用 @{bot_username}\n\n"
+        "管理员配置流程：\n"
+        "1. 先确认机器人已设为群管理员，并具备删消息、禁言、邀请链接等必要权限。\n"
+        "2. 点击下方「前往设置」进入机器人私聊设置页。\n"
+        "3. 在私聊里确认当前管理群组后，建议先运行「健康检查」。\n"
+        "4. 配置功能后先预览，再回到群内用测试账号触发一次。"
     )
 
 

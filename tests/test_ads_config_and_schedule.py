@@ -110,6 +110,9 @@ def test_format_ad_detail_text_matches_detail_flow() -> None:
     assert "⭕ 设置按钮: 已设置 1 个" in text
     assert "📄 文本内容: 郑州精品榜单" in text
     assert "⚙️ 状态: ✅ 启用" in text
+    assert "必填完成: 1/1" in text
+    assert "下一步: 预览效果 → 启用" in text
+    assert "测试: 到目标群确认轮播发送结果" in text
 
 
 def test_render_ads_home_text_contains_rule_summary() -> None:

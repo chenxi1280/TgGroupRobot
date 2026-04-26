@@ -61,11 +61,33 @@ async def get_running_event_by_keyword(session: AsyncSession, chat_id: int, keyw
 
 
 async def close_due_events(session: AsyncSession) -> list[GuessEvent]:
-    stmt = select(GuessEvent).where(GuessEvent.status == "running", GuessEvent.deadline_at <= now())
-    result = await session.execute(stmt)
-    events = list(result.scalars().all())
-    for event in events:
-        event.status = "pending"
-        event.updated_at = now()
+    event_ids = await list_due_event_ids(session)
+    events: list[GuessEvent] = []
+    for event_id in event_ids:
+        event = await close_due_event(session, event_id)
+        if event is not None:
+            events.append(event)
     await session.flush()
     return events
+
+
+async def list_due_event_ids(session: AsyncSession) -> list[int]:
+    stmt = select(GuessEvent.id).where(GuessEvent.status == "running", GuessEvent.deadline_at <= now())
+    result = await session.execute(stmt)
+    return [int(event_id) for event_id in result.scalars().all()]
+
+
+async def close_due_event(session: AsyncSession, event_id: int) -> GuessEvent | None:
+    stmt = (
+        select(GuessEvent)
+        .where(GuessEvent.id == event_id, GuessEvent.status == "running", GuessEvent.deadline_at <= now())
+        .with_for_update()
+    )
+    result = await session.execute(stmt)
+    event = result.scalar_one_or_none()
+    if event is None:
+        return None
+    event.status = "pending"
+    event.updated_at = now()
+    await session.flush()
+    return event

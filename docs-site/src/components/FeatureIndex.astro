@@ -30,7 +30,6 @@ const categories = categoryOrder.filter((category) => features.some((feature) =>
         <div class="feature-grid">
           {items.map((feature) => (
             <a class="feature-link" href={`/features/${feature.slug}/`}>
-              <span class:list={['status-dot', feature.status === '暂时关闭' && 'is-paused']}>{feature.status}</span>
               <strong>{feature.title}</strong>
               <span>{feature.summary}</span>
             </a>
