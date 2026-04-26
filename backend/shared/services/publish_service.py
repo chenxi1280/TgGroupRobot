@@ -82,6 +82,84 @@ class PublishService:
         return PublishResult(ok=True, message_id=msg.message_id)
 
     @staticmethod
+    async def send_video(
+        context: ContextTypes.DEFAULT_TYPE,
+        *,
+        chat_id: int,
+        video: str,
+        caption: str | None = None,
+        parse_mode: str | None = None,
+        reply_markup: InlineKeyboardMarkup | None = None,
+        **kwargs: Any,
+    ) -> PublishResult:
+        msg: Message = await context.bot.send_video(
+            chat_id=chat_id,
+            video=video,
+            caption=caption,
+            parse_mode=parse_mode,
+            reply_markup=reply_markup,
+            **kwargs,
+        )
+        return PublishResult(ok=True, message_id=msg.message_id)
+
+    @staticmethod
+    async def send_document(
+        context: ContextTypes.DEFAULT_TYPE,
+        *,
+        chat_id: int,
+        document: str,
+        caption: str | None = None,
+        parse_mode: str | None = None,
+        reply_markup: InlineKeyboardMarkup | None = None,
+        **kwargs: Any,
+    ) -> PublishResult:
+        msg: Message = await context.bot.send_document(
+            chat_id=chat_id,
+            document=document,
+            caption=caption,
+            parse_mode=parse_mode,
+            reply_markup=reply_markup,
+            **kwargs,
+        )
+        return PublishResult(ok=True, message_id=msg.message_id)
+
+    @staticmethod
+    async def send_sticker(
+        context: ContextTypes.DEFAULT_TYPE,
+        *,
+        chat_id: int,
+        sticker: str,
+        **kwargs: Any,
+    ) -> PublishResult:
+        msg: Message = await context.bot.send_sticker(
+            chat_id=chat_id,
+            sticker=sticker,
+            **kwargs,
+        )
+        return PublishResult(ok=True, message_id=msg.message_id)
+
+    @staticmethod
+    async def send_animation(
+        context: ContextTypes.DEFAULT_TYPE,
+        *,
+        chat_id: int,
+        animation: str,
+        caption: str | None = None,
+        parse_mode: str | None = None,
+        reply_markup: InlineKeyboardMarkup | None = None,
+        **kwargs: Any,
+    ) -> PublishResult:
+        msg: Message = await context.bot.send_animation(
+            chat_id=chat_id,
+            animation=animation,
+            caption=caption,
+            parse_mode=parse_mode,
+            reply_markup=reply_markup,
+            **kwargs,
+        )
+        return PublishResult(ok=True, message_id=msg.message_id)
+
+    @staticmethod
     async def edit(
         context: ContextTypes.DEFAULT_TYPE,
         *,

@@ -4,6 +4,7 @@ import pytest
 
 from backend.shared.services.base import ValidationError
 from backend.shared.ui.button_input import is_clear_button_input, parse_button_rows
+from backend.shared.ui.common.keyboard import back_button, confirm_delete_keyboard, pagination_row, toggle_row, url_button
 
 
 def test_parse_button_rows_accepts_json_and_wraps_to_four_columns() -> None:
@@ -68,3 +69,31 @@ def test_parse_button_rows_empty_input_requires_explicit_allow_empty() -> None:
         parse_button_rows("")
 
     assert parse_button_rows("", allow_empty=True) == []
+
+
+def test_common_keyboard_helpers_preserve_callback_scope_and_normalize_url() -> None:
+    assert back_button("sm:open:-100123:task1").callback_data == "sm:open:-100123:task1"
+    assert url_button("频道", "@demo_channel").url == "https://t.me/demo_channel"
+
+    row = pagination_row(
+        page=1,
+        total_pages=3,
+        previous_callback="sm:list:-100123:0",
+        next_callback="sm:list:-100123:2",
+    )
+    assert [button.callback_data for button in row] == ["sm:list:-100123:0", "_noop", "sm:list:-100123:2"]
+
+    toggle = toggle_row(
+        "状态：",
+        enabled=True,
+        on_callback="sm:set:-100123:task1:enabled:1",
+        off_callback="sm:set:-100123:task1:enabled:0",
+    )
+    assert [button.callback_data for button in toggle] == ["_noop", "sm:set:-100123:task1:enabled:1", "sm:set:-100123:task1:enabled:0"]
+
+    keyboard = confirm_delete_keyboard(
+        confirm_callback="sm:del_do:-100123:task1",
+        cancel_callback="sm:del_cancel:-100123:task1",
+    )
+    assert keyboard.inline_keyboard[0][0].callback_data == "sm:del_do:-100123:task1"
+    assert keyboard.inline_keyboard[0][1].callback_data == "sm:del_cancel:-100123:task1"

@@ -3,6 +3,10 @@ from __future__ import annotations
 import datetime as dt
 import re
 
+from backend.features.activity.services.lottery_subscription import (
+    format_lottery_subscribe_targets,
+    parse_lottery_subscribe_targets,
+)
 from backend.features.activity.services.lottery_service_types import ParsedLotteryConfig
 
 
@@ -11,6 +15,7 @@ LOTTERY_TYPE_CODES = {
     "points": "p",
     "invite": "i",
     "activity": "a",
+    "subscribe": "s",
 }
 LOTTERY_TYPE_BY_CODE = {code: value for value, code in LOTTERY_TYPE_CODES.items()}
 SELECTION_MODE_CODES = {
@@ -35,6 +40,7 @@ CONFIG_FIELD_NAMES = {
     "活跃消息数",
     "统计天数",
     "入围人数",
+    "关注目标",
 }
 DIRECT_USER_ID_LINK_PATTERNS = (
     re.compile(r"tg://user\?id=(\d+)", flags=re.IGNORECASE),
@@ -96,6 +102,7 @@ def lottery_type_label(lottery_type: str) -> str:
         "points": "💰 积分抽奖",
         "invite": "👥 邀请抽奖",
         "activity": "🔥 群活跃抽奖",
+        "subscribe": "📣 强制订阅抽奖",
     }.get(lottery_type, "🎁 抽奖")
 
 
@@ -251,18 +258,27 @@ def parse_lottery_config_text(
     required_activity_count = 0
     finalist_limit = 0
     preset_winner_ids: list[int] = []
+    subscribe_target_values: list[str] = []
     winner_block = False
+    subscribe_target_block = False
     for line in lines[1:]:
         line = line.strip()
         if not line:
             continue
         if line == "奖品:":
             winner_block = False
+            subscribe_target_block = False
             continue
         if _is_winner_field(line) and not _split_config_line(line)[1]:
             winner_block = True
+            subscribe_target_block = False
             continue
         split_line = _split_config_line(line)
+        if subscribe_target_block:
+            if split_line is None or split_line[0] not in CONFIG_FIELD_NAMES | set(WINNER_FIELD_PREFIXES):
+                subscribe_target_values.append(line)
+                continue
+            subscribe_target_block = False
         if winner_block:
             if split_line is None or split_line[0] not in CONFIG_FIELD_NAMES:
                 preset_winner_ids.extend(
@@ -282,6 +298,12 @@ def parse_lottery_config_text(
         field_name, field_value = split_line
         if field_name == "开奖时间":
             draw_time_utc = _parse_future_time(field_value)
+            continue
+        if field_name == "关注目标":
+            if field_value:
+                subscribe_target_values.append(field_value)
+            else:
+                subscribe_target_block = True
             continue
         if field_name == "最低积分":
             min_points = _parse_non_negative_int(field_value, "最低积分")
@@ -359,6 +381,11 @@ def parse_lottery_config_text(
         qualification_window_days = 7
     if selection_mode == "ranking_random" and finalist_limit <= 0:
         raise ValueError("排名入围随机玩法必须配置入围人数，格式如：入围人数: 10")
+    subscribe_targets = None
+    if lottery_type == "subscribe":
+        if not subscribe_target_values:
+            raise ValueError("强制订阅抽奖必须配置关注目标，格式如：关注目标: @channel")
+        subscribe_targets = parse_lottery_subscribe_targets("\n".join(subscribe_target_values))
 
     return ParsedLotteryConfig(
         lottery_type=lottery_type,
@@ -379,6 +406,8 @@ def parse_lottery_config_text(
         prizes=prizes,
         point_type_id=None,
         point_type_name=None,
+        subscribe_targets=subscribe_targets,
+        subscribe_check_mode="all",
     )
 
 
@@ -399,6 +428,9 @@ def format_lottery_announcement_text(config: ParsedLotteryConfig) -> str:
         text += f"\n👥 邀请人数门槛: {config.required_invites}"
     if config.required_activity_count > 0:
         text += f"\n🔥 活跃消息门槛: {config.required_activity_count}"
+    if config.lottery_type == "subscribe":
+        target_text = format_lottery_subscribe_targets(config.subscribe_targets or [])
+        text += f"\n📣 参与条件: 需先关注：{target_text}"
     if config.qualification_window_days > 0:
         text += f"\n📊 统计天数: 最近 {config.qualification_window_days} 天"
     if config.selection_mode == "ranking_random" and config.finalist_limit > 0:

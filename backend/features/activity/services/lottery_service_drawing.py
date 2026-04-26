@@ -94,11 +94,18 @@ async def create_lottery_winner(
     return winner
 
 
-async def perform_random_draw(session: AsyncSession, lottery: Lottery) -> list[LotteryWinner]:
+async def perform_random_draw(
+    session: AsyncSession,
+    lottery: Lottery,
+    *,
+    eligible_user_ids: set[int] | None = None,
+) -> list[LotteryWinner]:
     participants = await get_lottery_participants(session, lottery.id)
     qualification_rules = lottery.qualification_rules or {}
     if qualification_rules.get("selection_mode") == "ranking_random" and lottery.lottery_type in {"invite", "activity"}:
         participants = await build_ranked_finalists(session, lottery)
+    if eligible_user_ids is not None:
+        participants = [participant for participant in participants if int(participant.user_id) in eligible_user_ids]
 
     prize_list = _build_prize_slots(lottery.prizes or [])
     preset_winner_ids = []
@@ -106,6 +113,8 @@ async def perform_random_draw(session: AsyncSession, lottery: Lottery) -> list[L
         try:
             user_id_int = int(user_id)
         except (TypeError, ValueError):
+            continue
+        if eligible_user_ids is not None and user_id_int not in eligible_user_ids:
             continue
         if user_id_int > 0 and user_id_int not in preset_winner_ids:
             preset_winner_ids.append(user_id_int)

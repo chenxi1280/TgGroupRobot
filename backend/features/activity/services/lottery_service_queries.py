@@ -93,7 +93,7 @@ async def count_lotteries_by_type(session: AsyncSession, chat_id: int) -> dict[s
         .group_by(Lottery.lottery_type)
     )
     result = await session.execute(stmt)
-    counts = {"common": 0, "points": 0, "invite": 0, "activity": 0}
+    counts = {"common": 0, "points": 0, "invite": 0, "activity": 0, "subscribe": 0}
     for lottery_type, count in result.all():
         counts[lottery_type] = int(count)
     return counts

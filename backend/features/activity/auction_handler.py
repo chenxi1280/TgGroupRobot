@@ -57,6 +57,48 @@ async def _reply(update: Update, text: str, *, parse_mode: str = "Markdown", rep
         await update.effective_message.reply_text(text, parse_mode=parse_mode, reply_markup=reply_markup)
 
 
+def _auction_item_prompt() -> str:
+    return (
+        "💰 拍卖 | 拍卖物品\n\n"
+        "本步请发送要拍卖的物品消息，可以是文字、图片或其它消息。\n"
+        "格式：直接发送物品内容，或回复物品消息发送“拍卖”。\n"
+        "完整示例：苹果手机 15 Pro 256G"
+    )
+
+
+def _auction_title_prompt() -> str:
+    return (
+        "💰 拍卖 | 拍卖标题\n\n"
+        "本步只输入拍卖标题，不要带起拍价和截止时间。\n"
+        "格式：拍卖标题\n"
+        "完整示例：苹果手机 15 Pro 256G"
+    )
+
+
+def _auction_start_price_prompt() -> str:
+    return (
+        "💰 拍卖 | 起拍价\n\n"
+        "本步只输入起拍价，不要带单位。\n"
+        "格式：正整数\n"
+        "完整示例：100"
+    )
+
+
+def _auction_confirm_prompt(data: dict, deadline_text: str) -> str:
+    return "\n".join(
+        [
+            "💰 请确认拍卖信息：",
+            f"标题：{data.get('title')}",
+            f"起拍价：{data.get('start_price')}",
+            f"截止时间：{deadline_text}",
+            "",
+            "本步只发送确认指令。",
+            "格式：确认 或 取消",
+            "完整示例：确认",
+        ]
+    )
+
+
 async def auction_group_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     if update.effective_chat is None or update.effective_user is None or update.effective_message is None:
         return False
@@ -79,7 +121,7 @@ async def auction_group_message_handler(update: Update, context: ContextTypes.DE
             data = dict(state.state_data or {})
             if state.state_type == ConversationStateType.auction_wait_title.value:
                 if data.get("awaiting_item") and _is_auction_create_trigger(text):
-                    await _reply(update, "💰 请回复拍卖的物品或者拍卖的东西。")
+                    await _reply(update, _auction_item_prompt())
                     return True
                 source_message_id = data.get("source_message_id") or getattr(message, "message_id", None)
                 if source_message_id is None:
@@ -96,7 +138,7 @@ async def auction_group_message_handler(update: Update, context: ContextTypes.DE
                     data,
                 )
                 await session.commit()
-                await _reply(update, "💰 请输入起拍价（正整数）：")
+                await _reply(update, _auction_start_price_prompt())
                 return True
 
             if state.state_type == ConversationStateType.auction_wait_start_price.value:
@@ -145,17 +187,7 @@ async def auction_group_message_handler(update: Update, context: ContextTypes.DE
                     data,
                 )
                 await session.commit()
-                summary = "\n".join(
-                    [
-                        "💰 请确认拍卖信息：",
-                        f"标题：{data.get('title')}",
-                        f"起拍价：{data.get('start_price')}",
-                        f"截止时间：{text}",
-                        "",
-                        "发送 `确认` 发布，发送 `取消` 放弃。",
-                    ]
-                )
-                await _reply(update, summary)
+                await _reply(update, _auction_confirm_prompt(data, text))
                 return True
 
             if state.state_type == ConversationStateType.auction_wait_confirm.value:
@@ -214,9 +246,9 @@ async def auction_group_message_handler(update: Update, context: ContextTypes.DE
             )
             await session.commit()
             if message.reply_to_message is not None:
-                await _reply(update, "💰 请输入拍卖标题：")
+                await _reply(update, _auction_title_prompt())
             else:
-                await _reply(update, "💰 请回复拍卖的物品或者拍卖的东西。")
+                await _reply(update, _auction_item_prompt())
             return True
 
         if message.reply_to_message is not None:

@@ -3,6 +3,7 @@ from __future__ import annotations
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from backend.shared.time_ui import build_interval_keyboard
+from backend.shared.ui.common.keyboard import back_button, confirm_delete_keyboard, noop_button
 
 
 def sm_repeat_keyboard(chat_id: int, task_id: str, current_repeat_min: int) -> InlineKeyboardMarkup:
@@ -28,7 +29,7 @@ def sm_day_period_start_keyboard(chat_id: int, task_id: str) -> InlineKeyboardMa
             row = []
     if row:
         buttons.append(row)
-    buttons.append([InlineKeyboardButton("🔙 返回", callback_data=f"sm:open:{chat_id}:{task_id}")])
+    buttons.append([back_button(f"sm:open:{chat_id}:{task_id}")])
     return InlineKeyboardMarkup(buttons)
 
 
@@ -42,18 +43,16 @@ def sm_day_period_end_keyboard(chat_id: int, task_id: str, start_hour: int) -> I
             row = []
     if row:
         buttons.append(row)
-    buttons.insert(0, [InlineKeyboardButton(f"已选择开始时间: {start_hour:02d}:00，请选择结束时间", callback_data="_noop")])
-    buttons.append([InlineKeyboardButton("🔙 返回", callback_data=f"sm:open:{chat_id}:{task_id}")])
+    buttons.insert(0, [noop_button(f"已选择开始时间: {start_hour:02d}:00，请选择结束时间")])
+    buttons.append([back_button(f"sm:open:{chat_id}:{task_id}")])
     return InlineKeyboardMarkup(buttons)
 
 
 def sm_confirm_delete_keyboard(chat_id: int, task_id: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("✅ 确认删除", callback_data=f"sm:del_do:{chat_id}:{task_id}"),
-            InlineKeyboardButton("❌ 取消", callback_data=f"sm:del_cancel:{chat_id}:{task_id}"),
-        ],
-    ])
+    return confirm_delete_keyboard(
+        confirm_callback=f"sm:del_do:{chat_id}:{task_id}",
+        cancel_callback=f"sm:del_cancel:{chat_id}:{task_id}",
+    )
 
 
 def sm_time_range_keyboard(chat_id: int, task_id: str) -> InlineKeyboardMarkup:
@@ -62,17 +61,17 @@ def sm_time_range_keyboard(chat_id: int, task_id: str) -> InlineKeyboardMarkup:
             InlineKeyboardButton("开始时间", callback_data=f"sm:edit:{chat_id}:{task_id}:start_at"),
             InlineKeyboardButton("结束时间", callback_data=f"sm:edit:{chat_id}:{task_id}:end_at"),
         ],
-        [InlineKeyboardButton("🔙 返回", callback_data=f"sm:open:{chat_id}:{task_id}")],
+        [back_button(f"sm:open:{chat_id}:{task_id}")],
     ])
 
 
 def sm_edit_text_keyboard(chat_id: int, task_id: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"sm:open:{chat_id}:{task_id}")]])
+    return InlineKeyboardMarkup([[back_button(f"sm:open:{chat_id}:{task_id}")]])
 
 
 def sm_edit_media_keyboard(chat_id: int, task_id: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"sm:open:{chat_id}:{task_id}")]])
+    return InlineKeyboardMarkup([[back_button(f"sm:open:{chat_id}:{task_id}")]])
 
 
 def sm_edit_buttons_keyboard(chat_id: int, task_id: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"sm:open:{chat_id}:{task_id}")]])
+    return InlineKeyboardMarkup([[back_button(f"sm:open:{chat_id}:{task_id}")]])

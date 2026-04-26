@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import structlog
+from types import SimpleNamespace
 
 from backend.platform.scheduler.core.core import ScheduledTask
 from backend.platform.scheduler.core.task_config import TASK_CONFIG
@@ -12,6 +13,7 @@ from backend.features.activity.services.auction_service import (
     list_due_auction_ids,
     settle_due_auction,
 )
+from backend.shared.services.publish_service import PublishService
 
 log = structlog.get_logger(__name__)
 
@@ -44,7 +46,9 @@ class AuctionTask(ScheduledTask):
                         is_final=True,
                         settlement_note=result.note,
                     )
-                    sent = await app.bot.send_message(
+                    context = SimpleNamespace(bot=app.bot, application=app)
+                    sent = await PublishService.send(
+                        context,
                         chat_id=result.item.chat_id,
                         text=text,
                         parse_mode="Markdown",
@@ -54,7 +58,12 @@ class AuctionTask(ScheduledTask):
                     message_id = int(sent.message_id)
                     if setting.pin_message_enabled:
                         try:
-                            await app.bot.pin_chat_message(chat_id, message_id, disable_notification=True)
+                            await PublishService.pin(
+                                context,
+                                chat_id=chat_id,
+                                message_id=message_id,
+                                disable_notification=True,
+                            )
                         except Exception as exc:
                             log.warning("auction_result_pin_failed", item_id=item_id, message_id=message_id, error=str(exc))
                 except Exception as exc:

@@ -10,6 +10,10 @@ from backend.features.activity.services.guess_service import (
     get_running_event_by_keyword,
     place_bet,
 )
+from backend.features.group_ops.text_trigger_runtime import (
+    is_reserved_group_text_command,
+    is_reserved_group_text_command_for_chat,
+)
 from backend.shared.services.base import ValidationError
 from backend.shared.services.publish_service import PublishService
 from backend.shared.services.user_service import ensure_user
@@ -38,6 +42,8 @@ async def guess_message_handler(update: Update, context: ContextTypes.DEFAULT_TY
     text = (update.effective_message.text or update.effective_message.caption or "").strip()
     if not text:
         return False
+    if is_reserved_group_text_command(text):
+        return False
 
     parts = text.split()
     keyword = parts[0]
@@ -45,6 +51,9 @@ async def guess_message_handler(update: Update, context: ContextTypes.DEFAULT_TY
     message_id = update.effective_message.message_id
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
+        if await is_reserved_group_text_command_for_chat(session, chat_id, text):
+            await session.commit()
+            return False
         event = await get_running_event_by_keyword(session, chat_id, keyword)
         if event is None:
             await session.commit()

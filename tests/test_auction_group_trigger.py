@@ -94,7 +94,8 @@ async def test_auction_create_trigger_accepts_money_label(monkeypatch):
             {"source_message_id": 99},
         )
     ]
-    assert replies and "请输入拍卖标题" in replies[0][0]
+    assert replies and "本步只输入拍卖标题" in replies[0][0]
+    assert "完整示例：苹果手机 15 Pro 256G" in replies[0][0]
 
 
 @pytest.mark.asyncio
@@ -125,7 +126,8 @@ async def test_auction_create_trigger_without_reply_asks_for_item(monkeypatch):
             {"awaiting_item": True},
         )
     ]
-    assert replies and "请回复拍卖的物品" in replies[0][0]
+    assert replies and "本步请发送要拍卖的物品消息" in replies[0][0]
+    assert "完整示例：苹果手机 15 Pro 256G" in replies[0][0]
 
 
 @pytest.mark.asyncio
@@ -156,7 +158,7 @@ async def test_auction_create_trigger_ignores_legacy_admin_permission(monkeypatc
             {"awaiting_item": True},
         )
     ]
-    assert replies and "请回复拍卖的物品" in replies[0][0]
+    assert replies and "本步请发送要拍卖的物品消息" in replies[0][0]
 
 
 @pytest.mark.asyncio
@@ -190,7 +192,8 @@ async def test_auction_item_reply_after_trigger_uses_message_as_source(monkeypat
             {"source_message_id": 456, "title": "洋芋一袋"},
         )
     ]
-    assert replies and "请输入起拍价" in replies[0][0]
+    assert replies and "本步只输入起拍价" in replies[0][0]
+    assert "完整示例：100" in replies[0][0]
 
 
 @pytest.mark.asyncio

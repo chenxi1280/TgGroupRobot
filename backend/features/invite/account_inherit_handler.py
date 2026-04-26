@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime as dt
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 
 from backend.platform.db.runtime.session import Database
@@ -41,7 +42,16 @@ def _extract_inherit_chat_id(cb: CallbackParser) -> int | None:
 
 async def _render_text(update: Update, text: str, reply_markup: InlineKeyboardMarkup) -> None:
     if update.callback_query is not None and update.callback_query.message is not None:
-        await update.callback_query.edit_message_text(text=text, reply_markup=reply_markup)
+        try:
+            await update.callback_query.edit_message_text(text=text, reply_markup=reply_markup)
+        except BadRequest as exc:
+            if "Message is not modified" not in str(exc):
+                raise
+            await update.callback_query.answer(text="已是当前页面", show_alert=False)
+            mark_callback_query_answered(update)
+            return
+        await update.callback_query.answer()
+        mark_callback_query_answered(update)
         return
     if update.effective_message is not None:
         await update.effective_message.reply_text(text=text, reply_markup=reply_markup)
@@ -89,8 +99,6 @@ async def account_inherit_command(update: Update, context: ContextTypes.DEFAULT_
 async def account_inherit_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.callback_query is None or update.effective_user is None:
         return
-    await update.callback_query.answer()
-    mark_callback_query_answered(update)
     cb = CallbackParser.parse(update.callback_query.data or "")
     action = cb.get(1)
     chat_id = _extract_inherit_chat_id(cb)
@@ -136,7 +144,19 @@ async def account_inherit_callback(update: Update, context: ContextTypes.DEFAULT
                 await session.commit()
             except ValidationError as exc:
                 await session.rollback()
-                await answer_callback_query_safely(update, f"❌ {exc}", show_alert=True)
+                await _render_text(
+                    update,
+                    "\n".join(
+                        [
+                            "❌ 继承令牌生成失败",
+                            "",
+                            str(exc),
+                            "",
+                            "旧号需要在当前群有可继承的主积分或自定义积分。",
+                        ]
+                    ),
+                    InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"inh:user:{target_chat_id}")]]),
+                )
                 return
             text = "\n".join(
                 [

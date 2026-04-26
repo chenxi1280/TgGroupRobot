@@ -3,6 +3,7 @@ from __future__ import annotations
 import structlog
 
 from telegram import Update
+from telegram.error import NetworkError
 from telegram.ext import ContextTypes
 
 from backend.features.activity.services.lottery_service_parsing import (
@@ -80,7 +81,7 @@ async def lottery_message_handler_impl(
     *,
     parse_config_fn,
 ) -> None:
-    log.warning("=== LOTTERY_MESSAGE_HANDLER CALLED ===")
+    log.info("lottery_message_handler_called")
     if update.effective_chat is None or update.effective_user is None or update.effective_message is None:
         return
     chat = update.effective_chat
@@ -97,6 +98,9 @@ async def lottery_message_handler_impl(
             else:
                 await parse_config_fn(update, context, session, state, text)
             log.info("lottery_handler_done")
+    except NetworkError as exc:
+        log.warning("lottery_message_transport_error", error=str(exc), error_type=type(exc).__name__)
+        return
     except Exception as exc:
         log.exception("lottery_message_handler_error", error=str(exc), error_type=type(exc).__name__, traceback=True)
         return
@@ -179,9 +183,4 @@ async def lottery_cancel_callback_impl(update: Update, context: ContextTypes.DEF
         state_chat_id = user.id if chat.type == "private" else chat.id
         await clear_user_state_fn(session, state_chat_id, user.id)
         await session.commit()
-    if chat.type == "private":
-        from backend.features.admin.admin_handler import _show_private_admin_menu
-
-        await _show_private_admin_menu(update, context, target_chat_id)
-    else:
-        await handler.show_menu(update, context, target_chat_id)
+    await handler.show_menu(update, context, target_chat_id)

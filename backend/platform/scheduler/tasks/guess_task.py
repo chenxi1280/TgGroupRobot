@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import structlog
+from types import SimpleNamespace
 
 from backend.platform.scheduler.core.core import ScheduledTask
 from backend.platform.scheduler.core.task_config import TASK_CONFIG
 from backend.features.activity.services.guess_service import close_due_event, format_event_runtime, list_due_event_ids
+from backend.shared.services.publish_service import PublishService
 
 log = structlog.get_logger(__name__)
 
@@ -33,9 +35,11 @@ class GuessTask(ScheduledTask):
                     await session.commit()
                     continue
                 text = format_event_runtime(event)
+                context = SimpleNamespace(bot=app.bot, application=app)
                 if event.announcement_message_id:
                     try:
-                        await app.bot.edit_message_text(
+                        await PublishService.edit(
+                            context,
                             chat_id=event.chat_id,
                             message_id=event.announcement_message_id,
                             text=text,
@@ -43,13 +47,13 @@ class GuessTask(ScheduledTask):
                         )
                     except Exception:
                         try:
-                            msg = await app.bot.send_message(chat_id=event.chat_id, text=text, parse_mode="Markdown")
+                            msg = await PublishService.send(context, chat_id=event.chat_id, text=text, parse_mode="Markdown")
                             event.announcement_message_id = msg.message_id
                         except Exception as exc:
                             await session.rollback()
                             log.error("guess_deadline_notice_failed", event_id=event_id, error=str(exc))
                             continue
                 else:
-                    msg = await app.bot.send_message(chat_id=event.chat_id, text=text, parse_mode="Markdown")
+                    msg = await PublishService.send(context, chat_id=event.chat_id, text=text, parse_mode="Markdown")
                     event.announcement_message_id = msg.message_id
                 await session.commit()

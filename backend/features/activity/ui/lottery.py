@@ -39,9 +39,11 @@ def lottery_menu_keyboard(chat_id: int | None = None) -> InlineKeyboardMarkup:
 def lottery_type_keyboard(chat_id: int | None = None) -> InlineKeyboardMarkup:
     common_type = encode_lottery_type("common")
     points_type = encode_lottery_type("points")
+    subscribe_type = encode_lottery_type("subscribe")
     threshold_mode = encode_selection_mode("threshold_random")
     create_callback = f"lot:draw_cond:{chat_id}:{common_type}:{threshold_mode}" if chat_id else f"lot:draw_cond:{common_type}:{threshold_mode}"
     points_callback = f"lot:draw_cond:{chat_id}:{points_type}:{threshold_mode}" if chat_id else f"lot:draw_cond:{points_type}:{threshold_mode}"
+    subscribe_callback = f"lot:draw_cond:{chat_id}:{subscribe_type}:{threshold_mode}" if chat_id else f"lot:draw_cond:{subscribe_type}:{threshold_mode}"
     invite_callback = f"lot:mode_menu:{chat_id}:invite" if chat_id else "lot:mode_menu:invite"
     activity_callback = f"lot:mode_menu:{chat_id}:activity" if chat_id else "lot:mode_menu:activity"
     back_callback = f"adm:menu:lottery:{chat_id}" if chat_id else "adm:menu:lottery"
@@ -54,6 +56,7 @@ def lottery_type_keyboard(chat_id: int | None = None) -> InlineKeyboardMarkup:
             InlineKeyboardButton("👥 邀请抽奖", callback_data=invite_callback),
             InlineKeyboardButton("🔥 群活跃抽奖", callback_data=activity_callback),
         ],
+        [InlineKeyboardButton("📣 强制订阅抽奖", callback_data=subscribe_callback)],
         [InlineKeyboardButton("🔙 返回", callback_data=back_callback)],
     ])
 

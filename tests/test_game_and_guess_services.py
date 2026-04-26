@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from backend.features.activity import game_panels
+from backend.features.activity import game_panels, guess_handler
 from backend.features.admin import admin_handler
 from backend.shared.services.base import ValidationError
 from backend.shared.callback_parser import CallbackParser
@@ -63,6 +63,20 @@ class _PanelSession:
 
     async def execute(self, stmt):
         return SimpleNamespace(scalar=lambda: 0)
+
+
+@pytest.mark.asyncio
+async def test_guess_reserved_sign_keyword_does_not_consume_sign_text():
+    update = SimpleNamespace(
+        effective_chat=SimpleNamespace(id=-1001, type="supergroup"),
+        effective_user=SimpleNamespace(id=42),
+        effective_message=SimpleNamespace(message_id=9, text="签到", caption=None),
+    )
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": None}))
+
+    handled = await guess_handler.guess_message_handler(update, context)
+
+    assert handled is False
 
 
 class _PanelDb:

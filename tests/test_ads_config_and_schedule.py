@@ -13,6 +13,7 @@ from backend.features.automation.ads_handler import (
     ads_rules_callback,
 )
 from backend.features.automation.services.ad_rotation_service import (
+    _claim_due_rotation_rules,
     compute_next_run_at,
     describe_delete_policy,
     describe_rule_mode,
@@ -80,6 +81,65 @@ def test_select_next_rotation_item_respects_cursor_and_wrap() -> None:
     item, next_cursor = select_next_rotation_item(rule, items, now=now)
     assert item.id == 11
     assert next_cursor == 2
+
+
+@pytest.mark.asyncio
+async def test_claim_due_rotation_rule_advances_next_run_before_dispatch(monkeypatch) -> None:
+    now = dt.datetime(2026, 4, 14, 2, 0, tzinfo=dt.UTC)
+    rule = SimpleNamespace(
+        chat_id=-100123,
+        enabled=True,
+        interval_seconds=60,
+        start_at=None,
+        last_sent_at=None,
+        next_run_at=now,
+        mode="send",
+        delete_policy="delete_prev_cycle",
+        delete_delay_seconds=60,
+        unpin_previous=True,
+        last_sent_message_id=88,
+        last_pinned_message_id=89,
+        current_order_cursor=1,
+    )
+    item = SimpleNamespace(
+        id=11,
+        chat_id=-100123,
+        title="轮播",
+        content="正文",
+        image_file_id=None,
+        buttons=[],
+        last_sent_message_id=77,
+        sort_order=1,
+        enabled=True,
+        start_time=None,
+        end_time=None,
+    )
+
+    class _Result:
+        def scalars(self):
+            return self
+
+        def all(self):
+            return [rule]
+
+    class _Session:
+        async def execute(self, stmt):
+            return _Result()
+
+    async def fake_list_rotation_items(session, chat_id):
+        return [item]
+
+    monkeypatch.setattr(
+        "backend.features.automation.services.ad_rotation_service.list_rotation_items",
+        fake_list_rotation_items,
+    )
+
+    plans = await _claim_due_rotation_rules(_Session(), now=now)
+
+    assert len(plans) == 1
+    assert plans[0].item.id == 11
+    assert plans[0].next_cursor == 1
+    assert rule.next_run_at == dt.datetime(2026, 4, 14, 2, 1, tzinfo=dt.UTC)
 
 
 def test_describe_rule_mode_and_delete_policy() -> None:

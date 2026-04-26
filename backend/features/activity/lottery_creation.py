@@ -22,9 +22,16 @@ from backend.features.activity.services.lottery_service import (
 )
 from backend.features.activity.services.lottery_service_parsing import (
     collect_winner_reference_values,
+    encode_lottery_type,
+    encode_selection_mode,
     extract_winner_usernames,
     lottery_draw_trigger_label,
     parse_direct_winner_ids,
+)
+from backend.features.activity.services.lottery_subscription import (
+    format_lottery_subscribe_targets,
+    parse_lottery_subscribe_targets,
+    validate_lottery_subscribe_targets,
 )
 from backend.shared.ui.message_config_panel import format_completion_lines
 
@@ -33,6 +40,7 @@ log = structlog.get_logger(__name__)
 LOTTERY_CREATE_STEPS = {
     "title",
     "prize_name",
+    "subscribe_targets",
     "prize_quantity",
     "draw_param",
     "point_type",
@@ -53,6 +61,7 @@ def _lottery_type_title(lottery_type: str) -> str:
         "points": "💰 积分抽奖",
         "invite": "👥 邀请抽奖",
         "activity": "🔥 群活跃抽奖",
+        "subscribe": "📣 强制订阅抽奖",
     }.get(lottery_type, "🎁 抽奖")
 
 
@@ -232,6 +241,12 @@ def _save_state_data(state: object, data: dict) -> None:
     state.state_data = data
 
 
+async def _commit_wizard_state_before_prompt(session) -> None:
+    commit = getattr(session, "commit", None)
+    if commit is not None:
+        await commit()
+
+
 def _draw_time_from_draft(data: dict) -> dt.datetime:
     raw = data.get("draw_time")
     if raw:
@@ -266,6 +281,9 @@ def _build_config_from_state(data: dict) -> ParsedLotteryConfig:
         raise ValueError("群活跃抽奖必须设置活跃消息数")
     if selection_mode == "ranking_random" and finalist_limit <= 0:
         raise ValueError("排名入围随机玩法必须设置入围人数")
+    subscribe_targets = list(data.get("subscribe_targets") or [])
+    if lottery_type == "subscribe" and not subscribe_targets:
+        raise ValueError("强制订阅抽奖必须设置关注目标")
     title = str(data.get("title") or "").strip()
     if not title:
         raise ValueError("抽奖名称不能为空")
@@ -288,6 +306,8 @@ def _build_config_from_state(data: dict) -> ParsedLotteryConfig:
         prizes=prizes,
         point_type_id=data.get("point_type_id"),
         point_type_name=data.get("point_type_name"),
+        subscribe_targets=subscribe_targets if lottery_type == "subscribe" else None,
+        subscribe_check_mode="all",
     )
 
 
@@ -320,6 +340,8 @@ def _format_lottery_wizard_summary(config: ParsedLotteryConfig, *, include_sensi
         lines.append(f"邀请门槛：{config.required_invites} 人")
     if config.required_activity_count > 0:
         lines.append(f"活跃门槛：{config.required_activity_count} 条消息")
+    if config.lottery_type == "subscribe":
+        lines.append(f"订阅目标：{format_lottery_subscribe_targets(config.subscribe_targets or [])}")
     if config.selection_mode == "ranking_random":
         lines.append(f"入围人数：{config.finalist_limit}")
     if include_sensitive:
@@ -360,6 +382,8 @@ def _lottery_draft_required_items(data: dict) -> list[tuple[str, bool]]:
         items.append(("邀请门槛", int(data.get("required_invites") or 0) > 0))
     if lottery_type == "activity" and selection_mode == "threshold_random":
         items.append(("活跃门槛", int(data.get("required_activity_count") or 0) > 0))
+    if lottery_type == "subscribe":
+        items.append(("关注目标", bool(data.get("subscribe_targets"))))
     if selection_mode == "ranking_random":
         items.append(("入围人数", int(data.get("finalist_limit") or 0) > 0))
     return items
@@ -374,6 +398,113 @@ def _append_lottery_wizard_guide(text: str, data: dict, *, next_step: str | None
     return text if not lines else text + "\n" + "\n".join(lines)
 
 
+def _lottery_title_prompt(lottery_type: str, selection_mode: str, draw_trigger: str) -> str:
+    text = f"{_lottery_type_title(lottery_type)} | 创建抽奖  ( /cancel 取消)\n\n"
+    if selection_mode == "ranking_random":
+        text += "当前玩法：🏆 排名入围随机\n\n"
+    elif lottery_type in {"invite", "activity"}:
+        text += "当前玩法：🎯 达标随机\n\n"
+    text += f"开奖条件：{'👥 满人开奖' if draw_trigger == 'full_participants' else '⏰ 定时开奖'}\n\n"
+    if lottery_type == "subscribe":
+        text += "本类型会单独配置本次抽奖的关注目标，不读取“发言强制关注”的配置。\n\n"
+    text += (
+        "本步只输入抽奖名称。\n"
+        "格式：抽奖名称\n"
+        "完整示例：周末福利抽奖\n"
+        "如果需要描述，格式：抽奖名称|描述\n"
+        "带描述完整示例：周末福利抽奖|仅限本群成员参与"
+    )
+    return text
+
+
+def _prize_name_prompt(example: str) -> str:
+    return (
+        "本步只输入奖品名称，不要带中奖人数。\n"
+        "格式：奖品名称\n"
+        f"完整示例：{example}\n"
+        "下一步会单独填写这个奖品的中奖人数/份数。"
+    )
+
+
+def _subscribe_targets_prompt() -> str:
+    return (
+        "本步只输入本次抽奖要求关注的频道/群组。\n"
+        "格式：@频道或群组用户名\n"
+        "完整示例：@channel_a\n"
+        "多个目标完整示例：@channel_a,@group_b\n"
+        "私有群/频道完整示例：-1001234567890|https://t.me/+invite"
+    )
+
+
+def _prize_quantity_prompt(prize_name: object) -> str:
+    return (
+        f"本步只输入「{prize_name}」的中奖人数/份数，不要再输入奖品名称。\n"
+        "格式：正整数\n"
+        "完整示例：1"
+    )
+
+
+def _full_participants_prompt() -> str:
+    return (
+        "本步只输入满员开奖人数。\n"
+        "格式：正整数\n"
+        "完整示例：100"
+    )
+
+
+def _deadline_prompt() -> str:
+    return (
+        "本步只输入截止开奖时间。\n"
+        "格式：YYYY-MM-DD HH:MM\n"
+        f"完整示例：<code>{_default_deadline_text()}</code>\n"
+        "可以直接复制上面的示例后修改。"
+    )
+
+
+def _participation_cost_prompt(point_name: str) -> str:
+    return (
+        f"本步只输入每人参与需要扣除的 {point_name} 数量，不要带单位。\n"
+        "格式：非负整数\n"
+        "完整示例：0"
+    )
+
+
+def _invite_requirement_prompt(selection_mode: str) -> str:
+    if selection_mode == "ranking_random":
+        return (
+            "本步只输入邀请入围最低人数，0 表示不设最低门槛。\n"
+            "格式：非负整数\n"
+            "完整示例：0"
+        )
+    return (
+        "本步只输入参与抽奖需要邀请的人数。\n"
+        "格式：正整数\n"
+        "完整示例：3"
+    )
+
+
+def _activity_requirement_prompt(selection_mode: str) -> str:
+    if selection_mode == "ranking_random":
+        return (
+            "本步只输入活跃入围最低消息数，0 表示不设最低门槛。\n"
+            "格式：非负整数\n"
+            "完整示例：0"
+        )
+    return (
+        "本步只输入参与抽奖需要达到的活跃消息数。\n"
+        "格式：正整数\n"
+        "完整示例：200"
+    )
+
+
+def _finalist_limit_prompt() -> str:
+    return (
+        "本步只输入开奖时从排行榜取前多少名入围。\n"
+        "格式：正整数\n"
+        "完整示例：10"
+    )
+
+
 def _preset_confirm_keyboard(target_chat_id: int, has_preset: bool = False, *, include_sensitive: bool = True) -> InlineKeyboardMarkup:
     rows = []
     if include_sensitive:
@@ -382,8 +513,29 @@ def _preset_confirm_keyboard(target_chat_id: int, has_preset: bool = False, *, i
     else:
         publish_label = "✅ 确认发布抽奖"
     rows.append([InlineKeyboardButton(publish_label, callback_data=f"lot:wiz:{target_chat_id}:publish")])
-    rows.append([InlineKeyboardButton("❌ 取消创建", callback_data=f"lottery:cancel:{target_chat_id}")])
+    rows.append([InlineKeyboardButton("🔙 返回上级", callback_data=f"lot:wiz:{target_chat_id}:back")])
+    rows.append([InlineKeyboardButton("❌ 取消配置", callback_data=f"lottery:cancel:{target_chat_id}")])
     return InlineKeyboardMarkup(rows)
+
+
+def _wizard_nav_keyboard(target_chat_id: int, *, back_callback: str | None = None) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    if back_callback:
+        rows.append([InlineKeyboardButton("🔙 返回上级", callback_data=back_callback)])
+    rows.append([InlineKeyboardButton("❌ 取消配置", callback_data=f"lottery:cancel:{target_chat_id}")])
+    return InlineKeyboardMarkup(rows)
+
+
+def _wizard_back_callback(target_chat_id: int) -> str:
+    return f"lot:wiz:{target_chat_id}:back"
+
+
+def _create_parent_callback(target_chat_id: int, lottery_type: str, selection_mode: str) -> str:
+    return (
+        f"lot:draw_cond:{target_chat_id}:"
+        f"{encode_lottery_type(lottery_type)}:"
+        f"{encode_selection_mode(selection_mode)}"
+    )
 
 
 def _prize_action_keyboard(target_chat_id: int) -> InlineKeyboardMarkup:
@@ -391,7 +543,8 @@ def _prize_action_keyboard(target_chat_id: int) -> InlineKeyboardMarkup:
         [
             [InlineKeyboardButton("➕ 添加下一个奖品", callback_data=f"lot:wiz:{target_chat_id}:prize:add")],
             [InlineKeyboardButton("✅ 奖品设置完成", callback_data=f"lot:wiz:{target_chat_id}:prize:done")],
-            [InlineKeyboardButton("❌ 取消创建", callback_data=f"lottery:cancel:{target_chat_id}")],
+            [InlineKeyboardButton("🔙 返回上级", callback_data=f"lot:wiz:{target_chat_id}:back")],
+            [InlineKeyboardButton("❌ 取消配置", callback_data=f"lottery:cancel:{target_chat_id}")],
         ]
     )
 
@@ -401,7 +554,8 @@ def _point_type_keyboard(target_chat_id: int, custom_point_types: list[object]) 
     for item in custom_point_types:
         if getattr(item, "enabled", True):
             rows.append([InlineKeyboardButton(getattr(item, "name", f"积分{item.id}"), callback_data=f"lot:wiz:{target_chat_id}:pt:{item.id}")])
-    rows.append([InlineKeyboardButton("❌ 取消创建", callback_data=f"lottery:cancel:{target_chat_id}")])
+    rows.append([InlineKeyboardButton("🔙 返回上级", callback_data=f"lot:wiz:{target_chat_id}:back")])
+    rows.append([InlineKeyboardButton("❌ 取消配置", callback_data=f"lottery:cancel:{target_chat_id}")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -428,6 +582,49 @@ def _next_step_after_points(data: dict) -> str:
     return "preset_confirm"
 
 
+def _previous_lottery_wizard_step(data: dict) -> str | None:
+    step = data.get("step")
+    lottery_type = data.get("lottery_type")
+    selection_mode = data.get("selection_mode")
+    if step == "subscribe_targets":
+        return "title"
+    if step == "prize_name":
+        if lottery_type == "subscribe":
+            return "subscribe_targets"
+        return "title"
+    if step == "prize_quantity":
+        return "prize_name"
+    if step == "prize_action":
+        return "prize_name"
+    if step == "draw_param":
+        return "prize_action"
+    if step == "point_type":
+        return "draw_param"
+    if step == "participation_cost":
+        return "point_type"
+    if step in {"invite_requirement", "activity_requirement"}:
+        return "draw_param"
+    if step == "finalist_limit":
+        if lottery_type == "invite":
+            return "invite_requirement"
+        if lottery_type == "activity":
+            return "activity_requirement"
+        return "draw_param"
+    if step == "preset_confirm":
+        if selection_mode == "ranking_random":
+            return "finalist_limit"
+        if lottery_type == "invite":
+            return "invite_requirement"
+        if lottery_type == "activity":
+            return "activity_requirement"
+        if lottery_type == "points":
+            return "participation_cost"
+        return "draw_param"
+    if step == "preset_winners":
+        return "preset_confirm"
+    return None
+
+
 def _qualification_rules_from_config(config: ParsedLotteryConfig) -> dict:
     rules = {
         "draw_trigger": config.draw_trigger,
@@ -441,7 +638,17 @@ def _qualification_rules_from_config(config: ParsedLotteryConfig) -> dict:
     if config.point_type_id:
         rules["point_type_id"] = config.point_type_id
         rules["point_type_name"] = config.point_type_name
+    if config.lottery_type == "subscribe":
+        rules["requires_lottery_subscribe"] = True
+        rules["subscribe_check_mode"] = config.subscribe_check_mode or "all"
+        rules["subscribe_targets"] = list(config.subscribe_targets or [])
     return rules
+
+
+async def _validate_lottery_publish_config(context: ContextTypes.DEFAULT_TYPE, config: ParsedLotteryConfig) -> None:
+    if config.lottery_type != "subscribe":
+        return
+    config.subscribe_targets = await validate_lottery_subscribe_targets(context, list(config.subscribe_targets or []))
 
 
 async def _create_and_publish_lottery(
@@ -453,6 +660,7 @@ async def _create_and_publish_lottery(
     creator_user_id: int,
     config: ParsedLotteryConfig,
 ):
+    await _validate_lottery_publish_config(context, config)
     lottery = await create_lottery(
         session,
         chat_id=target_chat_id,
@@ -499,17 +707,19 @@ async def _reply_point_type_prompt(update: Update, session, state: object, data:
     data["step"] = "point_type"
     _save_state_data(state, data)
     custom_types = await PointsExtendedService.list_custom_point_types(session, int(data["target_chat_id"]))
+    await _commit_wizard_state_before_prompt(session)
     await update.effective_message.reply_text(
         _append_lottery_wizard_guide("请选择本次积分抽奖扣除哪一种积分。", data, next_step="选择积分类型后填写参与扣分"),
         reply_markup=_point_type_keyboard(int(data["target_chat_id"]), custom_types),
     )
 
 
-async def _reply_preset_confirm(update: Update, state: object, data: dict) -> None:
+async def _reply_preset_confirm(update: Update, session, state: object, data: dict) -> None:
     data["step"] = "preset_confirm"
     _save_state_data(state, data)
     config = _build_config_from_state(data)
     include_sensitive = _is_private_admin_context(update)
+    await _commit_wizard_state_before_prompt(session)
     await update.effective_message.reply_text(
         _format_lottery_wizard_summary(config, include_sensitive=include_sensitive),
         reply_markup=_preset_confirm_keyboard(
@@ -523,19 +733,39 @@ async def _reply_preset_confirm(update: Update, state: object, data: dict) -> No
 async def _reply_next_prompt(update: Update, session, state: object, data: dict, next_step: str) -> None:
     data["step"] = next_step
     _save_state_data(state, data)
+    target_chat_id = int(data["target_chat_id"])
+    nav_keyboard = _wizard_nav_keyboard(target_chat_id, back_callback=_wizard_back_callback(target_chat_id))
     if next_step == "point_type":
         await _reply_point_type_prompt(update, session, state, data)
+        return
+    if next_step == "preset_confirm":
+        await _reply_preset_confirm(update, session, state, data)
+        return
+    await _commit_wizard_state_before_prompt(session)
+    if next_step == "subscribe_targets":
+        await update.effective_message.reply_text(
+            _append_lottery_wizard_guide(_subscribe_targets_prompt(), data, next_step="填写奖品名称"),
+            reply_markup=nav_keyboard,
+        )
     elif next_step == "prize_name":
-        await update.effective_message.reply_text(_append_lottery_wizard_guide("请输入第一个奖品的名称，例如：1USDT", data, next_step="填写中奖人数/份数"))
+        await update.effective_message.reply_text(
+            _append_lottery_wizard_guide(_prize_name_prompt("1USDT"), data, next_step="填写中奖人数/份数"),
+            reply_markup=nav_keyboard,
+        )
     elif next_step == "prize_quantity":
         await update.effective_message.reply_text(
-            _append_lottery_wizard_guide(f"请输入 {data.get('pending_prize_name')} 的中奖人数/份数，例如：1", data, next_step="继续添加奖品或完成奖品设置")
+            _append_lottery_wizard_guide(_prize_quantity_prompt(data.get("pending_prize_name")), data, next_step="继续添加奖品或完成奖品设置"),
+            reply_markup=nav_keyboard,
         )
     elif next_step == "prize_action":
         prize_lines = [f"• {prize['name']} × {prize['quantity']}" for prize in data.get("prizes") or []]
         await update.effective_message.reply_text(
             _append_lottery_wizard_guide(
-                "当前奖品：\n" + "\n".join(prize_lines) + "\n\n还需要继续添加奖品吗？",
+                "当前奖品：\n"
+                + "\n".join(prize_lines)
+                + "\n\n如果还有别的奖品，点击“添加下一个奖品”。\n"
+                + "如果奖品已全部录入，点击“奖品设置完成”。\n"
+                + "这里不用发送文字。",
                 data,
                 next_step="完成奖品后填写开奖条件",
             ),
@@ -543,35 +773,152 @@ async def _reply_next_prompt(update: Update, session, state: object, data: dict,
         )
     elif next_step == "draw_param":
         if data.get("draw_trigger") == "full_participants":
-            await update.effective_message.reply_text(_append_lottery_wizard_guide("请输入满员开奖人数，例如：100", data, next_step="填写玩法门槛或确认发布"))
+            await update.effective_message.reply_text(
+                _append_lottery_wizard_guide(_full_participants_prompt(), data, next_step="填写玩法门槛或确认发布"),
+                reply_markup=nav_keyboard,
+            )
         else:
             await update.effective_message.reply_text(
-                _append_lottery_wizard_guide(
-                    f"请输入截止开奖时间，直接复制：<code>{_default_deadline_text()}</code>",
-                    data,
-                    next_step="填写玩法门槛或确认发布",
-                ),
+                _append_lottery_wizard_guide(_deadline_prompt(), data, next_step="填写玩法门槛或确认发布"),
                 parse_mode="HTML",
+                reply_markup=nav_keyboard,
             )
     elif next_step == "participation_cost":
         point_name = data.get("point_type_name") or "积分"
         await update.effective_message.reply_text(
-            _append_lottery_wizard_guide(f"请输入每人参与需要扣除多少 {point_name}，0 表示不扣。", data, next_step="填写玩法门槛或确认发布")
+            _append_lottery_wizard_guide(_participation_cost_prompt(point_name), data, next_step="填写玩法门槛或确认发布"),
+            reply_markup=nav_keyboard,
         )
     elif next_step == "invite_requirement":
-        if data.get("selection_mode") == "ranking_random":
-            await update.effective_message.reply_text(_append_lottery_wizard_guide("请输入邀请入围最低人数，0 表示不设最低门槛。", data, next_step="填写入围人数"))
-        else:
-            await update.effective_message.reply_text(_append_lottery_wizard_guide("请输入参与抽奖需要邀请多少人，例如：3", data, next_step="确认配置并发布"))
+        next_label = "填写入围人数" if data.get("selection_mode") == "ranking_random" else "确认配置并发布"
+        await update.effective_message.reply_text(
+            _append_lottery_wizard_guide(_invite_requirement_prompt(data.get("selection_mode")), data, next_step=next_label),
+            reply_markup=nav_keyboard,
+        )
     elif next_step == "activity_requirement":
-        if data.get("selection_mode") == "ranking_random":
-            await update.effective_message.reply_text(_append_lottery_wizard_guide("请输入活跃入围最低消息数，0 表示不设最低门槛。", data, next_step="填写入围人数"))
-        else:
-            await update.effective_message.reply_text(_append_lottery_wizard_guide("请输入参与抽奖需要达到多少条活跃消息，例如：200", data, next_step="确认配置并发布"))
+        next_label = "填写入围人数" if data.get("selection_mode") == "ranking_random" else "确认配置并发布"
+        await update.effective_message.reply_text(
+            _append_lottery_wizard_guide(_activity_requirement_prompt(data.get("selection_mode")), data, next_step=next_label),
+            reply_markup=nav_keyboard,
+        )
     elif next_step == "finalist_limit":
-        await update.effective_message.reply_text(_append_lottery_wizard_guide("请输入开奖时从排行榜取前多少名入围，例如：10", data, next_step="确认配置并发布"))
-    elif next_step == "preset_confirm":
-        await _reply_preset_confirm(update, state, data)
+        await update.effective_message.reply_text(
+            _append_lottery_wizard_guide(_finalist_limit_prompt(), data, next_step="确认配置并发布"),
+            reply_markup=nav_keyboard,
+        )
+
+
+async def _edit_wizard_step_prompt(update: Update, query, session, state: object, data: dict, step: str) -> None:
+    data["step"] = step
+    target_chat_id = int(data["target_chat_id"])
+    _save_state_data(state, data)
+    nav_keyboard = _wizard_nav_keyboard(target_chat_id, back_callback=_wizard_back_callback(target_chat_id))
+
+    if step == "title":
+        await query.edit_message_text(
+            _append_lottery_wizard_guide(
+                _lottery_title_prompt(data.get("lottery_type", "common"), data.get("selection_mode", "threshold_random"), data.get("draw_trigger", "time_deadline")),
+                data,
+                next_step="填写抽奖名称",
+            ),
+            reply_markup=_wizard_nav_keyboard(
+                target_chat_id,
+                back_callback=_create_parent_callback(
+                    target_chat_id,
+                    data.get("lottery_type", "common"),
+                    data.get("selection_mode", "threshold_random"),
+                ),
+            ),
+        )
+        return
+    if step == "subscribe_targets":
+        await query.edit_message_text(
+            _append_lottery_wizard_guide(_subscribe_targets_prompt(), data, next_step="填写奖品名称"),
+            reply_markup=nav_keyboard,
+        )
+        return
+    if step == "prize_name":
+        await query.edit_message_text(
+            _append_lottery_wizard_guide(_prize_name_prompt("1USDT"), data, next_step="填写中奖人数/份数"),
+            reply_markup=nav_keyboard,
+        )
+        return
+    if step == "prize_quantity":
+        await query.edit_message_text(
+            _append_lottery_wizard_guide(_prize_quantity_prompt(data.get("pending_prize_name") or "当前奖品"), data, next_step="继续添加奖品或完成奖品设置"),
+            reply_markup=nav_keyboard,
+        )
+        return
+    if step == "prize_action":
+        prize_lines = [f"• {prize['name']} × {prize['quantity']}" for prize in data.get("prizes") or []]
+        text = (
+            "当前奖品：\n"
+            + ("\n".join(prize_lines) if prize_lines else "暂无")
+            + "\n\n如果还有别的奖品，点击“添加下一个奖品”。\n"
+            + "如果奖品已全部录入，点击“奖品设置完成”。\n"
+            + "这里不用发送文字。"
+        )
+        await query.edit_message_text(
+            _append_lottery_wizard_guide(text, data, next_step="完成奖品后填写开奖条件"),
+            reply_markup=_prize_action_keyboard(target_chat_id),
+        )
+        return
+    if step == "draw_param":
+        if data.get("draw_trigger") == "full_participants":
+            await query.edit_message_text(
+                _append_lottery_wizard_guide(_full_participants_prompt(), data, next_step="填写玩法门槛或确认发布"),
+                reply_markup=nav_keyboard,
+            )
+        else:
+            await query.edit_message_text(
+                _append_lottery_wizard_guide(_deadline_prompt(), data, next_step="填写玩法门槛或确认发布"),
+                parse_mode="HTML",
+                reply_markup=nav_keyboard,
+            )
+        return
+    if step == "point_type":
+        from backend.features.points.services.points_extended_service import PointsExtendedService
+
+        custom_types = await PointsExtendedService.list_custom_point_types(session, target_chat_id)
+        await query.edit_message_text(
+            _append_lottery_wizard_guide("请选择本次积分抽奖扣除哪一种积分。", data, next_step="选择积分类型后填写参与扣分"),
+            reply_markup=_point_type_keyboard(target_chat_id, custom_types),
+        )
+        return
+    if step == "participation_cost":
+        point_name = data.get("point_type_name") or "积分"
+        await query.edit_message_text(
+            _append_lottery_wizard_guide(_participation_cost_prompt(point_name), data, next_step="填写玩法门槛或确认发布"),
+            reply_markup=nav_keyboard,
+        )
+        return
+    if step == "invite_requirement":
+        next_label = "填写入围人数" if data.get("selection_mode") == "ranking_random" else "确认配置并发布"
+        await query.edit_message_text(
+            _append_lottery_wizard_guide(_invite_requirement_prompt(data.get("selection_mode")), data, next_step=next_label),
+            reply_markup=nav_keyboard,
+        )
+        return
+    if step == "activity_requirement":
+        next_label = "填写入围人数" if data.get("selection_mode") == "ranking_random" else "确认配置并发布"
+        await query.edit_message_text(
+            _append_lottery_wizard_guide(_activity_requirement_prompt(data.get("selection_mode")), data, next_step=next_label),
+            reply_markup=nav_keyboard,
+        )
+        return
+    if step == "finalist_limit":
+        await query.edit_message_text(
+            _append_lottery_wizard_guide(_finalist_limit_prompt(), data, next_step="确认配置并发布"),
+            reply_markup=nav_keyboard,
+        )
+        return
+    if step == "preset_confirm":
+        config = _build_config_from_state(data)
+        include_sensitive = _is_private_admin_context(update)
+        await query.edit_message_text(
+            _format_lottery_wizard_summary(config, include_sensitive=include_sensitive),
+            reply_markup=_preset_confirm_keyboard(target_chat_id, bool(config.preset_winner_ids), include_sensitive=include_sensitive),
+        )
 
 
 async def _handle_lottery_wizard_message(update: Update, context: ContextTypes.DEFAULT_TYPE, session, state: object, text: str) -> None:
@@ -589,6 +936,11 @@ async def _handle_lottery_wizard_message(update: Update, context: ContextTypes.D
                 data["description"] = None
             if not data["title"]:
                 raise ValueError("抽奖名称不能为空")
+            next_step = "subscribe_targets" if data.get("lottery_type") == "subscribe" else "prize_name"
+            await _reply_next_prompt(update, session, state, data, next_step)
+        elif step == "subscribe_targets":
+            targets = parse_lottery_subscribe_targets(text)
+            data["subscribe_targets"] = await validate_lottery_subscribe_targets(context, targets)
             await _reply_next_prompt(update, session, state, data, "prize_name")
         elif step == "prize_name":
             prize_name = text.strip()
@@ -698,18 +1050,22 @@ class LotteryCreationMixin:
             )
             await session.commit()
 
-        text = f"{_lottery_type_title(lottery_type)} | 创建抽奖  ( /cancel 取消)\n\n"
-        if selection_mode == "ranking_random":
-            text += "当前玩法：🏆 排名入围随机\n\n"
-        elif lottery_type in {"invite", "activity"}:
-            text += "当前玩法：🎯 达标随机\n\n"
-        text += f"开奖条件：{'👥 满人开奖' if draw_trigger == 'full_participants' else '⏰ 定时开奖'}\n\n"
-        text += "请回复这次抽奖的名称。\n"
-        text += "如果需要描述，可以使用：抽奖名称|描述"
-        text = _append_lottery_wizard_guide(text, {"lottery_type": lottery_type, "selection_mode": selection_mode, "draw_trigger": draw_trigger}, next_step="填写抽奖名称")
+        text = _append_lottery_wizard_guide(
+            _lottery_title_prompt(lottery_type, selection_mode, draw_trigger),
+            {"lottery_type": lottery_type, "selection_mode": selection_mode, "draw_trigger": draw_trigger},
+            next_step="填写抽奖名称",
+        )
 
         keyboard = InlineKeyboardMarkup(
-            [[InlineKeyboardButton("❌ 取消配置", callback_data=f"lottery:cancel:{target_chat_id}")]]
+            [
+                [
+                    InlineKeyboardButton(
+                        "🔙 返回上级",
+                        callback_data=_create_parent_callback(target_chat_id, lottery_type, selection_mode),
+                    )
+                ],
+                [InlineKeyboardButton("❌ 取消配置", callback_data=f"lottery:cancel:{target_chat_id}")],
+            ]
         )
         await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
 
@@ -764,6 +1120,8 @@ async def parse_lottery_config_message(update: Update, context: ContextTypes.DEF
             reply_text += f"👥 邀请人数门槛: {config.required_invites}\n"
         if config.required_activity_count > 0:
             reply_text += f"🔥 活跃消息门槛: {config.required_activity_count}\n"
+        if config.lottery_type == "subscribe":
+            reply_text += f"📣 订阅目标: {format_lottery_subscribe_targets(config.subscribe_targets or [])}\n"
         if config.qualification_window_days > 0:
             reply_text += f"📊 统计天数: 最近 {config.qualification_window_days} 天\n"
         if config.max_participants > 0:
@@ -822,6 +1180,21 @@ async def handle_lottery_wizard_callback(update: Update, context: ContextTypes.D
             await session.commit()
             return
         try:
+            if action == "back":
+                previous_step = _previous_lottery_wizard_step(data)
+                if previous_step is None:
+                    await clear_user_state(session, chat_id=state_chat_id, user_id=user.id)
+                    await session.commit()
+                    await q.edit_message_text(
+                        "已返回上级，请重新选择抽奖条件。",
+                        reply_markup=InlineKeyboardMarkup(
+                            [[InlineKeyboardButton("🔙 返回抽奖类型", callback_data=f"lot:create_menu:{target_chat_id}")]]
+                        ),
+                    )
+                    return
+                await _edit_wizard_step_prompt(update, q, session, state, data, previous_step)
+                await session.commit()
+                return
             if action == "pt":
                 if len(data_parts) < 5:
                     await q.answer("积分类型参数无效", show_alert=True)
@@ -844,10 +1217,11 @@ async def handle_lottery_wizard_callback(update: Update, context: ContextTypes.D
                 await session.commit()
                 await q.edit_message_text(
                     _append_lottery_wizard_guide(
-                        f"已选择：{data['point_type_name']}\n\n请输入每人参与需要扣除多少 {data['point_type_name']}，0 表示不扣。",
+                        f"已选择：{data['point_type_name']}\n\n{_participation_cost_prompt(data['point_type_name'])}",
                         data,
                         next_step="填写玩法门槛或确认发布",
-                    )
+                    ),
+                    reply_markup=_wizard_nav_keyboard(target_chat_id, back_callback=_wizard_back_callback(target_chat_id)),
                 )
                 return
             if action == "preset":
@@ -860,12 +1234,14 @@ async def handle_lottery_wizard_callback(update: Update, context: ContextTypes.D
                 await session.commit()
                 await q.edit_message_text(
                     _append_lottery_wizard_guide(
-                        "请发送内定中奖人，支持数字ID、@用户名、用户资料链接，多个用户用逗号分隔。\n"
-                        "例如：123456789,@alice,tg://user?id=987654321\n\n"
+                        "本步只输入内定中奖人，支持数字ID、@用户名、用户资料链接。\n"
+                        "格式：用户1,用户2,用户3\n"
+                        "完整示例：123456789,@alice,tg://user?id=987654321\n\n"
                         "发送“无”可清空内定名单。",
                         data,
                         next_step="回到确认页后发布到群",
-                    )
+                    ),
+                    reply_markup=_wizard_nav_keyboard(target_chat_id, back_callback=_wizard_back_callback(target_chat_id)),
                 )
                 return
             if action == "prize":
@@ -878,22 +1254,25 @@ async def handle_lottery_wizard_callback(update: Update, context: ContextTypes.D
                     data["step"] = "prize_name"
                     _save_state_data(state, data)
                     await session.commit()
-                    await q.edit_message_text(_append_lottery_wizard_guide("请输入下一个奖品的名称，例如：2USDT", data, next_step="填写中奖人数/份数"))
+                    await q.edit_message_text(
+                        _append_lottery_wizard_guide(_prize_name_prompt("2USDT"), data, next_step="填写中奖人数/份数"),
+                        reply_markup=_wizard_nav_keyboard(target_chat_id, back_callback=_wizard_back_callback(target_chat_id)),
+                    )
                     return
                 if prize_action == "done":
                     data["step"] = "draw_param"
                     _save_state_data(state, data)
                     await session.commit()
                     if data.get("draw_trigger") == "full_participants":
-                        await q.edit_message_text(_append_lottery_wizard_guide("请输入满员开奖人数，例如：100", data, next_step="填写玩法门槛或确认发布"))
+                        await q.edit_message_text(
+                            _append_lottery_wizard_guide(_full_participants_prompt(), data, next_step="填写玩法门槛或确认发布"),
+                            reply_markup=_wizard_nav_keyboard(target_chat_id, back_callback=_wizard_back_callback(target_chat_id)),
+                        )
                     else:
                         await q.edit_message_text(
-                            _append_lottery_wizard_guide(
-                                f"请输入截止开奖时间，直接复制：<code>{_default_deadline_text()}</code>",
-                                data,
-                                next_step="填写玩法门槛或确认发布",
-                            ),
+                            _append_lottery_wizard_guide(_deadline_prompt(), data, next_step="填写玩法门槛或确认发布"),
                             parse_mode="HTML",
+                            reply_markup=_wizard_nav_keyboard(target_chat_id, back_callback=_wizard_back_callback(target_chat_id)),
                         )
                     return
                 await q.answer("奖品操作参数无效", show_alert=True)

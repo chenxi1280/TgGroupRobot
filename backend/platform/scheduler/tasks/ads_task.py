@@ -23,4 +23,4 @@ class AdsTask(ScheduledTask):
 
         log = structlog.get_logger(__name__)
         dispatched = await dispatch_due_rotation_rules(app)
-        log.info("ad_rotation_tick_finished", dispatched=dispatched)
+        log.info("ads_scheduler_tick_finished", dispatched=dispatched)

@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import datetime as dt
+from dataclasses import dataclass
 import structlog
 
 from telegram.ext import Application
@@ -14,14 +15,26 @@ from backend.shared.ui.common.verification import verification_timeout_help_keyb
 from backend.platform.db.schema.models.core import VerificationChallenge
 from backend.platform.scheduler.core.core import ScheduledTask
 from backend.platform.scheduler.core.task_config import TASK_CONFIG
-from backend.shared.services.base import ServiceBase
 from backend.shared.services.chat_service import get_chat_settings
+from backend.shared.services.publish_service import PublishService
 from backend.features.verification.verification_runtime import verification_locked_permissions
 from backend.features.verification.verification_service import is_self_review_question
 from sqlalchemy import select
 
 
 log = structlog.get_logger(__name__)
+
+
+@dataclass(frozen=True)
+class VerificationTimeoutPlan:
+    challenge_id: int | None
+    challenge_ref: object | None
+    chat_id: int
+    user_id: int
+    action: str
+    duration: int
+    is_self_review: bool
+    language: str
 
 
 async def get_expired_challenges(session) -> list:
@@ -72,7 +85,7 @@ async def mute_user(app: Application, chat_id: int, user_id: int, duration: int 
         return False
 
 
-async def kick_user(app: Application, chat_id: int, user_id: int) -> None:
+async def kick_user(app: Application, chat_id: int, user_id: int) -> bool:
     """
     踢出用户
 
@@ -84,8 +97,10 @@ async def kick_user(app: Application, chat_id: int, user_id: int) -> None:
     try:
         await app.bot.ban_chat_member(chat_id=chat_id, user_id=user_id)
         log.info("user_kicked_for_verification_timeout", chat_id=chat_id, user_id=user_id)
+        return True
     except Exception as e:
         log.warning("kick_user_failed", chat_id=chat_id, user_id=user_id, error=str(e))
+        return False
 
 
 async def unrestrict_user(app: Application, chat_id: int, user_id: int) -> bool:
@@ -128,79 +143,144 @@ async def check_verification_timeouts(app: Application) -> None:
         app: Bot 应用实例
     """
     db: Database = app.bot_data["db"]
-    async with db.session_factory() as session:
-        # 获取所有超时且未处理的验证挑战
-        expired_challenges = await get_expired_challenges(session)
+    started_at = dt.datetime.now(dt.UTC)
+    processed = 0
+    telegram_failures = 0
+    db_commit_failures = 0
 
-        if not expired_challenges:
+    async with db.session_factory() as session:
+        plans = await _build_verification_timeout_plans(session)
+        try:
+            await session.commit()
+        except Exception as exc:
+            await session.rollback()
+            log.exception("verification_timeout_claim_commit_failed", error=str(exc))
             return
 
-        log.info("processing_verification_timeouts", count=len(expired_challenges))
+    if not plans:
+        return
 
-        for ch in expired_challenges:
-            # 跳过管理员确认模式的超时处理（管理员模式永久等待）
-            if ch.verification_type == "admin":
-                ch.timeout_handled = True
-                continue
+    log.info("processing_verification_timeouts", count=len(plans))
 
+    for plan in plans:
+        ok = await _execute_verification_timeout_plan(app, plan)
+        if not ok:
+            telegram_failures += 1
+            continue
+
+        async with db.session_factory() as session:
             try:
-                # 获取群组设置
-                settings = await get_chat_settings(session, ch.chat_id)
-                is_self_review = is_self_review_question(ch.question)
-
-                # 根据配置执行超时处理
-                if is_self_review and settings.join_self_review_timeout_action == "reject_block":
-                    await kick_user(app, ch.chat_id, ch.user_id)
-                elif settings.verification_timeout_action == "none":
-                    if await unrestrict_user(app, ch.chat_id, ch.user_id):
-                        ch.solved = True
-                    else:
-                        continue
-                elif settings.verification_timeout_action == "kick":
-                    # 踢出群聊
-                    await kick_user(app, ch.chat_id, ch.user_id)
-                else:
-                    # 默认禁言
-                    duration = settings.verification_mute_duration
-                    muted = await mute_user(app, ch.chat_id, ch.user_id, duration)
-
-                    if muted:
-                        mention = f'<a href="tg://user?id={ch.user_id}">用户</a>'
-                        try:
-                            reason_text = (
-                                f"⛔ {mention} 自助审核超时，已按配置处理。\n"
-                                if is_self_review
-                                else f"⛔ {mention} 验证超时，已被禁言 {duration} 秒。\n"
-                            )
-                            await app.bot.send_message(
-                                chat_id=ch.chat_id,
-                                text=reason_text + "如需协助，请联系管理员处理。",
-                                parse_mode="HTML",
-                                reply_markup=verification_timeout_help_keyboard(ch.user_id),
-                            )
-                        except Exception as e:
-                            log.warning(
-                                "send_verification_timeout_notice_failed",
-                                chat_id=ch.chat_id,
-                                user_id=ch.user_id,
-                                error=str(e),
-                            )
-
-                # 标记为已处理
-                ch.timeout_handled = True
-
-            except Exception as e:
+                await _mark_verification_timeout_handled(session, plan)
+                await session.commit()
+                processed += 1
+            except Exception as exc:
+                db_commit_failures += 1
+                await session.rollback()
                 log.exception(
-                    "handle_verification_timeout_failed",
-                    chat_id=ch.chat_id,
-                    user_id=ch.user_id,
-                    error=str(e),
+                    "verification_timeout_finalize_failed",
+                    chat_id=plan.chat_id,
+                    user_id=plan.user_id,
+                    error=str(exc),
                 )
 
-        await session.commit()
+    duration = (dt.datetime.now(dt.UTC) - started_at).total_seconds()
+    log.info(
+        "verification_timeouts_processed",
+        count=len(plans),
+        processed=processed,
+        telegram_failures=telegram_failures,
+        db_commit_failures=db_commit_failures,
+        duration=round(duration, 3),
+    )
 
-    if expired_challenges:
-        log.info("verification_timeouts_processed", count=len(expired_challenges))
+
+async def _build_verification_timeout_plans(session) -> list[VerificationTimeoutPlan]:
+    expired_challenges = await get_expired_challenges(session)
+    plans: list[VerificationTimeoutPlan] = []
+
+    for ch in expired_challenges:
+        if ch.verification_type == "admin":
+            ch.timeout_handled = True
+            continue
+
+        try:
+            settings = await get_chat_settings(session, ch.chat_id)
+            is_self_review = is_self_review_question(ch.question)
+            action = "mute"
+            if is_self_review and settings.join_self_review_timeout_action == "reject_block":
+                action = "kick"
+            elif settings.verification_timeout_action == "none":
+                action = "unrestrict"
+            elif settings.verification_timeout_action == "kick":
+                action = "kick"
+
+            plans.append(
+                VerificationTimeoutPlan(
+                    challenge_id=getattr(ch, "id", None),
+                    challenge_ref=ch,
+                    chat_id=int(ch.chat_id),
+                    user_id=int(ch.user_id),
+                    action=action,
+                    duration=int(getattr(settings, "verification_mute_duration", 86400) or 86400),
+                    is_self_review=is_self_review,
+                    language=getattr(settings, "language", "zh-CN"),
+                )
+            )
+        except Exception as exc:
+            log.exception(
+                "build_verification_timeout_plan_failed",
+                chat_id=ch.chat_id,
+                user_id=ch.user_id,
+                error=str(exc),
+            )
+    return plans
+
+
+async def _execute_verification_timeout_plan(app: Application, plan: VerificationTimeoutPlan) -> bool:
+    if plan.action == "unrestrict":
+        return await unrestrict_user(app, plan.chat_id, plan.user_id)
+    if plan.action == "kick":
+        return await kick_user(app, plan.chat_id, plan.user_id)
+
+    muted = await mute_user(app, plan.chat_id, plan.user_id, plan.duration)
+    if not muted:
+        return False
+
+    mention = f'<a href="tg://user?id={plan.user_id}">用户</a>'
+    reason_text = (
+        f"⛔ {mention} 自助审核超时，已按配置处理。\n"
+        if plan.is_self_review
+        else f"⛔ {mention} 验证超时，已被禁言 {plan.duration} 秒。\n"
+    )
+    try:
+        await PublishService.send(
+            type("BotContext", (), {"bot": app.bot, "application": app})(),
+            chat_id=plan.chat_id,
+            text=reason_text + "如需协助，请联系管理员处理。",
+            parse_mode="HTML",
+            reply_markup=verification_timeout_help_keyboard(plan.user_id),
+        )
+    except Exception as exc:
+        log.warning(
+            "send_verification_timeout_notice_failed",
+            chat_id=plan.chat_id,
+            user_id=plan.user_id,
+            error=str(exc),
+        )
+    return True
+
+
+async def _mark_verification_timeout_handled(session, plan: VerificationTimeoutPlan) -> None:
+    challenge = None
+    if plan.challenge_id is not None:
+        challenge = await session.get(VerificationChallenge, plan.challenge_id)
+    if challenge is None:
+        challenge = plan.challenge_ref
+    if challenge is None:
+        return
+    if plan.action == "unrestrict":
+        challenge.solved = True
+    challenge.timeout_handled = True
 
 
 class VerificationTimeoutTask(ScheduledTask):

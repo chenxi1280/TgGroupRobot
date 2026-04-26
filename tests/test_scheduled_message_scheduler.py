@@ -13,6 +13,8 @@ class _Session:
     def __init__(self) -> None:
         self.commits = 0
         self.rollbacks = 0
+        self.active = False
+        self.active_events: list[bool] = []
 
     async def commit(self) -> None:
         self.commits += 1
@@ -26,9 +28,11 @@ class _SessionContext:
         self.session = session
 
     async def __aenter__(self):
+        self.session.active = True
         return self.session
 
     async def __aexit__(self, exc_type, exc, tb):
+        self.session.active = False
         return False
 
 
@@ -58,6 +62,8 @@ class _Bot:
         return True
 
     async def send_message(self, *args, **kwargs):
+        if hasattr(self, "session"):
+            self.session.active_events.append(self.session.active)
         self.calls.append(("send_message", args, kwargs))
         return self._message()
 
@@ -88,6 +94,7 @@ def _task(**kwargs):
         "title": "测试任务",
         "chat_id": -1001,
         "enabled": True,
+        "repeat_interval_min": 60,
         "start_at": None,
         "end_at": None,
         "day_start_hour": 0,
@@ -110,23 +117,16 @@ async def test_execute_disables_empty_task_without_sending_or_deleting(monkeypat
     session = _Session()
     bot = _Bot()
     task = _task(delete_previous=True, last_sent_message_id=88, pin_message=True)
-    disabled: list[tuple[str, bool]] = []
     marked_sent: list[tuple[str, int]] = []
 
     async def fake_get_due_tasks(session_obj, limit: int = 100):
         return [task]
-
-    async def fake_toggle(session_obj, task_id: str, enabled: bool):
-        disabled.append((task_id, enabled))
-        task.enabled = enabled
-        return task
 
     async def fake_mark_sent(session_obj, task_id: str, message_id: int):
         marked_sent.append((task_id, message_id))
         return task
 
     monkeypatch.setattr(ScheduledMessageService, "get_due_tasks", staticmethod(fake_get_due_tasks))
-    monkeypatch.setattr(ScheduledMessageService, "toggle_task_enabled", staticmethod(fake_toggle))
     monkeypatch.setattr(ScheduledMessageService, "mark_task_sent", staticmethod(fake_mark_sent))
 
     app = SimpleNamespace(bot=bot, bot_data={"db": _Db(session)})
@@ -134,7 +134,6 @@ async def test_execute_disables_empty_task_without_sending_or_deleting(monkeypat
     await ScheduledMessageTaskRunner().execute(app)
 
     assert bot.calls == []
-    assert disabled == [("task-1", False)]
     assert task.enabled is False
     assert marked_sent == []
     assert session.commits == 1
@@ -159,7 +158,7 @@ async def test_send_message_text_task_sends_one_text_message():
     message_id = await ScheduledMessageTaskRunner()._send_message(app, _task(text="你好"))
 
     assert message_id == 101
-    assert [(name, args[1] if len(args) > 1 else None) for name, args, _ in bot.calls] == [("send_message", "你好")]
+    assert [(name, kwargs["text"]) for name, _, kwargs in bot.calls] == [("send_message", "你好")]
 
 
 @pytest.mark.asyncio
@@ -198,6 +197,34 @@ async def test_send_message_sticker_task_sends_one_sticker_without_text_fallback
 
     assert message_id == 101
     assert [name for name, _, _ in bot.calls] == ["send_sticker"]
+
+
+@pytest.mark.asyncio
+async def test_execute_sends_after_claim_session_is_closed(monkeypatch):
+    session = _Session()
+    bot = _Bot()
+    bot.session = session
+    task = _task(text="你好")
+    marked_sent: list[tuple[str, int]] = []
+
+    async def fake_get_due_tasks(session_obj, limit: int = 100):
+        return [task]
+
+    async def fake_mark_sent(session_obj, task_id: str, message_id: int):
+        marked_sent.append((task_id, message_id))
+        return task
+
+    monkeypatch.setattr(ScheduledMessageService, "get_due_tasks", staticmethod(fake_get_due_tasks))
+    monkeypatch.setattr(ScheduledMessageService, "mark_task_sent", staticmethod(fake_mark_sent))
+
+    app = SimpleNamespace(bot=bot, bot_data={"db": _Db(session)})
+
+    await ScheduledMessageTaskRunner().execute(app)
+
+    assert [name for name, _, _ in bot.calls] == ["send_message"]
+    assert session.active_events == [False]
+    assert marked_sent == [("task-1", 101)]
+    assert session.commits == 2
 
 
 @pytest.mark.asyncio

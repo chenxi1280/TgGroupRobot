@@ -24,16 +24,19 @@ class MessageTask(ScheduledTask):
         )
         import datetime as dt
         import structlog
+        from types import SimpleNamespace
+        from backend.shared.services.publish_service import PublishService
 
         log = structlog.get_logger(__name__)
         db = app.bot_data["db"]
+        context = SimpleNamespace(bot=app.bot, application=app)
 
         current_time = dt.datetime.now(dt.UTC)
         async with db.session_factory() as session:
             messages = await get_pending_messages(session, current_time)
             for msg in messages:
                 try:
-                    await app.bot.send_message(chat_id=msg.chat_id, text=msg.content)
+                    await PublishService.send(context, chat_id=msg.chat_id, text=msg.content)
                     await mark_message_sent(session, msg)
                     log.info(
                         "scheduled_message_sent",

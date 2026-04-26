@@ -9,6 +9,7 @@ import structlog
 from telegram.ext import ContextTypes
 
 from backend.features.garage.services.garage_features_service import CarReviewService
+from backend.features.group_ops.text_trigger_runtime import is_reserved_group_text_command_for_chat
 from backend.features.nearby.services.nearby_profile_service import build_user_display_name
 from backend.platform.db.schema.models.core import TgUser
 from backend.shared.services.publish_service import PublishService
@@ -94,12 +95,16 @@ async def _process_car_review_features(
     rank_command = car_review_setting.rank_command.strip()
     rank_request = _resolve_rank_request(text, rank_command)
     if rank_request is not None:
+        if await is_reserved_group_text_command_for_chat(session, chat.id, text):
+            return False
         title, since = rank_request
         await _reply_car_review_rankings(context, session, chat, message, title=title, since=since)
         return True
 
     submit_command = car_review_setting.submit_command.strip()
     if submit_command and text.startswith(submit_command):
+        if await is_reserved_group_text_command_for_chat(session, chat.id, text):
+            return False
         await _submit_car_review(context, session, chat, user, message, text, submit_command, car_review_setting)
         return True
 

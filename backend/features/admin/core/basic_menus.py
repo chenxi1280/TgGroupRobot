@@ -30,7 +30,8 @@ class CoreBasicMenusMixin:
             f"🎁 通用:{type_counts['common']}  "
             f"💰 积分:{type_counts['points']}  "
             f"👥 邀请:{type_counts['invite']}  "
-            f"🔥 活跃:{type_counts['activity']}"
+            f"🔥 活跃:{type_counts['activity']}  "
+            f"📣 订阅:{type_counts['subscribe']}"
         )
 
         keyboard = lottery_menu_keyboard(chat_id)

@@ -529,7 +529,7 @@ async def test_send_auto_reply_payload_sends_url_buttons() -> None:
 
 
 @pytest.mark.asyncio
-async def test_auto_reply_text_button_callback_runs_points_trigger(monkeypatch) -> None:
+async def test_auto_reply_text_button_callback_runs_group_text_trigger(monkeypatch) -> None:
     session = _FakeSession()
     q = _FakeCallbackQuery("arbtn:text:-100456:9:0:0")
     message = SimpleNamespace(replies=[], reply_text=lambda text, **kwargs: None)
@@ -551,16 +551,16 @@ async def test_auto_reply_text_button_callback_runs_points_trigger(monkeypatch) 
         assert (chat_id, rule_id) == (-100456, 9)
         return rule
 
-    async def fake_points_trigger(update, context, trigger_text: str):
-        triggers.append((update.effective_user.id, trigger_text))
+    async def fake_group_text_trigger(update, context, chat_id: int, trigger_text: str):
+        triggers.append((update.effective_user.id, chat_id, trigger_text))
         return True
 
     monkeypatch.setattr(auto_reply_button_actions, "get_auto_reply_rule_in_chat", fake_get_rule)
-    monkeypatch.setattr(auto_reply_button_actions, "points_text_trigger_handler", fake_points_trigger)
+    monkeypatch.setattr(auto_reply_button_actions, "try_group_text_trigger", fake_group_text_trigger)
 
     await auto_reply_button_actions.auto_reply_text_button_callback(update, context)
 
-    assert triggers == [(42, "签到")]
+    assert triggers == [(42, -100456, "签到")]
     assert q.answers == [("已触发：签到", False)]
 
 

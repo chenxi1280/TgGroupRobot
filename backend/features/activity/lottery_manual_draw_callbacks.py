@@ -6,6 +6,11 @@ from sqlalchemy import select
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from backend.features.activity.services.lottery_subscription import (
+    filter_lottery_subscribed_user_ids,
+    get_lottery_subscribe_targets,
+    requires_lottery_subscribe,
+)
 from backend.features.activity.ui.lottery import (
     manual_draw_prize_keyboard,
     manual_draw_summary_keyboard,
@@ -50,6 +55,15 @@ async def manual_draw_select_prize_callback_impl(
             await session.commit()
             return
         participants = await get_lottery_participants_fn(session, lottery_id)
+        if requires_lottery_subscribe(lottery):
+            rules = lottery.qualification_rules or {}
+            eligible_user_ids = await filter_lottery_subscribed_user_ids(
+                context,
+                get_lottery_subscribe_targets(rules),
+                {int(participant.user_id) for participant in participants},
+                check_mode=rules.get("subscribe_check_mode") or "all",
+            )
+            participants = [participant for participant in participants if int(participant.user_id) in eligible_user_ids]
         user_ids = [p.user_id for p in participants]
         result = await session.execute(select(TgUser).where(TgUser.id.in_(user_ids)))
         users = {u.id: u for u in result.scalars().all()}
@@ -180,6 +194,22 @@ async def manual_draw_complete_callback_impl(
             await session.commit()
             return
         winner_user_ids = [w["user_id"] for w in winners.values()]
+        if requires_lottery_subscribe(lottery):
+            rules = lottery.qualification_rules or {}
+            eligible_user_ids = await filter_lottery_subscribed_user_ids(
+                context,
+                get_lottery_subscribe_targets(rules),
+                {int(user_id) for user_id in winner_user_ids},
+                check_mode=rules.get("subscribe_check_mode") or "all",
+            )
+            invalid_user_ids = sorted(set(winner_user_ids) - eligible_user_ids)
+            if invalid_user_ids:
+                await handler.message_helper.safe_edit(
+                    update,
+                    "有已选择的中奖人当前未满足本抽奖订阅条件，请返回重新选择。",
+                )
+                await session.commit()
+                return
         user_result = await session.execute(select(TgUser).where(TgUser.id.in_(winner_user_ids)))
         users = {u.id: u for u in user_result.scalars().all()}
         winners_list = []
@@ -241,6 +271,15 @@ async def manual_draw_winner_page_callback_impl(
             return
         prize_name = lottery.prizes[prize_index // 10]["name"]
         participants = await get_lottery_participants_fn(session, lottery_id)
+        if requires_lottery_subscribe(lottery):
+            rules = lottery.qualification_rules or {}
+            eligible_user_ids = await filter_lottery_subscribed_user_ids(
+                context,
+                get_lottery_subscribe_targets(rules),
+                {int(participant.user_id) for participant in participants},
+                check_mode=rules.get("subscribe_check_mode") or "all",
+            )
+            participants = [participant for participant in participants if int(participant.user_id) in eligible_user_ids]
         user_ids = [p.user_id for p in participants]
         result = await session.execute(select(TgUser).where(TgUser.id.in_(user_ids)))
         users = {u.id: u for u in result.scalars().all()}

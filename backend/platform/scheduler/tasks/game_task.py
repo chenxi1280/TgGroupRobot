@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime as dt
 import html
 import structlog
+from types import SimpleNamespace
 
 from backend.platform.scheduler.core.core import ScheduledTask
 from backend.platform.scheduler.core.task_config import TASK_CONFIG
@@ -19,6 +20,7 @@ from backend.features.activity.services.game_service import (
     settle_k3_round,
 )
 from backend.shared.time_helper import LOCAL_TIMEZONE
+from backend.shared.services.publish_service import PublishService
 
 log = structlog.get_logger(__name__)
 
@@ -109,21 +111,28 @@ class GameTask(ScheduledTask):
                 )
         else:
             lines.append("😶 本局无人中奖，下注积分已按规则结算。")
-        await app.bot.send_message(chat_id=round_obj.chat_id, text="\n".join(lines), parse_mode="HTML")
+        await PublishService.send(
+            SimpleNamespace(bot=app.bot, application=app),
+            chat_id=round_obj.chat_id,
+            text="\n".join(lines),
+            parse_mode="HTML",
+        )
 
     async def _send_blackjack_summary(self, app, summary: dict) -> None:
         round_obj = summary["round"]
         participant = summary["participant"]
         outcome = summary["outcome"]
         text = format_blackjack_round_text(participant, reveal_dealer=True, outcome=outcome)
+        context = SimpleNamespace(bot=app.bot, application=app)
         if round_obj.announcement_message_id:
             try:
-                await app.bot.edit_message_text(
+                await PublishService.edit(
+                    context,
                     chat_id=round_obj.chat_id,
                     message_id=round_obj.announcement_message_id,
                     text=text,
                 )
             except Exception:
-                await app.bot.send_message(chat_id=round_obj.chat_id, text=text)
+                await PublishService.send(context, chat_id=round_obj.chat_id, text=text)
         else:
-            await app.bot.send_message(chat_id=round_obj.chat_id, text=text)
+            await PublishService.send(context, chat_id=round_obj.chat_id, text=text)

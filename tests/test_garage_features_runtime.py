@@ -510,6 +510,56 @@ async def test_process_garage_features_handles_weekly_car_review_rank(monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_process_garage_features_car_review_does_not_steal_sign_in_text(monkeypatch):
+    session = _FakeSession()
+    db = _FakeDb(session)
+
+    async def fake_get_teacher_setting(*args, **kwargs):
+        return SimpleNamespace(
+            nearby_search_enabled=False,
+            attendance_enabled=False,
+            force_location_enabled=False,
+            footer_button_label=None,
+        )
+
+    async def fake_get_car_review_setting(*args, **kwargs):
+        return SimpleNamespace(
+            enabled=True,
+            rank_command="签到",
+            submit_command="签到",
+            teacher_lookup_mode="off",
+        )
+
+    async def forbidden_list_rankings(*args, **kwargs):
+        raise AssertionError("reserved sign text must stay available for points sign-in")
+
+    async def fake_is_teacher(*args, **kwargs):
+        return False
+
+    async def fake_is_whitelisted(*args, **kwargs):
+        return False
+
+    monkeypatch.setattr(TeacherSearchService, "get_setting", fake_get_teacher_setting)
+    monkeypatch.setattr(CarReviewService, "get_setting", fake_get_car_review_setting)
+    monkeypatch.setattr(CarReviewService, "list_rankings", forbidden_list_rankings)
+    monkeypatch.setattr(GarageAuthService, "is_certified_teacher", fake_is_teacher)
+    monkeypatch.setattr(GarageAuthService, "is_whitelisted", fake_is_whitelisted)
+
+    handled = await _process_garage_features(
+        SimpleNamespace(application=SimpleNamespace(bot_data={})),
+        db,
+        SimpleNamespace(id=-1001, title="测试群"),
+        SimpleNamespace(id=42),
+        SimpleNamespace(message_id=9, location=None, reply_to_message=None),
+        "签到",
+        SimpleNamespace(garage_limit_enabled=False),
+        False,
+    )
+
+    assert handled is False
+
+
+@pytest.mark.asyncio
 async def test_process_garage_features_exact_lookup_replies_teacher_reviews(monkeypatch):
     session = _FakeSession()
     db = _FakeDb(session)
@@ -992,6 +1042,54 @@ async def test_process_garage_features_footer_button_shows_teacher_search_guide(
     assert "发送“老师搜索 关键词”" in replies[0]
     assert "发送“附近”" in replies[0]
     assert "发送“开课老师”" in replies[0]
+
+
+@pytest.mark.asyncio
+async def test_process_garage_features_does_not_steal_sign_in_text(monkeypatch):
+    session = _FakeSession()
+    db = _FakeDb(session)
+    replies: list[str] = []
+
+    async def fake_get_teacher_setting(*args, **kwargs):
+        return SimpleNamespace(
+            nearby_search_enabled=True,
+            attendance_enabled=False,
+            force_location_enabled=False,
+            footer_button_label="签到",
+            delete_mode="none",
+        )
+
+    async def fake_get_car_review_setting(*args, **kwargs):
+        return SimpleNamespace(enabled=False, rank_command="出击排行", submit_command="提交报告")
+
+    async def fake_reply(context, *, chat_id, text, reply_to_message_id=None, **kwargs):
+        replies.append(text)
+
+    async def fake_is_teacher(*args, **kwargs):
+        return False
+
+    async def fake_is_whitelisted(*args, **kwargs):
+        return False
+
+    monkeypatch.setattr(TeacherSearchService, "get_setting", fake_get_teacher_setting)
+    monkeypatch.setattr(CarReviewService, "get_setting", fake_get_car_review_setting)
+    monkeypatch.setattr(GarageAuthService, "is_certified_teacher", fake_is_teacher)
+    monkeypatch.setattr(GarageAuthService, "is_whitelisted", fake_is_whitelisted)
+    monkeypatch.setattr(group_message_handler.PublishService, "reply", fake_reply)
+
+    handled = await _process_garage_features(
+        SimpleNamespace(application=SimpleNamespace(bot_data={})),
+        db,
+        SimpleNamespace(id=-1001, title="测试群"),
+        SimpleNamespace(id=42),
+        SimpleNamespace(message_id=9, location=None, venue=None, reply_to_message=None),
+        "签到",
+        SimpleNamespace(garage_limit_enabled=False),
+        False,
+    )
+
+    assert handled is False
+    assert replies == []
 
 
 @pytest.mark.asyncio

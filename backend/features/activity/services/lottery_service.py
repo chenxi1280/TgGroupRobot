@@ -25,6 +25,16 @@ from backend.features.activity.services.lottery_service_participation import (
     can_join_lottery,
     join_lottery,
 )
+from backend.features.activity.services.lottery_subscription import (
+    build_lottery_subscribe_markup,
+    check_lottery_subscribe_membership,
+    filter_lottery_subscribed_user_ids,
+    format_lottery_subscribe_targets,
+    get_lottery_subscribe_targets,
+    parse_lottery_subscribe_targets,
+    requires_lottery_subscribe,
+    validate_lottery_subscribe_targets,
+)
 from backend.features.activity.services.lottery_service_queries import (
     count_lotteries_by_type,
     create_lottery,

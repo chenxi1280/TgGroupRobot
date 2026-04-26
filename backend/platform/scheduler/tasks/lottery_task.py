@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import datetime as dt
 import html
+from types import SimpleNamespace
 
 import structlog
 from sqlalchemy import func, or_, select
 
 from backend.platform.scheduler.core.core import ScheduledTask
 from backend.platform.scheduler.core.task_config import TASK_CONFIG
+from backend.shared.services.publish_service import PublishService
 
 log = structlog.get_logger(__name__)
 
@@ -72,11 +74,13 @@ def _format_deadline_reminder(lottery, *, participant_count: int, label: str) ->
     )
 
 
-def _format_no_participants_announcement(lottery) -> str:
+def _format_no_participants_announcement(lottery, *, participant_count: int | None = None) -> str:
     title = html.escape(lottery.title or "抽奖")
-    return "\n".join(
+    lines = ["⏰ 抽奖已结束，已停止参与。"]
+    if participant_count is not None:
+        lines.append(f"👥 本次参与人数：{participant_count}")
+    lines.extend(
         [
-            "⏰ 抽奖已截止，已停止参与。",
             "",
             f"🎉 抽奖【{title}】开奖结果",
             "",
@@ -84,13 +88,27 @@ def _format_no_participants_announcement(lottery) -> str:
             "可调整门槛后重新发起。",
         ]
     )
+    return "\n".join(lines)
+
+
+def _format_no_eligible_announcement(lottery, *, participant_count: int) -> str:
+    title = html.escape(lottery.title or "抽奖")
+    return "\n".join(
+        [
+            "⏰ 抽奖已结束，已停止参与。",
+            f"👥 本次参与人数：{participant_count}",
+            "",
+            f"🎉 抽奖【{title}】开奖结果",
+            "",
+            "😔 本次无人满足参与条件，未产生中奖人员。",
+        ]
+    )
 
 
 def _format_draw_result_with_close_notice(announcement: str, *, participant_count: int | None = None) -> str:
-    lines = ["⏰ 抽奖已截止，已停止参与。"]
+    lines = ["⏰ 抽奖已结束，已停止参与。"]
     if participant_count is not None:
         lines.append(f"👥 本次参与人数：{participant_count}")
-    lines.append("🎁 奖励已按配置发放；如未收到奖励，请联系管理员核对积分记录。")
     return "\n".join(lines) + "\n\n" + announcement
 
 
@@ -112,7 +130,28 @@ async def _send_lottery_message(app, lottery, text: str):
     if lottery.message_id:
         kwargs["reply_to_message_id"] = lottery.message_id
         kwargs["allow_sending_without_reply"] = True
-    return await app.bot.send_message(**kwargs)
+    return await PublishService.send(SimpleNamespace(bot=app.bot, application=app), **kwargs)
+
+
+async def _send_lottery_result_message(app, lottery, text: str):
+    try:
+        return await _send_lottery_message(app, lottery, text)
+    except Exception as first_exc:
+        log.warning("auto_draw_result_publish_service_failed", lottery_id=lottery.id, error=str(first_exc))
+        try:
+            return await app.bot.send_message(
+                chat_id=lottery.chat_id,
+                text=text,
+                parse_mode="HTML",
+            )
+        except Exception as second_exc:
+            log.error(
+                "auto_draw_result_direct_send_failed",
+                lottery_id=lottery.id,
+                first_error=str(first_exc),
+                error=str(second_exc),
+            )
+            raise second_exc from first_exc
 
 
 async def _lock_pending_lottery(session, lottery_model, lottery_id: int):
@@ -232,7 +271,38 @@ class LotteryTask(ScheduledTask):
             return
         lottery = locked_lottery
         participant_total = await _participant_count(session, lottery.id)
-        winners = await perform_random_draw(session, lottery)
+        eligible_user_ids = None
+        eligible_filter_applied = False
+        from backend.features.activity.services.lottery_service_queries import get_lottery_participants
+        from backend.features.activity.services.lottery_subscription import (
+            filter_lottery_subscribed_user_ids,
+            get_lottery_subscribe_targets,
+            requires_lottery_subscribe,
+        )
+
+        if requires_lottery_subscribe(lottery):
+            rules = lottery.qualification_rules or {}
+            participants = await get_lottery_participants(session, lottery.id)
+            preset_ids: list[int] = []
+            for raw_user_id in rules.get("preset_winner_ids") or rules.get("fixed_winner_ids") or []:
+                try:
+                    user_id = int(raw_user_id)
+                except (TypeError, ValueError):
+                    continue
+                if user_id > 0:
+                    preset_ids.append(user_id)
+            candidate_ids = {int(participant.user_id) for participant in participants} | set(preset_ids)
+            eligible_user_ids = await filter_lottery_subscribed_user_ids(
+                SimpleNamespace(bot=app.bot),
+                get_lottery_subscribe_targets(rules),
+                candidate_ids,
+                check_mode=rules.get("subscribe_check_mode") or "all",
+            )
+            eligible_filter_applied = True
+        if eligible_user_ids is None:
+            winners = await perform_random_draw(session, lottery)
+        else:
+            winners = await perform_random_draw(session, lottery, eligible_user_ids=eligible_user_ids)
 
         if winners:
             user_ids = [winner.user_id for winner in winners]
@@ -245,11 +315,13 @@ class LotteryTask(ScheduledTask):
                 generate_lottery_announcement(lottery, winners, users),
                 participant_count=participant_total,
             )
+        elif eligible_filter_applied:
+            announcement = _format_no_eligible_announcement(lottery, participant_count=participant_total)
         else:
-            announcement = _format_no_participants_announcement(lottery)
+            announcement = _format_no_participants_announcement(lottery, participant_count=participant_total)
 
         try:
-            await _send_lottery_message(app, lottery, announcement)
+            await _send_lottery_result_message(app, lottery, announcement)
         except Exception as exc:
             log.error("auto_draw_announcement_failed", lottery_id=lottery.id, error=str(exc))
             await session.rollback()

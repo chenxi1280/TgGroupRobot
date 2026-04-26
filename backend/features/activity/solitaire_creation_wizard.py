@@ -19,6 +19,33 @@ from backend.shared.time_helper import LOCAL_TIMEZONE
 from backend.shared.time_ui import build_copy_time_keyboard, build_datetime_prompt_text, next_top_of_hour
 
 
+def _description_prompt(title: object) -> str:
+    return (
+        f"标题: {title}\n\n"
+        "本步只输入接龙描述，可选。\n"
+        "格式：描述文本，或 /skip 跳过\n"
+        "完整示例：一起吃火锅，报名后请准时到场"
+    )
+
+
+def _max_participants_prompt(description: object) -> str:
+    return (
+        f"描述: {description or '无'}\n\n"
+        "本步只输入最大参与人数，可选，不要带单位。\n"
+        "格式：正整数，或 /skip 跳过\n"
+        "完整示例：10"
+    )
+
+
+def _points_required_prompt(max_participants: object) -> str:
+    return (
+        f"最大人数: {max_participants or '无限制'}\n\n"
+        "本步只输入参与所需积分，可选，不要带单位。\n"
+        "格式：非负整数，或 /skip 跳过\n"
+        "完整示例：50"
+    )
+
+
 async def solitaire_create_title_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int | None:
     if update.effective_message is None or update.effective_user is None or update.effective_chat is None:
         return ConversationHandler.END
@@ -28,9 +55,7 @@ async def solitaire_create_title_message(update: Update, context: ContextTypes.D
     async with db.session_factory() as session:
         state_data = await set_user_state(session, chat.id, user.id, "solitaire_create", {"title": update.effective_message.text})
         await session.commit()
-    await update.effective_message.reply_text(
-        f"标题: {state_data.state_data.get('title')}\n\n请输入接龙描述（可选）\n\n输入 /skip 跳过"
-    )
+    await update.effective_message.reply_text(_description_prompt(state_data.state_data.get("title")))
     return WAIT_DESCRIPTION
 
 
@@ -48,9 +73,7 @@ async def solitaire_create_description_message(update: Update, context: ContextT
         state_data["description"] = description
         await set_user_state(session, chat.id, user.id, "solitaire_create", state_data)
         await session.commit()
-    await update.effective_message.reply_text(
-        f"描述: {description or '无'}\n\n请输入最大参与人数（可选）\n输入数字或 /skip 跳过"
-    )
+    await update.effective_message.reply_text(_max_participants_prompt(description))
     return WAIT_MAX_PARTICIPANTS
 
 
@@ -70,19 +93,17 @@ async def solitaire_create_max_message(update: Update, context: ContextTypes.DEF
         try:
             max_participants = int(text)
             if max_participants <= 0:
-                await update.effective_message.reply_text("人数必须大于0，请重新输入或 /skip 跳过")
+                await update.effective_message.reply_text("人数必须大于0。格式：正整数，完整示例：10；或发送 /skip 跳过。")
                 return WAIT_MAX_PARTICIPANTS
         except ValueError:
-            await update.effective_message.reply_text("请输入有效的数字或 /skip 跳过")
+            await update.effective_message.reply_text("请输入有效数字。格式：正整数，完整示例：10；或发送 /skip 跳过。")
             return WAIT_MAX_PARTICIPANTS
 
     state_data["max_participants"] = max_participants
     async with db.session_factory() as session:
         await set_user_state(session, chat.id, user.id, "solitaire_create", state_data)
         await session.commit()
-    await update.effective_message.reply_text(
-        f"最大人数: {max_participants or '无限制'}\n\n请输入参与所需积分（可选）\n输入数字或 /skip 跳过"
-    )
+    await update.effective_message.reply_text(_points_required_prompt(max_participants))
     return WAIT_POINTS_REQUIRED
 
 
@@ -102,10 +123,10 @@ async def solitaire_create_points_message(update: Update, context: ContextTypes.
         try:
             points_required = int(text)
             if points_required < 0:
-                await update.effective_message.reply_text("积分不能为负数，请重新输入或 /skip 跳过")
+                await update.effective_message.reply_text("积分不能为负数。格式：非负整数，完整示例：50；或发送 /skip 跳过。")
                 return WAIT_POINTS_REQUIRED
         except ValueError:
-            await update.effective_message.reply_text("请输入有效的数字或 /skip 跳过")
+            await update.effective_message.reply_text("请输入有效数字。格式：非负整数，完整示例：50；或发送 /skip 跳过。")
             return WAIT_POINTS_REQUIRED
 
     state_data["points_required"] = points_required
@@ -120,6 +141,7 @@ async def solitaire_create_points_message(update: Update, context: ContextTypes.
             input_hint="👉 请输入截止时间，或输入 /skip 跳过：",
             extra_tips=[
                 f"积分限制: {points_required or '无限制'}",
+                "本步只输入截止时间。",
                 "不设置则一直有效，直到手动结束。",
             ],
         ),

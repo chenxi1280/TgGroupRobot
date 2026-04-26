@@ -5,9 +5,11 @@ from types import SimpleNamespace
 
 import pytest
 from sqlalchemy.exc import IntegrityError
+from telegram.error import NetworkError
 
 from backend.features.activity import lottery_handler
 import backend.features.activity.lottery_drawing as lottery_drawing_module
+from backend.features.activity.lottery_message_callbacks import lottery_cancel_callback_impl
 from backend.features.activity.lottery_drawing import LotteryDrawMixin
 from backend.features.activity.lottery_creation import (
     _build_config_from_state,
@@ -23,6 +25,11 @@ from backend.features.activity.lottery_creation import (
 from backend.features.activity.lottery_participation import _format_join_success_message
 from backend.features.activity.lottery_participation import _join_error_message
 from backend.features.activity.lottery_menus import _format_local_time as _format_lottery_menu_local_time
+from backend.features.activity.services.lottery_subscription import (
+    check_lottery_subscribe_membership,
+    parse_lottery_subscribe_targets,
+    validate_lottery_subscribe_targets,
+)
 import backend.features.activity.services.lottery_service_drawing as lottery_service_drawing
 import backend.features.activity.services.lottery_service_participation as lottery_service_participation
 import backend.platform.scheduler.tasks.lottery_task as lottery_task_module
@@ -82,7 +89,7 @@ def test_lottery_menu_keyboard_exposes_all_real_flows():
     assert callbacks["🔙 返回"] == "adm:menu:main:-1001"
 
 
-def test_lottery_type_keyboard_lists_four_types():
+def test_lottery_type_keyboard_lists_five_types():
     rows = [[button.text for button in row] for row in lottery_type_keyboard(-1001).inline_keyboard]
     callbacks = {
         button.text: button.callback_data
@@ -92,12 +99,14 @@ def test_lottery_type_keyboard_lists_four_types():
     assert rows == [
         ["🎁 通用抽奖", "💰 积分抽奖"],
         ["👥 邀请抽奖", "🔥 群活跃抽奖"],
+        ["📣 强制订阅抽奖"],
         ["🔙 返回"],
     ]
     assert callbacks["🎁 通用抽奖"] == "lot:draw_cond:-1001:c:t"
     assert callbacks["💰 积分抽奖"] == "lot:draw_cond:-1001:p:t"
     assert callbacks["👥 邀请抽奖"] == "lot:mode_menu:-1001:invite"
     assert callbacks["🔥 群活跃抽奖"] == "lot:mode_menu:-1001:activity"
+    assert callbacks["📣 强制订阅抽奖"] == "lot:draw_cond:-1001:s:t"
 
 
 def test_lottery_mode_keyboard_exposes_threshold_and_ranking_modes():
@@ -137,12 +146,65 @@ def test_lottery_creation_callbacks_stay_under_telegram_limit_for_real_chat_id()
     callbacks.extend(_all_callbacks(lottery_type_keyboard(REAL_CHAT_ID)))
     callbacks.extend(_all_callbacks(lottery_mode_keyboard(REAL_CHAT_ID, "invite")))
     callbacks.extend(_all_callbacks(lottery_mode_keyboard(REAL_CHAT_ID, "activity")))
-    for lottery_type in ("common", "points", "invite", "activity"):
+    for lottery_type in ("common", "points", "invite", "activity", "subscribe"):
         callbacks.extend(_all_callbacks(lottery_draw_condition_keyboard(REAL_CHAT_ID, lottery_type, "threshold_random")))
     callbacks.extend(_all_callbacks(lottery_draw_condition_keyboard(REAL_CHAT_ID, "invite", "ranking_random")))
 
     assert callbacks
     assert all(len(callback.encode()) <= 64 for callback in callbacks)
+
+
+@pytest.mark.asyncio
+async def test_lottery_cancel_returns_to_lottery_menu_in_private_context():
+    calls: list[tuple[str, int, int | None]] = []
+
+    class _Query:
+        data = f"lottery:cancel:{REAL_CHAT_ID}"
+
+        async def answer(self):
+            calls.append(("answer", 0, None))
+
+        async def edit_message_text(self, text, **kwargs):
+            calls.append(("edit", 0, None))
+
+    class _Session:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def commit(self):
+            calls.append(("commit", 0, None))
+
+    class _Db:
+        def session_factory(self):
+            return _Session()
+
+    class _Handler:
+        async def show_menu(self, update, context, target_chat_id):
+            calls.append(("show_lottery_menu", target_chat_id, None))
+
+    async def _clear_user_state(session, chat_id, user_id):
+        calls.append(("clear_state", chat_id, user_id))
+
+    update = SimpleNamespace(
+        callback_query=_Query(),
+        effective_chat=SimpleNamespace(id=777, type="private"),
+        effective_user=SimpleNamespace(id=42),
+    )
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}))
+
+    await lottery_cancel_callback_impl(
+        update,
+        context,
+        handler=_Handler(),
+        clear_user_state_fn=_clear_user_state,
+    )
+
+    assert ("clear_state", 42, 42) in calls
+    assert ("show_lottery_menu", REAL_CHAT_ID, None) in calls
+    assert not any(call[0] == "edit" for call in calls)
 
 
 def test_lottery_wizard_point_type_callbacks_stay_short_and_store_selection():
@@ -161,6 +223,8 @@ def test_lottery_wizard_point_type_callbacks_stay_short_and_store_selection():
 
     assert callbacks["积分"] == "lot:wiz:-1002966682374:pt:0"
     assert callbacks["出击分"] == "lot:wiz:-1002966682374:pt:7"
+    assert callbacks["🔙 返回上级"] == "lot:wiz:-1002966682374:back"
+    assert callbacks["❌ 取消配置"] == "lottery:cancel:-1002966682374"
     assert "关闭积分" not in callbacks
     assert all(len(callback.encode()) <= 64 for callback in callbacks.values())
 
@@ -170,6 +234,8 @@ def test_lottery_wizard_prize_action_callbacks_allow_multiple_prizes():
 
     assert f"lot:wiz:{REAL_CHAT_ID}:prize:add" in callbacks
     assert f"lot:wiz:{REAL_CHAT_ID}:prize:done" in callbacks
+    assert f"lot:wiz:{REAL_CHAT_ID}:back" in callbacks
+    assert f"lottery:cancel:{REAL_CHAT_ID}" in callbacks
     assert all(len(callback.encode()) <= 64 for callback in callbacks)
 
 
@@ -258,7 +324,11 @@ async def test_lottery_wizard_group_confirm_does_not_echo_preset_winners():
         effective_message=_Message(),
     )
 
-    await _reply_preset_confirm(update, state, state.state_data)
+    class _Session:
+        async def commit(self):
+            return None
+
+    await _reply_preset_confirm(update, _Session(), state, state.state_data)
 
     assert replies
     assert "抽奖名称：公开抽奖" in replies[-1]["text"]
@@ -270,6 +340,8 @@ async def test_lottery_wizard_group_confirm_does_not_echo_preset_winners():
         for button in row
     ]
     assert "✅ 确认发布抽奖" in button_texts
+    assert "🔙 返回上级" in button_texts
+    assert "❌ 取消配置" in button_texts
     assert all("内定" not in text for text in button_texts)
 
 
@@ -312,6 +384,118 @@ def test_lottery_ranking_announcement_explains_no_manual_join():
 
     assert "无需点击参与" in announcement
     assert "继续完成对应的邀请或活跃任务" in announcement
+
+
+def test_subscribe_lottery_config_stores_per_lottery_targets():
+    config = parse_lottery_config_text(
+        "\n".join(
+            [
+                "关注后抽奖|先关注指定频道再参与",
+                "开奖时间: 2099-12-31 20:00",
+                "关注目标: @channel_a",
+                "最低积分: 0",
+                "参与费用: 0",
+                "最大人数: 100",
+                "入群天数: 0",
+                "奖品:",
+                "一等奖,1",
+            ]
+        ),
+        lottery_type="subscribe",
+    )
+
+    summary = _format_lottery_wizard_summary(config)
+    rules = _qualification_rules_from_config(config)
+    announcement = format_lottery_announcement_text(config)
+
+    assert config.lottery_type == "subscribe"
+    assert config.subscribe_targets == [{"target": "@channel_a", "label": "@channel_a", "url": "https://t.me/channel_a"}]
+    assert rules["requires_lottery_subscribe"] is True
+    assert rules["subscribe_check_mode"] == "all"
+    assert rules["subscribe_targets"] == config.subscribe_targets
+    assert "📣 强制订阅抽奖" in summary
+    assert "订阅目标：@channel_a" in summary
+    assert "📣 参与条件: 需先关注：@channel_a" in announcement
+
+
+def test_subscribe_lottery_config_requires_own_target():
+    with pytest.raises(ValueError, match="必须配置关注目标"):
+        parse_lottery_config_text(
+            "\n".join(
+                [
+                    "关注后抽奖",
+                    "开奖时间: 2099-12-31 20:00",
+                    "奖品:",
+                    "一等奖,1",
+                ]
+            ),
+            lottery_type="subscribe",
+        )
+
+
+def test_parse_lottery_subscribe_targets_accepts_private_invite_format():
+    targets = parse_lottery_subscribe_targets("@channel_a, https://t.me/group_b\n-1001234567890|https://t.me/+invite")
+
+    assert targets == [
+        {"target": "@channel_a", "label": "@channel_a", "url": "https://t.me/channel_a"},
+        {"target": "@group_b", "label": "@group_b", "url": "https://t.me/group_b"},
+        {"target": -1001234567890, "label": "-1001234567890", "url": "https://t.me/+invite"},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_validate_lottery_subscribe_targets_requires_bot_admin_and_resolves_label():
+    class _Bot:
+        id = 777
+
+        async def get_chat(self, chat_id):
+            assert chat_id == "@channel_a"
+            return SimpleNamespace(type="channel", title="频道A", username="channel_a")
+
+        async def get_chat_member(self, chat_id, user_id):
+            assert (chat_id, user_id) == ("@channel_a", 777)
+            return SimpleNamespace(status="administrator")
+
+    targets = parse_lottery_subscribe_targets("@channel_a")
+
+    validated = await validate_lottery_subscribe_targets(SimpleNamespace(bot=_Bot()), targets)
+
+    assert validated == [{"target": "@channel_a", "label": "频道A", "url": "https://t.me/channel_a"}]
+
+
+@pytest.mark.asyncio
+async def test_lottery_subscribe_membership_uses_per_lottery_targets_only():
+    calls: list[tuple[object, int]] = []
+
+    class _Bot:
+        async def get_chat_member(self, chat_id, user_id):
+            calls.append((chat_id, user_id))
+            status = {"@channel_a": "member", "@channel_b": "left"}[chat_id]
+            return SimpleNamespace(status=status)
+
+    context = SimpleNamespace(bot=_Bot())
+    targets = parse_lottery_subscribe_targets("@channel_a,https://t.me/channel_b")
+
+    allowed, reason = await check_lottery_subscribe_membership(context, targets, 42, check_mode="all")
+
+    assert allowed is False
+    assert "本抽奖要求" in reason
+    assert calls == [("@channel_a", 42), ("@channel_b", 42)]
+
+    allowed, reason = await check_lottery_subscribe_membership(context, targets, 42, check_mode="any")
+
+    assert allowed is True
+    assert reason is None
+
+
+@pytest.mark.asyncio
+async def test_lottery_subscribe_membership_requires_target():
+    context = SimpleNamespace(bot=SimpleNamespace())
+
+    allowed, reason = await check_lottery_subscribe_membership(context, [], 42)
+
+    assert allowed is False
+    assert "缺少订阅目标" in reason
 
 
 def test_lottery_join_success_message_mentions_user_and_count_without_preset():
@@ -446,16 +630,26 @@ async def test_lottery_wizard_collects_common_full_draw_fields():
     await _handle_lottery_wizard_message(update, SimpleNamespace(), session, state, "春季抽奖|好运连连")
     assert state.state_data["step"] == "prize_name"
     assert state.state_data["title"] == "春季抽奖"
-    assert "第一个奖品" in replies[-1]["text"]
+    assert "本步只输入奖品名称，不要带中奖人数" in replies[-1]["text"]
+    assert "完整示例：1USDT" in replies[-1]["text"]
+    first_prompt_buttons = [
+        button.text
+        for row in replies[-1]["reply_markup"].inline_keyboard
+        for button in row
+    ]
+    assert first_prompt_buttons == ["🔙 返回上级", "❌ 取消配置"]
 
     await _handle_lottery_wizard_message(update, SimpleNamespace(), session, state, "1USDT")
     assert state.state_data["step"] == "prize_quantity"
-    assert "中奖人数/份数" in replies[-1]["text"]
+    assert "本步只输入「1USDT」的中奖人数/份数，不要再输入奖品名称" in replies[-1]["text"]
+    assert "格式：正整数" in replies[-1]["text"]
+    assert "完整示例：1" in replies[-1]["text"]
 
     await _handle_lottery_wizard_message(update, SimpleNamespace(), session, state, "1")
     assert state.state_data["step"] == "prize_action"
     assert state.state_data["prizes"] == [{"name": "1USDT", "quantity": 1, "points_reward": 0}]
-    assert "还需要继续添加奖品吗" in replies[-1]["text"]
+    assert "如果还有别的奖品，点击“添加下一个奖品”" in replies[-1]["text"]
+    assert "这里不用发送文字" in replies[-1]["text"]
     assert replies[-1]["reply_markup"] is not None
 
     state.state_data["step"] = "draw_param"
@@ -534,9 +728,52 @@ async def test_lottery_wizard_time_deadline_prompt_uses_copyable_next_day_exampl
     await _reply_next_prompt(update, _Session(), state, state.state_data, "draw_param")
 
     prompt = replies[0]
-    assert "直接复制：<code>" in prompt["text"]
+    assert "格式：YYYY-MM-DD HH:MM" in prompt["text"]
+    assert "完整示例：<code>" in prompt["text"]
     assert prompt["kwargs"]["parse_mode"] == "HTML"
-    assert "YYYY-MM-DD" not in prompt["text"]
+
+
+@pytest.mark.asyncio
+async def test_lottery_wizard_commits_next_step_before_sending_prompt():
+    events: list[tuple[str, int | None]] = []
+
+    class _Session:
+        commits = 0
+
+        async def commit(self):
+            self.commits += 1
+            events.append(("commit", self.commits))
+
+    session = _Session()
+    state = SimpleNamespace(
+        state_data={
+            "step": "prize_name",
+            "target_chat_id": -1001,
+            "lottery_type": "common",
+            "selection_mode": "threshold_random",
+            "draw_trigger": "full_participants",
+            "title": "测试抽奖",
+            "qualification_window_days": 7,
+            "prizes": [],
+            "preset_winner_ids": [],
+        }
+    )
+
+    class _Message:
+        async def reply_text(self, text, **kwargs):
+            events.append(("reply", session.commits))
+            raise NetworkError("httpx.ConnectError")
+
+    update = SimpleNamespace(effective_message=_Message())
+    data = dict(state.state_data)
+    data["pending_prize_name"] = "1USDT"
+
+    with pytest.raises(NetworkError):
+        await _reply_next_prompt(update, session, state, data, "prize_quantity")
+
+    assert events == [("commit", 1), ("reply", 1)]
+    assert state.state_data["step"] == "prize_quantity"
+    assert state.state_data["pending_prize_name"] == "1USDT"
 
 
 @pytest.mark.asyncio
@@ -958,11 +1195,11 @@ def test_lottery_deadline_result_messages_include_close_notice():
     lottery = SimpleNamespace(title="A<B")
 
     result_text = _format_draw_result_with_close_notice("开奖结果", participant_count=7)
-    assert result_text.startswith("⏰ 抽奖已截止，已停止参与。")
+    assert result_text.startswith("⏰ 抽奖已结束，已停止参与。")
     assert "本次参与人数：7" in result_text
-    assert "奖励已按配置发放" in result_text
-    no_participants = _format_no_participants_announcement(lottery)
-    assert "抽奖已截止，已停止参与" in no_participants
+    no_participants = _format_no_participants_announcement(lottery, participant_count=0)
+    assert "抽奖已结束，已停止参与" in no_participants
+    assert "本次参与人数：0" in no_participants
     assert "抽奖【A&lt;B】开奖结果" in no_participants
     assert "调整门槛后重新发起" in no_participants
 
@@ -1003,6 +1240,139 @@ async def test_lottery_auto_draw_skips_when_pending_lock_is_missing(monkeypatch)
     )
 
     assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_lottery_auto_draw_falls_back_to_direct_send_and_completes(monkeypatch):
+    now = dt.datetime.now(dt.timezone.utc)
+    lottery = SimpleNamespace(
+        id=55,
+        chat_id=-1001,
+        message_id=777,
+        status="pending",
+        draw_time=now - dt.timedelta(minutes=1),
+        title="自动开奖",
+        qualification_rules={"draw_trigger": "time_deadline"},
+    )
+    direct_calls: list[dict] = []
+
+    async def fake_lock_pending_lottery(session, lottery_model, lottery_id):
+        return lottery
+
+    async def fake_send_lottery_message(app, lottery_obj, text):
+        raise NetworkError("reply failed")
+
+    async def fake_draw(session, lottery_obj):
+        return []
+
+    class _CountResult:
+        def scalar(self):
+            return 3
+
+    class _Session:
+        def __init__(self):
+            self.commits = 0
+            self.rollbacks = 0
+
+        async def execute(self, stmt):
+            return _CountResult()
+
+        async def commit(self):
+            self.commits += 1
+
+        async def rollback(self):
+            self.rollbacks += 1
+
+    class _Bot:
+        async def send_message(self, **kwargs):
+            direct_calls.append(kwargs)
+            return SimpleNamespace(message_id=99)
+
+    monkeypatch.setattr(lottery_task_module, "_lock_pending_lottery", fake_lock_pending_lottery)
+    monkeypatch.setattr(lottery_task_module, "_send_lottery_message", fake_send_lottery_message)
+    session = _Session()
+
+    await LotteryTask()._draw_due_lottery(
+        app=SimpleNamespace(bot=_Bot()),
+        session=session,
+        lottery=lottery,
+        now=now,
+        perform_random_draw=fake_draw,
+        generate_lottery_announcement=lambda lottery_obj, winners, users: "result",
+        distribute_lottery_rewards=lambda session, lottery_obj, winners: None,
+        lottery_model=SimpleNamespace,
+        user_model=SimpleNamespace,
+    )
+
+    assert direct_calls == [{"chat_id": -1001, "text": _format_no_participants_announcement(lottery, participant_count=3), "parse_mode": "HTML"}]
+    assert lottery.status == "completed"
+    assert session.commits == 1
+    assert session.rollbacks == 0
+
+
+@pytest.mark.asyncio
+async def test_lottery_auto_draw_keeps_pending_when_all_announcement_sends_fail(monkeypatch):
+    now = dt.datetime.now(dt.timezone.utc)
+    lottery = SimpleNamespace(
+        id=56,
+        chat_id=-1001,
+        message_id=777,
+        status="pending",
+        draw_time=now - dt.timedelta(minutes=1),
+        title="自动开奖",
+        qualification_rules={"draw_trigger": "time_deadline"},
+    )
+
+    async def fake_lock_pending_lottery(session, lottery_model, lottery_id):
+        return lottery
+
+    async def fake_send_lottery_message(app, lottery_obj, text):
+        raise NetworkError("reply failed")
+
+    async def fake_draw(session, lottery_obj):
+        return []
+
+    class _CountResult:
+        def scalar(self):
+            return 0
+
+    class _Session:
+        def __init__(self):
+            self.commits = 0
+            self.rollbacks = 0
+
+        async def execute(self, stmt):
+            return _CountResult()
+
+        async def commit(self):
+            self.commits += 1
+
+        async def rollback(self):
+            self.rollbacks += 1
+
+    class _Bot:
+        async def send_message(self, **kwargs):
+            raise NetworkError("direct failed")
+
+    monkeypatch.setattr(lottery_task_module, "_lock_pending_lottery", fake_lock_pending_lottery)
+    monkeypatch.setattr(lottery_task_module, "_send_lottery_message", fake_send_lottery_message)
+    session = _Session()
+
+    await LotteryTask()._draw_due_lottery(
+        app=SimpleNamespace(bot=_Bot()),
+        session=session,
+        lottery=lottery,
+        now=now,
+        perform_random_draw=fake_draw,
+        generate_lottery_announcement=lambda lottery_obj, winners, users: "result",
+        distribute_lottery_rewards=lambda session, lottery_obj, winners: None,
+        lottery_model=SimpleNamespace,
+        user_model=SimpleNamespace,
+    )
+
+    assert lottery.status == "pending"
+    assert session.commits == 0
+    assert session.rollbacks == 1
 
 
 @pytest.mark.asyncio
@@ -1261,3 +1631,36 @@ async def test_perform_random_draw_allows_fixed_winners_without_participants(mon
     winners = await lottery_service_drawing.perform_random_draw(_Session(), lottery)
 
     assert [(winner.user_id, winner.prize_name) for winner in winners] == [(111, "一等奖")]
+
+
+@pytest.mark.asyncio
+async def test_perform_random_draw_filters_preset_and_participants_by_eligible_users(monkeypatch):
+    async def fake_get_lottery_participants(session, lottery_id: int):
+        return [SimpleNamespace(user_id=222, points_balance=0), SimpleNamespace(user_id=333, points_balance=0)]
+
+    def fake_shuffle(items):
+        return None
+
+    class _Session:
+        def __init__(self):
+            self.added = []
+
+        def add(self, entity):
+            self.added.append(entity)
+
+        async def flush(self):
+            return None
+
+    lottery = SimpleNamespace(
+        id=57,
+        chat_id=-1001,
+        lottery_type="common",
+        qualification_rules={"preset_winner_ids": [111]},
+        prizes=[{"name": "一等奖", "quantity": 1}, {"name": "二等奖", "quantity": 1}],
+    )
+    monkeypatch.setattr(lottery_service_drawing, "get_lottery_participants", fake_get_lottery_participants)
+    monkeypatch.setattr(lottery_service_drawing.random, "shuffle", fake_shuffle)
+
+    winners = await lottery_service_drawing.perform_random_draw(_Session(), lottery, eligible_user_ids={333})
+
+    assert [(winner.user_id, winner.prize_name) for winner in winners] == [(333, "一等奖")]

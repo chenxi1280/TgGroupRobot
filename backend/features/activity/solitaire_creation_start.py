@@ -48,7 +48,7 @@ async def solitaire_create_start_callback(update: Update, context: ContextTypes.
         "参与积分: 0（0=无限制）\n"
         "截止时间: YYYY-MM-DD HH:MM（可选，可直接留空）\n"
         "```\n\n"
-        "示例:\n"
+        "完整示例：\n"
         "```\n"
         "今晚聚餐\n"
         "一起吃火锅\n"
@@ -60,6 +60,7 @@ async def solitaire_create_start_callback(update: Update, context: ContextTypes.
     keyboard = InlineKeyboardMarkup(
         [
             [InlineKeyboardButton(f"📋 复制 {deadline_text}", api_kwargs={"copy_text": {"text": deadline_text}})],
+            [InlineKeyboardButton("🔙 返回上级", callback_data=f"adm:menu:solitaire:{target_chat_id}")],
             [InlineKeyboardButton("❌ 取消配置", callback_data=f"solitaire:cancel:{target_chat_id}")],
         ]
     )

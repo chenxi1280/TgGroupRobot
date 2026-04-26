@@ -4,15 +4,47 @@
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 import structlog
 import datetime as dt
+from types import SimpleNamespace
+
 from telegram import InlineKeyboardButton
+
 from backend.platform.scheduler.core.core import ScheduledTask
 from backend.platform.scheduler.core.task_config import TASK_CONFIG
 from backend.features.automation.services.scheduled_message_service import ScheduledMessageService
-from backend.shared.time_helper import is_time_in_window, timestamp_to_datetime
+from backend.shared.services.publish_service import PublishService
+from backend.shared.time_helper import calculate_next_run_time, is_time_in_window
 
 log = structlog.get_logger(__name__)
+
+
+@dataclass(frozen=True)
+class ScheduledMessageDispatchItem:
+    task_id: str
+    title: str
+    chat_id: int
+    delete_previous: bool
+    last_sent_message_id: int | None
+    pin_message: bool
+    text: str | None
+    parse_mode: str
+    media_type: str
+    media_file_id: str | None
+    buttons: list
+
+
+@dataclass
+class ScheduledMessageRunStats:
+    due: int = 0
+    claimed: int = 0
+    sent: int = 0
+    skipped_expired: int = 0
+    skipped_window: int = 0
+    skipped_empty: int = 0
+    telegram_failures: int = 0
+    db_commit_failures: int = 0
 
 
 class ScheduledMessageTaskRunner(ScheduledTask):
@@ -34,29 +66,49 @@ class ScheduledMessageTaskRunner(ScheduledTask):
     async def execute(self, app) -> None:
         """执行定时消息任务"""
         db = app.bot_data["db"]
+        started_at = dt.datetime.now(dt.UTC)
+        stats = ScheduledMessageRunStats()
+
+        dispatch_items = await self._claim_due_tasks(db, stats=stats)
+        for item in dispatch_items:
+            await self._dispatch_claimed_task(app, db, item, stats=stats)
+
+        if stats.due or stats.claimed or stats.telegram_failures or stats.db_commit_failures:
+            duration = (dt.datetime.now(dt.UTC) - started_at).total_seconds()
+            log.info(
+                "scheduled_message_tick_finished",
+                due=stats.due,
+                claimed=stats.claimed,
+                sent=stats.sent,
+                skipped_expired=stats.skipped_expired,
+                skipped_window=stats.skipped_window,
+                skipped_empty=stats.skipped_empty,
+                telegram_failures=stats.telegram_failures,
+                db_commit_failures=stats.db_commit_failures,
+                duration=round(duration, 3),
+            )
+
+    async def _claim_due_tasks(self, db, *, stats: ScheduledMessageRunStats) -> list[ScheduledMessageDispatchItem]:
+        dispatch_items: list[ScheduledMessageDispatchItem] = []
+        now = int(dt.datetime.now(dt.UTC).timestamp())
 
         async with db.session_factory() as session:
-            # 获取到期需要执行的任务
-            tasks = await ScheduledMessageService.get_due_tasks(session, limit=100)
+            try:
+                tasks = await ScheduledMessageService.get_due_tasks(session, limit=100)
+                stats.due = len(tasks)
+                if not tasks:
+                    return []
 
-            if not tasks:
-                return
+                log.info("scheduled_messages_due", count=len(tasks))
 
-            log.info("scheduled_messages_due", count=len(tasks))
-
-            for task in tasks:
-                try:
-                    # 检查是否在有效期内
-                    now = int(dt.datetime.now(dt.UTC).timestamp())
-
-                    # 检查开始时间
+                for task in tasks:
                     if task.start_at and now < task.start_at:
+                        task.next_run_at = task.start_at
                         continue
 
-                    # 检查终止时间
                     if task.end_at and now > task.end_at:
-                        # 过期任务，禁用
-                        await ScheduledMessageService.toggle_task_enabled(session, task.task_id, False)
+                        task.enabled = False
+                        stats.skipped_expired += 1
                         log.info(
                             "scheduled_message_expired",
                             task_id=str(task.task_id),
@@ -64,14 +116,14 @@ class ScheduledMessageTaskRunner(ScheduledTask):
                         )
                         continue
 
-                    # 检查时段窗口
                     if not is_time_in_window(now, task.day_start_hour, task.day_end_hour):
-                        # 不在时段内，跳过
+                        task.next_run_at = calculate_next_run_time(task, now)
+                        stats.skipped_window += 1
                         continue
 
                     if not ScheduledMessageService.has_sendable_content(task):
-                        await ScheduledMessageService.toggle_task_enabled(session, task.task_id, False)
-                        await session.commit()
+                        task.enabled = False
+                        stats.skipped_empty += 1
                         log.warning(
                             "scheduled_message_skipped_empty_content",
                             task_id=str(task.task_id),
@@ -80,69 +132,110 @@ class ScheduledMessageTaskRunner(ScheduledTask):
                         )
                         continue
 
-                    # 删除上一条消息（如果需要）
-                    if task.delete_previous and task.last_sent_message_id:
-                        try:
-                            await app.bot.delete_message(
-                                task.chat_id,
-                                task.last_sent_message_id,
-                            )
-                            log.info(
-                                "scheduled_message_deleted_previous",
-                                task_id=str(task.task_id),
-                                message_id=task.last_sent_message_id,
-                            )
-                        except Exception as e:
-                            # 消息可能已被删除，忽略错误
-                            log.warning(
-                                "scheduled_message_delete_previous_failed",
-                                task_id=str(task.task_id),
-                                message_id=task.last_sent_message_id,
-                                error=str(e),
-                            )
+                    dispatch_items.append(self._snapshot_task(task))
+                    task.next_run_at = calculate_next_run_time(task, now)
+                    stats.claimed += 1
 
-                    # 发送消息
-                    message_id = await self._send_message(app, task)
+                await session.commit()
+            except Exception as exc:
+                stats.db_commit_failures += 1
+                await session.rollback()
+                log.error("scheduled_message_claim_failed", error=str(exc), exc_info=True)
+                return []
 
-                    if message_id:
-                        # 置顶消息（如果需要）
-                        if task.pin_message:
-                            try:
-                                await app.bot.pin_chat_message(task.chat_id, message_id)
-                            except Exception as e:
-                                log.warning(
-                                    "scheduled_message_pin_failed",
-                                    task_id=str(task.task_id),
-                                    message_id=message_id,
-                                    error=str(e),
-                                )
+        return dispatch_items
 
-                        # 标记任务已发送
-                        await ScheduledMessageService.mark_task_sent(session, task.task_id, message_id)
-                        await session.commit()
+    @staticmethod
+    def _snapshot_task(task) -> ScheduledMessageDispatchItem:
+        return ScheduledMessageDispatchItem(
+            task_id=str(task.task_id),
+            title=str(task.title or ""),
+            chat_id=int(task.chat_id),
+            delete_previous=bool(task.delete_previous),
+            last_sent_message_id=task.last_sent_message_id,
+            pin_message=bool(task.pin_message),
+            text=task.text,
+            parse_mode=task.parse_mode,
+            media_type=task.media_type,
+            media_file_id=task.media_file_id,
+            buttons=list(task.buttons or []),
+        )
 
-                        log.info(
-                            "scheduled_message_sent",
-                            task_id=str(task.task_id),
-                            title=task.title,
-                            chat_id=task.chat_id,
-                            message_id=message_id,
-                        )
-                    else:
-                        log.error(
-                            "scheduled_message_send_failed",
-                            task_id=str(task.task_id),
-                            title=task.title,
-                        )
+    async def _dispatch_claimed_task(
+        self,
+        app,
+        db,
+        item: ScheduledMessageDispatchItem,
+        *,
+        stats: ScheduledMessageRunStats,
+    ) -> None:
+        if item.delete_previous and item.last_sent_message_id:
+            try:
+                await PublishService.delete(
+                    self._context_for_app(app),
+                    chat_id=item.chat_id,
+                    message_id=item.last_sent_message_id,
+                )
+                log.info(
+                    "scheduled_message_deleted_previous",
+                    task_id=item.task_id,
+                    message_id=item.last_sent_message_id,
+                )
+            except Exception as exc:
+                log.warning(
+                    "scheduled_message_delete_previous_failed",
+                    task_id=item.task_id,
+                    message_id=item.last_sent_message_id,
+                    error=str(exc),
+                )
 
-                except Exception as e:
-                    log.error(
-                        "scheduled_message_task_error",
-                        task_id=str(task.task_id),
-                        title=task.title,
-                        error=str(e),
-                    )
-                    await session.rollback()
+        message_id = await self._send_message(app, item)
+        if not message_id:
+            stats.telegram_failures += 1
+            log.error("scheduled_message_send_failed", task_id=item.task_id, title=item.title)
+            return
+
+        if item.pin_message:
+            try:
+                await PublishService.pin(
+                    self._context_for_app(app),
+                    chat_id=item.chat_id,
+                    message_id=message_id,
+                )
+            except Exception as exc:
+                log.warning(
+                    "scheduled_message_pin_failed",
+                    task_id=item.task_id,
+                    message_id=message_id,
+                    error=str(exc),
+                )
+
+        async with db.session_factory() as session:
+            try:
+                await ScheduledMessageService.mark_task_sent(session, item.task_id, message_id)
+                await session.commit()
+                stats.sent += 1
+                log.info(
+                    "scheduled_message_sent",
+                    task_id=item.task_id,
+                    title=item.title,
+                    chat_id=item.chat_id,
+                    message_id=message_id,
+                )
+            except Exception as exc:
+                stats.db_commit_failures += 1
+                await session.rollback()
+                log.error(
+                    "scheduled_message_mark_sent_failed",
+                    task_id=item.task_id,
+                    message_id=message_id,
+                    error=str(exc),
+                    exc_info=True,
+                )
+
+    @staticmethod
+    def _context_for_app(app):
+        return SimpleNamespace(bot=app.bot, application=app)
 
     async def _send_message(self, app, task) -> int | None:
         """
@@ -196,60 +289,61 @@ class ScheduledMessageTaskRunner(ScheduledTask):
                     reply_markup = InlineKeyboardMarkup(rows)
 
             # 根据媒体类型发送不同类型的消息
+            context = self._context_for_app(app)
             if task.media_type == "photo" and task.media_file_id:
-                # 发送图片
-                msg = await app.bot.send_photo(
-                    task.chat_id,
-                    task.media_file_id,
+                result = await PublishService.send_photo(
+                    context,
+                    chat_id=task.chat_id,
+                    photo=task.media_file_id,
                     caption=task.text,
                     parse_mode=task.parse_mode if task.parse_mode != "none" else None,
                     reply_markup=reply_markup,
                 )
             elif task.media_type == "video" and task.media_file_id:
-                # 发送视频
-                msg = await app.bot.send_video(
-                    task.chat_id,
-                    task.media_file_id,
+                result = await PublishService.send_video(
+                    context,
+                    chat_id=task.chat_id,
+                    video=task.media_file_id,
                     caption=task.text,
                     parse_mode=task.parse_mode if task.parse_mode != "none" else None,
                     reply_markup=reply_markup,
                 )
             elif task.media_type == "document" and task.media_file_id:
-                # 发送文档
-                msg = await app.bot.send_document(
-                    task.chat_id,
-                    task.media_file_id,
+                result = await PublishService.send_document(
+                    context,
+                    chat_id=task.chat_id,
+                    document=task.media_file_id,
                     caption=task.text,
                     parse_mode=task.parse_mode if task.parse_mode != "none" else None,
                     reply_markup=reply_markup,
                 )
             elif task.media_type == "sticker" and task.media_file_id:
-                # 发送贴纸（贴纸不能有 caption）
-                msg = await app.bot.send_sticker(
-                    task.chat_id,
-                    task.media_file_id,
+                result = await PublishService.send_sticker(
+                    context,
+                    chat_id=task.chat_id,
+                    sticker=task.media_file_id,
                 )
             elif task.media_type == "animation" and task.media_file_id:
-                # 发送动画（GIF）
-                msg = await app.bot.send_animation(
-                    task.chat_id,
-                    task.media_file_id,
+                result = await PublishService.send_animation(
+                    context,
+                    chat_id=task.chat_id,
+                    animation=task.media_file_id,
                     caption=task.text,
                     parse_mode=task.parse_mode if task.parse_mode != "none" else None,
                     reply_markup=reply_markup,
                 )
             elif str(task.text or "").strip():
-                # 发送纯文本消息
-                msg = await app.bot.send_message(
-                    task.chat_id,
-                    task.text,
+                result = await PublishService.send(
+                    context,
+                    chat_id=task.chat_id,
+                    text=task.text,
                     parse_mode=task.parse_mode if task.parse_mode != "none" else None,
                     reply_markup=reply_markup,
                 )
             else:
                 return None
 
-            return msg.message_id
+            return result.message_id
 
         except Exception as e:
             log.error(

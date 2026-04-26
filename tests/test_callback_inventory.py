@@ -212,3 +212,31 @@ def test_generated_keyboards_do_not_emit_legacy_admin_back_callbacks() -> None:
     for path, line, callback_data in _callback_samples():
         assert not callback_data.startswith("adm:menu:back_to_menu"), (path, line, callback_data)
         assert callback_data not in forbidden, (path, line, callback_data)
+
+
+def test_scheduler_tasks_use_publish_service_for_message_delivery() -> None:
+    direct_bot_methods = {
+        "send_message",
+        "send_photo",
+        "send_video",
+        "send_document",
+        "send_sticker",
+        "send_animation",
+        "edit_message_text",
+        "delete_message",
+        "pin_chat_message",
+        "unpin_chat_message",
+    }
+    violations: list[tuple[str, int, str]] = []
+    for path in (BACKEND_ROOT / "platform" / "scheduler" / "tasks").rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        rel_path = str(path.relative_to(PROJECT_ROOT))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if isinstance(node.func, ast.Attribute) and node.func.attr in direct_bot_methods:
+                if isinstance(node.func.value, ast.Name) and node.func.value.id == "PublishService":
+                    continue
+                violations.append((rel_path, node.lineno, node.func.attr))
+
+    assert violations == []

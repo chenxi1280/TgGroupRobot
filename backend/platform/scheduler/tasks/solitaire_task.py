@@ -22,11 +22,14 @@ class SolitaireTask(ScheduledTask):
         from backend.platform.db.schema.models.core import Solitaire
         from backend.platform.db.schema.models.enums import SolitaireStatus
         from backend.features.activity.services.solitaire_service import close_solitaire, format_solitaire_message
+        from backend.shared.services.publish_service import PublishService
         import datetime as dt
         import structlog
+        from types import SimpleNamespace
 
         log = structlog.get_logger(__name__)
         db = app.bot_data["db"]
+        context = SimpleNamespace(bot=app.bot, application=app)
 
         async with db.session_factory() as session:
             # 查询所有进行中且有截止时间的接龙
@@ -52,7 +55,8 @@ class SolitaireTask(ScheduledTask):
 
                         # 在群组中发送过期通知
                         try:
-                            await app.bot.send_message(
+                            await PublishService.send(
+                                context,
                                 chat_id=solitaire.chat_id,
                                 text=f"⏰ 接龙已截止\n\n{solitaire.title}\n参与人数: {entries_count} 人"
                             )
@@ -63,7 +67,8 @@ class SolitaireTask(ScheduledTask):
                         if solitaire.message_id:
                             try:
                                 group_text = format_solitaire_message(close_result.solitaire, show_closed=False)
-                                await app.bot.edit_message_text(
+                                await PublishService.edit(
+                                    context,
                                     chat_id=solitaire.chat_id,
                                     message_id=solitaire.message_id,
                                     text=group_text

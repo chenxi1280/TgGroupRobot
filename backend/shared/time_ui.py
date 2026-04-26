@@ -37,8 +37,8 @@ def build_datetime_prompt_text(
     copy_hint = "点击下方蓝色按钮可直接复制\n\n" if show_copy_hint else ""
     return (
         f"{title}\n\n"
-        "格式:年-月-日 时:分\n"
-        f"例如:{sample_markup}\n\n"
+        "格式：YYYY-MM-DD HH:MM\n"
+        f"完整示例：{sample_markup}\n\n"
         f"最近整点示例：{sample_markup}\n"
         f"{copy_hint}"
         f"{tip_lines}{input_hint}"
@@ -88,8 +88,8 @@ def build_hhmm_prompt_text(
         tip_lines = f"{tip_lines}\n\n"
     return (
         f"{title}\n\n"
-        "格式:时:分\n"
-        f"例如:<b>{html.escape(sample_time_text)}</b>\n\n"
+        "格式：HH:MM\n"
+        f"完整示例：<b>{html.escape(sample_time_text)}</b>\n\n"
         f"最近整点示例：<b>{html.escape(sample_time_text)}</b>\n"
         "点击下方蓝色按钮可直接复制\n\n"
         f"{tip_lines}{input_hint}"
@@ -111,7 +111,7 @@ def build_minutes_or_hhmm_prompt_text(
     return (
         f"{title}\n\n"
         "支持两种格式：分钟数 或 HH:MM\n"
-        f"例如:<b>{html.escape(minutes_sample_text)}</b> 或 <b>{html.escape(hhmm_sample_text)}</b>\n\n"
+        f"完整示例：<b>{html.escape(minutes_sample_text)}</b> 或 <b>{html.escape(hhmm_sample_text)}</b>\n\n"
         f"快捷示例：<b>{html.escape(minutes_sample_text)}</b> / <b>{html.escape(hhmm_sample_text)}</b>\n"
         "点击下方蓝色按钮可直接复制\n\n"
         f"{tip_lines}{input_hint}"
@@ -132,8 +132,8 @@ def build_numeric_duration_prompt_text(
         tip_lines = f"{tip_lines}\n\n"
     return (
         f"{title}\n\n"
-        f"格式:纯数字（单位：{unit_label}）\n"
-        f"例如:<b>{html.escape(sample_value_text)}</b>\n\n"
+        f"格式：纯数字（单位：{unit_label}）\n"
+        f"完整示例：<b>{html.escape(sample_value_text)}</b>\n\n"
         f"快捷示例：<b>{html.escape(sample_value_text)}</b>\n"
         "点击下方蓝色按钮可直接复制\n\n"
         f"{tip_lines}{input_hint}"

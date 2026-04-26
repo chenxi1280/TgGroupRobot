@@ -17,6 +17,7 @@ from backend.shared.services.base import ValidationError
 from backend.shared.services.permission_service import PermissionPolicyService
 from backend.shared.services.user_service import ensure_user
 from backend.shared.services.publish_service import PublishService
+from backend.features.group_ops.text_trigger_runtime import is_reserved_group_text_command_for_chat
 
 
 def _is_add_egg_command(text: str, bot_username: str | None) -> bool:
@@ -47,7 +48,6 @@ async def engagement_message_handler(update: Update, context: ContextTypes.DEFAU
     text = (update.effective_message.text or "").strip()
     if not text:
         return False
-
     db: Database = context.application.bot_data["db"]
     if _is_add_egg_command(text, getattr(context.bot, "username", None)):
         allowed, error_text = await PermissionPolicyService.require_manage(
@@ -122,9 +122,15 @@ async def engagement_message_handler(update: Update, context: ContextTypes.DEFAU
         )
         await increase_message_count(session, update.effective_chat.id, update.effective_user.id)
         reward = await get_or_create_chat_reward(session, update.effective_chat.id)
+        reserved_text_command = await is_reserved_group_text_command_for_chat(session, update.effective_chat.id, text)
         command_keyword = reward.command_keyword
-        egg_reward = await try_claim_egg(session, update.effective_chat.id, update.effective_user.id, text)
-        if text == reward.command_keyword:
+        egg_reward = None if reserved_text_command else await try_claim_egg(
+            session,
+            update.effective_chat.id,
+            update.effective_user.id,
+            text,
+        )
+        if not reserved_text_command and text == reward.command_keyword:
             try:
                 chat_reward_result = await try_claim_chat_reward(session, update.effective_chat.id, update.effective_user.id)
             except ValidationError as exc:

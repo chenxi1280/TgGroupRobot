@@ -147,3 +147,49 @@ async def test_group_egg_template_with_answer_is_rejected_before_creation(monkey
 
     assert handled is True
     assert replies == ["⚠️ 彩蛋答案不能在群聊里配置。请到机器人私聊中复制模板并创建，避免群友提前看到答案。"]
+
+
+@pytest.mark.asyncio
+async def test_engagement_reserved_sign_text_does_not_claim_reward_or_egg(monkeypatch):
+    class _Session:
+        async def commit(self):
+            return None
+
+    class _SessionFactory:
+        def __call__(self):
+            return self
+
+        async def __aenter__(self):
+            return _Session()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    async def noop(*args, **kwargs):
+        return None
+
+    async def fake_reward(*args, **kwargs):
+        return SimpleNamespace(command_keyword="签到")
+
+    async def forbidden_claim(*args, **kwargs):
+        raise AssertionError("reserved sign text must stay available for points sign-in")
+
+    monkeypatch.setattr(engagement_handler, "ensure_user", noop)
+    monkeypatch.setattr(engagement_handler, "increase_message_count", noop)
+    monkeypatch.setattr(engagement_handler, "get_or_create_chat_reward", fake_reward)
+    monkeypatch.setattr(engagement_handler, "try_claim_egg", forbidden_claim)
+    monkeypatch.setattr(engagement_handler, "try_claim_chat_reward", forbidden_claim)
+
+    update = SimpleNamespace(
+        effective_chat=SimpleNamespace(id=-1001, type="supergroup"),
+        effective_user=SimpleNamespace(id=42, username=None, first_name="A", last_name=None, language_code=None),
+        effective_message=SimpleNamespace(message_id=9, text="签到"),
+    )
+    context = SimpleNamespace(
+        application=SimpleNamespace(bot_data={"db": SimpleNamespace(session_factory=_SessionFactory())}),
+        bot=SimpleNamespace(username="bot"),
+    )
+
+    handled = await engagement_handler.engagement_message_handler(update, context)
+
+    assert handled is False

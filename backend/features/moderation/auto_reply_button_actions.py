@@ -9,7 +9,7 @@ from backend.features.moderation.auto_reply_buttons import (
     find_auto_reply_button,
 )
 from backend.features.moderation.services.auto_reply_service import get_auto_reply_rule_in_chat
-from backend.features.points.points_handler import points_text_trigger_handler
+from backend.features.group_ops.text_trigger_runtime import try_group_text_trigger
 from backend.platform.db.runtime.session import Database
 from backend.platform.telegram.errors import answer_callback_query_safely
 from backend.shared.callback_parser import CallbackParser
@@ -55,7 +55,7 @@ async def auto_reply_text_button_callback(update: Update, context: ContextTypes.
         return
 
     try:
-        handled = await points_text_trigger_handler(update, context, trigger_text)
+        handled = await try_group_text_trigger(update, context, chat_id, trigger_text)
     except Exception as exc:
         log.warning(
             "auto_reply_text_button_trigger_failed",

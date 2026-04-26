@@ -14,6 +14,11 @@ from backend.features.activity.services.lottery_service import (
     get_lottery_participants,
     get_or_create_lottery_setting,
 )
+from backend.features.activity.services.lottery_subscription import (
+    filter_lottery_subscribed_user_ids,
+    get_lottery_subscribe_targets,
+    requires_lottery_subscribe,
+)
 from backend.features.activity.ui.lottery import manual_draw_summary_keyboard
 
 
@@ -47,6 +52,32 @@ class LotteryDrawMixin:
             participants = await get_lottery_participants(session, lottery_id)
             qualification_rules = lottery.qualification_rules or {}
             preset_winner_ids = qualification_rules.get("preset_winner_ids") or qualification_rules.get("fixed_winner_ids") or []
+            eligible_user_ids = None
+            if requires_lottery_subscribe(lottery):
+                candidate_ids = {int(participant.user_id) for participant in participants}
+                for raw_user_id in preset_winner_ids:
+                    try:
+                        user_id = int(raw_user_id)
+                    except (TypeError, ValueError):
+                        continue
+                    if user_id > 0:
+                        candidate_ids.add(user_id)
+                eligible_user_ids = await filter_lottery_subscribed_user_ids(
+                    context,
+                    get_lottery_subscribe_targets(qualification_rules),
+                    candidate_ids,
+                    check_mode=qualification_rules.get("subscribe_check_mode") or "all",
+                )
+                participants = [participant for participant in participants if int(participant.user_id) in eligible_user_ids]
+                filtered_preset_ids = []
+                for raw_user_id in preset_winner_ids:
+                    try:
+                        user_id = int(raw_user_id)
+                    except (TypeError, ValueError):
+                        continue
+                    if user_id in eligible_user_ids:
+                        filtered_preset_ids.append(user_id)
+                preset_winner_ids = filtered_preset_ids
             if not participants and not preset_winner_ids:
                 await self.message_helper.safe_edit(update, "没有人参与抽奖。")
                 await session.commit()
@@ -82,7 +113,10 @@ class LotteryDrawMixin:
                 perform_random_draw,
             )
 
-            winners = await perform_random_draw(session, lottery)
+            if eligible_user_ids is None:
+                winners = await perform_random_draw(session, lottery)
+            else:
+                winners = await perform_random_draw(session, lottery, eligible_user_ids=eligible_user_ids)
             if winners:
                 user_ids = [winner.user_id for winner in winners]
                 user_stmt = select(TgUser).where(TgUser.id.in_(user_ids))

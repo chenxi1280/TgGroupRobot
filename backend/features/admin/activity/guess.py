@@ -7,6 +7,92 @@ from backend.shared.time_ui import build_copy_options_keyboard, build_minutes_or
 DEFAULT_GUESS_COMMAND = "竞猜"
 
 
+def _guess_title_prompt() -> str:
+    return (
+        "⚽ 竞猜 | 活动名字\n\n"
+        "本步只输入活动名字。\n"
+        "格式：活动名字\n"
+        "完整示例：世界杯决赛胜负"
+    )
+
+
+def _guess_cover_prompt() -> str:
+    return (
+        "⚽ 竞猜 | 活动封面\n\n"
+        "本步只发送图片，或发送“清空”移除封面。\n"
+        "格式：图片消息 或 清空\n"
+        "完整示例：直接发送一张比赛海报图片"
+    )
+
+
+def _guess_description_prompt() -> str:
+    return (
+        "⚽ 竞猜 | 活动说明\n\n"
+        "本步只输入活动说明。\n"
+        "格式：说明文本\n"
+        "完整示例：90 分钟常规时间结果，不含加时。"
+    )
+
+
+def _guess_banker_prompt() -> str:
+    return (
+        "⚽ 竞猜 | 本局庄家\n\n"
+        "本步只输入庄家用户，或发送“清空”切回无庄模式。\n"
+        "格式：用户ID 或 @用户名 或 清空\n"
+        "完整示例：123456789"
+    )
+
+
+def _guess_pool_prompt() -> str:
+    return (
+        "⚽ 竞猜 | 公共奖池\n\n"
+        "本步只输入公共奖池积分，不要带单位。\n"
+        "格式：非负整数\n"
+        "完整示例：1000\n"
+        "不需要奖池可填 0。"
+    )
+
+
+def _guess_options_prompt() -> str:
+    return (
+        "⚽ 竞猜 | 竞猜选项\n\n"
+        "本步只输入竞猜选项，每行一个选项。\n"
+        "格式：编号:文案；也支持每行只写文案。\n"
+        "完整示例：\n"
+        "A:主胜\n"
+        "B:平局\n"
+        "C:客胜"
+    )
+
+
+def _guess_command_prompt() -> str:
+    return (
+        "⚽ 竞猜 | 群内指令\n\n"
+        "本步只输入群内参与指令，不要带斜杠。\n"
+        "格式：指令文字\n"
+        "完整示例：竞猜"
+    )
+
+
+def _guess_rake_ratio_prompt() -> str:
+    return (
+        "⚽ 竞猜 | 抽水比例\n\n"
+        "本步只输入 0 到 1 之间的小数。\n"
+        "格式：小数\n"
+        "完整示例：0.1\n"
+        "0.1 表示抽水 10%。"
+    )
+
+
+def _guess_rake_owner_prompt() -> str:
+    return (
+        "⚽ 竞猜 | 抽水归属\n\n"
+        "本步只输入抽水归属用户，或发送“清空”清除。\n"
+        "格式：用户ID 或 @用户名 或 清空\n"
+        "完整示例：123456789"
+    )
+
+
 def _guess_draft_with_defaults(draft: dict | None) -> dict:
     next_draft = dict(draft or {})
     if not str(next_draft.get("command_keyword") or "").strip():
@@ -217,7 +303,7 @@ class GuessAdminControllerMixin:
                 if sub == "start":
                     await _start_guess_input_state(session, user_id=update.effective_user.id, chat_id=chat_id, state_type="guess_wait_title", draft=_guess_draft_with_defaults({}))
                     await session.commit()
-                    await self.message_helper.safe_edit(update, "⚽ 竞猜 | 活动名字\n\n👉 请输入活动名字：", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"guess:home:{chat_id}")]]))
+                    await self.message_helper.safe_edit(update, _guess_title_prompt(), reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"guess:home:{chat_id}")]]))
                     return
                 if sub in {"title", "cover", "description", "banker", "pool", "options", "command", "deadline"}:
                     state_map = {
@@ -231,13 +317,13 @@ class GuessAdminControllerMixin:
                         "deadline": "guess_wait_deadline",
                     }
                     prompt_map = {
-                        "title": "⚽ 竞猜 | 活动名字\n\n👉 请输入活动名字：\n例如：世界杯决赛胜负",
-                        "cover": "⚽ 竞猜 | 活动封面\n\n请发送图片，或发送“清空”移除封面。",
-                        "description": "⚽ 竞猜 | 活动说明\n\n👉 请输入活动说明：\n例如：90 分钟常规时间结果，不含加时。",
-                        "banker": "⚽ 竞猜 | 本局庄家\n\n请输入用户名或用户ID，发送“清空”切回无庄模式。",
-                        "pool": "⚽ 竞猜 | 公共奖池\n\n👉 请输入公共奖池积分：\n例如：1000；不需要奖池可填 0。",
-                        "options": "⚽ 竞猜 | 竞猜选项\n\n每行一个选项，支持 `编号:文案`。\n例如：\nA:主胜\nB:平局\nC:客胜",
-                        "command": "⚽ 竞猜 | 群内指令\n\n👉 请输入群内指令，例如：竞猜",
+                        "title": _guess_title_prompt(),
+                        "cover": _guess_cover_prompt(),
+                        "description": _guess_description_prompt(),
+                        "banker": _guess_banker_prompt(),
+                        "pool": _guess_pool_prompt(),
+                        "options": _guess_options_prompt(),
+                        "command": _guess_command_prompt(),
                     }
                     await _start_guess_input_state(session, user_id=update.effective_user.id, chat_id=chat_id, state_type=state_map[sub], draft=draft)
                     await session.commit()
@@ -317,12 +403,12 @@ class GuessAdminControllerMixin:
                 if sub == "rake_ratio":
                     await _start_guess_input_state(session, user_id=update.effective_user.id, chat_id=chat_id, state_type="guess_wait_rake_ratio", draft={})
                     await session.commit()
-                    await self.message_helper.safe_edit(update, "⚽ 竞猜 | 抽水比例\n\n请输入 0 到 1 之间的小数，例如 0.1。", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"guess:settings:{chat_id}:home")]]))
+                    await self.message_helper.safe_edit(update, _guess_rake_ratio_prompt(), reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"guess:settings:{chat_id}:home")]]))
                     return
                 if sub == "rake_owner":
                     await _start_guess_input_state(session, user_id=update.effective_user.id, chat_id=chat_id, state_type="guess_wait_rake_owner", draft={})
                     await session.commit()
-                    await self.message_helper.safe_edit(update, "⚽ 竞猜 | 抽水归属\n\n请输入用户名或用户ID，发送“清空”清除。", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"guess:settings:{chat_id}:home")]]))
+                    await self.message_helper.safe_edit(update, _guess_rake_owner_prompt(), reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"guess:settings:{chat_id}:home")]]))
                     return
                 if sub == "delete_mode":
                     await update_guess_setting(session, chat_id, delete_message_mode=callback_data.get(4))

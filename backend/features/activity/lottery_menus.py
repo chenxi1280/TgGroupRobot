@@ -9,6 +9,8 @@ from sqlalchemy import select
 from backend.platform.db.runtime.session import Database
 from backend.platform.db.schema.models.core import TgChat
 from backend.features.activity.services.lottery_service import (
+    format_lottery_subscribe_targets,
+    get_lottery_subscribe_targets,
     format_lottery_stats_message,
     get_chat_lotteries,
     get_lottery,
@@ -30,6 +32,7 @@ def _lottery_type_title(lottery_type: str) -> str:
         "points": "💰 积分抽奖",
         "invite": "👥 邀请抽奖",
         "activity": "🔥 群活跃抽奖",
+        "subscribe": "📣 强制订阅抽奖",
     }.get(lottery_type, "🎁 抽奖")
 
 
@@ -69,7 +72,7 @@ class LotteryMenuMixin:
         text = (
             f"🎁[{chat_title}]抽奖\n\n"
             f"{format_lottery_stats_message(stats)}\n\n"
-            "当前支持 4 类抽奖：通用 / 积分 / 邀请 / 群活跃。\n"
+            "当前支持 5 类抽奖：通用 / 积分 / 邀请 / 群活跃 / 强制订阅。\n"
             "不同类型会按各自资格条件校验参与资格。"
         )
         await self.message_helper.safe_edit(
@@ -93,6 +96,7 @@ class LotteryMenuMixin:
                 "• 💰 积分抽奖：按积分门槛/费用参与",
                 "• 👥 邀请抽奖：按邀请人数参与",
                 "• 🔥 群活跃抽奖：按近 N 天发言数参与",
+                "• 📣 强制订阅抽奖：单独配置本次抽奖关注目标，需先关注后参与",
             ]
         )
         await self.message_helper.safe_edit(
@@ -221,6 +225,7 @@ class LotteryMenuMixin:
                 ),
                 InlineKeyboardButton("🎁 通用", callback_data=f"lot:list:{target_chat_id}:{status}:common:0"),
                 InlineKeyboardButton("💰 积分", callback_data=f"lot:list:{target_chat_id}:{status}:points:0"),
+                InlineKeyboardButton("📣 关注", callback_data=f"lot:list:{target_chat_id}:{status}:subscribe:0"),
             ]
         )
         keyboard_rows.append(
@@ -301,6 +306,8 @@ class LotteryMenuMixin:
             lines.append(f"👥 邀请门槛：{rules['required_invites']}（最近 {rules.get('window_days', 7)} 天）")
         if rules.get("required_activity_count"):
             lines.append(f"🔥 活跃门槛：{rules['required_activity_count']}（最近 {rules.get('window_days', 7)} 天）")
+        if lottery.lottery_type == "subscribe" or rules.get("requires_lottery_subscribe") or rules.get("requires_force_subscribe"):
+            lines.append(f"📣 订阅目标：{format_lottery_subscribe_targets(get_lottery_subscribe_targets(rules))}")
         if selection_mode == "ranking_random":
             lines.append(f"🏆 入围人数：前 {int(rules.get('finalist_limit') or 0)} 名")
         is_private_context = bool(update.effective_chat and update.effective_chat.type == "private")

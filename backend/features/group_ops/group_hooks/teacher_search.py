@@ -4,6 +4,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
 from backend.features.garage.services.garage_features_service import TeacherSearchService
+from backend.features.group_ops.text_trigger_runtime import is_reserved_group_text_command_for_chat
 
 from .common import _reply_garage_feedback
 
@@ -113,7 +114,11 @@ async def _process_teacher_search_features(
         return True
 
     footer_label = (teacher_setting.footer_button_label or "").strip()
-    if footer_label and text == footer_label:
+    if (
+        footer_label
+        and text == footer_label
+        and not await is_reserved_group_text_command_for_chat(session, chat.id, text)
+    ):
         await session.commit()
         await _reply_garage_feedback(
             context,

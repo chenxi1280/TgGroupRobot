@@ -36,13 +36,12 @@ async def solitaire_cancel_callback(update: Update, context: ContextTypes.DEFAUL
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
-        await clear_user_state(session, target_chat_id, user.id)
+        state_chat_id = user.id if chat.type == "private" else chat.id
+        await clear_user_state(session, state_chat_id, user.id)
         await session.commit()
 
-    if chat.type == "private":
-        from backend.features.admin.admin_handler import _show_private_admin_menu
-
-        await _show_private_admin_menu(update, context, target_chat_id)
-    else:
-        await q.edit_message_text("已取消创建", reply_markup=solitaire_menu_keyboard(None))
+    await q.edit_message_text(
+        "已取消配置，已返回接龙管理。",
+        reply_markup=solitaire_menu_keyboard(target_chat_id if chat.type == "private" else None),
+    )
     return ConversationHandler.END
