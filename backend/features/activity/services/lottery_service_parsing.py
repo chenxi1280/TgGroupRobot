@@ -221,6 +221,86 @@ def _parse_winner_ids(value: str, *, allow_unresolved_refs: bool = False) -> lis
     return ids
 
 
+def validate_unique_prize_names(prizes: list[dict]) -> None:
+    seen: set[str] = set()
+    duplicates: list[str] = []
+    for prize in prizes:
+        name = str(prize.get("name") or "").strip()
+        if not name:
+            continue
+        if name in seen and name not in duplicates:
+            duplicates.append(name)
+        seen.add(name)
+    if duplicates:
+        raise ValueError("奖品名称不能重复：" + "、".join(duplicates))
+
+
+def _split_preset_assignment_value(value: str, prizes: list[dict]) -> tuple[str | None, str]:
+    text = value.strip()
+    prize_names = sorted(
+        {str(prize.get("name") or "").strip() for prize in prizes if str(prize.get("name") or "").strip()},
+        key=len,
+        reverse=True,
+    )
+    for prize_name in prize_names:
+        for separator in (":", "：", "=", "＝"):
+            prefix = f"{prize_name}{separator}"
+            if text.startswith(prefix):
+                return prize_name, text[len(prefix):].strip()
+    return None, text
+
+
+def _prize_quantity_by_name(prizes: list[dict]) -> dict[str, int]:
+    quantities: dict[str, int] = {}
+    for prize in prizes:
+        name = str(prize.get("name") or "").strip()
+        if not name:
+            continue
+        quantities[name] = quantities.get(name, 0) + int(prize.get("quantity", 1) or 1)
+    return quantities
+
+
+def validate_preset_winner_assignments(assignments: list[dict], prizes: list[dict]) -> None:
+    if not assignments:
+        return
+    quantity_by_name = _prize_quantity_by_name(prizes)
+    counts: dict[str, int] = {}
+    for item in assignments:
+        prize_name = str(item.get("prize_name") or "").strip()
+        if prize_name not in quantity_by_name:
+            raise ValueError(f"内定中奖奖品不存在：{prize_name}")
+        counts[prize_name] = counts.get(prize_name, 0) + 1
+    for prize_name, count in counts.items():
+        if count > quantity_by_name[prize_name]:
+            raise ValueError(f"内定中奖人超过奖品「{prize_name}」的中奖人数")
+
+
+def parse_preset_winner_values(
+    values: list[str],
+    prizes: list[dict],
+    *,
+    allow_unresolved_refs: bool = False,
+) -> tuple[list[int], list[dict]]:
+    preset_winner_ids: list[int] = []
+    preset_winner_assignments: list[dict] = []
+    for value in values:
+        prize_name, winner_value = _split_preset_assignment_value(value, prizes)
+        if not winner_value:
+            continue
+        for user_id in _parse_winner_ids(
+            winner_value,
+            allow_unresolved_refs=allow_unresolved_refs,
+        ):
+            if user_id not in preset_winner_ids:
+                preset_winner_ids.append(user_id)
+            if prize_name is not None and not any(
+                int(item.get("user_id") or 0) == user_id for item in preset_winner_assignments
+            ):
+                preset_winner_assignments.append({"user_id": user_id, "prize_name": prize_name})
+    validate_preset_winner_assignments(preset_winner_assignments, prizes)
+    return preset_winner_ids, preset_winner_assignments
+
+
 def parse_lottery_config_text(
     text: str,
     lottery_type: str = "common",
@@ -258,6 +338,8 @@ def parse_lottery_config_text(
     required_activity_count = 0
     finalist_limit = 0
     preset_winner_ids: list[int] = []
+    preset_winner_values: list[str] = []
+    preset_winner_assignments: list[dict] = []
     subscribe_target_values: list[str] = []
     winner_block = False
     subscribe_target_block = False
@@ -281,14 +363,7 @@ def parse_lottery_config_text(
             subscribe_target_block = False
         if winner_block:
             if split_line is None or split_line[0] not in CONFIG_FIELD_NAMES:
-                preset_winner_ids.extend(
-                    user_id
-                    for user_id in _parse_winner_ids(
-                        line,
-                        allow_unresolved_refs=allow_unresolved_winner_refs,
-                    )
-                    if user_id not in preset_winner_ids
-                )
+                preset_winner_values.append(line)
                 continue
             winner_block = False
         else:
@@ -322,14 +397,7 @@ def parse_lottery_config_text(
         elif field_name == "入围人数":
             finalist_limit = _parse_non_negative_int(field_value, "入围人数")
         elif field_name in WINNER_FIELD_PREFIXES:
-            preset_winner_ids.extend(
-                user_id
-                for user_id in _parse_winner_ids(
-                    field_value,
-                    allow_unresolved_refs=allow_unresolved_winner_refs,
-                )
-                if user_id not in preset_winner_ids
-            )
+            preset_winner_values.append(field_value)
 
     prizes = []
     prize_start = False
@@ -364,6 +432,12 @@ def parse_lottery_config_text(
 
     if not prizes:
         raise ValueError("至少需要一个奖品")
+    validate_unique_prize_names(prizes)
+    preset_winner_ids, preset_winner_assignments = parse_preset_winner_values(
+        preset_winner_values,
+        prizes,
+        allow_unresolved_refs=allow_unresolved_winner_refs,
+    )
     prize_slot_count = sum(int(prize.get("quantity", 1)) for prize in prizes)
     if len(preset_winner_ids) > prize_slot_count:
         raise ValueError("内定中奖人数不能超过奖品总数量")
@@ -408,6 +482,7 @@ def parse_lottery_config_text(
         point_type_name=None,
         subscribe_targets=subscribe_targets,
         subscribe_check_mode="all",
+        preset_winner_assignments=preset_winner_assignments,
     )
 
 

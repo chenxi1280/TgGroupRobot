@@ -14,6 +14,8 @@ from backend.shared.services.formatters import format_user_display_name
 
 log = structlog.get_logger(__name__)
 
+FORCE_SUBSCRIBE_CONFIG_NOTIFY_SECONDS = 300
+
 
 def _normalize_force_subscribe_target(value: str | int | None) -> str | int | None:
     if value is None:
@@ -35,6 +37,25 @@ def _normalize_force_subscribe_target(value: str | int | None) -> str | int | No
     if not path or "/" in path or path.startswith("+") or path == "joinchat":
         return None
     return f"@{path}"
+
+
+def _is_public_force_subscribe_target(value: str | int | None) -> bool:
+    if not isinstance(value, str):
+        return False
+    raw = value.strip()
+    if raw.startswith("@"):
+        return _normalize_force_subscribe_target(raw) is not None
+    parsed = urlparse(raw)
+    return (
+        parsed.scheme in {"http", "https"}
+        and parsed.netloc.lower() in {"t.me", "www.t.me"}
+        and not parsed.query
+        and not parsed.fragment
+        and bool(parsed.path.strip("/"))
+        and "/" not in parsed.path.strip("/")
+        and not parsed.path.strip("/").startswith("+")
+        and parsed.path.strip("/") != "joinchat"
+    )
 
 
 def _force_subscribe_target_fallback_label(value: str | int | None) -> str:
@@ -121,16 +142,22 @@ async def diagnose_force_subscribe_targets(context: ContextTypes.DEFAULT_TYPE, s
         if not raw_target:
             continue
         target = _normalize_force_subscribe_target(raw_target)
-        if target is None:
-            diagnostics.append(f"绑定目标{index}格式无效，请重新绑定。")
+        if target is None or not _is_public_force_subscribe_target(raw_target):
+            diagnostics.append(f"绑定目标{index}格式无效，请重新绑定公开频道/群组的 @用户名。")
             continue
         if bot is None or not hasattr(bot, "get_chat"):
             diagnostics.append(f"绑定目标{index}暂时无法检查机器人权限。")
             continue
         try:
-            await bot.get_chat(chat_id=target)
+            target_chat = await bot.get_chat(chat_id=target)
         except Exception:
             diagnostics.append(f"绑定目标{index}机器人无法访问，请确认机器人已加入并有权限。")
+            continue
+        if getattr(target_chat, "type", None) not in {"channel", "group", "supergroup"}:
+            diagnostics.append(f"绑定目标{index}不是频道/群组，请重新绑定公开频道/群组。")
+            continue
+        if not str(getattr(target_chat, "username", "") or "").strip():
+            diagnostics.append(f"绑定目标{index}没有公开用户名，无法生成关注按钮。")
             continue
         if bot_id is None or not hasattr(bot, "get_chat_member"):
             continue
@@ -165,10 +192,65 @@ async def _build_resolved_force_subscribe_channel_button(
 ) -> InlineKeyboardButton | None:
     if not value:
         return None
+    if not _is_public_force_subscribe_target(value):
+        return None
     fallback = _force_subscribe_target_fallback_label(value)
     target_chat = await _resolve_force_subscribe_target_chat(context, value)
     label = _force_subscribe_label_from_chat(target_chat, fallback) if target_chat is not None else fallback
     return _build_force_subscribe_channel_button(value, label=label, target_chat=target_chat)
+
+
+async def _notify_force_subscribe_config_issue(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+    diagnostics: list[dict[str, object]],
+    *,
+    fail_open: bool,
+) -> None:
+    issue_reasons = [
+        str(item.get("reason") or "unknown")
+        for item in diagnostics
+        if not bool(item.get("checked"))
+    ]
+    if not issue_reasons:
+        return
+
+    now = dt.datetime.now(dt.UTC)
+    bot_data = getattr(getattr(context, "application", None), "bot_data", None)
+    cache_key = (chat_id, tuple(sorted(issue_reasons)))
+    if isinstance(bot_data, dict):
+        notify_cache = bot_data.setdefault("_force_subscribe_config_issue_notified_at", {})
+        last_notified = notify_cache.get(cache_key)
+        if isinstance(last_notified, dt.datetime):
+            elapsed = (now - last_notified).total_seconds()
+            if elapsed < FORCE_SUBSCRIBE_CONFIG_NOTIFY_SECONDS:
+                return
+        notify_cache[cache_key] = now
+
+    if fail_open:
+        text = (
+            "⚠️ 强制订阅配置异常，已临时放行本次发言，避免误伤已关注用户。\n"
+            "请管理员重新绑定公开频道/群组的 @用户名，确保能生成关注按钮。"
+        )
+    else:
+        text = (
+            "⚠️ 强制订阅部分目标配置异常，已跳过这些异常目标。\n"
+            "请管理员重新绑定公开频道/群组的 @用户名，确保能生成关注按钮。"
+        )
+    try:
+        await context.bot.send_message(chat_id=chat_id, text=text)
+        log.warning(
+            "force_subscribe_config_issue_notified",
+            chat_id=chat_id,
+            diagnostics=diagnostics,
+        )
+    except Exception as exc:
+        log.warning(
+            "force_subscribe_config_issue_notify_failed",
+            chat_id=chat_id,
+            diagnostics=diagnostics,
+            error=str(exc),
+        )
 
 
 def _is_force_subscribe_member(member) -> bool:
@@ -228,14 +310,14 @@ async def _check_force_subscribe(
     diagnostics: list[dict[str, object]] = []
     for configured_target in configured_targets:
         target = _normalize_force_subscribe_target(configured_target)
-        if target is None:
-            subscribed_results.append(False)
+        if target is None or not _is_public_force_subscribe_target(configured_target):
             diagnostics.append(
                 {
                     "target": configured_target,
-                    "normalized_target": None,
+                    "normalized_target": target,
                     "subscribed": False,
-                    "reason": "invalid_target",
+                    "checked": False,
+                    "reason": "invalid_public_target",
                 }
             )
             log.warning(
@@ -253,18 +335,19 @@ async def _check_force_subscribe(
                 {
                     "target": configured_target,
                     "normalized_target": target,
+                    "checked": True,
                     "status": getattr(member, "status", None),
                     "is_member": getattr(member, "is_member", None),
                     "subscribed": subscribed,
                 }
             )
         except Exception as exc:
-            subscribed_results.append(False)
             diagnostics.append(
                 {
                     "target": configured_target,
                     "normalized_target": target,
                     "subscribed": False,
+                    "checked": False,
                     "reason": type(exc).__name__,
                     "error": str(exc),
                 }
@@ -278,7 +361,18 @@ async def _check_force_subscribe(
                 error=str(exc),
             )
 
+    if not subscribed_results:
+        await _notify_force_subscribe_config_issue(context, chat.id, diagnostics, fail_open=True)
+        log.warning(
+            "force_subscribe_skip_all_targets_invalid",
+            chat_id=chat.id,
+            user_id=user.id,
+            diagnostics=diagnostics,
+        )
+        return True
+
     check_mode = getattr(settings, "force_subscribe_check_mode", "all")
+    await _notify_force_subscribe_config_issue(context, chat.id, diagnostics, fail_open=False)
     subscribed = all(subscribed_results) if check_mode == "all" else any(subscribed_results)
     log.info(
         "force_subscribe_check_result",

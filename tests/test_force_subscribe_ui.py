@@ -123,6 +123,49 @@ async def test_force_subscribe_menu_resolves_link_target_title(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_force_subscribe_menu_surfaces_invalid_legacy_target(monkeypatch):
+    rendered: list[tuple[str, object]] = []
+    settings = SimpleNamespace(
+        force_subscribe_enabled=True,
+        force_subscribe_bound_channel_1="TgMgtPrd_bot",
+        force_subscribe_bound_channel_2=None,
+        force_subscribe_delete_warn_after_seconds=60,
+        force_subscribe_guide_text="请先订阅",
+        force_subscribe_cover_file_id=None,
+        force_subscribe_custom_buttons_enabled=False,
+        force_subscribe_buttons=[],
+        force_subscribe_not_subscribed_action="delete_and_warn",
+        force_subscribe_check_mode="all",
+    )
+
+    async def fake_set_current_chat(db, user_id: int, chat_id: int):
+        return None
+
+    async def fake_get_chat_settings(session, chat_id: int):
+        return settings
+
+    async def fake_safe_edit(update, text, reply_markup):
+        rendered.append((text, reply_markup))
+
+    class _Bot:
+        async def get_chat(self, *, chat_id):
+            raise AssertionError("legacy bare usernames should not be resolved as valid targets")
+
+    monkeypatch.setattr(admin_handler._admin_handler, "_set_current_chat", fake_set_current_chat)
+    monkeypatch.setattr(admin_handler, "get_chat_settings", fake_get_chat_settings)
+    monkeypatch.setattr(admin_handler._admin_handler.message_helper, "safe_edit", fake_safe_edit)
+
+    update = SimpleNamespace(effective_user=SimpleNamespace(id=7))
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}), bot=_Bot())
+
+    await admin_handler._admin_handler._show_force_subscribe_menu(update, context, -100123)
+
+    text, keyboard = rendered[0]
+    assert "⚠️ 绑定目标1格式无效，请重新绑定公开频道/群组的 @用户名。" in text
+    assert keyboard.inline_keyboard[1][1].text == "TgMgtPrd_bot"
+
+
+@pytest.mark.asyncio
 async def test_force_subscribe_cycle_action_updates_setting(monkeypatch):
     settings = SimpleNamespace(
         force_subscribe_not_subscribed_action="delete_and_warn",
@@ -381,7 +424,7 @@ async def test_force_subscribe_target_input_validates_accessible_group(monkeypat
 
         async def get_chat(self, *, chat_id):
             bot_calls.append(("get_chat", chat_id))
-            return SimpleNamespace(type="supergroup")
+            return SimpleNamespace(type="supergroup", username="group_a")
 
         async def get_chat_member(self, *, chat_id, user_id):
             bot_calls.append(("get_chat_member", (chat_id, user_id)))
@@ -475,5 +518,59 @@ async def test_force_subscribe_target_input_rejects_bot_deep_link(monkeypatch):
     )
 
     assert settings.force_subscribe_bound_channel_1 == "@old_channel"
-    assert replies == ["本期不支持机器人目标，请填写频道或群组的 @用户名、t.me 链接或数字 ID。"]
+    assert replies == ["本期不支持机器人目标，请填写公开频道或群组的 @用户名 / t.me 链接。"]
+    assert shown == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("raw_target", ["TgMgtPrd_bot", "-100456", "https://t.me/+invite"])
+async def test_force_subscribe_target_input_rejects_unsupported_targets(monkeypatch, raw_target: str):
+    settings = SimpleNamespace(force_subscribe_bound_channel_1="@old_channel")
+    replies: list[str] = []
+    shown: list[int] = []
+
+    async def fake_require_manage(*args, **kwargs):
+        return True, None
+
+    async def fake_get_chat_settings(session, chat_id: int):
+        return settings
+
+    async def fake_show_force_subscribe_menu(update, context, chat_id: int):
+        shown.append(chat_id)
+
+    class _Bot:
+        id = 777
+
+        async def get_chat(self, *, chat_id):
+            raise AssertionError("unsupported targets should be rejected before Telegram lookup")
+
+    monkeypatch.setattr(admin_handler.PermissionPolicyService, "require_manage", fake_require_manage)
+    monkeypatch.setattr(admin_handler, "get_chat_settings", fake_get_chat_settings)
+    monkeypatch.setattr(admin_handler._admin_handler, "_show_force_subscribe_menu", fake_show_force_subscribe_menu)
+
+    async def _reply_text(text: str, **kwargs):
+        replies.append(text)
+
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=9),
+        effective_message=SimpleNamespace(reply_text=_reply_text),
+    )
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}), bot=_Bot())
+    session = _Session()
+    state = SimpleNamespace(
+        state_type="force_subscribe_channel_1_input",
+        state_data={"target_chat_id": -100123},
+        chat_id=9,
+    )
+
+    await handle_force_subscribe_channel_input(
+        update,
+        context,
+        session,
+        state,
+        raw_target,
+    )
+
+    assert settings.force_subscribe_bound_channel_1 == "@old_channel"
+    assert replies == ["目标格式错误，请填写公开频道或群组的 @用户名 / t.me 链接，不支持裸用户名、数字 ID 或私密邀请链接。"]
     assert shown == []

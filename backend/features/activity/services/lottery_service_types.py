@@ -27,6 +27,7 @@ class ParsedLotteryConfig:
     point_type_name: str | None = None
     subscribe_targets: list[dict] | None = None
     subscribe_check_mode: str = "all"
+    preset_winner_assignments: list[dict] | None = None
 
 
 @dataclass

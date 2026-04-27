@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from telegram.error import NetworkError
 
 from backend.features.activity import lottery_handler
+import backend.features.activity.lottery_creation as lottery_creation_module
 import backend.features.activity.lottery_drawing as lottery_drawing_module
 import backend.features.activity.lottery_participation as lottery_participation_module
 from backend.features.activity.lottery_message_callbacks import lottery_cancel_callback_impl
@@ -277,6 +278,28 @@ def test_lottery_wizard_config_summary_includes_core_fields_and_preset():
     assert rules["point_type_id"] == 7
     assert rules["point_type_name"] == "出击分"
     assert rules["preset_winner_ids"] == [123456789]
+
+
+def test_lottery_wizard_config_summary_includes_assigned_preset_prize():
+    config = _build_config_from_state(
+        {
+            "target_chat_id": -1001,
+            "lottery_type": "common",
+            "selection_mode": "threshold_random",
+            "draw_trigger": "full_participants",
+            "title": "指定奖品抽奖",
+            "max_participants": 100,
+            "prizes": [{"name": "一等奖", "quantity": 1, "points_reward": 0}, {"name": "二等奖", "quantity": 1, "points_reward": 0}],
+            "preset_winner_ids": [123456789],
+            "preset_winner_assignments": [{"user_id": 123456789, "prize_name": "二等奖"}],
+        }
+    )
+
+    summary = _format_lottery_wizard_summary(config)
+    rules = _qualification_rules_from_config(config)
+
+    assert "内定中奖人：123456789（二等奖）" in summary
+    assert rules["preset_winner_assignments"] == [{"user_id": 123456789, "prize_name": "二等奖"}]
 
 
 def test_lottery_wizard_public_summary_hides_preset_winners():
@@ -736,6 +759,67 @@ async def test_lottery_wizard_collects_common_full_draw_fields():
 
 
 @pytest.mark.asyncio
+async def test_subscribe_lottery_wizard_prompts_prize_before_subscribe_target(monkeypatch):
+    replies: list[dict[str, object]] = []
+    state = SimpleNamespace(
+        state_data={
+            "step": "title",
+            "target_chat_id": -1001,
+            "lottery_type": "subscribe",
+            "selection_mode": "threshold_random",
+            "draw_trigger": "full_participants",
+            "qualification_window_days": 7,
+            "prizes": [],
+            "preset_winner_ids": [],
+        }
+    )
+
+    class _Message:
+        async def reply_text(self, text, reply_markup=None, **kwargs):
+            replies.append({"text": text, "reply_markup": reply_markup})
+
+    class _Session:
+        async def commit(self):
+            return None
+
+    async def fake_validate_lottery_subscribe_targets(context, targets):
+        return targets
+
+    monkeypatch.setattr(
+        lottery_creation_module,
+        "validate_lottery_subscribe_targets",
+        fake_validate_lottery_subscribe_targets,
+    )
+
+    update = SimpleNamespace(effective_message=_Message())
+    session = _Session()
+
+    await _handle_lottery_wizard_message(update, SimpleNamespace(), session, state, "关注后抽奖")
+    assert state.state_data["step"] == "prize_name"
+    assert "本步只输入奖品名称，不要带中奖人数" in replies[-1]["text"]
+    assert "本步只输入本次抽奖要求关注的频道/群组" not in replies[-1]["text"]
+    assert "下一步: 填写中奖人数/份数" in replies[-1]["text"]
+
+    await _handle_lottery_wizard_message(update, SimpleNamespace(), session, state, "1USDT")
+    await _handle_lottery_wizard_message(update, SimpleNamespace(), session, state, "1")
+    state.state_data["step"] = "draw_param"
+    await _handle_lottery_wizard_message(update, SimpleNamespace(), session, state, "100")
+
+    assert state.state_data["step"] == "subscribe_targets"
+    assert "本步只输入本次抽奖要求关注的频道/群组" in replies[-1]["text"]
+    assert "下一步: 确认配置并发布" in replies[-1]["text"]
+
+    await _handle_lottery_wizard_message(update, SimpleNamespace(), session, state, "@channel_a")
+
+    assert state.state_data["step"] == "preset_confirm"
+    assert state.state_data["subscribe_targets"] == [
+        {"target": "@channel_a", "label": "@channel_a", "url": "https://t.me/channel_a"}
+    ]
+    assert "📣 强制订阅抽奖" in replies[-1]["text"]
+    assert "订阅目标：@channel_a" in replies[-1]["text"]
+
+
+@pytest.mark.asyncio
 async def test_lottery_wizard_collects_multiple_prize_tiers():
     replies: list[dict[str, object]] = []
     state = SimpleNamespace(
@@ -888,6 +972,91 @@ async def test_lottery_wizard_rejects_too_many_preset_winners():
 
     assert any("内定中奖人数不能超过中奖人数" in text for text in replies)
     assert state.state_data["preset_winner_ids"] == []
+
+
+@pytest.mark.asyncio
+async def test_lottery_wizard_rejects_duplicate_prize_name():
+    replies: list[str] = []
+    state = SimpleNamespace(
+        state_data={
+            "step": "prize_name",
+            "target_chat_id": -1001,
+            "lottery_type": "common",
+            "selection_mode": "threshold_random",
+            "draw_trigger": "full_participants",
+            "title": "抽奖",
+            "qualification_window_days": 7,
+            "prizes": [{"name": "1USDT", "quantity": 1, "points_reward": 0}],
+            "preset_winner_ids": [],
+        }
+    )
+
+    class _Message:
+        async def reply_text(self, text, **kwargs):
+            replies.append(text)
+
+    class _Session:
+        async def commit(self):
+            return None
+
+    await _handle_lottery_wizard_message(
+        SimpleNamespace(effective_message=_Message()),
+        SimpleNamespace(),
+        _Session(),
+        state,
+        "1USDT",
+    )
+
+    assert any("奖品名称不能重复：1USDT" in text for text in replies)
+    assert state.state_data["step"] == "prize_name"
+
+
+@pytest.mark.asyncio
+async def test_lottery_wizard_accepts_assigned_preset_winner(monkeypatch):
+    replies: list[dict[str, object]] = []
+    state = SimpleNamespace(
+        state_data={
+            "step": "preset_winners",
+            "target_chat_id": -1001,
+            "lottery_type": "common",
+            "selection_mode": "threshold_random",
+            "draw_trigger": "full_participants",
+            "title": "抽奖",
+            "max_participants": 100,
+            "qualification_window_days": 7,
+            "prizes": [{"name": "一等奖", "quantity": 1, "points_reward": 0}, {"name": "二等奖", "quantity": 1, "points_reward": 0}],
+            "preset_winner_ids": [],
+        }
+    )
+
+    class _Message:
+        async def reply_text(self, text, reply_markup=None, **kwargs):
+            replies.append({"text": text, "reply_markup": reply_markup})
+
+    class _Session:
+        async def commit(self):
+            return None
+
+    async def fake_resolve_username(session, context, username):
+        return 67890
+
+    monkeypatch.setattr(lottery_creation_module, "_resolve_username_to_user_id", fake_resolve_username)
+
+    await _handle_lottery_wizard_message(
+        SimpleNamespace(effective_message=_Message()),
+        SimpleNamespace(bot=None),
+        _Session(),
+        state,
+        "一等奖: 12345\n二等奖: @alice",
+    )
+
+    assert state.state_data["step"] == "preset_confirm"
+    assert state.state_data["preset_winner_ids"] == [12345, 67890]
+    assert state.state_data["preset_winner_assignments"] == [
+        {"user_id": 12345, "prize_name": "一等奖"},
+        {"user_id": 67890, "prize_name": "二等奖"},
+    ]
+    assert "内定中奖人：12345（一等奖）, 67890（二等奖）" in replies[-1]["text"]
 
 
 @pytest.mark.asyncio
@@ -1202,6 +1371,52 @@ def test_parse_time_deadline_lottery_keeps_deadline_and_preset_winners():
     assert config.draw_time.year == 2099
     assert config.preset_winner_ids == [12345]
     assert "截止开奖时间: 2099-12-31 20:00" in format_lottery_announcement_text(config)
+
+
+def test_parse_lottery_config_accepts_preset_winner_prize_assignments():
+    config = parse_lottery_config_text(
+        "\n".join(
+            [
+                "指定奖品抽奖",
+                "开奖时间: 2099-12-31 20:00",
+                "最低积分: 0",
+                "参与费用: 0",
+                "最大人数: 50",
+                "入群天数: 0",
+                "内定中奖人:",
+                "一等奖: 12345",
+                "二等奖: 67890",
+                "奖品:",
+                "一等奖,1",
+                "二等奖,1",
+            ]
+        )
+    )
+
+    assert config.preset_winner_ids == [12345, 67890]
+    assert config.preset_winner_assignments == [
+        {"user_id": 12345, "prize_name": "一等奖"},
+        {"user_id": 67890, "prize_name": "二等奖"},
+    ]
+
+
+def test_parse_lottery_config_rejects_duplicate_prize_names():
+    with pytest.raises(ValueError, match="奖品名称不能重复：一等奖"):
+        parse_lottery_config_text(
+            "\n".join(
+                [
+                    "重复奖品抽奖",
+                    "开奖时间: 2099-12-31 20:00",
+                    "最低积分: 0",
+                    "参与费用: 0",
+                    "最大人数: 50",
+                    "入群天数: 0",
+                    "奖品:",
+                    "一等奖,1",
+                    "一等奖,1",
+                ]
+            )
+        )
 
 
 def test_parse_lottery_config_rejects_non_positive_prize_quantity():
@@ -1695,6 +1910,50 @@ async def test_perform_random_draw_uses_fixed_winners_before_random_participants
     winners = await lottery_service_drawing.perform_random_draw(session, lottery)
 
     assert [(winner.user_id, winner.prize_name) for winner in winners] == [(111, "一等奖"), (333, "二等奖")]
+
+
+@pytest.mark.asyncio
+async def test_perform_random_draw_honors_assigned_preset_prize(monkeypatch):
+    async def fake_get_lottery_participants(session, lottery_id: int):
+        return [SimpleNamespace(user_id=333, points_balance=0)]
+
+    def fake_shuffle(items):
+        return None
+
+    class _Result:
+        def scalar_one_or_none(self):
+            return None
+
+    class _Session:
+        def __init__(self):
+            self.added = []
+
+        async def execute(self, stmt):
+            return _Result()
+
+        def add(self, entity):
+            self.added.append(entity)
+
+        async def flush(self):
+            return None
+
+    lottery = SimpleNamespace(
+        id=58,
+        chat_id=-1001,
+        lottery_type="common",
+        qualification_rules={
+            "preset_winner_ids": [111],
+            "preset_winner_assignments": [{"user_id": 111, "prize_name": "二等奖"}],
+        },
+        prizes=[{"name": "一等奖", "quantity": 1}, {"name": "二等奖", "quantity": 1}],
+    )
+    session = _Session()
+    monkeypatch.setattr(lottery_service_drawing, "get_lottery_participants", fake_get_lottery_participants)
+    monkeypatch.setattr(lottery_service_drawing.random, "shuffle", fake_shuffle)
+
+    winners = await lottery_service_drawing.perform_random_draw(session, lottery)
+
+    assert [(winner.user_id, winner.prize_name) for winner in winners] == [(111, "二等奖"), (333, "一等奖")]
 
 
 @pytest.mark.asyncio

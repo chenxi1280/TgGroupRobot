@@ -51,6 +51,20 @@ def _all_auto_delete_switches_enabled(settings) -> bool:
     )
 
 
+def _any_auto_delete_switch_enabled(settings) -> bool:
+    return any(
+        bool(getattr(settings, attr, False))
+        for attr in (
+            "auto_delete_join",
+            "auto_delete_left",
+            "auto_delete_pinned",
+            "auto_delete_avatar",
+            "auto_delete_title",
+            "auto_delete_anonymous",
+        )
+    )
+
+
 def _has_extra_system_message(message) -> bool:
     return any(bool(getattr(message, field, None)) for field in EXTRA_SYSTEM_MESSAGE_FIELDS)
 
@@ -111,8 +125,8 @@ async def auto_delete_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         if getattr(message, "left_chat_member", None):
             await record_group_leave_event(session, chat.id)
 
-        # 检查是否开启自动删除
-        if not settings.auto_delete_enabled:
+        # 兼容旧数据：菜单按分项开关展示生效状态，运行时也应以分项开关兜底。
+        if not (bool(getattr(settings, "auto_delete_enabled", False)) or _any_auto_delete_switch_enabled(settings)):
             await session.commit()
             return
 

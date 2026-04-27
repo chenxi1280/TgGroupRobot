@@ -31,6 +31,61 @@ def _seconds_label(seconds: int) -> str:
     return f"{seconds}秒"
 
 
+def _rule_effect_summary(rule: dict) -> list[str]:
+    if not bool(rule.get("enabled")):
+        return [
+            "当前效果: 规则关闭，不会处理消息。",
+            "删除消息: 关闭",
+            "警告成员: 关闭",
+            "禁言成员: 关闭",
+            "提示消息: 关闭",
+        ]
+
+    action_parts: list[str] = []
+    delete_enabled = bool(rule.get("delete_message"))
+    warn_enabled = bool(rule.get("warn_enabled"))
+    mute_enabled = bool(rule.get("mute_enabled"))
+    kick_enabled = bool(rule.get("kick_enabled"))
+    notice_enabled = bool(rule.get("notice_enabled"))
+
+    if delete_enabled:
+        action_parts.append("删除消息")
+    if warn_enabled:
+        action_parts.append("警告成员")
+    if mute_enabled:
+        action_parts.append("禁言成员")
+    if kick_enabled:
+        action_parts.append("踢出成员")
+    if notice_enabled:
+        action_parts.append("提示消息")
+
+    if action_parts == ["删除消息"]:
+        effect = "当前效果: 只删除消息，不会警告/禁言/提示。"
+    elif action_parts:
+        effect = f"当前效果: {' + '.join(action_parts)}。"
+    else:
+        effect = "当前效果: 规则已开启，但未配置任何处罚动作。"
+
+    warn_label = f"启动，警告{int(rule.get('warn_threshold', 3) or 3)}次" if warn_enabled else "关闭"
+    mute_label = f"启动，{_seconds_label(int(rule.get('mute_seconds', 3600) or 3600))}" if mute_enabled else "关闭"
+    notice_label = (
+        f"启动，{int(rule.get('notice_delete_seconds', 10) or 10)}秒后删除"
+        if notice_enabled
+        else "关闭"
+    )
+
+    rows = [
+        effect,
+        f"删除消息: {'启动' if delete_enabled else '关闭'}",
+        f"警告成员: {warn_label}",
+        f"禁言成员: {mute_label}",
+    ]
+    if kick_enabled:
+        rows.append("踢出成员: 启动")
+    rows.append(f"提示消息: {notice_label}")
+    return rows
+
+
 def _rule_button_text(settings, rule_id: str) -> str:
     rule = get_rule_config(settings, rule_id)
     return f"{_short_status(bool(rule.get('enabled')))} {RULE_DEFINITIONS[rule_id].label}"
@@ -246,9 +301,10 @@ def format_garbage_rule_text(chat_title: str, settings, rule_id: str) -> str:
             definition.description,
             "",
             f"状态: {'启动' if bool(rule.get('enabled')) else '关闭'}",
+            *_rule_effect_summary(rule),
             f"白名单用户: {len(get_global_whitelist_user_ids(settings))}人",
             "",
-            "管理员和总白名单用户不会触发本规则。",
+            "生效对象: 普通成员；管理员和总白名单用户不会触发。",
         ]
     )
 

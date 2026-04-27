@@ -173,12 +173,14 @@ async def _validate_force_subscribe_target(update: Update, context: ContextTypes
     if message is None:
         return False
     if _is_bot_deep_link(value):
-        await message.reply_text("本期不支持机器人目标，请填写频道或群组的 @用户名、t.me 链接或数字 ID。")
+        await message.reply_text("本期不支持机器人目标，请填写公开频道或群组的 @用户名 / t.me 链接。")
         return False
 
     target = _normalize_force_subscribe_target(value)
-    if target is None:
-        await message.reply_text("目标格式错误，请填写频道或群组的 @用户名、t.me 链接或数字 ID。")
+    raw = value.strip()
+    is_public_input = raw.startswith("@") or raw.startswith("https://t.me/") or raw.startswith("http://t.me/")
+    if target is None or not is_public_input or isinstance(target, int):
+        await message.reply_text("目标格式错误，请填写公开频道或群组的 @用户名 / t.me 链接，不支持裸用户名、数字 ID 或私密邀请链接。")
         return False
 
     try:
@@ -189,6 +191,9 @@ async def _validate_force_subscribe_target(update: Update, context: ContextTypes
 
     if target_chat.type not in {"channel", "group", "supergroup"}:
         await message.reply_text("本期不支持机器人目标，请绑定频道或群组。")
+        return False
+    if not str(getattr(target_chat, "username", "") or "").strip():
+        await message.reply_text("该频道/群组没有公开用户名，无法生成关注按钮。请绑定公开频道/群组的 @用户名。")
         return False
 
     bot_id = getattr(context.bot, "id", None)

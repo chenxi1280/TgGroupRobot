@@ -71,7 +71,7 @@ def _settings(**overrides):
 
 
 def _context(bot: _Bot):
-    return SimpleNamespace(bot=bot)
+    return SimpleNamespace(bot=bot, application=SimpleNamespace(bot_data={}))
 
 
 def _chat():
@@ -101,19 +101,24 @@ async def test_force_subscribe_normalizes_username_and_t_me_targets() -> None:
 
 
 @pytest.mark.asyncio
-async def test_force_subscribe_normalizes_numeric_chat_id() -> None:
-    bot = _Bot({-100456: "member"})
+async def test_force_subscribe_rejects_legacy_numeric_target_without_blocking_member() -> None:
+    bot = _Bot({})
+    message = _Message()
 
     allowed = await _check_force_subscribe(
         _context(bot),
         _chat(),
         _user(),
-        _Message(),
+        message,
         _settings(force_subscribe_bound_channel_1="-100456"),
     )
 
     assert allowed is True
-    assert bot.get_chat_member_calls == [(-100456, 42)]
+    assert message.deleted is False
+    assert bot.get_chat_member_calls == []
+    assert bot.messages[0]["chat_id"] == -100123
+    assert "强制订阅配置异常" in bot.messages[0]["text"]
+    assert "已临时放行本次发言" in bot.messages[0]["text"]
 
 
 @pytest.mark.asyncio
@@ -178,7 +183,7 @@ async def test_force_subscribe_mutes_and_warns_unsubscribed_member() -> None:
 
 
 @pytest.mark.asyncio
-async def test_force_subscribe_all_mode_blocks_when_one_target_is_inaccessible() -> None:
+async def test_force_subscribe_all_mode_skips_inaccessible_target_when_valid_target_is_subscribed() -> None:
     bot = _Bot({"@channel_a": "member", "@channel_b": RuntimeError("chat not found")})
     message = _Message()
 
@@ -194,9 +199,47 @@ async def test_force_subscribe_all_mode_blocks_when_one_target_is_inaccessible()
         ),
     )
 
+    assert allowed is True
+    assert message.deleted is False
+    assert bot.get_chat_member_calls == [("@channel_a", 42), ("@channel_b", 42)]
+    assert "部分目标配置异常" in bot.messages[0]["text"]
+
+
+@pytest.mark.asyncio
+async def test_force_subscribe_bare_username_is_config_issue_and_does_not_block() -> None:
+    bot = _Bot({})
+    message = _Message()
+
+    allowed = await _check_force_subscribe(
+        _context(bot),
+        _chat(),
+        _user(),
+        message,
+        _settings(force_subscribe_bound_channel_1="TgMgtPrd_bot"),
+    )
+
+    assert allowed is True
+    assert message.deleted is False
+    assert bot.get_chat_member_calls == []
+    assert "强制订阅配置异常" in bot.messages[0]["text"]
+
+
+@pytest.mark.asyncio
+async def test_force_subscribe_valid_target_still_blocks_unsubscribed_member() -> None:
+    bot = _Bot({"@channel_a": "left"})
+    message = _Message()
+
+    allowed = await _check_force_subscribe(
+        _context(bot),
+        _chat(),
+        _user(),
+        message,
+        _settings(force_subscribe_not_subscribed_action="delete_only"),
+    )
+
     assert allowed is False
     assert message.deleted is True
-    assert bot.get_chat_member_calls == [("@channel_a", 42), ("@channel_b", 42)]
+    assert bot.messages == []
 
 
 @pytest.mark.asyncio
@@ -234,6 +277,6 @@ async def test_force_subscribe_target_diagnostics_surface_invalid_and_permission
     )
 
     assert diagnostics == [
-        "绑定目标1格式无效，请重新绑定。",
+        "绑定目标1格式无效，请重新绑定公开频道/群组的 @用户名。",
         "绑定目标2机器人不是管理员，可能无法稳定校验订阅。",
     ]

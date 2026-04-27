@@ -33,6 +33,13 @@ def _build_prize_slots(prizes: list[dict]) -> list[dict]:
     return prize_list
 
 
+def _pop_prize_slot_by_name(prize_list: list[dict], prize_name: str) -> dict | None:
+    for index, prize in enumerate(prize_list):
+        if str(prize.get("name") or "") == prize_name:
+            return prize_list.pop(index)
+    return None
+
+
 async def build_ranked_finalists(session: AsyncSession, lottery: Lottery) -> list[LotteryParticipant]:
     qualification_rules = lottery.qualification_rules or {}
     finalist_limit = max(int(qualification_rules.get("finalist_limit") or 0), 0)
@@ -127,12 +134,43 @@ async def perform_random_draw(
     winners = []
     used_user_ids: set[int] = set()
     remaining_prizes = prize_list.copy()
+    preset_winner_assignments = qualification_rules.get("preset_winner_assignments") or []
+    if preset_winner_assignments:
+        from backend.shared.services.user_service import ensure_user
+
+        for item in preset_winner_assignments:
+            try:
+                user_id = int(item.get("user_id"))
+            except (TypeError, ValueError):
+                continue
+            prize_name = str(item.get("prize_name") or "").strip()
+            if user_id <= 0 or user_id in used_user_ids:
+                continue
+            if eligible_user_ids is not None and user_id not in eligible_user_ids:
+                continue
+            prize = _pop_prize_slot_by_name(remaining_prizes, prize_name)
+            if prize is None:
+                continue
+            await ensure_user(session, user_id, None, None, None, None)
+            winner = LotteryWinner(
+                lottery_id=lottery.id,
+                user_id=user_id,
+                prize_name=prize["name"],
+                prize_index=prize["prize_index"],
+                points_reward=prize["points_reward"],
+            )
+            session.add(winner)
+            winners.append(winner)
+            used_user_ids.add(user_id)
+
     if preset_winner_ids:
         from backend.shared.services.user_service import ensure_user
 
         for user_id in preset_winner_ids:
             if not remaining_prizes:
                 break
+            if user_id in used_user_ids:
+                continue
             prize = remaining_prizes.pop(0)
             await ensure_user(session, user_id, None, None, None, None)
             winner = LotteryWinner(

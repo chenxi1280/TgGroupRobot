@@ -21,12 +21,15 @@ from backend.features.activity.services.lottery_service import (
     parse_lottery_config_text,
 )
 from backend.features.activity.services.lottery_service_parsing import (
+    _split_preset_assignment_value,
     collect_winner_reference_values,
     encode_lottery_type,
     encode_selection_mode,
     extract_winner_usernames,
     lottery_draw_trigger_label,
     parse_direct_winner_ids,
+    validate_preset_winner_assignments,
+    validate_unique_prize_names,
 )
 from backend.features.activity.services.lottery_subscription import (
     format_lottery_subscribe_targets,
@@ -215,21 +218,50 @@ async def _resolve_preset_winner_refs_from_config_text(
     context: ContextTypes.DEFAULT_TYPE,
     session,
     text: str,
-) -> list[int] | None:
+    prizes: list[dict],
+) -> tuple[list[int], list[dict]] | None:
     values = collect_winner_reference_values(text)
     if not values:
         return None
+    return await _parse_preset_winner_refs_from_values(
+        update,
+        context,
+        session,
+        values,
+        prizes,
+        include_message_entities=False,
+    )
+
+
+async def _parse_preset_winner_refs_from_values(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    session,
+    values: list[str],
+    prizes: list[dict],
+    *,
+    include_message_entities: bool,
+) -> tuple[list[int], list[dict]]:
     merged_ids: list[int] = []
+    assignments: list[dict] = []
     for value in values:
+        prize_name, winner_value = _split_preset_assignment_value(value, prizes)
+        if winner_value.strip() in PRESET_CLEAR_WORDS:
+            continue
         for user_id in await _parse_preset_winner_ids_from_message(
             update,
             context,
             session,
-            value,
-            include_message_entities=False,
+            winner_value,
+            include_message_entities=include_message_entities and prize_name is None,
         ):
             _add_unique_user_id(merged_ids, user_id)
-    return merged_ids
+            if prize_name is not None and not any(
+                int(item.get("user_id") or 0) == user_id for item in assignments
+            ):
+                assignments.append({"user_id": user_id, "prize_name": prize_name})
+    validate_preset_winner_assignments(assignments, prizes)
+    return merged_ids, assignments
 
 
 def _state_data(state: object) -> dict:
@@ -264,6 +296,9 @@ def _build_config_from_state(data: dict) -> ParsedLotteryConfig:
     prizes = list(data.get("prizes") or [])
     if not prizes:
         raise ValueError("至少需要设置一个奖品")
+    validate_unique_prize_names(prizes)
+    preset_winner_assignments = list(data.get("preset_winner_assignments") or [])
+    validate_preset_winner_assignments(preset_winner_assignments, prizes)
     preset_winner_ids = [int(user_id) for user_id in data.get("preset_winner_ids") or []]
     if len(preset_winner_ids) > _prize_slot_count(prizes):
         raise ValueError("内定中奖人数不能超过中奖人数")
@@ -308,6 +343,7 @@ def _build_config_from_state(data: dict) -> ParsedLotteryConfig:
         point_type_name=data.get("point_type_name"),
         subscribe_targets=subscribe_targets if lottery_type == "subscribe" else None,
         subscribe_check_mode="all",
+        preset_winner_assignments=preset_winner_assignments,
     )
 
 
@@ -346,7 +382,16 @@ def _format_lottery_wizard_summary(config: ParsedLotteryConfig, *, include_sensi
         lines.append(f"入围人数：{config.finalist_limit}")
     if include_sensitive:
         if config.preset_winner_ids:
-            lines.append(f"内定中奖人：{', '.join(str(user_id) for user_id in config.preset_winner_ids)}")
+            assignment_by_user = {
+                int(item.get("user_id")): str(item.get("prize_name"))
+                for item in (config.preset_winner_assignments or [])
+                if item.get("user_id") and item.get("prize_name")
+            }
+            preset_labels = [
+                f"{user_id}（{assignment_by_user[user_id]}）" if user_id in assignment_by_user else str(user_id)
+                for user_id in config.preset_winner_ids
+            ]
+            lines.append(f"内定中奖人：{', '.join(preset_labels)}")
         else:
             lines.append("内定中奖人：未设置")
     lines.extend(
@@ -561,6 +606,8 @@ def _point_type_keyboard(target_chat_id: int, custom_point_types: list[object]) 
 
 def _next_step_after_draw_param(data: dict) -> str:
     lottery_type = data.get("lottery_type")
+    if lottery_type == "subscribe":
+        return "subscribe_targets"
     if lottery_type == "points":
         return "point_type"
     if lottery_type == "invite":
@@ -587,10 +634,8 @@ def _previous_lottery_wizard_step(data: dict) -> str | None:
     lottery_type = data.get("lottery_type")
     selection_mode = data.get("selection_mode")
     if step == "subscribe_targets":
-        return "title"
+        return "draw_param"
     if step == "prize_name":
-        if lottery_type == "subscribe":
-            return "subscribe_targets"
         return "title"
     if step == "prize_quantity":
         return "prize_name"
@@ -619,6 +664,8 @@ def _previous_lottery_wizard_step(data: dict) -> str | None:
             return "activity_requirement"
         if lottery_type == "points":
             return "participation_cost"
+        if lottery_type == "subscribe":
+            return "subscribe_targets"
         return "draw_param"
     if step == "preset_winners":
         return "preset_confirm"
@@ -635,6 +682,8 @@ def _qualification_rules_from_config(config: ParsedLotteryConfig) -> dict:
         "finalist_limit": config.finalist_limit,
         "selection_mode": config.selection_mode,
     }
+    if config.preset_winner_assignments:
+        rules["preset_winner_assignments"] = list(config.preset_winner_assignments)
     if config.point_type_id:
         rules["point_type_id"] = config.point_type_id
         rules["point_type_name"] = config.point_type_name
@@ -744,7 +793,7 @@ async def _reply_next_prompt(update: Update, session, state: object, data: dict,
     await _commit_wizard_state_before_prompt(session)
     if next_step == "subscribe_targets":
         await update.effective_message.reply_text(
-            _append_lottery_wizard_guide(_subscribe_targets_prompt(), data, next_step="填写奖品名称"),
+            _append_lottery_wizard_guide(_subscribe_targets_prompt(), data, next_step="确认配置并发布"),
             reply_markup=nav_keyboard,
         )
     elif next_step == "prize_name":
@@ -833,7 +882,7 @@ async def _edit_wizard_step_prompt(update: Update, query, session, state: object
         return
     if step == "subscribe_targets":
         await query.edit_message_text(
-            _append_lottery_wizard_guide(_subscribe_targets_prompt(), data, next_step="填写奖品名称"),
+            _append_lottery_wizard_guide(_subscribe_targets_prompt(), data, next_step="确认配置并发布"),
             reply_markup=nav_keyboard,
         )
         return
@@ -936,16 +985,17 @@ async def _handle_lottery_wizard_message(update: Update, context: ContextTypes.D
                 data["description"] = None
             if not data["title"]:
                 raise ValueError("抽奖名称不能为空")
-            next_step = "subscribe_targets" if data.get("lottery_type") == "subscribe" else "prize_name"
-            await _reply_next_prompt(update, session, state, data, next_step)
+            await _reply_next_prompt(update, session, state, data, "prize_name")
         elif step == "subscribe_targets":
             targets = parse_lottery_subscribe_targets(text)
             data["subscribe_targets"] = await validate_lottery_subscribe_targets(context, targets)
-            await _reply_next_prompt(update, session, state, data, "prize_name")
+            await _reply_next_prompt(update, session, state, data, "preset_confirm")
         elif step == "prize_name":
             prize_name = text.strip()
             if not prize_name:
                 raise ValueError("奖品名称不能为空")
+            if any(str(prize.get("name") or "").strip() == prize_name for prize in data.get("prizes") or []):
+                raise ValueError(f"奖品名称不能重复：{prize_name}")
             data["pending_prize_name"] = prize_name[:128]
             await _reply_next_prompt(update, session, state, data, "prize_quantity")
         elif step == "prize_quantity":
@@ -993,10 +1043,24 @@ async def _handle_lottery_wizard_message(update: Update, context: ContextTypes.D
             data["finalist_limit"] = _parse_positive_int(text, "入围人数")
             await _reply_next_prompt(update, session, state, data, "preset_confirm")
         elif step == "preset_winners":
-            preset_ids = await _parse_preset_winner_ids_from_message(update, context, session, text)
+            if text.strip() in PRESET_CLEAR_WORDS:
+                data["preset_winner_ids"] = []
+                data["preset_winner_assignments"] = []
+                await _reply_next_prompt(update, session, state, data, "preset_confirm")
+                await session.commit()
+                return
+            preset_ids, preset_assignments = await _parse_preset_winner_refs_from_values(
+                update,
+                context,
+                session,
+                text.strip().splitlines() or [text],
+                list(data.get("prizes") or []),
+                include_message_entities=True,
+            )
             if len(preset_ids) > _prize_slot_count(list(data.get("prizes") or [])):
                 raise ValueError("内定中奖人数不能超过中奖人数")
             data["preset_winner_ids"] = preset_ids
+            data["preset_winner_assignments"] = preset_assignments
             await _reply_next_prompt(update, session, state, data, "preset_confirm")
         else:
             await update.effective_message.reply_text("当前抽奖创建状态异常，请取消后重新创建。")
@@ -1086,12 +1150,14 @@ async def parse_lottery_config_message(update: Update, context: ContextTypes.DEF
             draw_trigger=draw_trigger,
             allow_unresolved_winner_refs=True,
         )
-        resolved_preset_ids = await _resolve_preset_winner_refs_from_config_text(update, context, session, text)
-        if resolved_preset_ids is not None:
+        resolved_preset = await _resolve_preset_winner_refs_from_config_text(update, context, session, text, config.prizes)
+        if resolved_preset is not None:
+            resolved_preset_ids, resolved_preset_assignments = resolved_preset
             prize_slot_count = _prize_slot_count(config.prizes)
             if len(resolved_preset_ids) > prize_slot_count:
                 raise ValueError("内定中奖人数不能超过奖品总数量")
             config.preset_winner_ids = resolved_preset_ids
+            config.preset_winner_assignments = resolved_preset_assignments
 
         target_chat_id = state.state_data.get("target_chat_id") or update.effective_chat.id
         lottery = await _create_and_publish_lottery(
@@ -1235,8 +1301,11 @@ async def handle_lottery_wizard_callback(update: Update, context: ContextTypes.D
                 await q.edit_message_text(
                     _append_lottery_wizard_guide(
                         "本步只输入内定中奖人，支持数字ID、@用户名、用户资料链接。\n"
-                        "格式：用户1,用户2,用户3\n"
-                        "完整示例：123456789,@alice,tg://user?id=987654321\n\n"
+                        "不指定奖品格式：用户1,用户2,用户3\n"
+                        "指定奖品格式：奖品名称: 用户\n"
+                        "完整示例：123456789,@alice,tg://user?id=987654321\n"
+                        "指定奖品完整示例：一等奖: 123456789\n"
+                        "多行示例：\n一等奖: 123456789\n二等奖: @alice\n\n"
                         "发送“无”可清空内定名单。",
                         data,
                         next_step="回到确认页后发布到群",

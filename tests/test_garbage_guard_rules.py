@@ -1,14 +1,20 @@
 from __future__ import annotations
 
+import datetime as dt
 from types import SimpleNamespace
 
+import pytest
+
+from backend.features.admin.ui.antispam import format_garbage_rule_text
 from backend.features.moderation.services.garbage_guard_rules import (
     get_rule_config,
     is_global_whitelisted,
     set_global_whitelist_user_ids,
     set_rule_config,
 )
-from backend.features.moderation.services.garbage_guard_service import detect_garbage_violation
+from backend.features.moderation.services import garbage_guard_service
+from backend.features.moderation.services.garbage_guard_service import apply_garbage_punishment, detect_garbage_violation
+from backend.features.moderation.services.moderation_warning_service import WarningResult
 
 
 def _settings():
@@ -106,3 +112,123 @@ def test_long_message_and_long_name_are_independent_rules() -> None:
     )
     assert violation is not None
     assert violation.rule_id == "long_name"
+
+
+def test_garbage_rule_text_shows_delete_only_effect_and_runtime_scope() -> None:
+    settings = _settings()
+    set_rule_config(settings, "banned_words", {"enabled": True, "delete_message": True})
+
+    text = format_garbage_rule_text("锅巴 群", settings, "banned_words")
+
+    assert "当前效果: 只删除消息，不会警告/禁言/提示。" in text
+    assert "警告成员: 关闭" in text
+    assert "禁言成员: 关闭" in text
+    assert "提示消息: 关闭" in text
+    assert "生效对象: 普通成员；管理员和总白名单用户不会触发。" in text
+
+
+def test_garbage_rule_text_shows_full_punishment_combo() -> None:
+    settings = _settings()
+    set_rule_config(
+        settings,
+        "banned_words",
+        {
+            "enabled": True,
+            "delete_message": True,
+            "warn_enabled": True,
+            "warn_threshold": 1,
+            "mute_enabled": True,
+            "mute_seconds": 600,
+            "notice_enabled": True,
+            "notice_delete_seconds": 10,
+        },
+    )
+
+    text = format_garbage_rule_text("锅巴 群", settings, "banned_words")
+
+    assert "当前效果: 删除消息 + 警告成员 + 禁言成员 + 提示消息。" in text
+    assert "警告成员: 启动，警告1次" in text
+    assert "禁言成员: 启动，10分钟" in text
+    assert "提示消息: 启动，10秒后删除" in text
+
+
+@pytest.mark.asyncio
+async def test_banned_word_full_punishment_deletes_warns_mutes_and_notices(monkeypatch) -> None:
+    settings = _settings()
+    set_rule_config(
+        settings,
+        "banned_words",
+        {
+            "enabled": True,
+            "delete_message": True,
+            "warn_enabled": True,
+            "warn_threshold": 1,
+            "mute_enabled": True,
+            "mute_seconds": 600,
+            "notice_enabled": True,
+            "notice_delete_seconds": 10,
+        },
+    )
+    calls: list[tuple[str, object]] = []
+
+    async def fake_delete_many(context, *, chat_id: int, message_ids: list[int]):
+        calls.append(("delete_many", (chat_id, message_ids)))
+        return SimpleNamespace(applied=True)
+
+    async def fake_add_warning(session, *, chat_id: int, user_id: int, rule: str, threshold: int):
+        calls.append(("add_warning", (chat_id, user_id, rule, threshold)))
+        return WarningResult(
+            count=1,
+            threshold=threshold,
+            threshold_reached=True,
+            expires_at=dt.datetime.now(dt.UTC) + dt.timedelta(days=7),
+        )
+
+    async def fake_resolve_effective_action(context, chat_id: int, user_id: int, action: str, **kwargs):
+        calls.append(("resolve_action", (chat_id, user_id, action)))
+        return SimpleNamespace(action=action)
+
+    async def fake_execute(context, **kwargs):
+        calls.append(("execute", kwargs))
+        return SimpleNamespace(applied=True)
+
+    async def fake_record_violation(session, **kwargs):
+        calls.append(("record_violation", kwargs))
+
+    async def fake_send_temporary_notice(bot, *, chat_id: int, text: str, delete_after_seconds: int):
+        calls.append(("notice", (chat_id, text, delete_after_seconds)))
+
+    monkeypatch.setattr(garbage_guard_service.ActionExecutor, "delete_many", fake_delete_many)
+    monkeypatch.setattr(garbage_guard_service.ActionExecutor, "execute", fake_execute)
+    monkeypatch.setattr(garbage_guard_service, "add_warning", fake_add_warning)
+    monkeypatch.setattr(garbage_guard_service, "resolve_effective_action", fake_resolve_effective_action)
+    monkeypatch.setattr(garbage_guard_service, "record_violation", fake_record_violation)
+    monkeypatch.setattr(garbage_guard_service, "send_temporary_notice", fake_send_temporary_notice)
+
+    result = await apply_garbage_punishment(
+        SimpleNamespace(bot=object()),
+        object(),
+        settings=settings,
+        chat_id=-100123,
+        target_user_id=42,
+        target_label="Alice",
+        rule_id="banned_words",
+        detail="违禁词测试",
+        message_ids=[99],
+        actor_user_id=7,
+        record_message_id=99,
+    )
+
+    assert result.applied is True
+    assert result.action_label == "delete+warn+mute"
+    assert result.warning is not None
+    assert result.warning.threshold_reached is True
+    assert ("delete_many", (-100123, [99])) in calls
+    assert ("add_warning", (-100123, 42, "banned_words", 1)) in calls
+    assert ("resolve_action", (-100123, 42, "mute")) in calls
+    execute_call = next(value for name, value in calls if name == "execute")
+    assert execute_call["action"] == "mute"
+    assert execute_call["mute_seconds"] == 600
+    notice_call = next(value for name, value in calls if name == "notice")
+    assert notice_call[0] == -100123
+    assert notice_call[2] == 10

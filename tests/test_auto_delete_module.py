@@ -179,6 +179,52 @@ async def test_auto_delete_handler_uses_module_settings_and_deletes_matching_mes
 
 
 @pytest.mark.asyncio
+async def test_auto_delete_handler_honors_item_switch_when_legacy_master_flag_is_off(monkeypatch):
+    settings = SimpleNamespace(
+        auto_delete_enabled=False,
+        auto_delete_join=False,
+        auto_delete_left=False,
+        auto_delete_pinned=False,
+        auto_delete_anonymous=False,
+        auto_delete_title=True,
+        auto_delete_avatar=False,
+    )
+    session = _Session()
+    db = SimpleNamespace(session_factory=_SessionFactory(session))
+    deleted: list[int] = []
+
+    async def fake_delete():
+        deleted.append(1)
+
+    message = SimpleNamespace(
+        message_id=10,
+        new_chat_members=None,
+        left_chat_member=None,
+        pinned_message=None,
+        new_chat_title="新群名",
+        new_chat_photo=None,
+        delete_chat_photo=None,
+        from_user=SimpleNamespace(is_bot=False, username=None, id=1001),
+        delete=fake_delete,
+    )
+    update = SimpleNamespace(
+        effective_chat=SimpleNamespace(id=-100123, type="supergroup", title="Group"),
+        effective_message=message,
+    )
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": db}))
+
+    async def fake_ensure(*args, **kwargs):
+        return settings
+
+    monkeypatch.setattr(auto_delete_handler.ModuleSettingsService, "ensure", fake_ensure)
+
+    await auto_delete_handler.auto_delete_handler(update, context)
+
+    assert deleted == [1]
+    assert session.commits == 1
+
+
+@pytest.mark.asyncio
 async def test_auto_delete_handler_records_left_member_even_when_auto_delete_disabled(monkeypatch):
     settings = SimpleNamespace(
         auto_delete_enabled=False,
