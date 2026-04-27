@@ -4,6 +4,7 @@ import datetime as dt
 import re
 
 from backend.shared.services.base import ValidationError
+from backend.shared.time_helper import LOCAL_TIMEZONE
 
 
 def now_utc() -> dt.datetime:
@@ -19,20 +20,14 @@ def as_utc(value: dt.datetime) -> dt.datetime:
 def parse_auction_end_at(raw: str, *, now: dt.datetime | None = None) -> dt.datetime:
     value = raw.strip()
     current = as_utc(now or now_utc())
-    if re.fullmatch(r"\d+", value):
-        minutes = int(value)
-        if minutes <= 0:
-            raise ValidationError("截止时间必须大于 0 分钟。")
-        return current + dt.timedelta(minutes=minutes)
-
-    if re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", value):
-        hour, minute = map(int, value.split(":"))
-        target = current.replace(hour=hour, minute=minute, second=0, microsecond=0)
-        if target <= current:
-            target += dt.timedelta(days=1)
-        return target
-
-    raise ValidationError("截止时间格式错误，请输入分钟数或 HH:MM。")
+    try:
+        target = dt.datetime.strptime(value, "%Y-%m-%d %H:%M")
+    except ValueError:
+        raise ValidationError("截止时间格式错误，请使用 YYYY-MM-DD HH:MM。")
+    target_utc = target.replace(tzinfo=LOCAL_TIMEZONE).astimezone(dt.UTC)
+    if target_utc <= current:
+        raise ValidationError("截止时间必须晚于当前时间。")
+    return target_utc
 
 
 def parse_bid_amount(raw: str) -> int | None:

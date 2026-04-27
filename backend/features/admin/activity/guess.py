@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from backend.features.admin.activity.runtime import clear_private_admin_state
 from backend.features.admin.support import *
-from backend.shared.time_ui import build_copy_options_keyboard, build_minutes_or_hhmm_prompt_text, next_top_of_hour_hhmm
+from backend.shared.time_helper import LOCAL_TIMEZONE
+from backend.shared.time_ui import build_copy_time_keyboard, build_datetime_prompt_text, next_top_of_hour
 
 DEFAULT_GUESS_COMMAND = "竞猜"
 
@@ -328,20 +329,19 @@ class GuessAdminControllerMixin:
                     await _start_guess_input_state(session, user_id=update.effective_user.id, chat_id=chat_id, state_type=state_map[sub], draft=draft)
                     await session.commit()
                     if sub == "deadline":
-                        hhmm_sample = next_top_of_hour_hhmm(hours_offset=1)
+                        sample_dt = next_top_of_hour(days_offset=1)
+                        sample_text = sample_dt.astimezone(LOCAL_TIMEZONE).strftime("%Y-%m-%d %H:%M")
                         await self.message_helper.safe_edit(
                             update,
-                            build_minutes_or_hhmm_prompt_text(
+                            build_datetime_prompt_text(
                                 title="⚽ 竞猜 | 截止时间",
-                                minutes_sample_text="30",
-                                hhmm_sample_text=hhmm_sample,
-                                input_hint="👉 请输入分钟数或 HH:MM：",
+                                sample_time_text=sample_text,
+                                sample_time_unix=int(sample_dt.timestamp()),
+                                input_hint="👉 请输入截止时间：",
+                                extra_tips=["本步只输入截止时间。"],
                             ),
                             parse_mode="HTML",
-                            reply_markup=build_copy_options_keyboard(
-                                f"guess:create:{chat_id}:preview",
-                                [("📋 复制 30分钟", "30"), (f"📋 复制 {hhmm_sample}", hhmm_sample)],
-                            ),
+                            reply_markup=build_copy_time_keyboard(f"guess:create:{chat_id}:preview", sample_text),
                         )
                         return
                     await self.message_helper.safe_edit(update, prompt_map[sub], reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"guess:create:{chat_id}:preview")]]))

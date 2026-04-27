@@ -58,8 +58,12 @@ async def test_guess_deadline_prompt_uses_unified_copy_ui(monkeypatch):
 
     assert started and started[0][0] == "guess_wait_deadline"
     assert rendered and rendered[0][2] == "HTML"
-    assert "支持两种格式" in rendered[0][0]
-    assert rendered[0][1].inline_keyboard[0][0].to_dict()["copy_text"]["text"] == "30"
+    assert "格式：YYYY-MM-DD HH:MM" in rendered[0][0]
+    assert "完整示例：" in rendered[0][0]
+    assert "支持两种格式" not in rendered[0][0]
+    copied = rendered[0][1].inline_keyboard[0][0].to_dict()["copy_text"]["text"]
+    assert copied != "30"
+    assert len(copied) == 16 and copied[4] == "-" and copied[13] == ":"
 
 
 @pytest.mark.asyncio
@@ -206,8 +210,12 @@ async def test_auction_deadline_prompt_uses_unified_copy_ui(monkeypatch):
     assert result is True
     assert saved_state and saved_state[0][0] == "auction_wait_end_at"
     assert rendered and rendered[0][1] == "HTML"
-    assert "支持两种格式" in rendered[0][0]
-    assert rendered[0][2].inline_keyboard[0][0].to_dict()["copy_text"]["text"] == "30"
+    assert "格式：YYYY-MM-DD HH:MM" in rendered[0][0]
+    assert "完整示例：" in rendered[0][0]
+    assert "支持两种格式" not in rendered[0][0]
+    copied = rendered[0][2].inline_keyboard[0][0].to_dict()["copy_text"]["text"]
+    assert copied != "30"
+    assert len(copied) == 16 and copied[4] == "-" and copied[13] == ":"
 
 
 @pytest.mark.asyncio

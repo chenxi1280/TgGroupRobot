@@ -21,7 +21,8 @@ from backend.features.activity.services.auction_service import (
 )
 from backend.shared.services.base import ValidationError
 from backend.platform.state.state_service import clear_user_state, get_user_state, set_user_state
-from backend.shared.time_ui import build_copy_options_keyboard, build_minutes_or_hhmm_prompt_text, next_top_of_hour_hhmm
+from backend.shared.time_helper import LOCAL_TIMEZONE
+from backend.shared.time_ui import build_copy_time_keyboard, build_datetime_prompt_text, next_top_of_hour
 
 
 log = structlog.get_logger(__name__)
@@ -155,20 +156,19 @@ async def auction_group_message_handler(update: Update, context: ContextTypes.DE
                     data,
                 )
                 await session.commit()
-                hhmm_sample = next_top_of_hour_hhmm(hours_offset=1)
+                sample_dt = next_top_of_hour(days_offset=1)
+                sample_text = sample_dt.astimezone(LOCAL_TIMEZONE).strftime("%Y-%m-%d %H:%M")
                 await _reply(
                     update,
-                    build_minutes_or_hhmm_prompt_text(
+                    build_datetime_prompt_text(
                         title="💰 拍卖 | 截止时间",
-                        minutes_sample_text="30",
-                        hhmm_sample_text=hhmm_sample,
-                        input_hint="👉 请输入分钟数或 HH:MM：",
+                        sample_time_text=sample_text,
+                        sample_time_unix=int(sample_dt.timestamp()),
+                        input_hint="👉 请输入截止时间：",
+                        extra_tips=["本步只输入截止时间。"],
                     ),
                     parse_mode="HTML",
-                    reply_markup=build_copy_options_keyboard(
-                        back_callback=None,
-                        options=[("📋 复制 30分钟", "30"), (f"📋 复制 {hhmm_sample}", hhmm_sample)],
-                    ),
+                    reply_markup=build_copy_time_keyboard(None, sample_text),
                 )
                 return True
 

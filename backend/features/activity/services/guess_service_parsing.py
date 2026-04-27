@@ -4,6 +4,7 @@ import datetime as dt
 from decimal import Decimal, InvalidOperation
 
 from backend.shared.services.base import ValidationError
+from backend.shared.time_helper import LOCAL_TIMEZONE
 
 
 def now() -> dt.datetime:
@@ -20,29 +21,29 @@ def parse_ratio(raw: str) -> str:
     return format(value.normalize(), "f")
 
 
-def parse_deadline(raw: str) -> dt.datetime:
+def parse_deadline(raw: str, *, allow_iso: bool = True) -> dt.datetime:
     text = raw.strip()
-    current = now()
-    if text.isdigit():
-        minutes = int(text)
-        if minutes <= 0:
-            raise ValidationError("截止时间必须大于 0 分钟。")
-        return current + dt.timedelta(minutes=minutes)
+    if allow_iso:
+        try:
+            target = dt.datetime.fromisoformat(text)
+        except ValueError:
+            pass
+        else:
+            if target.tzinfo is None:
+                target = target.replace(tzinfo=LOCAL_TIMEZONE)
+            target_utc = target.astimezone(dt.UTC)
+            if target_utc <= now():
+                raise ValidationError("截止时间必须晚于当前时间。")
+            return target_utc
+
     try:
-        target = dt.datetime.fromisoformat(text)
+        target = dt.datetime.strptime(text, "%Y-%m-%d %H:%M")
     except ValueError:
-        pass
-    else:
-        if target.tzinfo is None:
-            target = target.replace(tzinfo=dt.UTC)
-        return target.astimezone(dt.UTC)
-    if len(text) == 5 and ":" in text:
-        hour, minute = map(int, text.split(":"))
-        target = current.replace(hour=hour, minute=minute, second=0, microsecond=0)
-        if target <= current:
-            target += dt.timedelta(days=1)
-        return target
-    raise ValidationError("截止时间格式错误，请输入分钟数或 HH:MM。")
+        raise ValidationError("截止时间格式错误，请使用 YYYY-MM-DD HH:MM。")
+    target_utc = target.replace(tzinfo=LOCAL_TIMEZONE).astimezone(dt.UTC)
+    if target_utc <= now():
+        raise ValidationError("截止时间必须晚于当前时间。")
+    return target_utc
 
 
 def parse_options(raw: str) -> list[dict]:

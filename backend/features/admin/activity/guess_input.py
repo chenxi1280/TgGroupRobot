@@ -102,7 +102,7 @@ async def handle_guess_admin_input(
                 return True
             draft["command_keyword"] = value[:32]
         elif state_type == "guess_wait_deadline":
-            draft["deadline_at"] = parse_guess_deadline(value).isoformat()
+            draft["deadline_at"] = parse_guess_deadline(value, allow_iso=False).isoformat()
         else:
             await update.effective_message.reply_text("当前竞猜配置状态不支持该输入，请重新进入配置页面。")
             return True

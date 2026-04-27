@@ -303,9 +303,18 @@ def test_guess_options_parser_accepts_lines():
     assert options == [{"key": "1", "label": "红队"}, {"key": "2", "label": "蓝队"}]
 
 
-def test_guess_deadline_parser_accepts_minutes():
-    target = parse_deadline("30")
-    assert target > dt.datetime.now(dt.UTC)
+def test_guess_deadline_parser_accepts_beijing_datetime():
+    target = parse_deadline("2099-03-31 23:00")
+    assert target == dt.datetime(2099, 3, 31, 15, 0, tzinfo=dt.UTC)
+
+
+def test_guess_deadline_parser_rejects_shortcuts_and_past_datetime():
+    with pytest.raises(ValidationError):
+        parse_deadline("30")
+    with pytest.raises(ValidationError):
+        parse_deadline("23:00")
+    with pytest.raises(ValidationError):
+        parse_deadline("2000-01-01 00:00", allow_iso=False)
 
 
 def test_guess_ratio_parser_rejects_invalid():

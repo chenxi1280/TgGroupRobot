@@ -55,7 +55,8 @@ USERNAME_REFERENCE_PATTERNS = (
     ),
     re.compile(r"tg://resolve\?domain=([A-Za-z][A-Za-z0-9_]{4,31})", flags=re.IGNORECASE),
 )
-CLEAR_WINNER_MARKERS = ("可选", "无", "不设置", "留空", "跳过", "0")
+CLEAR_WINNER_MARKERS = ("可选", "无", "不设置", "留空", "跳过", "随机", "0")
+RANDOM_WINNER_MARKERS = {"随机", "不内定", "无", "跳过", "留空", "0"}
 
 
 def encode_lottery_type(lottery_type: str) -> str:
@@ -237,17 +238,55 @@ def validate_unique_prize_names(prizes: list[dict]) -> None:
 
 def _split_preset_assignment_value(value: str, prizes: list[dict]) -> tuple[str | None, str]:
     text = value.strip()
-    prize_names = sorted(
-        {str(prize.get("name") or "").strip() for prize in prizes if str(prize.get("name") or "").strip()},
-        key=len,
-        reverse=True,
-    )
+    prize_names = sorted(_prize_names(prizes), key=len, reverse=True)
     for prize_name in prize_names:
         for separator in (":", "：", "=", "＝"):
             prefix = f"{prize_name}{separator}"
             if text.startswith(prefix):
                 return prize_name, text[len(prefix):].strip()
+    _raise_if_malformed_preset_assignment(text, prize_names)
     return None, text
+
+
+def _prize_names(prizes: list[dict]) -> set[str]:
+    return {str(prize.get("name") or "").strip() for prize in prizes if str(prize.get("name") or "").strip()}
+
+
+def _format_available_prize_names(prize_names: list[str]) -> str:
+    return "、".join(prize_names) if prize_names else "无"
+
+
+def _has_winner_reference(value: str) -> bool:
+    return bool(parse_direct_winner_ids(value) or extract_winner_usernames(value))
+
+
+def _raise_if_malformed_preset_assignment(text: str, prize_names: list[str]) -> None:
+    if not text or re.match(r"^(?:https?|tg)://", text, flags=re.IGNORECASE):
+        return
+    separator_match = re.match(r"^([^:：=＝]{1,80})\s*[:：=＝]\s*(.+)$", text)
+    if separator_match and _has_winner_reference(separator_match.group(2)):
+        prize_name = separator_match.group(1).strip()
+        raise ValueError(
+            f"内定中奖奖品不存在：{prize_name}。"
+            f"可用奖品：{_format_available_prize_names(prize_names)}"
+        )
+    parts = text.split(maxsplit=1)
+    if len(parts) != 2:
+        return
+    maybe_prize, winner_value = parts
+    if not _has_winner_reference(winner_value) or _has_winner_reference(maybe_prize):
+        return
+    if maybe_prize in prize_names:
+        raise ValueError(f"指定奖品请使用格式：{maybe_prize}: 用户")
+    raise ValueError(
+        f"内定中奖奖品不存在：{maybe_prize}。"
+        f"如需指定奖品，请使用格式：奖品名称: 用户；"
+        f"可用奖品：{_format_available_prize_names(prize_names)}"
+    )
+
+
+def _requires_prize_assignment(prizes: list[dict]) -> bool:
+    return len(_prize_names(prizes)) > 1
 
 
 def _prize_quantity_by_name(prizes: list[dict]) -> dict[str, int]:
@@ -283,10 +322,17 @@ def parse_preset_winner_values(
 ) -> tuple[list[int], list[dict]]:
     preset_winner_ids: list[int] = []
     preset_winner_assignments: list[dict] = []
+    require_assignment = _requires_prize_assignment(prizes)
     for value in values:
         prize_name, winner_value = _split_preset_assignment_value(value, prizes)
-        if not winner_value:
+        winner_value = winner_value.strip()
+        if not winner_value or winner_value in RANDOM_WINNER_MARKERS:
             continue
+        if require_assignment and prize_name is None and _has_winner_reference(winner_value):
+            raise ValueError(
+                "多个奖品时，请逐个奖品设置内定中奖人，格式：奖品名称: 用户；"
+                "不指定的奖品请写：奖品名称: 随机"
+            )
         for user_id in _parse_winner_ids(
             winner_value,
             allow_unresolved_refs=allow_unresolved_refs,

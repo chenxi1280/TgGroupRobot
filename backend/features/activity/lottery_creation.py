@@ -28,6 +28,7 @@ from backend.features.activity.services.lottery_service_parsing import (
     extract_winner_usernames,
     lottery_draw_trigger_label,
     parse_direct_winner_ids,
+    RANDOM_WINNER_MARKERS,
     validate_preset_winner_assignments,
     validate_unique_prize_names,
 )
@@ -244,10 +245,19 @@ async def _parse_preset_winner_refs_from_values(
 ) -> tuple[list[int], list[dict]]:
     merged_ids: list[int] = []
     assignments: list[dict] = []
+    require_assignment = len(
+        {str(prize.get("name") or "").strip() for prize in prizes if str(prize.get("name") or "").strip()}
+    ) > 1
     for value in values:
         prize_name, winner_value = _split_preset_assignment_value(value, prizes)
-        if winner_value.strip() in PRESET_CLEAR_WORDS:
+        winner_value = winner_value.strip()
+        if winner_value in PRESET_CLEAR_WORDS or winner_value in RANDOM_WINNER_MARKERS:
             continue
+        if require_assignment and prize_name is None:
+            raise ValueError(
+                "多个奖品时，请逐个奖品设置内定中奖人，格式：奖品名称: 用户；"
+                "不指定的奖品请写：奖品名称: 随机"
+            )
         for user_id in await _parse_preset_winner_ids_from_message(
             update,
             context,
@@ -366,9 +376,26 @@ def _format_lottery_wizard_summary(config: ParsedLotteryConfig, *, include_sensi
         lines.append(f"开奖时间：{_format_local_time(config.draw_time)}")
     else:
         lines.append(f"满员人数：{config.max_participants}")
+    assignment_by_prize: dict[str, list[int]] = {}
+    if include_sensitive:
+        for item in config.preset_winner_assignments or []:
+            if item.get("user_id") and item.get("prize_name"):
+                assignment_by_prize.setdefault(str(item["prize_name"]), []).append(int(item["user_id"]))
     lines.append("奖品：")
     for prize in config.prizes:
-        lines.append(f"• {prize['name']} × {prize['quantity']}")
+        line = f"• {prize['name']} × {prize['quantity']}"
+        if include_sensitive:
+            assigned_ids = assignment_by_prize.get(str(prize["name"])) or []
+            if assigned_ids:
+                assigned_text = "、".join(str(user_id) for user_id in assigned_ids)
+                remaining = max(0, int(prize.get("quantity") or 0) - len(assigned_ids))
+                line += f"（内定：{assigned_text}"
+                if remaining:
+                    line += f"；剩余 {remaining} 个随机"
+                line += "）"
+            elif config.preset_winner_assignments:
+                line += "（随机）"
+        lines.append(line)
     lines.append(f"中奖人数：{_prize_slot_count(config.prizes)}")
     if config.lottery_type == "points":
         lines.append(f"扣除积分：{config.participation_cost} {config.point_type_name or '积分'}")
@@ -396,15 +423,7 @@ def _format_lottery_wizard_summary(config: ParsedLotteryConfig, *, include_sensi
             lines.append("内定中奖人：未设置")
     lines.extend(
         format_completion_lines(
-            [
-                ("抽奖名称", bool(config.title)),
-                ("奖品和中奖人数", bool(config.prizes) and _prize_slot_count(config.prizes) > 0),
-                (
-                    "开奖条件",
-                    (config.draw_trigger == "time_deadline" and bool(config.draw_time))
-                    or (config.draw_trigger == "full_participants" and config.max_participants > 0),
-                ),
-            ],
+            _lottery_config_required_items(config),
             next_step="确认无误后发布到群",
             test_step="发布后用测试账号点击参与，确认门槛和扣分正确",
         )
@@ -412,26 +431,72 @@ def _format_lottery_wizard_summary(config: ParsedLotteryConfig, *, include_sensi
     return "\n".join(lines)
 
 
+def _lottery_condition_progress_from_values(
+    *,
+    lottery_type: str,
+    selection_mode: str,
+    participation_cost_configured: bool,
+    required_invites: int,
+    required_activity_count: int,
+    finalist_limit: int,
+    subscribe_targets_configured: bool,
+) -> tuple[str, bool]:
+    if lottery_type == "points":
+        return "参与扣分", participation_cost_configured
+    if lottery_type == "invite":
+        if selection_mode == "ranking_random":
+            return "排行入围条件", finalist_limit > 0
+        return "邀请门槛", required_invites > 0
+    if lottery_type == "activity":
+        if selection_mode == "ranking_random":
+            return "排行入围条件", finalist_limit > 0
+        return "活跃门槛", required_activity_count > 0
+    if lottery_type == "subscribe":
+        return "关注目标", subscribe_targets_configured
+    return "参与条件（无额外要求）", True
+
+
+def _lottery_config_required_items(config: ParsedLotteryConfig) -> list[tuple[str, bool]]:
+    condition_label, condition_done = _lottery_condition_progress_from_values(
+        lottery_type=config.lottery_type,
+        selection_mode=config.selection_mode,
+        participation_cost_configured=True,
+        required_invites=config.required_invites,
+        required_activity_count=config.required_activity_count,
+        finalist_limit=config.finalist_limit,
+        subscribe_targets_configured=bool(config.subscribe_targets),
+    )
+    return [
+        ("抽奖名称", bool(config.title)),
+        ("奖品和中奖人数", bool(config.prizes) and _prize_slot_count(config.prizes) > 0),
+        (
+            "开奖条件",
+            (config.draw_trigger == "time_deadline" and bool(config.draw_time))
+            or (config.draw_trigger == "full_participants" and config.max_participants > 0),
+        ),
+        (condition_label, condition_done),
+    ]
+
+
 def _lottery_draft_required_items(data: dict) -> list[tuple[str, bool]]:
     draw_trigger = data.get("draw_trigger", "time_deadline")
     lottery_type = data.get("lottery_type", "common")
     selection_mode = data.get("selection_mode", "threshold_random")
-    items: list[tuple[str, bool]] = [
+    condition_label, condition_done = _lottery_condition_progress_from_values(
+        lottery_type=lottery_type,
+        selection_mode=selection_mode,
+        participation_cost_configured="participation_cost" in data,
+        required_invites=int(data.get("required_invites") or 0),
+        required_activity_count=int(data.get("required_activity_count") or 0),
+        finalist_limit=int(data.get("finalist_limit") or 0),
+        subscribe_targets_configured=bool(data.get("subscribe_targets")),
+    )
+    return [
         ("抽奖名称", bool(str(data.get("title") or "").strip())),
         ("奖品和中奖人数", bool(data.get("prizes"))),
         ("开奖条件", bool(data.get("draw_time")) if draw_trigger == "time_deadline" else int(data.get("max_participants") or 0) > 0),
+        (condition_label, condition_done),
     ]
-    if lottery_type == "points":
-        items.append(("参与扣分", "participation_cost" in data))
-    if lottery_type == "invite" and selection_mode == "threshold_random":
-        items.append(("邀请门槛", int(data.get("required_invites") or 0) > 0))
-    if lottery_type == "activity" and selection_mode == "threshold_random":
-        items.append(("活跃门槛", int(data.get("required_activity_count") or 0) > 0))
-    if lottery_type == "subscribe":
-        items.append(("关注目标", bool(data.get("subscribe_targets"))))
-    if selection_mode == "ranking_random":
-        items.append(("入围人数", int(data.get("finalist_limit") or 0) > 0))
-    return items
 
 
 def _append_lottery_wizard_guide(text: str, data: dict, *, next_step: str | None = None) -> str:
@@ -1298,15 +1363,29 @@ async def handle_lottery_wizard_callback(update: Update, context: ContextTypes.D
                 data["step"] = "preset_winners"
                 _save_state_data(state, data)
                 await session.commit()
+                prize_lines = [
+                    f"{prize['name']}: 随机"
+                    for prize in data.get("prizes") or []
+                    if str(prize.get("name") or "").strip()
+                ]
+                if len(prize_lines) > 1:
+                    prompt_text = (
+                        "本次有多个奖品，请逐个奖品设置内定人。\n"
+                        "格式：奖品名称: @用户\n"
+                        "不内定的奖品写：奖品名称: 随机\n"
+                        "可直接按下面模板修改：\n"
+                        + "\n".join(prize_lines)
+                    )
+                else:
+                    prize_name = str((data.get("prizes") or [{}])[0].get("name") or "奖品").strip()
+                    prompt_text = (
+                        "本步只输入内定中奖人，支持数字ID、@用户名、用户资料链接。\n"
+                        f"可直接输入用户，或写成：{prize_name}: @用户\n"
+                        "发送“随机”或“无”可清空内定名单。"
+                    )
                 await q.edit_message_text(
                     _append_lottery_wizard_guide(
-                        "本步只输入内定中奖人，支持数字ID、@用户名、用户资料链接。\n"
-                        "不指定奖品格式：用户1,用户2,用户3\n"
-                        "指定奖品格式：奖品名称: 用户\n"
-                        "完整示例：123456789,@alice,tg://user?id=987654321\n"
-                        "指定奖品完整示例：一等奖: 123456789\n"
-                        "多行示例：\n一等奖: 123456789\n二等奖: @alice\n\n"
-                        "发送“无”可清空内定名单。",
+                        prompt_text,
                         data,
                         next_step="回到确认页后发布到群",
                     ),

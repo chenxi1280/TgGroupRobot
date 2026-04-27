@@ -14,15 +14,19 @@ from backend.features.group_ops.services import bottom_button_service
 from backend.features.group_ops.services.bottom_button_service import build_runtime_markup, sanitize_button_text
 
 
-def test_parse_auction_end_at_supports_minutes():
+def test_parse_auction_end_at_supports_beijing_datetime():
     now = dt.datetime(2026, 3, 31, 12, 0, tzinfo=dt.UTC)
-    assert parse_auction_end_at("30", now=now) == now + dt.timedelta(minutes=30)
+    assert parse_auction_end_at("2026-03-31 23:00", now=now) == dt.datetime(2026, 3, 31, 15, 0, tzinfo=dt.UTC)
 
 
-def test_parse_auction_end_at_supports_hhmm_cross_day():
+def test_parse_auction_end_at_rejects_shortcuts_and_past_datetime():
     now = dt.datetime(2026, 3, 31, 23, 30, tzinfo=dt.UTC)
-    result = parse_auction_end_at("08:05", now=now)
-    assert result == dt.datetime(2026, 4, 1, 8, 5, tzinfo=dt.UTC)
+    with pytest.raises(ValidationError):
+        parse_auction_end_at("30", now=now)
+    with pytest.raises(ValidationError):
+        parse_auction_end_at("08:05", now=now)
+    with pytest.raises(ValidationError):
+        parse_auction_end_at("2026-03-31 08:05", now=now)
 
 
 def test_parse_bid_amount_supports_plain_and_keyword():
