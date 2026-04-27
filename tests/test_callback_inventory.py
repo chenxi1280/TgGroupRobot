@@ -191,6 +191,52 @@ def test_admin_runtime_dispatch_tables_point_to_existing_methods() -> None:
     assert missing_action_handlers == {}
 
 
+def test_critical_backend_feature_entries_are_audited() -> None:
+    expected_menu_actions = {
+        "forcesub",
+        "antispam",
+        "autodel",
+        "bottom_button",
+        "welcome",
+        "verification",
+        "autoreply",
+        "lottery",
+        "auction",
+        "game",
+        "guess",
+        "engagement",
+        "points",
+        "teacher_search",
+        "car_review",
+        "alliance",
+        "renewal",
+        "closegroup",
+        "newmem",
+    }
+    expected_runtime_prefixes = {
+        "btm",
+        "auc",
+        "gm",
+        "guess",
+        "act",
+        "tsearch",
+        "crv",
+        "ali",
+    }
+    expected_admin_actions = {
+        "fs",
+        "nml",
+        "night",
+        "wel",
+        "punish",
+        "renewal",
+    }
+
+    assert expected_menu_actions <= set(ADMIN_MENU_HANDLERS)
+    assert expected_runtime_prefixes <= set(PREFIX_HANDLERS)
+    assert expected_admin_actions <= set(ADM_ACTION_HANDLERS)
+
+
 def test_adm_menu_callbacks_use_explicit_menu_actions() -> None:
     malformed: list[tuple[str, int, str]] = []
 

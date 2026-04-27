@@ -9,15 +9,15 @@ def build_sender_chat_actor(message: Any) -> Any | None:
     sender_chat = getattr(message, "sender_chat", None)
     if sender_chat is None:
         return None
+    title = sender_chat.title or "sender_chat"
     return SimpleNamespace(
-        id=getattr(sender_chat, "id", 0) or 0,
-        username=getattr(sender_chat, "username", None),
-        first_name=getattr(sender_chat, "title", None) or "sender_chat",
+        id=sender_chat.id or 0,
+        username=sender_chat.username,
+        first_name=title,
         last_name=None,
         language_code=None,
         is_bot=False,
         is_sender_chat=True,
-        full_name=getattr(sender_chat, "title", None) or "sender_chat",
     )
 
 

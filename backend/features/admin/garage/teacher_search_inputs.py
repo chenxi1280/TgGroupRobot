@@ -374,7 +374,7 @@ async def _handle_attendance_target_input(
     )
     await clear_admin_input_state(session, target_chat_id=target_chat_id, user_id=update.effective_user.id)
     await session.commit()
-    display_name = f"@{user.username}" if getattr(user, "username", None) else str(user.id)
+    display_name = f"@{user.username}" if user.username else str(user.id)
     await update.effective_message.reply_text(f"✅ 已替 {display_name} 记录今日开课打卡。")
     await admin_handler_instance()._show_teacher_search_menu(update, context, target_chat_id)
 

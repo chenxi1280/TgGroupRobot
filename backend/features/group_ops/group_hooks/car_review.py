@@ -12,6 +12,7 @@ from backend.features.garage.services.garage_features_service import CarReviewSe
 from backend.features.group_ops.text_trigger_runtime import is_reserved_group_text_command_for_chat
 from backend.features.nearby.services.nearby_profile_service import build_user_display_name
 from backend.platform.db.schema.models.core import TgUser
+from backend.shared.services.formatters import format_user_display_name
 from backend.shared.services.publish_service import PublishService
 from backend.shared.time_helper import LOCAL_TIMEZONE
 
@@ -206,7 +207,10 @@ async def _submit_car_review(
             await PublishService.send(
                 context,
                 chat_id=car_review_setting.approver_user_id,
-                text=f"收到新的车评待审核\n群：{chat.title}\n报告ID：{report.report_id}\n提交人：{user.full_name}",
+                text=(
+                    f"收到新的车评待审核\n群：{chat.title}\n报告ID：{report.report_id}\n"
+                    f"提交人：{format_user_display_name(user, user.id)}"
+                ),
             )
         except Exception as exc:
             log.warning("car_review_notify_approver_failed", chat_id=chat.id, report_id=report.report_id, error=str(exc))

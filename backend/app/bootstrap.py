@@ -153,6 +153,14 @@ def _register_common_handlers(app: Application) -> None:
 
     app.add_handler(TypeHandler(Update, _raw_update_probe), group=-99)
 
+    # ==================== Group -4: 系统提示清理 ====================
+    # 这类消息不依赖用户文本内容，必须早于风控处理；否则风控命中后抛出
+    # ApplicationHandlerStop 会导致自动删除完全没有机会执行。
+    app.add_handler(
+        MessageHandler(filters.ChatType.GROUPS & filters.ALL, auto_delete_handler),
+        group=-4,
+    )
+
     # ==================== Group -3: 群风控入口（优先于业务处理）====================
     app.add_handler(
         MessageHandler(filters.ChatType.GROUPS & filters.ALL, anti_flood_message_handler),
@@ -215,13 +223,6 @@ def _register_common_handlers(app: Application) -> None:
     # ==================== 新成员加入事件 ====================
     app.add_handler(ChatMemberHandler(invite_link_join_hint_handler, ChatMemberHandler.CHAT_MEMBER))
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, new_members_handler))
-
-    # ==================== Group 0: 自动删除 ====================
-    # 自动删除系统消息（文本与非文本都需要覆盖，例如匿名管理员消息）
-    app.add_handler(
-        MessageHandler(filters.ChatType.GROUPS & filters.ALL, auto_delete_handler),
-        group=0,
-    )
 
 
 async def _on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:

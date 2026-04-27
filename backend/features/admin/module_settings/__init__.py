@@ -2,6 +2,7 @@ from backend.features.admin.module_settings.force_subscribe_inputs import (
     build_force_subscribe_preview_markup,
     build_force_subscribe_preview_markup_async,
     describe_force_subscribe_target,
+    describe_force_subscribe_target_diagnostics,
     handle_force_subscribe_channel_input,
     parse_force_subscribe_buttons_input,
 )
@@ -21,6 +22,7 @@ __all__ = [
     "build_force_subscribe_preview_markup",
     "build_force_subscribe_preview_markup_async",
     "describe_force_subscribe_target",
+    "describe_force_subscribe_target_diagnostics",
     "format_duration_label",
     "handle_command_config_input",
     "handle_force_subscribe_channel_input",

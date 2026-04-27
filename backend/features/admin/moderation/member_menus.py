@@ -45,6 +45,7 @@ class ModerationMemberMenusMixin:
         buttons = getattr(settings, "force_subscribe_buttons", None) or []
         buttons_configured = custom_buttons and button_count(buttons) > 0
         button_summary = "跟随绑定目标按钮" if not custom_buttons else button_status(buttons)
+        target_diagnostics = await _describe_force_subscribe_target_diagnostics(context, settings)
         check_mode = getattr(settings, "force_subscribe_check_mode", "all")
         check_mode_label = "✅ 全部目标都关注" if check_mode == "all" else "🟡 任一目标已关注"
         action = getattr(
@@ -81,6 +82,7 @@ class ModerationMemberMenusMixin:
                 f"🚫 未关注时处理: {action_label}",
                 f"🧩 按钮来源: {'自定义按钮' if custom_buttons else '跟随绑定目标按钮'}",
                 f"🕘 删除提示消息: {delete_after}秒后删除",
+                *[f"⚠️ {item}" for item in target_diagnostics],
                 "🏖️ 预览: 发送到当前私聊",
             ],
         )

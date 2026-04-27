@@ -5,6 +5,7 @@ from telegram.ext import ContextTypes
 
 from backend.platform.db.schema.models.enums import PointsTxnType
 from backend.platform.db.runtime.session import Database
+from backend.shared.services.formatters import format_user_display_name
 from backend.shared.services.permission_service import PermissionPolicyService
 
 
@@ -13,18 +14,7 @@ _ADMIN_DEDUCT_COMMANDS = {"扣积分", "扣分"}
 
 
 def _user_label(user) -> str:
-    username = getattr(user, "username", None)
-    if username:
-        return f"@{username}"
-    full_name = " ".join(
-        item
-        for item in (
-            getattr(user, "first_name", None),
-            getattr(user, "last_name", None),
-        )
-        if item
-    ).strip()
-    return full_name or str(getattr(user, "id", "用户"))
+    return format_user_display_name(user, user.id)
 
 
 def _parse_admin_adjustment(text: str) -> tuple[int, str, str] | None:
@@ -88,11 +78,11 @@ async def _handle_admin_adjustment(
 
     await ensure_user_func(
         session,
-        user_id=getattr(target_user, "id"),
-        username=getattr(target_user, "username", None),
-        first_name=getattr(target_user, "first_name", None),
-        last_name=getattr(target_user, "last_name", None),
-        language_code=getattr(target_user, "language_code", None),
+        user_id=target_user.id,
+        username=target_user.username,
+        first_name=target_user.first_name,
+        last_name=target_user.last_name,
+        language_code=target_user.language_code,
     )
     ok, balance = await change_points_func(
         session,

@@ -10,6 +10,7 @@ from telegram.ext import ContextTypes
 from backend.features.group_ops.group_hooks.common import _schedule_message_delete
 from backend.platform.db.runtime.session import Database
 from backend.platform.db.schema.models.core import ChatMember
+from backend.shared.services.formatters import format_user_display_name
 
 log = structlog.get_logger(__name__)
 
@@ -104,12 +105,13 @@ async def _process_new_member_limit(
         warn_text = getattr(settings, "new_member_limit_warn_text", None) or "新成员需等待 {duration} 才可发送媒体/链接。"
         remaining_seconds = max(0, int(window_seconds - elapsed))
         duration_label = _format_duration_label(remaining_seconds)
+        user_label = html.escape(format_user_display_name(user, user.id))
         text = (
             warn_text
             .replace("{duration}", duration_label)
-            .replace("{member}", html.escape(user.full_name))
+            .replace("{member}", user_label)
             .replace("{userid}", str(user.id))
-            .replace("{nickname}", html.escape(user.full_name))
+            .replace("{nickname}", user_label)
         )
         try:
             sent = await context.bot.send_message(

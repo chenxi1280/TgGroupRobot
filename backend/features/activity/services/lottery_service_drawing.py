@@ -14,6 +14,7 @@ from backend.platform.db.schema.models.core import Lottery, LotteryParticipant, 
 from backend.platform.db.schema.models.enums import PointsTxnType
 from backend.platform.db.schema.models.expansion import EngagementChatStat
 from backend.platform.db.schema.models.core import InviteTracking
+from backend.shared.services.formatters import format_user_display_name
 
 log = structlog.get_logger(__name__)
 
@@ -172,7 +173,7 @@ def generate_lottery_announcement(lottery: Lottery, winners: list[LotteryWinner]
         user = users.get(winner.user_id)
         prize_name = html.escape(winner.prize_name)
         if user:
-            label = html.escape(user.full_name or user.username or "用户")
+            label = html.escape(format_user_display_name(user, winner.user_id))
             mention = f'<a href="tg://user?id={winner.user_id}">{label}</a>'
             text += f"• {prize_name}: {mention}"
             if winner.points_reward > 0:

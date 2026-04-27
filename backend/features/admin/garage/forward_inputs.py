@@ -164,16 +164,16 @@ async def _handle_source_input(
             remote_chat = None
         if remote_chat is not None:
             source_channel_id = int(remote_chat.id)
-            source_name = getattr(remote_chat, "title", None) or getattr(remote_chat, "username", None)
+            source_name = remote_chat.title or remote_chat.username
 
     if source_channel_id is None:
         await update.effective_message.reply_text("无法识别该频道，请输入频道 ID、用户名或可解析链接。")
         return
-    if remote_chat is None or getattr(remote_chat, "type", None) != "channel":
+    if remote_chat is None or remote_chat.type != "channel":
         await update.effective_message.reply_text("来源必须是频道，群组或私聊不能作为车库转发来源。")
         return
 
-    source_name = source_name or getattr(remote_chat, "title", None) or getattr(remote_chat, "username", None)
+    source_name = source_name or remote_chat.title or remote_chat.username
 
     await GarageForwardService.add_source(
         session,

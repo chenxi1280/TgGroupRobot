@@ -4,7 +4,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from backend.features.group_ops.group_hooks.control_force_subscribe import _check_force_subscribe
+from backend.features.group_ops.group_hooks.control_force_subscribe import (
+    _check_force_subscribe,
+    diagnose_force_subscribe_targets,
+)
 
 
 class _Bot:
@@ -18,11 +21,16 @@ class _Bot:
 
     async def get_chat(self, *, chat_id):
         self.get_chat_calls.append(chat_id)
-        return SimpleNamespace(type="channel", title=self.chat_titles[chat_id])
+        username = str(chat_id).lstrip("@") if isinstance(chat_id, str) and chat_id.startswith("@") else None
+        return SimpleNamespace(type="channel", title=self.chat_titles[chat_id], username=username)
 
     async def get_chat_member(self, *, chat_id, user_id):
         self.get_chat_member_calls.append((chat_id, user_id))
         status = self.statuses[chat_id]
+        if isinstance(status, Exception):
+            raise status
+        if isinstance(status, dict):
+            return SimpleNamespace(**status)
         return SimpleNamespace(status=status)
 
     async def send_message(self, chat_id, text, **kwargs):
@@ -71,7 +79,7 @@ def _chat():
 
 
 def _user():
-    return SimpleNamespace(id=42, full_name="Alice")
+    return SimpleNamespace(id=42, first_name="Alice", last_name=None, username=None)
 
 
 @pytest.mark.asyncio
@@ -167,3 +175,65 @@ async def test_force_subscribe_mutes_and_warns_unsubscribed_member() -> None:
     assert bot.restrict_calls[0]["user_id"] == 42
     assert bot.restrict_calls[0]["permissions"].can_send_messages is False
     assert bot.messages[0]["text"] == "Alice，请关注后发言。"
+
+
+@pytest.mark.asyncio
+async def test_force_subscribe_all_mode_blocks_when_one_target_is_inaccessible() -> None:
+    bot = _Bot({"@channel_a": "member", "@channel_b": RuntimeError("chat not found")})
+    message = _Message()
+
+    allowed = await _check_force_subscribe(
+        _context(bot),
+        _chat(),
+        _user(),
+        message,
+        _settings(
+            force_subscribe_bound_channel_2="@channel_b",
+            force_subscribe_check_mode="all",
+            force_subscribe_not_subscribed_action="delete_only",
+        ),
+    )
+
+    assert allowed is False
+    assert message.deleted is True
+    assert bot.get_chat_member_calls == [("@channel_a", 42), ("@channel_b", 42)]
+
+
+@pytest.mark.asyncio
+async def test_force_subscribe_restricted_member_with_is_member_true_is_allowed() -> None:
+    bot = _Bot({"@channel_a": {"status": "restricted", "is_member": True}})
+
+    allowed = await _check_force_subscribe(
+        _context(bot),
+        _chat(),
+        _user(),
+        _Message(),
+        _settings(),
+    )
+
+    assert allowed is True
+
+
+@pytest.mark.asyncio
+async def test_force_subscribe_target_diagnostics_surface_invalid_and_permission_issues() -> None:
+    bot = _Bot(
+        {
+            "@channel_a": {"status": "member"},
+            "@channel_b": {"status": "member"},
+        },
+        chat_titles={"@channel_a": "频道 A", "@channel_b": "频道 B"},
+    )
+    bot.id = 999
+
+    diagnostics = await diagnose_force_subscribe_targets(
+        _context(bot),
+        _settings(
+            force_subscribe_bound_channel_1="https://t.me/+invite",
+            force_subscribe_bound_channel_2="@channel_b",
+        ),
+    )
+
+    assert diagnostics == [
+        "绑定目标1格式无效，请重新绑定。",
+        "绑定目标2机器人不是管理员，可能无法稳定校验订阅。",
+    ]

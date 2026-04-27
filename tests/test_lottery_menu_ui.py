@@ -48,6 +48,7 @@ from backend.features.activity.services.lottery_service import (
     parse_lottery_config_text,
 )
 import backend.features.activity.services.lottery_service as lottery_service_module
+from backend.platform.db.schema.models.core import TgUser
 from backend.platform.scheduler.core.task_config import TASK_CONFIG
 from backend.platform.scheduler.tasks.lottery_task import (
     LotteryTask,
@@ -575,7 +576,7 @@ async def test_lottery_subscribe_notice_auto_deletes_after_30_seconds(monkeypatc
 
 def test_lottery_join_success_message_mentions_user_and_count_without_preset():
     message = _format_join_success_message(
-        user=SimpleNamespace(id=42, full_name="Alice <A>", username=None),
+        user=SimpleNamespace(id=42, first_name="Alice <A>", last_name=None, username=None),
         lottery=SimpleNamespace(title="测试 <lottery>", max_participants=100),
         participant_count=7,
         full_draw_completed=False,
@@ -1225,7 +1226,7 @@ def test_parse_lottery_config_rejects_non_positive_prize_quantity():
 def test_lottery_result_announcement_uses_html_escaping():
     lottery = SimpleNamespace(lottery_type="common", title="A<B")
     winners = [SimpleNamespace(user_id=123, prize_name="1<USDT>", points_reward=0)]
-    users = {123: SimpleNamespace(id=123, full_name="Alice & Bob", username=None)}
+    users = {123: SimpleNamespace(id=123, first_name="Alice & Bob", last_name=None, username=None)}
 
     announcement = lottery_service_drawing.generate_lottery_announcement(lottery, winners, users)
 
@@ -1241,6 +1242,23 @@ def test_lottery_result_announcement_mentions_winner_even_without_user_record():
     announcement = lottery_service_drawing.generate_lottery_announcement(lottery, winners, {})
 
     assert '<a href="tg://user?id=456">用户456</a>' in announcement
+
+
+def test_lottery_result_announcement_supports_tg_user_name_fields():
+    lottery = SimpleNamespace(lottery_type="common", title="抽奖")
+    winners = [SimpleNamespace(user_id=789, prize_name="1USDT", points_reward=0)]
+    users = {
+        789: TgUser(
+            id=789,
+            first_name="Alice",
+            last_name="Bob",
+            username=None,
+        )
+    }
+
+    announcement = lottery_service_drawing.generate_lottery_announcement(lottery, winners, users)
+
+    assert '<a href="tg://user?id=789">Alice Bob</a>' in announcement
 
 
 def test_lottery_deadline_reminders_are_idempotent_and_html_safe():
@@ -1379,7 +1397,14 @@ async def test_lottery_auto_draw_falls_back_to_direct_send_and_completes(monkeyp
         user_model=SimpleNamespace,
     )
 
-    assert direct_calls == [{"chat_id": -1001, "text": _format_no_participants_announcement(lottery, participant_count=3), "parse_mode": "HTML"}]
+    assert direct_calls == [
+        {
+            "chat_id": -1001,
+            "text": _format_no_participants_announcement(lottery, participant_count=3),
+            "parse_mode": "HTML",
+            "reply_markup": None,
+        }
+    ]
     assert lottery.status == "completed"
     assert session.commits == 1
     assert session.rollbacks == 0

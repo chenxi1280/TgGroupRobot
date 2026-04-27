@@ -10,6 +10,7 @@ from telegram.ext import ContextTypes
 
 from backend.features.automation.services.scheduled_message_service import ScheduledMessageService
 from backend.features.group_ops.group_hooks.common import _schedule_message_delete
+from backend.shared.services.formatters import format_user_display_name
 
 log = structlog.get_logger(__name__)
 
@@ -53,9 +54,10 @@ def _force_subscribe_target_fallback_label(value: str | int | None) -> str:
 
 
 def _force_subscribe_target_url(value: str | int | None, target_chat=None) -> str | None:
-    username = str(getattr(target_chat, "username", "") or "").strip()
-    if username:
-        return f"https://t.me/{username.lstrip('@')}"
+    if target_chat is not None:
+        username = str(target_chat.username or "").strip()
+        if username:
+            return f"https://t.me/{username.lstrip('@')}"
     if not value:
         return None
     raw = str(value).strip()
@@ -69,11 +71,10 @@ def _force_subscribe_target_url(value: str | int | None, target_chat=None) -> st
 
 
 def _force_subscribe_label_from_chat(target_chat, fallback: str) -> str:
-    for attr in ("title", "full_name"):
-        value = str(getattr(target_chat, attr, "") or "").strip()
-        if value:
-            return value
-    username = str(getattr(target_chat, "username", "") or "").strip()
+    title = str(target_chat.title or "").strip()
+    if title:
+        return title
+    username = str(target_chat.username or "").strip()
     if username:
         return f"@{username.lstrip('@')}"
     return fallback
@@ -104,6 +105,43 @@ async def _resolve_force_subscribe_target_label(context: ContextTypes.DEFAULT_TY
     if target_chat is None:
         return fallback
     return _force_subscribe_label_from_chat(target_chat, fallback)
+
+
+async def diagnose_force_subscribe_targets(context: ContextTypes.DEFAULT_TYPE, settings) -> list[str]:
+    diagnostics: list[str] = []
+    bot = getattr(context, "bot", None)
+    bot_id = getattr(bot, "id", None)
+    for index, raw_target in enumerate(
+        (
+            getattr(settings, "force_subscribe_bound_channel_1", None),
+            getattr(settings, "force_subscribe_bound_channel_2", None),
+        ),
+        start=1,
+    ):
+        if not raw_target:
+            continue
+        target = _normalize_force_subscribe_target(raw_target)
+        if target is None:
+            diagnostics.append(f"绑定目标{index}格式无效，请重新绑定。")
+            continue
+        if bot is None or not hasattr(bot, "get_chat"):
+            diagnostics.append(f"绑定目标{index}暂时无法检查机器人权限。")
+            continue
+        try:
+            await bot.get_chat(chat_id=target)
+        except Exception:
+            diagnostics.append(f"绑定目标{index}机器人无法访问，请确认机器人已加入并有权限。")
+            continue
+        if bot_id is None or not hasattr(bot, "get_chat_member"):
+            continue
+        try:
+            bot_member = await bot.get_chat_member(chat_id=target, user_id=bot_id)
+        except Exception:
+            diagnostics.append(f"绑定目标{index}无法确认机器人权限，请重新检查目标频道/群组。")
+            continue
+        if getattr(bot_member, "status", None) not in {"administrator", "creator"}:
+            diagnostics.append(f"绑定目标{index}机器人不是管理员，可能无法稳定校验订阅。")
+    return diagnostics
 
 
 def _build_force_subscribe_channel_button(
@@ -187,10 +225,19 @@ async def _check_force_subscribe(
         return True
 
     subscribed_results: list[bool] = []
+    diagnostics: list[dict[str, object]] = []
     for configured_target in configured_targets:
         target = _normalize_force_subscribe_target(configured_target)
         if target is None:
             subscribed_results.append(False)
+            diagnostics.append(
+                {
+                    "target": configured_target,
+                    "normalized_target": None,
+                    "subscribed": False,
+                    "reason": "invalid_target",
+                }
+            )
             log.warning(
                 "force_subscribe_target_invalid",
                 chat_id=chat.id,
@@ -200,9 +247,28 @@ async def _check_force_subscribe(
             continue
         try:
             member = await context.bot.get_chat_member(chat_id=target, user_id=user.id)
-            subscribed_results.append(_is_force_subscribe_member(member))
+            subscribed = _is_force_subscribe_member(member)
+            subscribed_results.append(subscribed)
+            diagnostics.append(
+                {
+                    "target": configured_target,
+                    "normalized_target": target,
+                    "status": getattr(member, "status", None),
+                    "is_member": getattr(member, "is_member", None),
+                    "subscribed": subscribed,
+                }
+            )
         except Exception as exc:
             subscribed_results.append(False)
+            diagnostics.append(
+                {
+                    "target": configured_target,
+                    "normalized_target": target,
+                    "subscribed": False,
+                    "reason": type(exc).__name__,
+                    "error": str(exc),
+                }
+            )
             log.warning(
                 "force_subscribe_check_failed",
                 chat_id=chat.id,
@@ -214,6 +280,14 @@ async def _check_force_subscribe(
 
     check_mode = getattr(settings, "force_subscribe_check_mode", "all")
     subscribed = all(subscribed_results) if check_mode == "all" else any(subscribed_results)
+    log.info(
+        "force_subscribe_check_result",
+        chat_id=chat.id,
+        user_id=user.id,
+        check_mode=check_mode,
+        subscribed=subscribed,
+        diagnostics=diagnostics,
+    )
     if subscribed:
         return True
 
@@ -236,11 +310,12 @@ async def _check_force_subscribe(
 
     if action in {"delete_and_warn", "warn_only", "mute"}:
         guide_text = getattr(settings, "force_subscribe_guide_text", None) or "{member}，您需要关注指定频道/群组后才能发言。"
+        user_label = html.escape(format_user_display_name(user, user.id))
         text = (
             guide_text
-            .replace("{member}", html.escape(user.full_name))
+            .replace("{member}", user_label)
             .replace("{userid}", str(user.id))
-            .replace("{nickname}", html.escape(user.full_name))
+            .replace("{nickname}", user_label)
         )
         markup = await _build_force_subscribe_markup(context, settings)
         try:

@@ -135,7 +135,7 @@ async def validate_lottery_subscribe_targets(
         except Exception as exc:
             raise ValueError(f"Bot 无法访问关注目标 {target}，请确认已加入该频道/群组并有权限查询成员。") from exc
 
-        chat_type = str(getattr(target_chat, "type", "") or "").lower()
+        chat_type = str(target_chat.type or "").lower()
         if chat_type and chat_type not in {"channel", "group", "supergroup"}:
             raise ValueError(f"关注目标 {target} 不是频道或群组。")
 

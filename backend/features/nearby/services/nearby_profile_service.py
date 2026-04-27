@@ -11,13 +11,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.platform.db.schema.models.core import NearbyProfile, TgUser
 from backend.shared.services.chat_service import ensure_chat
+from backend.shared.services.formatters import format_user_display_name
 from backend.shared.services.user_service import ensure_user
 
 EARTH_RADIUS_KM = 6371.0088
 
 
 class UserIdentityLike(Protocol):
-    """最小用户字段协议，兼容 telegram.User 与 ORM TgUser。"""
+    """用户身份最小字段协议，统一 telegram.User 与 ORM TgUser 的读取边界。"""
 
     id: int
     username: str | None
@@ -73,11 +74,7 @@ def format_distance(distance_km: float, fuzzy: bool = False) -> str:
 
 
 def build_user_display_name(user: TgUser, fallback_user_id: int) -> str:
-    if user.username:
-        return f"@{user.username}"
-    if user.first_name:
-        return user.first_name
-    return f"用户{fallback_user_id}"
+    return format_user_display_name(user, fallback_user_id)
 
 
 def _to_float(value: Decimal | float | int | None) -> float | None:

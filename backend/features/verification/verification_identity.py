@@ -44,7 +44,7 @@ async def resolve_username_to_user_id(context: ContextTypes.DEFAULT_TYPE, messag
         return None
     try:
         target_chat = await context.bot.get_chat(f"@{username}")
-        target_id = getattr(target_chat, "id", None)
+        target_id = target_chat.id
         if isinstance(target_id, int) and target_id > 0:
             return target_id
     except Exception:

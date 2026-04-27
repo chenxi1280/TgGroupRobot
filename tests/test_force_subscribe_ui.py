@@ -203,7 +203,7 @@ async def test_force_subscribe_preview_uses_resolved_channel_buttons(monkeypatch
                 "@channel_a": "频道 A",
                 "@channel_b": "频道 B",
             }
-            return SimpleNamespace(type="channel", title=titles[chat_id])
+            return SimpleNamespace(type="channel", title=titles[chat_id], username=str(chat_id).lstrip("@"))
 
     monkeypatch.setattr(admin_handler, "get_chat_settings", fake_get_chat_settings)
     monkeypatch.setattr(admin_handler._admin_handler.message_helper, "safe_edit", fake_safe_edit)

@@ -358,7 +358,13 @@ def callback_evidence_from_backend() -> list[CallbackEvidence]:
                         )
 
                 for keyword in node.keywords:
-                    if keyword.arg in {"back_callback", "callback_factory", "custom_callback"}:
+                    if keyword.arg in {
+                        "back_callback",
+                        "callback_factory",
+                        "cancel_callback",
+                        "confirm_callback",
+                        "custom_callback",
+                    }:
                         for pattern, raw in expression_to_patterns(keyword.value):
                             evidence.append(
                                 CallbackEvidence(

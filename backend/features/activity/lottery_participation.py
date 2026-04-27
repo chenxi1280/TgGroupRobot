@@ -27,26 +27,15 @@ from backend.features.activity.services.lottery_subscription import (
 from backend.features.group_ops.group_hooks.common import _schedule_message_delete
 from backend.features.points.services.points_service import change_points, get_balance
 from backend.features.points.services.points_extended_service import PointsExtendedService
+from backend.shared.services.formatters import format_user_display_name
 
 log = structlog.get_logger(__name__)
 LOTTERY_SUBSCRIBE_NOTICE_DELETE_SECONDS = 30
 
 
 def _user_mention(user) -> str:
-    label = (
-        getattr(user, "full_name", None)
-        or " ".join(
-            part
-            for part in (
-                getattr(user, "first_name", None),
-                getattr(user, "last_name", None),
-            )
-            if part
-        ).strip()
-        or getattr(user, "username", None)
-        or "用户"
-    )
-    return f'<a href="tg://user?id={getattr(user, "id")}">{html.escape(label)}</a>'
+    label = format_user_display_name(user, user.id)
+    return f'<a href="tg://user?id={user.id}">{html.escape(label)}</a>'
 
 
 def _format_join_success_message(*, user, lottery, participant_count: int, full_draw_completed: bool) -> str:

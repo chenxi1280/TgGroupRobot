@@ -148,7 +148,7 @@ async def _resolve_username_to_user_id(session, context: ContextTypes.DEFAULT_TY
         target_chat = await bot.get_chat(f"@{normalized}")
     except Exception:
         return None
-    target_id = getattr(target_chat, "id", None)
+    target_id = target_chat.id
     if isinstance(target_id, int) and target_id > 0:
         return target_id
     return None
@@ -177,7 +177,7 @@ async def _parse_preset_winner_ids_from_message(
                 getattr(entity, "type", None),
             )
             if entity_type == "text_mention" and getattr(entity, "user", None) is not None:
-                _add_unique_user_id(winner_ids, getattr(entity.user, "id", None))
+                _add_unique_user_id(winner_ids, entity.user.id)
                 continue
             if entity_type == "text_link":
                 entity_value = getattr(entity, "url", "") or ""
@@ -315,7 +315,7 @@ def _is_private_admin_context(update: Update) -> bool:
     chat = getattr(update, "effective_chat", None)
     if chat is None:
         return True
-    return getattr(chat, "type", None) == "private"
+    return chat.type == "private"
 
 
 def _format_lottery_wizard_summary(config: ParsedLotteryConfig, *, include_sensitive: bool = True) -> str:

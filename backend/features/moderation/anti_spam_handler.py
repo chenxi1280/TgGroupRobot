@@ -37,10 +37,7 @@ log = structlog.get_logger(__name__)
 def _user_label(user) -> str:
     if user is None:
         return "频道身份发言"
-    try:
-        return user.mention_html()
-    except Exception:
-        return str(getattr(user, "id", "未知用户"))
+    return user.mention_html()
 
 
 def _is_manual_warning_text(text: str) -> bool:
@@ -115,10 +112,10 @@ async def anti_spam_message_handler(update: Update, context: ContextTypes.DEFAUL
 
         leave_member = getattr(message, "left_chat_member", None)
         if leave_member is not None and bool(get_rule_config(settings, "leave_ban").get("enabled")):
-            if not is_global_whitelisted(settings, getattr(leave_member, "id", None)) and not await should_exempt_admin(
+            if not is_global_whitelisted(settings, leave_member.id) and not await should_exempt_admin(
                 context,
                 chat.id,
-                getattr(leave_member, "id", None),
+                leave_member.id,
                 True,
             ):
                 await ensure_chat(session, chat_id=chat.id, chat_type=chat.type, title=chat.title)

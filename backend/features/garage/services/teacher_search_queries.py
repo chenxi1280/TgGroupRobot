@@ -93,7 +93,7 @@ class TeacherSearchQueryMixin:
         matches: list[tuple[TeacherProfile, TgUser | None]] = []
         for profile, user in rows:
             first_name = (user.first_name or "") if user else ""
-            last_name = (getattr(user, "last_name", None) or "") if user else ""
+            last_name = (user.last_name or "") if user else ""
             parts = [
                 profile.region_text or "",
                 profile.price_text or "",

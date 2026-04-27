@@ -3,7 +3,7 @@ from __future__ import annotations
 import datetime as dt
 import re
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import KeyboardButton, ReplyKeyboardMarkup
 from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 from sqlalchemy import delete, select
@@ -175,21 +175,21 @@ def build_management_layout_preview(layouts: list[BottomButtonLayout]) -> str:
     rows: dict[int, list[str]] = {}
     for layout in layouts:
         rows.setdefault(layout.row_no, [])
-        rows[layout.row_no].append(f"{layout.button_text}（{'发送' if layout.action_mode == 'send' else '填充'}）")
+        rows[layout.row_no].append(layout.button_text)
     return "\n".join(" | ".join(items) for _, items in sorted(rows.items()))
 
 
-def build_runtime_markup(chat_id: int, layouts: list[BottomButtonLayout]) -> InlineKeyboardMarkup:
-    rows: dict[int, list[InlineKeyboardButton]] = {}
+def build_runtime_markup(chat_id: int, layouts: list[BottomButtonLayout]) -> ReplyKeyboardMarkup:
+    rows: dict[int, list[KeyboardButton]] = {}
     for layout in layouts:
-        payload = layout.payload_text or layout.button_text
-        if layout.action_mode == "fill":
-            button = InlineKeyboardButton(layout.button_text, switch_inline_query_current_chat=payload)
-        else:
-            button = InlineKeyboardButton(layout.button_text, callback_data=f"btmrun:send:{chat_id}:{layout.id}")
+        button = KeyboardButton(layout.button_text)
         rows.setdefault(layout.row_no, []).append(button)
-    inline_rows = [items for _, items in sorted(rows.items())]
-    return InlineKeyboardMarkup(inline_rows or [[InlineKeyboardButton("ℹ️ 暂无按钮", callback_data="btmrun:noop")]])
+    keyboard_rows = [items for _, items in sorted(rows.items())]
+    return ReplyKeyboardMarkup(
+        keyboard_rows or [[KeyboardButton("暂无按钮")]],
+        resize_keyboard=True,
+        is_persistent=True,
+    )
 
 
 async def generate_buttons(context: ContextTypes.DEFAULT_TYPE, session: AsyncSession, chat_id: int) -> BottomButtonSetting:
@@ -197,25 +197,26 @@ async def generate_buttons(context: ContextTypes.DEFAULT_TYPE, session: AsyncSes
     layouts = await list_layouts(session, chat_id)
     markup = build_runtime_markup(chat_id, layouts)
     text = setting.header_text
-    sent_message_id: int | None = None
 
     if setting.generated_message_id:
         try:
-            await context.bot.edit_message_text(
+            await context.bot.delete_message(
                 chat_id=chat_id,
                 message_id=setting.generated_message_id,
-                text=text,
-                reply_markup=markup,
             )
-            sent_message_id = setting.generated_message_id
         except TelegramError:
-            sent_message_id = None
+            pass
 
-    if sent_message_id is None:
-        sent = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=markup)
-        sent_message_id = sent.message_id
+    sent = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=markup)
+    sent_message_id = sent.message_id
+    try:
+        await context.bot.delete_message(chat_id=chat_id, message_id=sent_message_id)
+        sent_message_id = None
+    except TelegramError:
+        pass
 
     setting.generated_message_id = sent_message_id
+    setting.repeat_generate_enabled = False
     setting.last_generated_at = _now()
     setting.updated_at = _now()
     await session.flush()
@@ -223,18 +224,4 @@ async def generate_buttons(context: ContextTypes.DEFAULT_TYPE, session: AsyncSes
 
 
 async def list_due_repeat_generate(session: AsyncSession) -> list[BottomButtonSetting]:
-    now = _now()
-    stmt = select(BottomButtonSetting).where(
-        BottomButtonSetting.enabled.is_(True),
-        BottomButtonSetting.repeat_generate_enabled.is_(True),
-    )
-    result = await session.execute(stmt)
-    settings = list(result.scalars().all())
-    due: list[BottomButtonSetting] = []
-    for setting in settings:
-        if setting.last_generated_at is None:
-            due.append(setting)
-            continue
-        if setting.last_generated_at + dt.timedelta(seconds=setting.repeat_interval_seconds) <= now:
-            due.append(setting)
-    return due
+    return []

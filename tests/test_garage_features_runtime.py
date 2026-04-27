@@ -175,11 +175,11 @@ async def test_list_nearby_teachers_orders_by_distance_and_formats_fuzzy_text(mo
     rows = [
         (
             SimpleNamespace(user_id=1, latitude=31.2305, longitude=121.4739, region_text="A区", price_text="100", labels=["新人"], updated_at=dt.datetime.now(dt.UTC)),
-            SimpleNamespace(id=1, username="nearer", first_name="Near"),
+            SimpleNamespace(id=1, username="nearer", first_name="Near", last_name=None),
         ),
         (
             SimpleNamespace(user_id=2, latitude=31.2405, longitude=121.4839, region_text="B区", price_text="200", labels=["热门"], updated_at=dt.datetime.now(dt.UTC)),
-            SimpleNamespace(id=2, username="farther", first_name="Far"),
+            SimpleNamespace(id=2, username="farther", first_name="Far", last_name=None),
         ),
     ]
 
@@ -242,7 +242,7 @@ async def test_list_open_course_teachers_filters_non_certified_profiles(monkeypa
                 labels=["新人"],
                 updated_at=dt.datetime.now(dt.UTC),
             ),
-            SimpleNamespace(id=1, username="teacher_a", first_name="A"),
+            SimpleNamespace(id=1, username="teacher_a", first_name="A", last_name=None),
         ),
         (
             SimpleNamespace(
@@ -252,7 +252,7 @@ async def test_list_open_course_teachers_filters_non_certified_profiles(monkeypa
                 labels=["热门"],
                 updated_at=dt.datetime.now(dt.UTC),
             ),
-            SimpleNamespace(id=2, username="teacher_b", first_name="B"),
+            SimpleNamespace(id=2, username="teacher_b", first_name="B", last_name=None),
         ),
     ]
     session = _FakeSession(execute_results=[_ExecuteResult(rows=rows)])
@@ -289,17 +289,17 @@ async def test_build_teacher_summary_groups_by_region(monkeypatch):
         (
             SimpleNamespace(chat_id=-1001, user_id=1, enabled=True, created_at=dt.datetime.now(dt.UTC)),
             SimpleNamespace(region_text="A区", price_text="100", labels=["新人"], open_course_today=True),
-            SimpleNamespace(id=1, username="teacher_a", first_name="A"),
+            SimpleNamespace(id=1, username="teacher_a", first_name="A", last_name=None),
         ),
         (
             SimpleNamespace(chat_id=-1001, user_id=2, enabled=True, created_at=dt.datetime.now(dt.UTC)),
             SimpleNamespace(region_text="A区", price_text="200", labels=["热门"], open_course_today=False),
-            SimpleNamespace(id=2, username="teacher_b", first_name="B"),
+            SimpleNamespace(id=2, username="teacher_b", first_name="B", last_name=None),
         ),
         (
             SimpleNamespace(chat_id=-1001, user_id=3, enabled=True, created_at=dt.datetime.now(dt.UTC)),
             SimpleNamespace(region_text="B区", price_text="300", labels=[], open_course_today=True),
-            SimpleNamespace(id=3, username=None, first_name="Teacher C"),
+            SimpleNamespace(id=3, username=None, first_name="Teacher C", last_name=None),
         ),
     ]
     session = _FakeSession(execute_results=[_ExecuteResult(rows=rows)])
@@ -330,12 +330,12 @@ async def test_build_teacher_summary_filters_open_course(monkeypatch):
         (
             SimpleNamespace(chat_id=-1001, user_id=1, enabled=True, created_at=dt.datetime.now(dt.UTC)),
             SimpleNamespace(region_text="A区", price_text="100", labels=["新人"], open_course_today=False),
-            SimpleNamespace(id=1, username="teacher_a", first_name="A"),
+            SimpleNamespace(id=1, username="teacher_a", first_name="A", last_name=None),
         ),
         (
             SimpleNamespace(chat_id=-1001, user_id=2, enabled=True, created_at=dt.datetime.now(dt.UTC)),
             SimpleNamespace(region_text="B区", price_text="200", labels=["热门"], open_course_today=True),
-            SimpleNamespace(id=2, username="teacher_b", first_name="B"),
+            SimpleNamespace(id=2, username="teacher_b", first_name="B", last_name=None),
         ),
     ]
     session = _FakeSession(execute_results=[_ExecuteResult(rows=rows)])
@@ -413,15 +413,15 @@ async def test_list_rankings_aggregates_average_total_score():
     rows = [
         (
             SimpleNamespace(chat_id=-1001, teacher_user_id=11, report_status="approved", scores={"total_score": 80}),
-            SimpleNamespace(id=11, username="teacher_a", first_name="A"),
+            SimpleNamespace(id=11, username="teacher_a", first_name="A", last_name=None),
         ),
         (
             SimpleNamespace(chat_id=-1001, teacher_user_id=11, report_status="published", scores={"total_score": 100}),
-            SimpleNamespace(id=11, username="teacher_a", first_name="A"),
+            SimpleNamespace(id=11, username="teacher_a", first_name="A", last_name=None),
         ),
         (
             SimpleNamespace(chat_id=-1001, teacher_user_id=12, report_status="approved", scores={"total_score": 95}),
-            SimpleNamespace(id=12, username="teacher_b", first_name="B"),
+            SimpleNamespace(id=12, username="teacher_b", first_name="B", last_name=None),
         ),
     ]
     session = _FakeSession(execute_results=[_ExecuteResult(rows=rows)])
@@ -564,7 +564,7 @@ async def test_process_garage_features_exact_lookup_replies_teacher_reviews(monk
     session = _FakeSession()
     db = _FakeDb(session)
     replies: list[str] = []
-    teacher = SimpleNamespace(id=77, username="teacher77", first_name="T")
+    teacher = SimpleNamespace(id=77, username="teacher77", first_name="T", last_name=None)
     report = SimpleNamespace(
         report_id=5,
         author_user_id=42,
@@ -593,7 +593,7 @@ async def test_process_garage_features_exact_lookup_replies_teacher_reviews(monk
         return teacher if username == "teacher77" else None
 
     async def fake_list_reports(session, chat_id: int, teacher_user_id: int, *, limit: int = 5):
-        return [(report, SimpleNamespace(id=42, username="author42", first_name="A"))]
+        return [(report, SimpleNamespace(id=42, username="author42", first_name="A", last_name=None))]
 
     async def fake_stats(session, chat_id: int, teacher_user_id: int):
         return {"count": 1, "avg_score": 9}
@@ -814,7 +814,7 @@ async def test_process_garage_features_tag_search_uses_only_open_setting(monkeyp
 
 @pytest.mark.asyncio
 async def test_process_garage_features_submits_car_review_pending_admin_review(monkeypatch):
-    session = _FakeSession(get_map={(TgUser, 77): SimpleNamespace(id=77, username="teacher77", first_name="T"), (TgUser, 42): SimpleNamespace(id=42, username="author42", first_name="A")})
+    session = _FakeSession(get_map={(TgUser, 77): SimpleNamespace(id=77, username="teacher77", first_name="T", last_name=None), (TgUser, 42): SimpleNamespace(id=42, username="author42", first_name="A", last_name=None)})
     db = _FakeDb(session)
     replies = []
 
@@ -870,7 +870,7 @@ async def test_process_garage_features_submits_car_review_pending_admin_review(m
         SimpleNamespace(application=SimpleNamespace(bot_data={})),
         db,
         SimpleNamespace(id=-1001, title="测试群"),
-        SimpleNamespace(id=42, full_name="Author"),
+        SimpleNamespace(id=42, first_name="Author", last_name=None, username=None),
         SimpleNamespace(
             message_id=12,
             location=None,

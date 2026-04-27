@@ -5,22 +5,21 @@
 from __future__ import annotations
 
 import datetime as dt
-from typing import Any
 
-from telegram import User
+from backend.shared.services.formatters import UserDisplaySource, format_user_display_name
 
 
 def format_user_label(
-    user: User | dict[str, Any] | None,
+    user: UserDisplaySource | None,
     user_id: int | None = None,
     default: str = "未知用户",
 ) -> str:
     """格式化用户显示名称
 
-    优先级：first_name + last_name > username > "用户{id}" > default
+    优先级：username > first_name + last_name > "用户{id}" > default
 
     Args:
-        user: User 对象或包含用户信息的字典
+        user: 统一用户字段对象
         user_id: 用户 ID（当 user 为 None 时使用）
         default: 默认显示名称
 
@@ -28,44 +27,14 @@ def format_user_label(
         格式化后的用户名称
 
     Example:
-        >>> from telegram import User
-        >>> user = User(id=123, first_name="张", last_name="三", username=None, is_bot=False, language_code="zh")
+        >>> from types import SimpleNamespace
+        >>> user = SimpleNamespace(id=123, first_name="张", last_name="三", username=None)
         >>> format_user_label(user)
-        '张三'
+        '张 三'
         >>> format_user_label(None, 456)
         '用户456'
     """
-    if user is None:
-        return f"用户{user_id}" if user_id else default
-
-    # 处理 User 对象
-    if isinstance(user, User):
-        if user.first_name or user.last_name:
-            parts = []
-            if user.first_name:
-                parts.append(user.first_name)
-            if user.last_name:
-                parts.append(user.last_name)
-            return "".join(parts)
-        return user.username or f"用户{user.id}"
-
-    # 处理字典格式（兼容不同数据结构）
-    if isinstance(user, dict):
-        first_name = user.get("first_name")
-        last_name = user.get("last_name")
-        username = user.get("username")
-        uid = user.get("id") or user.get("user_id")
-
-        if first_name or last_name:
-            parts = []
-            if first_name:
-                parts.append(first_name)
-            if last_name:
-                parts.append(last_name)
-            return "".join(parts)
-        return username or f"用户{uid}" if uid else default
-
-    return default
+    return format_user_display_name(user, user_id, default=default)
 
 
 def format_participant_count(

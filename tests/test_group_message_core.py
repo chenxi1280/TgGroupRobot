@@ -240,3 +240,51 @@ async def test_unified_group_handler_skips_force_subscribe_for_admin(monkeypatch
 
     assert handled is False
     assert auto_reply_calls == [(-1001, "管理员发言")]
+
+
+@pytest.mark.asyncio
+async def test_unified_group_handler_checks_banned_words_in_media_caption(monkeypatch):
+    session = _FakeSession()
+    banned_word_calls: list[str] = []
+
+    async def fake_ensure(session, chat_id: int, **kwargs):
+        return _settings()
+
+    async def fake_is_admin(context, chat_id: int, user_id: int):
+        return False
+
+    async def fake_banned_word(context, db, chat, user, message, message_text: str, settings):
+        banned_word_calls.append(message_text)
+        return True
+
+    async def forbidden_auto_reply(*args, **kwargs):
+        raise AssertionError("deleted banned-word captions should stop later auto-reply processing")
+
+    monkeypatch.setattr(core_hooks.ModuleSettingsService, "ensure", fake_ensure)
+    monkeypatch.setattr(core_hooks, "is_user_admin", fake_is_admin)
+    monkeypatch.setattr(core_hooks, "_process_rename_monitor", _false)
+    monkeypatch.setattr(core_hooks, "_process_group_lock_controls", _false)
+    monkeypatch.setattr(core_hooks, "_process_night_mode", _false)
+    monkeypatch.setattr(core_hooks, "_process_alliance_joint_ban", _false)
+    monkeypatch.setattr(core_hooks, "_check_force_subscribe", _true)
+    monkeypatch.setattr(core_hooks, "_process_new_member_limit", _false)
+    monkeypatch.setattr(core_hooks, "_process_garage_features", _false)
+    monkeypatch.setattr(core_hooks, "_process_banned_word_check", fake_banned_word)
+    monkeypatch.setattr(core_hooks, "_process_auto_reply", forbidden_auto_reply)
+
+    update = SimpleNamespace(
+        effective_chat=SimpleNamespace(id=-1001, type="supergroup", title="Test Group"),
+        effective_user=SimpleNamespace(
+            id=42,
+            username="alice",
+            first_name="Alice",
+            last_name=None,
+            language_code="zh-CN",
+        ),
+        effective_message=SimpleNamespace(text=None, caption="视频里的违禁词", message_id=10, sender_chat=None),
+    )
+
+    handled = await core_hooks.unified_group_message_handler(update, _context(session))
+
+    assert handled is True
+    assert banned_word_calls == ["视频里的违禁词"]

@@ -619,7 +619,7 @@ async def test_new_member_limit_blocks_media_and_links(monkeypatch):
 
     context = SimpleNamespace(bot=FakeBot(), application=SimpleNamespace(bot_data={"db": _Db()}))
     chat = SimpleNamespace(id=-1001)
-    user = SimpleNamespace(id=7, full_name="测试用户")
+    user = SimpleNamespace(id=7, first_name="测试用户", last_name=None, username=None)
     message = SimpleNamespace(
         text="访问 https://example.com",
         caption=None,
@@ -677,7 +677,7 @@ async def test_night_mode_blocks_messages(monkeypatch):
 
     context = SimpleNamespace(bot=FakeBot(), application=SimpleNamespace(bot_data={"db": _Db()}))
     chat = SimpleNamespace(id=-1001)
-    user = SimpleNamespace(id=7, full_name="测试用户")
+    user = SimpleNamespace(id=7, first_name="测试用户", last_name=None, username=None)
     message = SimpleNamespace(message_id=12)
     message.delete = fake_delete
 

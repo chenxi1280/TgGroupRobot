@@ -12,7 +12,6 @@
     ],
     "inputStates": [
       "teacher_footer_text_input",
-      "teacher_footer_link_input",
       "teacher_attend_target_input",
       "teacher_att_open_input",
       "teacher_att_full_input",
@@ -234,23 +233,16 @@
       "id": "footer",
       "title": "页脚设置",
       "message": [
-        "页脚文本和链接会附加到老师搜索结果。"
+        "底部按钮会附加到老师搜索结果，点击后直接触发老师搜索。"
       ],
       "keyboard": [
         [
           {
-            "label": "页脚文本",
+            "label": "修改文字",
             "callbackData": "tsearch:footer:text:{chat_id}",
             "action": "input",
             "target": "footer_text_input",
-            "feedback": "请输入页脚文本。"
-          },
-          {
-            "label": "页脚链接",
-            "callbackData": "tsearch:footer:link:{chat_id}",
-            "action": "input",
-            "target": "footer_link_input",
-            "feedback": "请输入链接。"
+            "feedback": "请输入底部按钮文字。"
           }
         ],
         [
@@ -292,41 +284,6 @@
             "value": "联系管理员获取更多信息",
             "target": "result",
             "feedback": "已填入：页脚。"
-          }
-        ],
-        "errors": [
-          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
-        ]
-      }
-    },
-    {
-      "id": "footer_link_input",
-      "title": "设置页脚链接",
-      "message": [
-        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
-      ],
-      "keyboard": [
-        [
-          {
-            "label": "返回",
-            "callbackData": "tsearch:footer:menu:{chat_id}",
-            "action": "back",
-            "target": "footer",
-            "feedback": "已返回上一层。"
-          }
-        ]
-      ],
-      "input": {
-        "type": "text",
-        "prompt": "发送 URL",
-        "placeholder": "https://example.com",
-        "clearCommand": "/clear",
-        "examples": [
-          {
-            "label": "链接",
-            "value": "https://example.com",
-            "target": "result",
-            "feedback": "已填入：链接。"
           }
         ],
         "errors": [

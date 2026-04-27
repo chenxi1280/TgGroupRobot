@@ -13,11 +13,12 @@ from backend.platform.telegram.errors import answer_callback_query_safely, mark_
 from backend.shared.callback_parser import CallbackParser
 from backend.shared.services.chat_service import ensure_chat, get_chat_settings
 from backend.shared.services.command_config_service import ensure_command_enabled
+from backend.shared.services.formatters import format_user_display_name
 from backend.shared.services.user_service import ensure_user
 
 
 def _user_link_name(user) -> str:
-    return f"{getattr(user, 'first_name', None) or getattr(user, 'username', None) or '用户'}的链接"
+    return f"{format_user_display_name(user, user.id)}的链接"
 
 
 def _relay_link(bot_username: str | None, link_id: int) -> str | None:

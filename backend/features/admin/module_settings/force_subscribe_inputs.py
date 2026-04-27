@@ -18,6 +18,7 @@ from backend.features.group_ops.group_hooks.control_force_subscribe import (
     _build_resolved_force_subscribe_channel_button,
     _normalize_force_subscribe_target,
     _resolve_force_subscribe_target_label,
+    diagnose_force_subscribe_targets,
 )
 from backend.shared.services.base import ValidationError
 from backend.shared.ui.button_input import is_clear_button_input, parse_button_rows
@@ -35,6 +36,10 @@ async def describe_force_subscribe_target(context: ContextTypes.DEFAULT_TYPE, va
     if not value:
         return "未绑定"
     return await _resolve_force_subscribe_target_label(context, value)
+
+
+async def describe_force_subscribe_target_diagnostics(context: ContextTypes.DEFAULT_TYPE, settings) -> list[str]:
+    return await diagnose_force_subscribe_targets(context, settings)
 
 
 def build_force_subscribe_preview_markup(
@@ -182,7 +187,7 @@ async def _validate_force_subscribe_target(update: Update, context: ContextTypes
         await message.reply_text("无法访问该频道/群组，请确认机器人已加入目标并具备管理员权限。")
         return False
 
-    if getattr(target_chat, "type", None) not in {"channel", "group", "supergroup"}:
+    if target_chat.type not in {"channel", "group", "supergroup"}:
         await message.reply_text("本期不支持机器人目标，请绑定频道或群组。")
         return False
 

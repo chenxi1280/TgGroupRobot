@@ -32,10 +32,10 @@ def pop_invite_join_hint(context: ContextTypes.DEFAULT_TYPE, *, chat_id: int, us
 
 
 def collect_join_spam_signals(user) -> list[str]:
-    username = (getattr(user, "username", None) or "").strip()
+    username = (user.username or "").strip()
     full_name = " ".join(
         part.strip()
-        for part in [getattr(user, "first_name", None) or "", getattr(user, "last_name", None) or ""]
+        for part in [user.first_name or "", user.last_name or ""]
         if part and part.strip()
     ).strip()
     haystack = f"{username} {full_name}".strip()

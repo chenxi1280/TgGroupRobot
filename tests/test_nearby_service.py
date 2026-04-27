@@ -35,13 +35,13 @@ def test_format_distance_fuzzy() -> None:
 
 
 def test_build_user_display_name_priority() -> None:
-    user = SimpleNamespace(username="alice", first_name="Alice")
+    user = SimpleNamespace(id=1, username="alice", first_name="Alice", last_name=None)
     assert build_user_display_name(user, 1) == "@alice"
 
-    user = SimpleNamespace(username=None, first_name="Alice")
+    user = SimpleNamespace(id=1, username=None, first_name="Alice", last_name=None)
     assert build_user_display_name(user, 1) == "Alice"
 
-    user = SimpleNamespace(username=None, first_name=None)
+    user = SimpleNamespace(id=42, username=None, first_name=None, last_name=None)
     assert build_user_display_name(user, 42) == "用户42"
 
 

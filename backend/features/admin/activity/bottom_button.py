@@ -23,9 +23,8 @@ class BottomButtonAdminControllerMixin:
                 f"⚙️ 状态：{'✅ 启用' if setting.enabled else '❌ 关闭'}",
                 f"📝 文案：{setting.header_text}",
                 f"🔢 按钮数：{len(layouts)}",
-                f"⏱ 重复生成：{'✅ 启用' if setting.repeat_generate_enabled else '❌ 关闭'}",
                 "",
-                "提示：发送模式会由 Bot 直接发出内容；填充模式会把内容填到当前输入框。",
+                "提示：底部按钮会同步到 Telegram 输入框下方，用户点击后会发送按钮文字并触发对应功能。",
             ]
         )
         keyboard = InlineKeyboardMarkup([
@@ -39,8 +38,7 @@ class BottomButtonAdminControllerMixin:
                 InlineKeyboardButton("⌨️ 按钮设置", callback_data=f"btm:layout:{chat_id}:edit"),
             ],
             [
-                InlineKeyboardButton("✅ 立刻生成", callback_data=f"btm:generate:{chat_id}:now"),
-                InlineKeyboardButton(("✅ " if setting.repeat_generate_enabled else "⏱ ") + "重复生成", callback_data=f"btm:repeat:{chat_id}:{0 if setting.repeat_generate_enabled else 1}"),
+                InlineKeyboardButton("✅ 同步到底部键盘", callback_data=f"btm:generate:{chat_id}:now"),
             ],
             [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
         ])
@@ -116,20 +114,14 @@ class BottomButtonAdminControllerMixin:
                 "⌨️ 底部按钮 | 编辑按钮",
                 "",
                 f"按钮文字：{layout.button_text}",
-                f"发送内容：{layout.payload_text or layout.button_text}",
-                f"当前模式：{'📨 直接发送' if layout.action_mode == 'send' else '✍️ 仅填充'}",
+                f"点击后发送：{layout.button_text}",
                 "",
-                "建议按钮文字不超过 4 个字。",
+                "建议按钮文字不超过 4 个字，并与群内触发词保持一致。",
             ]
         )
         keyboard = InlineKeyboardMarkup([
             [
                 InlineKeyboardButton("✏️ 修改文字", callback_data=f"btm:button:{chat_id}:text:{layout.id}"),
-                InlineKeyboardButton("📝 修改内容", callback_data=f"btm:button:{chat_id}:payload:{layout.id}"),
-            ],
-            [
-                InlineKeyboardButton("📨 直接发送" + (" ✅" if layout.action_mode == "send" else ""), callback_data=f"btm:button:{chat_id}:mode:{layout.id}:send"),
-                InlineKeyboardButton("✍️ 仅填充" + (" ✅" if layout.action_mode == "fill" else ""), callback_data=f"btm:button:{chat_id}:mode:{layout.id}:fill"),
             ],
             [
                 InlineKeyboardButton("❌ 删除按钮", callback_data=f"btm:button:{chat_id}:delete:{layout.id}"),
@@ -153,7 +145,10 @@ class BottomButtonAdminControllerMixin:
 
         async with db.session_factory() as session:
             if action == "toggle":
-                await update_bottom_button_setting(session, chat_id, enabled=callback_data.get(3) == "1")
+                enabled = callback_data.get(3) == "1"
+                await update_bottom_button_setting(session, chat_id, enabled=enabled)
+                if enabled:
+                    await generate_bottom_buttons(context, session, chat_id)
                 await session.commit()
                 await self._show_bottom_button_menu(update, context, chat_id)
                 return
@@ -238,7 +233,8 @@ class BottomButtonAdminControllerMixin:
                 await self._show_bottom_button_menu(update, context, chat_id)
                 return
             if action == "repeat":
-                await update_bottom_button_setting(session, chat_id, repeat_generate_enabled=callback_data.get(3) == "1")
+                await update_bottom_button_setting(session, chat_id, repeat_generate_enabled=False)
                 await session.commit()
+                await answer_callback_query_safely(update, "底部键盘不需要重复生成，已保持关闭。")
                 await self._show_bottom_button_menu(update, context, chat_id)
                 return

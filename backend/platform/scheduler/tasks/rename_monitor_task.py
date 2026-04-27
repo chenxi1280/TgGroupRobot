@@ -21,8 +21,8 @@ def _display_name(user) -> str:
     return " ".join(
         part
         for part in [
-            getattr(user, "first_name", None),
-            getattr(user, "last_name", None),
+            user.first_name,
+            user.last_name,
         ]
         if part
     )
@@ -56,7 +56,7 @@ async def _check_member_profile(
     if current_user is None:
         return False
 
-    old_username = getattr(stored_user, "username", None)
+    old_username = stored_user.username
     old_name = _display_name(stored_user)
     context = SimpleNamespace(bot=app.bot, application=app)
     chat = SimpleNamespace(id=settings.chat_id)
@@ -71,14 +71,10 @@ async def _check_member_profile(
     )
 
     now = dt.datetime.now(dt.UTC)
-    stored_user.username = getattr(current_user, "username", None)
-    stored_user.first_name = getattr(current_user, "first_name", None)
-    stored_user.last_name = getattr(current_user, "last_name", None)
-    stored_user.language_code = getattr(current_user, "language_code", None) or getattr(
-        stored_user,
-        "language_code",
-        None,
-    )
+    stored_user.username = current_user.username
+    stored_user.first_name = current_user.first_name
+    stored_user.last_name = current_user.last_name
+    stored_user.language_code = current_user.language_code or stored_user.language_code
     stored_user.updated_at = now
     member.updated_at = now
     return changed

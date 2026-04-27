@@ -10,6 +10,7 @@ from backend.features.admin.points_extended.runtime import (
     clear_points_state,
     parse_state_int,
 )
+from backend.shared.services.formatters import format_user_display_name
 
 
 def _forwarded_user(message):
@@ -24,18 +25,7 @@ def _forwarded_user(message):
 
 
 def _user_label_from_telegram_user(user) -> str:
-    username = getattr(user, "username", None)
-    if username:
-        return f"@{username}"
-    name_parts = [
-        item
-        for item in (
-            getattr(user, "first_name", None),
-            getattr(user, "last_name", None),
-        )
-        if item
-    ]
-    return " ".join(name_parts).strip() or str(getattr(user, "id", "用户"))
+    return format_user_display_name(user, user.id)
 
 
 def _target_label(raw_value: str, target_user_id: int) -> str:
@@ -49,14 +39,14 @@ def _is_adjust_mode(value) -> bool:
 async def _resolve_adjust_target(module, session, message, raw_value: str) -> tuple[int, str, bool] | None:
     forwarded_user = _forwarded_user(message)
     if forwarded_user is not None:
-        target_user_id = int(getattr(forwarded_user, "id"))
+        target_user_id = int(forwarded_user.id)
         await module.ensure_user(
             session,
             user_id=target_user_id,
-            username=getattr(forwarded_user, "username", None),
-            first_name=getattr(forwarded_user, "first_name", None),
-            last_name=getattr(forwarded_user, "last_name", None),
-            language_code=getattr(forwarded_user, "language_code", None),
+            username=forwarded_user.username,
+            first_name=forwarded_user.first_name,
+            last_name=forwarded_user.last_name,
+            language_code=forwarded_user.language_code,
         )
         return target_user_id, _user_label_from_telegram_user(forwarded_user), True
 

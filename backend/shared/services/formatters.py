@@ -3,10 +3,45 @@
 from __future__ import annotations
 
 import datetime as dt
-from typing import TYPE_CHECKING
+import html
+from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     from backend.platform.db.schema.models.core import TgUser
+
+
+class UserDisplaySource(Protocol):
+    id: int
+    username: str | None
+    first_name: str | None
+    last_name: str | None
+
+
+def format_user_display_name(
+    user: UserDisplaySource | None,
+    fallback_user_id: int | None = None,
+    default: str = "用户",
+) -> str:
+    if user is None:
+        return f"用户{fallback_user_id}" if fallback_user_id is not None else default
+
+    username = str(user.username or "").strip()
+    if username:
+        return f"@{username.lstrip('@')}"
+
+    parts = [
+        str(part).strip()
+        for part in (
+            user.first_name,
+            user.last_name,
+        )
+        if isinstance(part, str) and part.strip()
+    ]
+    if parts:
+        return " ".join(parts)
+
+    user_id = fallback_user_id if fallback_user_id is not None else user.id
+    return f"用户{user_id}" if user_id is not None else default
 
 
 def format_user_mention(user: "TgUser", use_html: bool = False) -> str:
@@ -24,12 +59,13 @@ def format_user_mention(user: "TgUser", use_html: bool = False) -> str:
         # HTML 格式
         if user.username:
             return f"@{user.username}"
-        return f"<a href=\"tg://user?id={user.id}\">{user.full_name or '用户'}</a>"
+        label = html.escape(format_user_display_name(user, user.id))
+        return f"<a href=\"tg://user?id={user.id}\">{label}</a>"
     else:
         # Markdown 格式
         if user.username:
             return f"@{user.username}"
-        return f"[{user.full_name or '用户'}](tg://user?id={user.id})"
+        return f"[{format_user_display_name(user, user.id)}](tg://user?id={user.id})"
 
 
 def format_datetime(dt: dt.datetime, format_str: str = "%Y-%m-%d %H:%M") -> str:

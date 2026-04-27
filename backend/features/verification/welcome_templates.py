@@ -5,18 +5,17 @@ import html
 from telegram import User
 
 from backend.platform.db.schema.models.core import TgUser
+from backend.shared.services.formatters import format_user_display_name
 
 
 def render_welcome_template(template: str, *, default_text: str, member: User | TgUser | None, group_name: str, user_id: int) -> str:
     if isinstance(member, User):
         member_value = member.mention_html()
-        nickname = html.escape(member.full_name)
+        nickname = html.escape(format_user_display_name(member, user_id))
     else:
-        full_name = " ".join(
-            part for part in [getattr(member, "first_name", None), getattr(member, "last_name", None)] if part
-        ).strip()
-        nickname = html.escape(full_name or getattr(member, "username", "") or str(user_id))
-        member_value = html.escape(full_name or getattr(member, "username", "") or str(user_id))
+        display_name = format_user_display_name(member, user_id)
+        nickname = html.escape(display_name)
+        member_value = html.escape(display_name)
 
     return (
         (template or default_text)

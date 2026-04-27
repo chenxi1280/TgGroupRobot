@@ -80,6 +80,7 @@ from backend.features.admin.module_settings import (
     build_force_subscribe_preview_markup_async as _build_force_subscribe_preview_markup_async,
     build_force_subscribe_preview_markup as _build_force_subscribe_preview_markup,
     describe_force_subscribe_target as _describe_force_subscribe_target,
+    describe_force_subscribe_target_diagnostics as _describe_force_subscribe_target_diagnostics,
     format_duration_label as _format_duration_label,
     handle_command_config_input,
     handle_force_subscribe_channel_input,

@@ -121,16 +121,25 @@ async def _participant_count(session, lottery_id: int) -> int:
     return int(result.scalar() or 0)
 
 
-async def _send_lottery_message(app, lottery, text: str):
+async def _send_lottery_message(app, lottery, text: str, *, reply_to_source: bool = True):
     kwargs = {
         "chat_id": lottery.chat_id,
         "text": text,
         "parse_mode": "HTML",
     }
-    if lottery.message_id:
+    if reply_to_source and lottery.message_id:
         kwargs["reply_to_message_id"] = lottery.message_id
         kwargs["allow_sending_without_reply"] = True
     return await PublishService.send(SimpleNamespace(bot=app.bot, application=app), **kwargs)
+
+
+async def _send_lottery_plain_message(app, lottery, text: str):
+    return await PublishService.send(
+        SimpleNamespace(bot=app.bot, application=app),
+        chat_id=lottery.chat_id,
+        text=text,
+        parse_mode="HTML",
+    )
 
 
 async def _send_lottery_result_message(app, lottery, text: str):
@@ -139,14 +148,10 @@ async def _send_lottery_result_message(app, lottery, text: str):
     except Exception as first_exc:
         log.warning("auto_draw_result_publish_service_failed", lottery_id=lottery.id, error=str(first_exc))
         try:
-            return await app.bot.send_message(
-                chat_id=lottery.chat_id,
-                text=text,
-                parse_mode="HTML",
-            )
+            return await _send_lottery_plain_message(app, lottery, text)
         except Exception as second_exc:
             log.error(
-                "auto_draw_result_direct_send_failed",
+                "auto_draw_result_publish_service_fallback_failed",
                 lottery_id=lottery.id,
                 first_error=str(first_exc),
                 error=str(second_exc),
