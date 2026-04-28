@@ -18,6 +18,7 @@ class _Bot:
         self.get_chat_member_calls: list[tuple[object, int]] = []
         self.messages: list[dict] = []
         self.restrict_calls: list[dict] = []
+        self.delete_calls: list[dict] = []
 
     async def get_chat(self, *, chat_id):
         self.get_chat_calls.append(chat_id)
@@ -36,6 +37,10 @@ class _Bot:
     async def send_message(self, chat_id, text, **kwargs):
         self.messages.append({"chat_id": chat_id, "text": text, **kwargs})
         return SimpleNamespace(message_id=99)
+
+    async def delete_message(self, chat_id, message_id):
+        self.delete_calls.append({"chat_id": chat_id, "message_id": message_id})
+        return True
 
     async def restrict_chat_member(self, chat_id, user_id, **kwargs):
         self.restrict_calls.append({"chat_id": chat_id, "user_id": user_id, **kwargs})
@@ -70,8 +75,9 @@ def _settings(**overrides):
     return SimpleNamespace(**data)
 
 
-def _context(bot: _Bot):
-    return SimpleNamespace(bot=bot, application=SimpleNamespace(bot_data={}))
+def _context(bot: _Bot, *, bot_admin_ids: str = ""):
+    settings = SimpleNamespace(bot_admin_ids=bot_admin_ids)
+    return SimpleNamespace(bot=bot, application=SimpleNamespace(bot_data={"settings": settings}))
 
 
 def _chat():
@@ -116,10 +122,7 @@ async def test_force_subscribe_rejects_legacy_numeric_target_without_blocking_me
     assert allowed is True
     assert message.deleted is False
     assert bot.get_chat_member_calls == []
-    assert bot.messages[0]["chat_id"] == -100123
-    assert "强制订阅配置异常" in bot.messages[0]["text"]
-    assert "已临时跳过强制订阅校验" in bot.messages[0]["text"]
-    assert "普通成员仍会继续进入违禁词/垃圾防护检测" in bot.messages[0]["text"]
+    assert bot.messages == []
 
 
 @pytest.mark.asyncio
@@ -157,7 +160,7 @@ async def test_force_subscribe_deletes_and_warns_unsubscribed_member() -> None:
     )
 
     assert allowed is False
-    assert message.deleted is True
+    assert bot.delete_calls == [{"chat_id": -100123, "message_id": 12}]
     assert bot.messages[0]["chat_id"] == -100123
     assert bot.messages[0]["text"] == "Alice，请关注后发言。"
     assert bot.messages[0]["reply_markup"].inline_keyboard[0][0].text == "频道 A"
@@ -203,7 +206,7 @@ async def test_force_subscribe_all_mode_skips_inaccessible_target_when_valid_tar
     assert allowed is True
     assert message.deleted is False
     assert bot.get_chat_member_calls == [("@channel_a", 42), ("@channel_b", 42)]
-    assert "部分目标配置异常" in bot.messages[0]["text"]
+    assert bot.messages == []
 
 
 @pytest.mark.asyncio
@@ -222,7 +225,7 @@ async def test_force_subscribe_bare_username_is_config_issue_and_does_not_block(
     assert allowed is True
     assert message.deleted is False
     assert bot.get_chat_member_calls == []
-    assert "强制订阅配置异常" in bot.messages[0]["text"]
+    assert bot.messages == []
 
 
 @pytest.mark.asyncio
@@ -239,8 +242,29 @@ async def test_force_subscribe_valid_target_still_blocks_unsubscribed_member() -
     )
 
     assert allowed is False
-    assert message.deleted is True
+    assert bot.delete_calls == [{"chat_id": -100123, "message_id": 12}]
     assert bot.messages == []
+
+
+@pytest.mark.asyncio
+async def test_force_subscribe_config_issue_notifies_bot_admin_privately() -> None:
+    bot = _Bot({})
+    message = _Message()
+
+    allowed = await _check_force_subscribe(
+        _context(bot, bot_admin_ids="7001"),
+        _chat(),
+        _user(),
+        message,
+        _settings(force_subscribe_bound_channel_1="TgMgtPrd_bot"),
+    )
+
+    assert allowed is True
+    assert message.deleted is False
+    assert bot.get_chat_member_calls == []
+    assert bot.messages[0]["chat_id"] == 7001
+    assert "强制订阅配置已命中" in bot.messages[0]["text"]
+    assert "已临时跳过强制订阅校验" in bot.messages[0]["text"]
 
 
 @pytest.mark.asyncio

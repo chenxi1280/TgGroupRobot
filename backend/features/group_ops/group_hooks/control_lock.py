@@ -6,6 +6,11 @@ import structlog
 from telegram import ChatPermissions
 from telegram.ext import ContextTypes
 
+from backend.features.moderation.services.user_action_runtime import (
+    delete_message_safely,
+    execute_group_permission_action,
+)
+
 log = structlog.get_logger(__name__)
 
 
@@ -47,7 +52,15 @@ def _is_closed_by_schedule(settings) -> bool | None:
 
 async def _apply_group_lock_permissions(context: ContextTypes.DEFAULT_TYPE, chat_id: int, closed: bool) -> None:
     permissions = ChatPermissions(can_send_messages=not closed)
-    await context.bot.set_chat_permissions(chat_id=chat_id, permissions=permissions)
+    result = await execute_group_permission_action(
+        context,
+        chat_id=chat_id,
+        permissions=permissions,
+        feature="夜间管控",
+        detail="按夜间管控配置调整群发言权限",
+    )
+    if result.failed:
+        raise RuntimeError("; ".join(result.failures))
 
 
 async def _process_group_lock_controls(
@@ -88,11 +101,19 @@ async def _process_group_lock_controls(
         return False
 
     close_now = normalized == close_phrase
+    applied = False
     try:
         await _apply_group_lock_permissions(context, chat.id, close_now)
         lock_cache[chat.id] = close_now
-        if getattr(settings, "group_lock_delete_notice_mode", "keep") == "delete":
-            await message.delete()
+        applied = True
     except Exception as exc:
         log.warning("group_lock_phrase_apply_failed", chat_id=chat.id, user_id=user.id, error=str(exc))
+    if applied and getattr(settings, "group_lock_delete_notice_mode", "keep") == "delete":
+        await delete_message_safely(
+            context,
+            chat_id=chat.id,
+            message=message,
+            feature="夜间管控",
+            detail="管理员口令触发群权限调整，删除口令消息",
+        )
     return True

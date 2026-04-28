@@ -6,9 +6,11 @@ from __future__ import annotations
 
 import datetime as dt
 from dataclasses import dataclass
+from types import SimpleNamespace
 import structlog
 
 from telegram.ext import Application
+from telegram import ChatPermissions
 
 from backend.platform.db.runtime.session import Database
 from backend.shared.ui.common.verification import verification_timeout_help_keyboard
@@ -19,10 +21,15 @@ from backend.shared.services.chat_service import get_chat_settings
 from backend.shared.services.publish_service import PublishService
 from backend.features.verification.verification_runtime import verification_locked_permissions
 from backend.features.verification.verification_service import is_self_review_question
+from backend.features.moderation.services.user_action_runtime import execute_user_action, restrict_user_safely
 from sqlalchemy import select
 
 
 log = structlog.get_logger(__name__)
+
+
+def _task_context(app: Application):
+    return SimpleNamespace(bot=app.bot, application=app)
 
 
 @dataclass(frozen=True)
@@ -70,16 +77,18 @@ async def mute_user(app: Application, chat_id: int, user_id: int, duration: int 
         duration: 禁言时长（秒），默认 1 天
     """
     try:
-        # 禁言直到指定时间
         until_date = dt.datetime.now(dt.UTC) + dt.timedelta(seconds=duration)
-        await app.bot.restrict_chat_member(
+        result = await restrict_user_safely(
+            _task_context(app),
+            feature="进群验证",
             chat_id=chat_id,
             user_id=user_id,
             permissions=verification_locked_permissions(),
             until_date=until_date,
+            detail="验证超时，按配置禁言成员",
         )
         log.info("user_muted_for_verification_timeout", chat_id=chat_id, user_id=user_id, duration=duration)
-        return True
+        return result.punishment_applied
     except Exception as e:
         log.warning("mute_user_failed", chat_id=chat_id, user_id=user_id, error=str(e))
         return False
@@ -95,9 +104,16 @@ async def kick_user(app: Application, chat_id: int, user_id: int) -> bool:
         user_id: 用户 ID
     """
     try:
-        await app.bot.ban_chat_member(chat_id=chat_id, user_id=user_id)
+        result = await execute_user_action(
+            _task_context(app),
+            feature="进群验证",
+            chat_id=chat_id,
+            user_id=user_id,
+            action="ban",
+            detail="验证超时，按配置移出/封禁成员",
+        )
         log.info("user_kicked_for_verification_timeout", chat_id=chat_id, user_id=user_id)
-        return True
+        return result.punishment_applied
     except Exception as e:
         log.warning("kick_user_failed", chat_id=chat_id, user_id=user_id, error=str(e))
         return False
@@ -105,10 +121,10 @@ async def kick_user(app: Application, chat_id: int, user_id: int) -> bool:
 
 async def unrestrict_user(app: Application, chat_id: int, user_id: int) -> bool:
     """解除验证期间的发言限制。"""
-    from telegram import ChatPermissions
-
     try:
-        await app.bot.restrict_chat_member(
+        result = await restrict_user_safely(
+            _task_context(app),
+            feature="进群验证",
             chat_id=chat_id,
             user_id=user_id,
             permissions=ChatPermissions(
@@ -127,9 +143,10 @@ async def unrestrict_user(app: Application, chat_id: int, user_id: int) -> bool:
                 can_pin_messages=False,
                 can_manage_topics=False,
             ),
+            detail="验证超时动作是不处罚，解除发言限制",
         )
         log.info("user_unrestricted_for_verification_timeout_none", chat_id=chat_id, user_id=user_id)
-        return True
+        return result.punishment_applied
     except Exception as e:
         log.warning("unrestrict_user_failed", chat_id=chat_id, user_id=user_id, error=str(e))
         return False

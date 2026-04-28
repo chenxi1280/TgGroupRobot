@@ -6,6 +6,7 @@ import structlog
 from telegram.ext import ContextTypes
 
 from backend.features.group_ops.group_hooks.common import _schedule_message_delete
+from backend.features.moderation.services.user_action_runtime import execute_user_action
 
 log = structlog.get_logger(__name__)
 
@@ -51,10 +52,16 @@ async def _process_night_mode(
         return False
 
     if bool(getattr(settings, "night_mode_delete_message", True)):
-        try:
-            await message.delete()
-        except Exception as exc:
-            log.warning("night_mode_delete_failed", chat_id=chat.id, user_id=user.id, error=str(exc))
+        await execute_user_action(
+            context,
+            feature="夜间管控",
+            chat_id=chat.id,
+            user_id=user.id,
+            action="none",
+            detail="夜间管控命中，删除发言",
+            message=message,
+            delete_message=True,
+        )
 
     if bool(getattr(settings, "night_mode_warn_enabled", True)):
         warn_text = getattr(settings, "night_mode_warn_text", None) or "🌙 夜间管控生效中，请稍后再试。"

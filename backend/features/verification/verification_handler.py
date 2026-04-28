@@ -58,6 +58,7 @@ from backend.platform.telegram.errors import answer_callback_query_safely, mark_
 from backend.shared.i18n.strings import t
 from backend.shared.services.chat_service import ensure_chat, get_chat_settings
 from backend.shared.services.user_service import ensure_user
+from backend.features.moderation.services.user_action_runtime import restrict_user_safely
 from backend.features.verification.verification_callbacks import verify_callback
 from backend.features.verification.verification_messages import verify_message_handler
 
@@ -238,10 +239,19 @@ async def new_members_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
                 can_pin_messages=False,
                 can_manage_topics=False,
             )
-            try:
-                await context.bot.restrict_chat_member(chat_id=chat.id, user_id=u.id, permissions=perms)
-            except Exception:
-                pass
+            restrict_result = await restrict_user_safely(
+                context,
+                feature="进群验证",
+                chat_id=chat.id,
+                user_id=u.id,
+                permissions=perms,
+                detail="新成员验证开始，限制验证期间发言权限",
+            )
+            if restrict_result.failed:
+                ch.solved = True
+                ch.timeout_handled = True
+                await session.flush()
+                continue
 
             mention = u.mention_html()
             prompt_sent = True

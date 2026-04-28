@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import datetime as dt
-
 import structlog
 from telegram.ext import ContextTypes
 
@@ -19,7 +17,7 @@ from backend.features.moderation.services.garbage_guard_service import (
     apply_garbage_punishment,
     handle_garbage_result_fallback,
 )
-from backend.shared.services.action_executor import ActionExecutor
+from backend.features.moderation.services.user_action_runtime import execute_user_action
 from backend.shared.services.chat_service import ensure_chat
 from backend.shared.services.user_service import ensure_user
 
@@ -49,16 +47,23 @@ async def _process_alliance_reply_ban(
         if member is None:
             return False
 
-        await ActionExecutor.execute(
+        action_result = await execute_user_action(
             context,
             action="ban",
+            feature="联盟封禁",
             chat_id=chat.id,
             user_id=target_user.id,
             actor_user_id=user.id,
-            reason="联盟联合封禁",
+            detail="联盟联合封禁",
             message_id=getattr(message.reply_to_message, "message_id", None),
             sender_chat_id=getattr(getattr(message.reply_to_message, "sender_chat", None), "id", None),
         )
+        if not action_result.punishment_applied:
+            try:
+                await message.reply_text("联合封禁失败，请检查机器人封禁权限。")
+            except Exception:
+                pass
+            return True
         try:
             async with db.session_factory() as session:
                 await AllianceService.add_joint_ban_entry(
@@ -110,16 +115,19 @@ async def _process_alliance_joint_ban(
         await session.commit()
 
     try:
-        await ActionExecutor.execute(
+        action_result = await execute_user_action(
             context,
             action="ban",
+            feature="联盟封禁",
             chat_id=chat.id,
             user_id=user.id,
             actor_user_id=ban_item.source_operator_user_id,
-            reason="联盟联合封禁同步",
+            detail="联盟联合封禁同步",
             message_id=message.message_id,
             sender_chat_id=getattr(getattr(message, "sender_chat", None), "id", None),
         )
+        if not action_result.punishment_applied:
+            return True
         return True
     except Exception as exc:
         log.warning(
@@ -217,10 +225,17 @@ async def _process_banned_word_check(
         action=word.action,
     )
 
-    try:
-        await message.delete()
-    except Exception as exc:
-        log.warning("delete_message_failed", chat_id=chat.id, user_id=user.id, error=str(exc))
+    detail = f"命中违禁词「{word.word}」"
+    await execute_user_action(
+        context,
+        feature="违禁词",
+        chat_id=chat.id,
+        user_id=user.id,
+        action="none",
+        detail=detail,
+        message=message,
+        delete_message=True,
+    )
 
     if word.notify:
         notify_msg = word.notify_message or f"🚫 您的消息因包含违禁词「{word.word}」已被删除"
@@ -230,21 +245,26 @@ async def _process_banned_word_check(
             log.warning("send_notify_failed", chat_id=chat.id, error=str(exc))
 
     if word.action == "mute":
-        try:
-            until_date = dt.datetime.now(dt.UTC) + dt.timedelta(seconds=word.mute_duration) if word.mute_duration else None
-            await context.bot.restrict_chat_member(
-                chat_id=chat.id,
-                user_id=user.id,
-                permissions={"can_send_messages": False, "can_send_media_messages": False},
-                until_date=until_date,
-            )
-        except Exception as exc:
-            log.warning("mute_user_failed", chat_id=chat.id, user_id=user.id, error=str(exc))
+        await execute_user_action(
+            context,
+            feature="违禁词",
+            chat_id=chat.id,
+            user_id=user.id,
+            action="mute",
+            detail=detail,
+            message=message,
+            mute_seconds=int(word.mute_duration or 0) or None,
+        )
     elif word.action == "ban":
-        try:
-            await context.bot.ban_chat_member(chat_id=chat.id, user_id=user.id)
-        except Exception as exc:
-            log.warning("ban_user_failed", chat_id=chat.id, user_id=user.id, error=str(exc))
+        await execute_user_action(
+            context,
+            feature="违禁词",
+            chat_id=chat.id,
+            user_id=user.id,
+            action="ban",
+            detail=detail,
+            message=message,
+        )
 
     return True
 

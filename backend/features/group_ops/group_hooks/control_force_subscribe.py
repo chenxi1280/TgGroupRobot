@@ -1,20 +1,21 @@
 from __future__ import annotations
 
-import datetime as dt
 import html
 from urllib.parse import urlparse
 
 import structlog
-from telegram import ChatPermissions, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
 from backend.features.automation.services.scheduled_message_service import ScheduledMessageService
 from backend.features.group_ops.group_hooks.common import _schedule_message_delete
+from backend.features.moderation.services.user_action_runtime import (
+    execute_user_action,
+    notify_user_action_failure,
+)
 from backend.shared.services.formatters import format_user_display_name
 
 log = structlog.get_logger(__name__)
-
-FORCE_SUBSCRIBE_CONFIG_NOTIFY_SECONDS = 300
 
 
 def _normalize_force_subscribe_target(value: str | int | None) -> str | int | None:
@@ -215,18 +216,6 @@ async def _notify_force_subscribe_config_issue(
     if not issue_reasons:
         return
 
-    now = dt.datetime.now(dt.UTC)
-    bot_data = getattr(getattr(context, "application", None), "bot_data", None)
-    cache_key = (chat_id, tuple(sorted(issue_reasons)))
-    if isinstance(bot_data, dict):
-        notify_cache = bot_data.setdefault("_force_subscribe_config_issue_notified_at", {})
-        last_notified = notify_cache.get(cache_key)
-        if isinstance(last_notified, dt.datetime):
-            elapsed = (now - last_notified).total_seconds()
-            if elapsed < FORCE_SUBSCRIBE_CONFIG_NOTIFY_SECONDS:
-                return
-        notify_cache[cache_key] = now
-
     if fail_open:
         text = (
             "⚠️ 强制订阅配置异常，已临时跳过强制订阅校验，避免误伤已关注用户。\n"
@@ -239,20 +228,13 @@ async def _notify_force_subscribe_config_issue(
             "普通成员仍会继续进入违禁词/垃圾防护检测；管理员和白名单不触发违禁词。\n"
             "请管理员重新绑定公开频道/群组的 @用户名，确保能生成关注按钮。"
         )
-    try:
-        await context.bot.send_message(chat_id=chat_id, text=text)
-        log.warning(
-            "force_subscribe_config_issue_notified",
-            chat_id=chat_id,
-            diagnostics=diagnostics,
-        )
-    except Exception as exc:
-        log.warning(
-            "force_subscribe_config_issue_notify_failed",
-            chat_id=chat_id,
-            diagnostics=diagnostics,
-            error=str(exc),
-        )
+    await notify_user_action_failure(
+        context,
+        chat_id=chat_id,
+        feature="强制订阅配置",
+        detail=text,
+        failures=issue_reasons,
+    )
 
 
 def _is_force_subscribe_member(member) -> bool:
@@ -389,20 +371,27 @@ async def _check_force_subscribe(
 
     action = getattr(settings, "force_subscribe_not_subscribed_action", "delete_and_warn")
     if action in {"delete_and_warn", "delete_only"}:
-        try:
-            await message.delete()
-        except Exception as exc:
-            log.warning("force_subscribe_delete_failed", chat_id=chat.id, user_id=user.id, error=str(exc))
+        await execute_user_action(
+            context,
+            feature="强制订阅",
+            chat_id=chat.id,
+            user_id=user.id,
+            action="none",
+            detail="用户未完成强制订阅，删除发言",
+            message=message,
+            delete_message=True,
+        )
     if action == "mute":
-        try:
-            await context.bot.restrict_chat_member(
-                chat.id,
-                user.id,
-                permissions=ChatPermissions(can_send_messages=False),
-                until_date=dt.datetime.now(dt.UTC) + dt.timedelta(minutes=10),
-            )
-        except Exception as exc:
-            log.warning("force_subscribe_mute_failed", chat_id=chat.id, user_id=user.id, error=str(exc))
+        await execute_user_action(
+            context,
+            feature="强制订阅",
+            chat_id=chat.id,
+            user_id=user.id,
+            action="mute",
+            detail="用户未完成强制订阅，临时禁言",
+            message=message,
+            mute_seconds=600,
+        )
 
     if action in {"delete_and_warn", "warn_only", "mute"}:
         guide_text = getattr(settings, "force_subscribe_guide_text", None) or "{member}，您需要关注指定频道/群组后才能发言。"

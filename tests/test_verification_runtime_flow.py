@@ -121,6 +121,57 @@ async def test_burst_guard_stops_spam_and_verification(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_verification_restrict_failure_does_not_send_challenge_prompt(monkeypatch):
+    challenge = SimpleNamespace(token="token-1", solved=False, timeout_handled=False)
+
+    async def fake_get_chat_settings(session, chat_id: int):
+        return _settings(verification_mode="button")
+
+    async def fake_noop(*args, **kwargs):
+        return None
+
+    async def fake_false(*args, **kwargs):
+        return False
+
+    async def fake_send_for_mode(*args, **kwargs):
+        return False
+
+    async def fake_create_challenge(*args, **kwargs):
+        return challenge
+
+    class _RestrictFailBot:
+        def __init__(self) -> None:
+            self.messages: list[dict] = []
+
+        async def restrict_chat_member(self, **kwargs):
+            raise RuntimeError("restrict denied")
+
+        async def send_message(self, **kwargs):
+            self.messages.append(kwargs)
+            return None
+
+    monkeypatch.setattr(verification_handler, "ensure_chat", fake_noop)
+    monkeypatch.setattr(verification_handler, "get_chat_settings", fake_get_chat_settings)
+    monkeypatch.setattr(verification_handler, "ensure_user", fake_noop)
+    monkeypatch.setattr(verification_handler, "_upsert_chat_member_join", fake_noop)
+    monkeypatch.setattr(verification_handler, "record_group_join_event", fake_noop)
+    monkeypatch.setattr(verification_handler, "_handle_join_burst_guard", fake_false)
+    monkeypatch.setattr(verification_handler, "_handle_join_spam_guard", fake_false)
+    monkeypatch.setattr(verification_handler, "_track_invite_for_member", fake_noop)
+    monkeypatch.setattr(verification_handler.WelcomeService, "send_for_mode", fake_send_for_mode)
+    monkeypatch.setattr(verification_handler, "create_or_replace_challenge", fake_create_challenge)
+
+    bot = _RestrictFailBot()
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}), bot=bot, user_data={})
+
+    await verification_handler.new_members_handler(_join_update(), context)
+
+    assert challenge.solved is True
+    assert challenge.timeout_handled is True
+    assert bot.messages == []
+
+
+@pytest.mark.asyncio
 async def test_spam_guard_stops_self_review_when_verification_disabled(monkeypatch):
     tracked: list[int] = []
 

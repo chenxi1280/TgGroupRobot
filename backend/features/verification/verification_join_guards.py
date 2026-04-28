@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from telegram import ChatPermissions
 from telegram.ext import ContextTypes
 
+from backend.features.moderation.services.user_action_runtime import execute_user_action, restrict_user_safely
 from backend.platform.db.schema.models.core import ChatMember
 from backend.platform.db.schema.models.enums import MemberRole
 from backend.shared.async_tasks import spawn_background_task
@@ -110,11 +111,21 @@ async def apply_join_guard_action(
     mute_seconds: int = 86400,
 ) -> None:
     if kick:
-        await context.bot.ban_chat_member(chat_id=chat_id, user_id=user_id)
+        await execute_user_action(
+            context,
+            feature="进群拦截",
+            chat_id=chat_id,
+            user_id=user_id,
+            action="ban",
+            detail="进群拦截命中，按配置移出/封禁成员",
+            raise_on_failure=True,
+        )
         return
     if mute:
         until_date = dt.datetime.now(dt.UTC) + dt.timedelta(seconds=max(mute_seconds, 60))
-        await context.bot.restrict_chat_member(
+        await restrict_user_safely(
+            context,
+            feature="进群拦截",
             chat_id=chat_id,
             user_id=user_id,
             permissions=ChatPermissions(
@@ -130,6 +141,8 @@ async def apply_join_guard_action(
                 can_add_web_page_previews=False,
             ),
             until_date=until_date,
+            detail="进群拦截命中，按配置禁言成员",
+            raise_on_failure=True,
         )
 
 

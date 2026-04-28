@@ -25,6 +25,7 @@ from backend.features.verification.verification_service import (
 from backend.platform.db.runtime.session import Database
 from backend.shared.i18n.strings import t
 from backend.shared.services.chat_service import get_chat_settings
+from backend.features.moderation.services.user_action_runtime import execute_user_action
 
 
 async def verify_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -81,13 +82,24 @@ async def verify_message_handler(update: Update, context: ContextTypes.DEFAULT_T
         else:
             if is_self_review_question(ch.question) and settings.join_self_review_wrong_action == "reject_block":
                 try:
-                    await context.bot.ban_chat_member(chat_id=chat.id, user_id=user.id)
+                    await execute_user_action(
+                        context,
+                        feature="进群验证",
+                        chat_id=chat.id,
+                        user_id=user.id,
+                        action="ban",
+                        detail="自助审核失败，按配置拒绝入群",
+                        raise_on_failure=True,
+                    )
                     async with db.session_factory() as next_session:
                         await mark_challenge_released(next_session, chat.id, user.id)
                         await next_session.commit()
                     await update.effective_message.reply_text("❌ 自助审核失败，已拒绝入群。")
                 except Exception:
-                    pass
+                    try:
+                        await update.effective_message.reply_text("❌ 处理失败，请检查机器人禁言/踢人权限。")
+                    except Exception:
+                        pass
                 return
             wrong_action = getattr(settings, "verification_wrong_action", "none") or "none"
             if not is_self_review_question(ch.question) and wrong_action != "none":

@@ -5,6 +5,7 @@ import datetime as dt
 from telegram import ChatPermissions
 from telegram.ext import ContextTypes
 
+from backend.features.moderation.services.user_action_runtime import execute_user_action, restrict_user_safely
 from backend.features.verification.welcome_service import WelcomeService
 from backend.platform.db.runtime.session import Database
 
@@ -42,7 +43,16 @@ async def restrict_for_verification(
     }
     if duration_seconds and duration_seconds > 0:
         kwargs["until_date"] = dt.datetime.now(dt.UTC) + dt.timedelta(seconds=duration_seconds)
-    await context.bot.restrict_chat_member(**kwargs)
+    await restrict_user_safely(
+        context,
+        feature="进群验证",
+        chat_id=chat_id,
+        user_id=user_id,
+        permissions=kwargs["permissions"],
+        until_date=kwargs.get("until_date"),
+        detail="进群验证期间限制发言",
+        raise_on_failure=True,
+    )
 
 
 async def apply_verification_punishment(
@@ -59,7 +69,15 @@ async def apply_verification_punishment(
         await unrestrict_and_notify(context, chat_id, user_id, getattr(settings, "language", "zh-CN"))
         return "none"
     if selected == "kick":
-        await context.bot.ban_chat_member(chat_id=chat_id, user_id=user_id)
+        await execute_user_action(
+            context,
+            feature="进群验证",
+            chat_id=chat_id,
+            user_id=user_id,
+            action="ban",
+            detail="进群验证失败，按配置移出/封禁成员",
+            raise_on_failure=True,
+        )
         return "kick"
     duration = int(
         mute_seconds
@@ -71,7 +89,9 @@ async def apply_verification_punishment(
 
 
 async def unrestrict_and_notify(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int, language: str) -> None:
-    await context.bot.restrict_chat_member(
+    await restrict_user_safely(
+        context,
+        feature="进群验证",
         chat_id=chat_id,
         user_id=user_id,
         permissions=ChatPermissions(
@@ -90,6 +110,8 @@ async def unrestrict_and_notify(context: ContextTypes.DEFAULT_TYPE, chat_id: int
             can_pin_messages=False,
             can_manage_topics=False,
         ),
+        detail="验证完成或超时不处罚，解除发言限制",
+        raise_on_failure=True,
     )
 
 

@@ -11,6 +11,7 @@ from backend.features.verification.verification_helpers import (
 )
 from backend.features.verification.verification_runtime import send_after_verify_welcome, unrestrict_and_notify
 from backend.features.verification.verification_service import solve_by_token_scoped
+from backend.features.moderation.services.user_action_runtime import execute_user_action
 from backend.platform.db.runtime.session import Database
 from backend.platform.telegram.errors import answer_callback_query_safely, build_public_error_text, mark_callback_query_answered
 from backend.shared.callback_parser import CallbackParser
@@ -72,11 +73,21 @@ async def admin_verify_callback_impl(update: Update, context: ContextTypes.DEFAU
             return
 
         try:
+            await execute_user_action(
+                context,
+                feature="进群验证",
+                chat_id=chat.id,
+                user_id=user_id,
+                action="ban",
+                detail="管理员拒绝入群验证，按配置移出/封禁成员",
+                actor_user_id=actor.id,
+                raise_on_failure=True,
+            )
             await mark_challenge_released(session, chat.id, user_id)
             await session.commit()
-            await context.bot.ban_chat_member(chat_id=chat.id, user_id=user_id)
             await query.edit_message_text(f"❌ 已拒绝并踢出用户 {user_id}")
         except Exception as exc:
+            await session.rollback()
             log.warning("kick_user_failed", user_id=user_id, chat_id=chat.id, error=str(exc))
             await query.edit_message_text(f"⚠️ 操作失败：{build_public_error_text(exc)}")
 

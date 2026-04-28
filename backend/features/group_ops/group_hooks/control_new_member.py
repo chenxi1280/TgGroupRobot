@@ -8,6 +8,7 @@ from sqlalchemy import select
 from telegram.ext import ContextTypes
 
 from backend.features.group_ops.group_hooks.common import _schedule_message_delete
+from backend.features.moderation.services.user_action_runtime import execute_user_action
 from backend.platform.db.runtime.session import Database
 from backend.platform.db.schema.models.core import ChatMember
 from backend.shared.services.formatters import format_user_display_name
@@ -96,10 +97,16 @@ async def _process_new_member_limit(
         return False
 
     if bool(getattr(settings, "new_member_limit_delete_message", True)):
-        try:
-            await message.delete()
-        except Exception as exc:
-            log.warning("new_member_limit_delete_failed", chat_id=chat.id, user_id=user.id, error=str(exc))
+        await execute_user_action(
+            context,
+            feature="新人限制",
+            chat_id=chat.id,
+            user_id=user.id,
+            action="none",
+            detail="新成员限制命中，删除违规发言",
+            message=message,
+            delete_message=True,
+        )
 
     if bool(getattr(settings, "new_member_limit_warn_enabled", True)):
         warn_text = getattr(settings, "new_member_limit_warn_text", None) or "新成员需等待 {duration} 才可发送媒体/链接。"
