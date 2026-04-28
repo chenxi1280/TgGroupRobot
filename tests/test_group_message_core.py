@@ -456,4 +456,4 @@ async def test_banned_word_explicit_guard_notifies_when_all_actions_fail(monkeyp
     )
 
     assert handled is True
-    assert sent_messages == [(-1001, "⚠️ 违禁词已命中，但处罚动作没有成功执行。\n请确认机器人仍是管理员，并拥有删除消息/禁言权限；也请重启机器人加载最新代码。")]
+    assert sent_messages == [(-1001, "⚠️ 垃圾防护已命中，但处罚动作没有成功执行。\n请检查机器人是否仍是管理员，并拥有删除消息/禁言权限；也请重启机器人加载最新代码。")]

@@ -14,7 +14,10 @@ from backend.features.moderation.services.garbage_guard_rules import (
     has_explicit_garbage_config,
     is_global_whitelisted,
 )
-from backend.features.moderation.services.garbage_guard_service import apply_garbage_punishment
+from backend.features.moderation.services.garbage_guard_service import (
+    apply_garbage_punishment,
+    handle_garbage_result_fallback,
+)
 from backend.features.moderation.services.moderation_service import (
     build_moderation_action_label,
     build_moderation_notice,
@@ -143,11 +146,17 @@ async def anti_flood_message_handler(update: Update, context: ContextTypes.DEFAU
     await tracker.add_message(chat.id, actor_id, message.message_id)
 
     # 检测刷屏
+    if explicit_garbage:
+        max_messages = int(flood_config.get("messages", settings.anti_flood_messages) or settings.anti_flood_messages)
+        window_seconds = int(flood_config.get("seconds", settings.anti_flood_seconds) or settings.anti_flood_seconds)
+    else:
+        max_messages = int(settings.anti_flood_messages)
+        window_seconds = int(settings.anti_flood_seconds)
     flood_result = await tracker.check_flood(
         chat.id,
         actor_id,
-        settings.anti_flood_messages,
-        settings.anti_flood_seconds,
+        max_messages,
+        window_seconds,
     )
 
     if flood_result.is_flooding:
@@ -174,12 +183,22 @@ async def anti_flood_message_handler(update: Update, context: ContextTypes.DEFAU
                     target_user_id=user.id,
                     target_label=user.mention_html(),
                     rule_id="flood",
-                    detail=f"count={flood_result.message_count},span={flood_result.time_span:.3f}",
+                    detail=f"{flood_result.time_span:.1f} 秒内发送 {flood_result.message_count} 条消息，达到刷屏阈值",
                     message_ids=message_ids,
                     sender_chat_id=sender_chat.id if sender_chat is not None else None,
                     record_message_id=message.message_id,
                 )
                 await session.commit()
+            detail = f"{flood_result.time_span:.1f} 秒内发送 {flood_result.message_count} 条消息，达到刷屏阈值"
+            await handle_garbage_result_fallback(
+                context,
+                chat_id=chat.id,
+                message=message,
+                rule_id="flood",
+                detail=detail,
+                result=result,
+                delete_message_enabled=bool(flood_config.get("delete_message")),
+            )
             if result.applied:
                 log.info(
                     "flood_garbage_guard_executed",
@@ -187,8 +206,7 @@ async def anti_flood_message_handler(update: Update, context: ContextTypes.DEFAU
                     user_id=actor_id,
                     action=result.action_label,
                 )
-                raise ApplicationHandlerStop
-            return
+            raise ApplicationHandlerStop
 
         resolution = await resolve_effective_action(
             context,

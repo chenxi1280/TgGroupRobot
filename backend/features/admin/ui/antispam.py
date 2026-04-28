@@ -86,6 +86,38 @@ def _rule_effect_summary(rule: dict) -> list[str]:
     return rows
 
 
+def _rule_trigger_summary(rule_id: str, rule: dict, banned_word_count: int = 0) -> str:
+    if rule_id == "banned_words":
+        return f"实际触发条件: 包含/模糊匹配，命中词库后触发（当前 {banned_word_count} 个词）"
+    if rule_id == "long_message":
+        return f"实际触发条件: 超过 {int(rule.get('message_max_length', 100) or 100)} 字触发"
+    if rule_id == "long_name":
+        return f"实际触发条件: 昵称超过 {int(rule.get('name_max_length', 20) or 20)} 字触发"
+    if rule_id == "flood":
+        return (
+            "实际触发条件: "
+            f"{int(rule.get('seconds', 5) or 5)} 秒内达到 {int(rule.get('messages', 5) or 5)} 条触发"
+        )
+    if rule_id == "spam_user":
+        checks = []
+        if bool(rule.get("check_no_username")):
+            checks.append("无用户名")
+        if bool(rule.get("check_foreign_name")):
+            checks.append("外文昵称")
+        return f"实际触发条件: {' / '.join(checks) if checks else '未选择检测项'}"
+    if rule_id == "block_links":
+        return "实际触发条件: 消息包含链接"
+    if rule_id == "block_buttons":
+        return "实际触发条件: 消息包含按钮"
+    if rule_id == "block_forwards":
+        return "实际触发条件: 用户转发或引用外部消息"
+    if rule_id == "manual_warning":
+        return "实际触发条件: 管理员回复 warn 或 警告"
+    if rule_id == "leave_ban":
+        return "实际触发条件: 成员离开群组"
+    return "实际触发条件: 固定检测"
+
+
 def _rule_button_text(settings, rule_id: str) -> str:
     rule = get_rule_config(settings, rule_id)
     return f"{_short_status(bool(rule.get('enabled')))} {RULE_DEFINITIONS[rule_id].label}"
@@ -128,13 +160,13 @@ def format_garbage_guard_home_text(chat_title: str, settings) -> str:
         [
             f"☂️ [{chat_title}] 垃圾防护功能",
             "",
-            "拦截违禁词 - 匹配到违禁词时进行处罚",
+            "拦截违禁词 - 命中词库后按处罚组合处理",
             "禁止长内容 - 消息长度超过配置限额处罚",
             "禁止长昵称 - 昵称字数超限额发言时处罚",
             "禁止转发引用 - 用户转发或引用会被处罚",
             "禁止发送按钮 - 当用户消息含按钮时处罚",
             "禁止垃圾用户 - 无用户名或外文昵称用户",
-            "禁止发言刷屏 - 短时间大量发言进行处罚",
+            "禁止发言刷屏 - 短时间大量发言按阈值处罚",
             "",
             "以上规则对管理员和白名单用户无效",
             "",
@@ -291,7 +323,7 @@ def garbage_guard_rule_keyboard(settings, chat_id: int, rule_id: str, banned_wor
     return InlineKeyboardMarkup(rows)
 
 
-def format_garbage_rule_text(chat_title: str, settings, rule_id: str) -> str:
+def format_garbage_rule_text(chat_title: str, settings, rule_id: str, banned_word_count: int = 0) -> str:
     definition = RULE_DEFINITIONS[rule_id]
     rule = get_rule_config(settings, rule_id)
     return "\n".join(
@@ -301,6 +333,7 @@ def format_garbage_rule_text(chat_title: str, settings, rule_id: str) -> str:
             definition.description,
             "",
             f"状态: {'启动' if bool(rule.get('enabled')) else '关闭'}",
+            _rule_trigger_summary(rule_id, rule, banned_word_count),
             *_rule_effect_summary(rule),
             f"白名单用户: {len(get_global_whitelist_user_ids(settings))}人",
             "",

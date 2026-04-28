@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from backend.features.moderation.banned_word_common import get_action_label, get_match_type_label
+from backend.features.moderation.banned_word_common import get_action_label, get_compact_match_type_label
 
 
 def build_banned_word_list_text(words, total_triggers: int) -> str:
@@ -13,7 +13,7 @@ def build_banned_word_list_text(words, total_triggers: int) -> str:
             notify_label = "📢" if word.notify else "🔇"
             text += f"{status} [{word.id}] {word.word[:30]}\n"
             text += (
-                f"   匹配: {get_match_type_label(word.match_type)} | "
+                f"   匹配: {get_compact_match_type_label(word.match_type)} | "
                 f"处罚: {get_action_label(word.action)} {notify_label}\n\n"
             )
     else:

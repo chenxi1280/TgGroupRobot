@@ -17,7 +17,11 @@ from backend.features.moderation.services.garbage_guard_rules import (
 )
 from backend.features.moderation.services.garbage_guard_service import (
     apply_garbage_punishment,
+    delete_garbage_message_fallback,
     detect_garbage_violation,
+    execute_garbage_action_safely,
+    handle_garbage_result_fallback,
+    notify_garbage_action_failure,
 )
 from backend.features.moderation.services.moderation_service import (
     build_moderation_action_label,
@@ -128,33 +132,42 @@ async def anti_spam_message_handler(update: Update, context: ContextTypes.DEFAUL
                     language_code=leave_member.language_code,
                 )
                 config = get_rule_config(settings, "leave_ban")
+                delete_requested = bool(config.get("delete_message"))
+                delete_applied = False
                 if bool(config.get("delete_message")):
-                    await ActionExecutor.delete_many(context, chat_id=chat.id, message_ids=[message.message_id])
-                await ActionExecutor.execute(
+                    delete_result = await ActionExecutor.delete_many(context, chat_id=chat.id, message_ids=[message.message_id])
+                    delete_applied = bool(delete_result.applied)
+                ban_result = await execute_garbage_action_safely(
                     context,
                     action="ban",
                     chat_id=chat.id,
                     user_id=leave_member.id,
+                    rule_id="leave_ban",
+                    detail="成员离开群组",
                     actor_user_id=user.id if user is not None else None,
                     message_id=message.message_id,
-                    reason="leave_ban",
                 )
+                action_label = "删除消息 + 封禁成员" if delete_requested else "封禁成员"
                 await record_violation(
                     session,
                     chat_id=chat.id,
                     user_id=leave_member.id,
                     message_id=message.message_id,
                     rule="leave_ban",
-                    detail="left_chat_member",
-                    action="ban",
+                    detail="成员离开群组",
+                    action=action_label[:32],
                 )
                 await session.commit()
+                if delete_requested and not delete_applied:
+                    await delete_garbage_message_fallback(context, chat.id, message, "leave_ban", "成员离开群组")
+                if not bool(ban_result.applied):
+                    await notify_garbage_action_failure(context, chat.id, "leave_ban", "成员离开群组")
                 if bool(config.get("notice_enabled")):
                     notice = build_moderation_notice(
                         "🚫 离群封禁已执行",
                         _user_label(leave_member),
                         "用户离开群组",
-                        "封禁用户",
+                        action_label,
                     )
                     await send_temporary_notice(
                         context.bot,
@@ -198,8 +211,16 @@ async def anti_spam_message_handler(update: Update, context: ContextTypes.DEFAUL
                         record_message_id=getattr(message.reply_to_message, "message_id", None),
                     )
                     await session.commit()
-                    if result.applied:
-                        raise ApplicationHandlerStop
+                    await handle_garbage_result_fallback(
+                        context,
+                        chat_id=chat.id,
+                        message=message,
+                        rule_id="manual_warning",
+                        detail="管理员人工警告",
+                        result=result,
+                        delete_message_enabled=bool(manual_config.get("delete_message")),
+                    )
+                    raise ApplicationHandlerStop
 
         if not (settings.anti_spam_enabled or any_garbage_rule_enabled(settings)):
             await session.commit()
@@ -241,6 +262,16 @@ async def anti_spam_message_handler(update: Update, context: ContextTypes.DEFAUL
                 record_message_id=message.message_id,
             )
             await session.commit()
+            delete_message_enabled = bool(get_rule_config(settings, garbage_violation.rule_id).get("delete_message"))
+            await handle_garbage_result_fallback(
+                context,
+                chat_id=chat.id,
+                message=message,
+                rule_id=garbage_violation.rule_id,
+                detail=garbage_violation.detail,
+                result=result,
+                delete_message_enabled=delete_message_enabled,
+            )
             if result.applied:
                 log.info(
                     "garbage_guard_blocked",
@@ -249,8 +280,7 @@ async def anti_spam_message_handler(update: Update, context: ContextTypes.DEFAUL
                     rule=garbage_violation.rule,
                     action=result.action_label,
                 )
-                raise ApplicationHandlerStop
-            return
+            raise ApplicationHandlerStop
 
         violation = await detect_spam_violation(settings, message, chat.id, actor_id)
 

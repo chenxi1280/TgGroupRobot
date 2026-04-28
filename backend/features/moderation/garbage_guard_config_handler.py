@@ -80,7 +80,7 @@ async def _render_rule(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_
     chat_title = await _get_chat_title(db, chat_id)
     await _edit_config_message(
         q,
-        format_garbage_rule_text(chat_title, settings, rule_id),
+        format_garbage_rule_text(chat_title, settings, rule_id, banned_word_count=banned_word_count),
         reply_markup=garbage_guard_rule_keyboard(settings, chat_id, rule_id, banned_word_count=banned_word_count),
     )
 

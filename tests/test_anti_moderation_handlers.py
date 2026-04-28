@@ -11,8 +11,10 @@ import backend.features.moderation.banned_word_create as banned_word_create
 from backend.features.moderation.banned_word_message import safe_edit_banned_word_message
 import backend.features.moderation.anti_flood_handler as anti_flood_handler
 import backend.features.moderation.anti_spam_handler as anti_spam_handler
+from backend.features.moderation.banned_word_runtime import _parse_banned_word_config_text
 from backend.features.moderation.services import banned_word_service
 from backend.features.moderation.services.anti_spam_service import SpamViolation
+from backend.features.moderation.services.garbage_guard_rules import set_rule_config
 from backend.features.moderation.ui.banned_word import banned_word_list_keyboard, banned_word_menu_keyboard
 
 
@@ -76,6 +78,78 @@ def _build_context(session: _Session):
         application=SimpleNamespace(bot_data={"db": db}),
         bot=SimpleNamespace(),
     )
+
+
+def _settings_with_rule(rule_id: str, updates: dict[str, object]):
+    settings = SimpleNamespace(
+        anti_spam_enabled=False,
+        anti_spam_rules={},
+    )
+    set_rule_config(settings, rule_id, updates)
+    return settings
+
+
+def _message_for_rule(rule_id: str):
+    user = _FakeUser()
+    user.username = "tester"
+    user.first_name = "小明"
+    message = SimpleNamespace(
+        message_id=42,
+        sender_chat=None,
+        text="普通消息",
+        caption=None,
+        from_user=user,
+        reply_markup=None,
+        forward_origin=None,
+        forward_from_chat=None,
+        forward_from=None,
+        forward_date=None,
+        deleted=False,
+    )
+
+    async def delete():
+        message.deleted = True
+
+    message.delete = delete
+    if rule_id == "long_message":
+        message.text = "x" * 101
+    elif rule_id == "long_name":
+        user.first_name = "很长很长很长的昵称"
+    elif rule_id == "block_links":
+        message.text = "visit https://example.com"
+    elif rule_id == "block_buttons":
+        message.reply_markup = SimpleNamespace(inline_keyboard=[[object()]])
+    elif rule_id == "spam_user":
+        user.username = None
+    elif rule_id == "block_forwards":
+        message.forward_origin = SimpleNamespace()
+    return message, user
+
+
+def test_banned_word_prompt_and_parser_use_chinese_labels() -> None:
+    prompt = banned_word_create.BANNED_WORD_CREATE_PROMPT
+    assert "匹配类型: 包含" in prompt
+    assert "惩罚动作: 删除" in prompt
+    assert "匹配类型: contains" not in prompt
+    assert "惩罚动作: delete" not in prompt
+
+    config = _parse_banned_word_config_text(
+        "\n".join(
+            [
+                "违禁词测试",
+                "匹配类型: 包含",
+                "惩罚动作: 禁言",
+                "禁言时长: 300",
+                "删除提醒: 是",
+                "提醒消息: 请不要发送违禁词",
+            ]
+        )
+    )
+
+    assert config["match_type"] == "contains"
+    assert config["action"] == "mute"
+    assert config["notify"] is True
+    assert config["notify_message"] == "请不要发送违禁词"
 
 
 @pytest.mark.asyncio
@@ -271,6 +345,291 @@ async def test_anti_spam_handler_records_final_action(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_explicit_garbage_hit_falls_back_to_delete_even_when_other_action_applies(monkeypatch):
+    session = _Session()
+    update = _build_update()
+    context = _build_context(session)
+
+    class _Message:
+        message_id = 42
+        sender_chat = None
+        text = "x" * 101
+        caption = None
+        deleted = False
+
+        async def delete(self):
+            self.deleted = True
+
+    update.effective_message = _Message()
+
+    settings = SimpleNamespace(
+        anti_spam_enabled=False,
+        anti_spam_rules={},
+    )
+    set_rule_config(settings, "long_message", {"enabled": True, "message_max_length": 100, "delete_message": True})
+
+    async def fake_get_chat_settings(session, chat_id):
+        return settings
+
+    async def fake_should_exempt_admin(*args, **kwargs):
+        return False
+
+    async def fake_ensure_chat(*args, **kwargs):
+        return None
+
+    async def fake_ensure_user(*args, **kwargs):
+        return None
+
+    async def fake_apply_garbage_punishment(*args, **kwargs):
+        return SimpleNamespace(
+            applied=True,
+            action_label="删除消息 + 禁言成员",
+            delete_requested=True,
+            delete_applied=False,
+        )
+
+    monkeypatch.setattr(anti_spam_handler, "get_chat_settings", fake_get_chat_settings)
+    monkeypatch.setattr(anti_spam_handler, "should_exempt_admin", fake_should_exempt_admin)
+    monkeypatch.setattr(anti_spam_handler, "ensure_chat", fake_ensure_chat)
+    monkeypatch.setattr(anti_spam_handler, "ensure_user", fake_ensure_user)
+    monkeypatch.setattr(anti_spam_handler, "apply_garbage_punishment", fake_apply_garbage_punishment)
+
+    with pytest.raises(ApplicationHandlerStop):
+        await anti_spam_handler.anti_spam_message_handler(update, context)
+
+    assert update.effective_message.deleted is True
+    assert session.commits == 1
+
+
+@pytest.mark.asyncio
+async def test_explicit_garbage_hit_notifies_when_non_delete_action_fails(monkeypatch):
+    session = _Session()
+    update = _build_update()
+    sent_messages: list[str] = []
+
+    class _Bot:
+        async def send_message(self, chat_id: int, text: str, **kwargs):
+            sent_messages.append(text)
+
+    context = _build_context(session)
+    context.bot = _Bot()
+    update.effective_message = SimpleNamespace(
+        message_id=42,
+        sender_chat=None,
+        text="x" * 101,
+        caption=None,
+        deleted=False,
+    )
+    settings = _settings_with_rule(
+        "long_message",
+        {"enabled": True, "message_max_length": 100, "delete_message": True, "mute_enabled": True},
+    )
+
+    async def fake_get_chat_settings(session, chat_id):
+        return settings
+
+    async def fake_should_exempt_admin(*args, **kwargs):
+        return False
+
+    async def fake_ensure_chat(*args, **kwargs):
+        return None
+
+    async def fake_ensure_user(*args, **kwargs):
+        return None
+
+    async def fake_apply_garbage_punishment(*args, **kwargs):
+        return SimpleNamespace(
+            applied=True,
+            action_label="删除消息 + 禁言成员",
+            delete_requested=True,
+            delete_applied=True,
+            escalation_requested=True,
+            escalation_applied=False,
+        )
+
+    monkeypatch.setattr(anti_spam_handler, "get_chat_settings", fake_get_chat_settings)
+    monkeypatch.setattr(anti_spam_handler, "should_exempt_admin", fake_should_exempt_admin)
+    monkeypatch.setattr(anti_spam_handler, "ensure_chat", fake_ensure_chat)
+    monkeypatch.setattr(anti_spam_handler, "ensure_user", fake_ensure_user)
+    monkeypatch.setattr(anti_spam_handler, "apply_garbage_punishment", fake_apply_garbage_punishment)
+
+    with pytest.raises(ApplicationHandlerStop):
+        await anti_spam_handler.anti_spam_message_handler(update, context)
+
+    assert sent_messages == [
+        "⚠️ 垃圾防护已命中，但处罚动作没有成功执行。\n"
+        "请检查机器人是否仍是管理员，并拥有删除消息/禁言权限；也请重启机器人加载最新代码。"
+    ]
+
+
+@pytest.mark.parametrize(
+    ("rule_id", "updates"),
+    [
+        ("long_message", {"enabled": True, "message_max_length": 100, "delete_message": True}),
+        ("long_name", {"enabled": True, "name_max_length": 4, "delete_message": True}),
+        ("block_links", {"enabled": True, "delete_message": True}),
+        ("block_buttons", {"enabled": True, "delete_message": True}),
+        ("spam_user", {"enabled": True, "check_no_username": True, "delete_message": True}),
+        ("block_forwards", {"enabled": True, "delete_message": True}),
+    ],
+)
+@pytest.mark.asyncio
+async def test_all_message_garbage_rules_stop_and_fallback_delete(monkeypatch, rule_id: str, updates: dict[str, object]):
+    session = _Session()
+    update = _build_update()
+    message, user = _message_for_rule(rule_id)
+    update.effective_message = message
+    update.effective_user = user
+    context = _build_context(session)
+    applied_rules: list[str] = []
+
+    settings = _settings_with_rule(rule_id, updates)
+
+    async def fake_get_chat_settings(session, chat_id):
+        return settings
+
+    async def fake_should_exempt_admin(*args, **kwargs):
+        return False
+
+    async def fake_ensure_chat(*args, **kwargs):
+        return None
+
+    async def fake_ensure_user(*args, **kwargs):
+        return None
+
+    async def fake_apply_garbage_punishment(*args, **kwargs):
+        applied_rules.append(kwargs["rule_id"])
+        return SimpleNamespace(applied=False, action_label="未执行处罚")
+
+    monkeypatch.setattr(anti_spam_handler, "get_chat_settings", fake_get_chat_settings)
+    monkeypatch.setattr(anti_spam_handler, "should_exempt_admin", fake_should_exempt_admin)
+    monkeypatch.setattr(anti_spam_handler, "ensure_chat", fake_ensure_chat)
+    monkeypatch.setattr(anti_spam_handler, "ensure_user", fake_ensure_user)
+    monkeypatch.setattr(anti_spam_handler, "apply_garbage_punishment", fake_apply_garbage_punishment)
+
+    with pytest.raises(ApplicationHandlerStop):
+        await anti_spam_handler.anti_spam_message_handler(update, context)
+
+    assert applied_rules == [rule_id]
+    assert message.deleted is True
+
+
+@pytest.mark.asyncio
+async def test_manual_warning_stops_and_fallback_deletes_when_actions_fail(monkeypatch):
+    session = _Session()
+    update = _build_update()
+    context = _build_context(session)
+    target = _FakeUser(user_id=456)
+    update.effective_message = SimpleNamespace(
+        message_id=42,
+        sender_chat=None,
+        text="警告",
+        caption=None,
+        reply_to_message=SimpleNamespace(message_id=41, from_user=target),
+        deleted=False,
+    )
+
+    async def delete():
+        update.effective_message.deleted = True
+
+    update.effective_message.delete = delete
+    settings = _settings_with_rule("manual_warning", {"enabled": True, "delete_message": True, "warn_enabled": False})
+
+    async def fake_get_chat_settings(session, chat_id):
+        return settings
+
+    async def fake_should_exempt_admin(context, chat_id, user_id, default):
+        return user_id == update.effective_user.id
+
+    async def fake_ensure_chat(*args, **kwargs):
+        return None
+
+    async def fake_ensure_user(*args, **kwargs):
+        return None
+
+    async def fake_apply_garbage_punishment(*args, **kwargs):
+        return SimpleNamespace(applied=False, action_label="未执行处罚")
+
+    monkeypatch.setattr(anti_spam_handler, "get_chat_settings", fake_get_chat_settings)
+    monkeypatch.setattr(anti_spam_handler, "should_exempt_admin", fake_should_exempt_admin)
+    monkeypatch.setattr(anti_spam_handler, "ensure_chat", fake_ensure_chat)
+    monkeypatch.setattr(anti_spam_handler, "ensure_user", fake_ensure_user)
+    monkeypatch.setattr(anti_spam_handler, "apply_garbage_punishment", fake_apply_garbage_punishment)
+
+    with pytest.raises(ApplicationHandlerStop):
+        await anti_spam_handler.anti_spam_message_handler(update, context)
+
+    assert update.effective_message.deleted is True
+
+
+@pytest.mark.asyncio
+async def test_leave_ban_fallbacks_and_notifies_when_delete_and_ban_fail(monkeypatch):
+    session = _Session()
+    update = _build_update()
+    sent_messages: list[str] = []
+
+    class _Bot:
+        async def send_message(self, chat_id: int, text: str, **kwargs):
+            sent_messages.append(text)
+
+    context = _build_context(session)
+    context.bot = _Bot()
+    left_user = _FakeUser(user_id=456)
+    update.effective_message = SimpleNamespace(
+        message_id=42,
+        sender_chat=None,
+        text=None,
+        caption=None,
+        left_chat_member=left_user,
+        deleted=False,
+    )
+
+    async def delete():
+        update.effective_message.deleted = True
+
+    update.effective_message.delete = delete
+    settings = _settings_with_rule("leave_ban", {"enabled": True, "delete_message": True})
+
+    async def fake_get_chat_settings(session, chat_id):
+        return settings
+
+    async def fake_should_exempt_admin(*args, **kwargs):
+        return False
+
+    async def fake_ensure_chat(*args, **kwargs):
+        return None
+
+    async def fake_ensure_user(*args, **kwargs):
+        return None
+
+    async def fake_delete_many(*args, **kwargs):
+        return SimpleNamespace(applied=False)
+
+    async def fake_execute_garbage_action_safely(*args, **kwargs):
+        return SimpleNamespace(applied=False)
+
+    async def fake_record_violation(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(anti_spam_handler, "get_chat_settings", fake_get_chat_settings)
+    monkeypatch.setattr(anti_spam_handler, "should_exempt_admin", fake_should_exempt_admin)
+    monkeypatch.setattr(anti_spam_handler, "ensure_chat", fake_ensure_chat)
+    monkeypatch.setattr(anti_spam_handler, "ensure_user", fake_ensure_user)
+    monkeypatch.setattr(anti_spam_handler.ActionExecutor, "delete_many", fake_delete_many)
+    monkeypatch.setattr(anti_spam_handler, "execute_garbage_action_safely", fake_execute_garbage_action_safely)
+    monkeypatch.setattr(anti_spam_handler, "record_violation", fake_record_violation)
+
+    with pytest.raises(ApplicationHandlerStop):
+        await anti_spam_handler.anti_spam_message_handler(update, context)
+
+    assert update.effective_message.deleted is True
+    assert sent_messages == [
+        "⚠️ 垃圾防护已命中，但处罚动作没有成功执行。\n"
+        "请检查机器人是否仍是管理员，并拥有删除消息/禁言权限；也请重启机器人加载最新代码。"
+    ]
+
+
+@pytest.mark.asyncio
 async def test_anti_flood_handler_records_final_action(monkeypatch):
     session = _Session()
     update = _build_update(message_id=88)
@@ -338,6 +697,85 @@ async def test_anti_flood_handler_records_final_action(monkeypatch):
 
     assert recorded[0]["action"] == "delete"
     assert executed[0]["args"][3] == "delete"
+    assert session.commits == 2
+
+
+@pytest.mark.asyncio
+async def test_explicit_flood_uses_garbage_guard_threshold_and_stops_on_failed_action(monkeypatch):
+    session = _Session()
+    update = _build_update(message_id=88)
+    context = _build_context(session)
+    checked_args: list[tuple[int, int]] = []
+    apply_details: list[str] = []
+
+    class _Message:
+        message_id = 88
+        sender_chat = None
+        text = "hello"
+        caption = None
+        deleted = False
+
+        async def delete(self):
+            self.deleted = True
+
+    update.effective_message = _Message()
+
+    settings = SimpleNamespace(
+        anti_spam_rules={},
+        anti_flood_enabled=False,
+        anti_flood_messages=99,
+        anti_flood_seconds=99,
+        anti_flood_action="mute",
+        anti_flood_mute_duration=600,
+        anti_flood_exempt_admin=False,
+        anti_flood_cleanup_messages=False,
+        anti_flood_delete_notify=False,
+        anti_flood_delete_notify_seconds=30,
+    )
+    set_rule_config(settings, "flood", {"enabled": True, "messages": 3, "seconds": 7, "delete_message": True})
+    settings.anti_flood_messages = 99
+    settings.anti_flood_seconds = 99
+
+    class FakeTracker:
+        async def add_message(self, *args, **kwargs):
+            return None
+
+        async def check_flood(self, chat_id, actor_id, max_messages, window_seconds):
+            checked_args.append((max_messages, window_seconds))
+            return SimpleNamespace(is_flooding=True, message_count=4, time_span=3.2, action="none")
+
+        async def get_and_clear_messages(self, chat_id, actor_id):
+            return [88]
+
+    async def fake_get_chat_settings(session, chat_id):
+        return settings
+
+    async def fake_should_exempt_admin(*args, **kwargs):
+        return False
+
+    async def fake_ensure_chat(*args, **kwargs):
+        return None
+
+    async def fake_ensure_user(*args, **kwargs):
+        return None
+
+    async def fake_apply_garbage_punishment(*args, **kwargs):
+        apply_details.append(kwargs["detail"])
+        return SimpleNamespace(applied=False, action_label="未执行处罚")
+
+    monkeypatch.setattr(anti_flood_handler, "get_chat_settings", fake_get_chat_settings)
+    monkeypatch.setattr(anti_flood_handler, "should_exempt_admin", fake_should_exempt_admin)
+    monkeypatch.setattr(anti_flood_handler, "get_tracker", lambda: FakeTracker())
+    monkeypatch.setattr(anti_flood_handler, "ensure_chat", fake_ensure_chat)
+    monkeypatch.setattr(anti_flood_handler, "ensure_user", fake_ensure_user)
+    monkeypatch.setattr(anti_flood_handler, "apply_garbage_punishment", fake_apply_garbage_punishment)
+
+    with pytest.raises(ApplicationHandlerStop):
+        await anti_flood_handler.anti_flood_message_handler(update, context)
+
+    assert checked_args == [(3, 7)]
+    assert apply_details == ["3.2 秒内发送 4 条消息，达到刷屏阈值"]
+    assert update.effective_message.deleted is True
     assert session.commits == 2
 
 

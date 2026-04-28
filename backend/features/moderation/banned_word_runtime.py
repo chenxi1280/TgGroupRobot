@@ -6,7 +6,13 @@ import structlog
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
-from backend.features.moderation.banned_word_common import get_action_label, get_match_type_label
+from backend.features.moderation.banned_word_common import (
+    get_action_label,
+    get_match_type_label,
+    normalize_action_input,
+    normalize_bool_input,
+    normalize_match_type_input,
+)
 from backend.features.moderation.services.banned_word_service import create_banned_word, get_chat_banned_words, match_banned_words
 from backend.platform.db.runtime.session import Database
 from backend.platform.db.schema.models.enums import BannedWordMatchType, ConversationStateType
@@ -150,8 +156,8 @@ async def _parse_banned_word_config(update: Update, session, state: object, text
             raise ValueError(
                 {
                     "invalid_word": "❌ 违禁词格式无效\n\n违禁词不能为空",
-                    "invalid_match_type": "❌ 匹配类型无效\n\n有效选项：exact（精确匹配）、contains（包含匹配）、regex（正则表达式）",
-                    "invalid_action": "❌ 惩罚动作无效\n\n有效选项：delete（删除消息）、mute（禁言）、ban（封禁）\n\n注意：contains 是匹配类型，不是惩罚动作",
+                    "invalid_match_type": "❌ 匹配类型无效\n\n有效选项：精确、包含、正则",
+                    "invalid_action": "❌ 惩罚动作无效\n\n有效选项：删除、禁言、封禁\n\n注意：包含/模糊匹配是匹配类型，不是处罚动作",
                     "duplicate": "❌ 该违禁词已存在",
                 }.get(result.reason, "❌ 创建失败")
             )
@@ -192,9 +198,9 @@ def _parse_banned_word_config_text(text: str) -> dict:
     }
     for line in [item.strip() for item in lines[1:]]:
         if line.startswith("匹配类型:"):
-            config["match_type"] = line.split(":", 1)[1].strip()
+            config["match_type"] = normalize_match_type_input(line.split(":", 1)[1])
         elif line.startswith("惩罚动作:"):
-            config["action"] = line.split(":", 1)[1].strip()
+            config["action"] = normalize_action_input(line.split(":", 1)[1])
         elif line.startswith("禁言时长:"):
             duration_str = line.split(":", 1)[1].strip()
             if duration_str:
@@ -203,7 +209,7 @@ def _parse_banned_word_config_text(text: str) -> dict:
                 except ValueError as exc:
                     raise ValueError("禁言时长必须是数字") from exc
         elif line.startswith("删除提醒:"):
-            config["notify"] = line.split(":", 1)[1].strip().lower() in {"true", "1", "yes"}
+            config["notify"] = normalize_bool_input(line.split(":", 1)[1])
         elif line.startswith("提醒消息:"):
             config["notify_message"] = line.split(":", 1)[1].strip() if ":" in line else None
     return config

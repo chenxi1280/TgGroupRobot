@@ -7,7 +7,11 @@ from telegram.error import BadRequest
 
 from backend.features.admin import admin_handler
 from backend.features.admin.activity import game as game_admin_module
-from backend.features.admin.ui.antispam import garbage_guard_home_keyboard, garbage_guard_rule_keyboard
+from backend.features.admin.ui.antispam import (
+    format_garbage_rule_text,
+    garbage_guard_home_keyboard,
+    garbage_guard_rule_keyboard,
+)
 from backend.features.moderation import garbage_guard_config_handler
 from backend.features.moderation.anti_spam_config_handler import format_anti_spam_menu_text
 from backend.features.moderation.services.garbage_guard_rules import RULE_ORDER, set_rule_config
@@ -205,8 +209,8 @@ def test_anti_spam_text_marks_basic_mode() -> None:
     text = format_anti_spam_menu_text("测试群", settings)
 
     assert "垃圾防护功能" in text
-    assert "拦截违禁词 - 匹配到违禁词时进行处罚" in text
-    assert "禁止发言刷屏 - 短时间大量发言进行处罚" in text
+    assert "拦截违禁词 - 命中词库后按处罚组合处理" in text
+    assert "禁止发言刷屏 - 短时间大量发言按阈值处罚" in text
     assert "以上规则对管理员和白名单用户无效" in text
 
 
@@ -289,11 +293,13 @@ def test_garbage_rule_keyboard_hides_dependent_rows_until_enabled() -> None:
 def test_garbage_guard_banned_words_rule_exposes_add_entry() -> None:
     settings = SimpleNamespace(anti_spam_rules={}, anti_flood_enabled=False)
     keyboard = garbage_guard_rule_keyboard(settings, -100123, "banned_words")
+    text = format_garbage_rule_text("锅巴 群", settings, "banned_words", banned_word_count=0)
     rows = [[button.text for button in row] for row in keyboard.inline_keyboard]
     callbacks = [button.callback_data for row in keyboard.inline_keyboard for button in row]
 
     assert ["➕ 添加违禁词"] in rows
     assert "banned_word:add:-100123" in callbacks
+    assert "实际触发条件: 包含/模糊匹配，命中词库后触发（当前 0 个词）" in text
 
 
 def test_all_garbage_guard_rules_can_enable_with_tracked_json_assignment() -> None:

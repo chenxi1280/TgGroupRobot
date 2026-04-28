@@ -97,6 +97,7 @@ def test_long_message_and_long_name_are_independent_rules() -> None:
     violation = detect_garbage_violation(settings, _message("1" * 21))
     assert violation is not None
     assert violation.rule_id == "long_message"
+    assert violation.detail == "消息长度 21 字，超过 20 字限制"
 
     set_rule_config(settings, "long_message", {"enabled": False})
     violation = detect_garbage_violation(
@@ -118,8 +119,9 @@ def test_garbage_rule_text_shows_delete_only_effect_and_runtime_scope() -> None:
     settings = _settings()
     set_rule_config(settings, "banned_words", {"enabled": True, "delete_message": True})
 
-    text = format_garbage_rule_text("锅巴 群", settings, "banned_words")
+    text = format_garbage_rule_text("锅巴 群", settings, "banned_words", banned_word_count=2)
 
+    assert "实际触发条件: 包含/模糊匹配，命中词库后触发（当前 2 个词）" in text
     assert "当前效果: 只删除消息，不会警告/禁言/提示。" in text
     assert "警告成员: 关闭" in text
     assert "禁言成员: 关闭" in text
@@ -150,6 +152,18 @@ def test_garbage_rule_text_shows_full_punishment_combo() -> None:
     assert "警告成员: 启动，警告1次" in text
     assert "禁言成员: 启动，10分钟" in text
     assert "提示消息: 启动，10秒后删除" in text
+
+
+def test_garbage_rule_text_shows_long_content_and_flood_conditions() -> None:
+    settings = _settings()
+    set_rule_config(settings, "long_message", {"enabled": True, "message_max_length": 100})
+    set_rule_config(settings, "flood", {"enabled": True, "messages": 5, "seconds": 5})
+
+    long_text = format_garbage_rule_text("锅巴 群", settings, "long_message")
+    flood_text = format_garbage_rule_text("锅巴 群", settings, "flood")
+
+    assert "实际触发条件: 超过 100 字触发" in long_text
+    assert "实际触发条件: 5 秒内达到 5 条触发" in flood_text
 
 
 @pytest.mark.asyncio
@@ -220,7 +234,7 @@ async def test_banned_word_full_punishment_deletes_warns_mutes_and_notices(monke
     )
 
     assert result.applied is True
-    assert result.action_label == "delete+warn+mute"
+    assert result.action_label == "删除消息 + 警告成员 + 禁言成员"
     assert result.warning is not None
     assert result.warning.threshold_reached is True
     assert ("delete_many", (-100123, [99])) in calls
@@ -232,3 +246,99 @@ async def test_banned_word_full_punishment_deletes_warns_mutes_and_notices(monke
     notice_call = next(value for name, value in calls if name == "notice")
     assert notice_call[0] == -100123
     assert notice_call[2] == 10
+
+
+@pytest.mark.asyncio
+async def test_garbage_punishment_tracks_failed_delete_separately_from_other_actions(monkeypatch) -> None:
+    settings = _settings()
+    set_rule_config(
+        settings,
+        "long_message",
+        {
+            "enabled": True,
+            "delete_message": True,
+            "mute_enabled": True,
+            "mute_seconds": 600,
+        },
+    )
+
+    async def fake_delete_many(context, *, chat_id: int, message_ids: list[int]):
+        return SimpleNamespace(applied=False)
+
+    async def fake_resolve_effective_action(context, chat_id: int, user_id: int, action: str, **kwargs):
+        return SimpleNamespace(action=action)
+
+    async def fake_execute(context, **kwargs):
+        return SimpleNamespace(applied=True)
+
+    async def fake_record_violation(session, **kwargs):
+        return None
+
+    monkeypatch.setattr(garbage_guard_service.ActionExecutor, "delete_many", fake_delete_many)
+    monkeypatch.setattr(garbage_guard_service.ActionExecutor, "execute", fake_execute)
+    monkeypatch.setattr(garbage_guard_service, "resolve_effective_action", fake_resolve_effective_action)
+    monkeypatch.setattr(garbage_guard_service, "record_violation", fake_record_violation)
+
+    result = await apply_garbage_punishment(
+        SimpleNamespace(bot=object()),
+        object(),
+        settings=settings,
+        chat_id=-100123,
+        target_user_id=42,
+        target_label="Alice",
+        rule_id="long_message",
+        detail="消息长度 101 字，超过 100 字限制",
+        message_ids=[99],
+        record_message_id=99,
+    )
+
+    assert result.applied is True
+    assert result.delete_requested is True
+    assert result.delete_applied is False
+    assert result.action_label == "删除消息 + 禁言成员"
+
+
+@pytest.mark.asyncio
+async def test_garbage_punishment_records_and_returns_when_action_api_fails(monkeypatch) -> None:
+    settings = _settings()
+    set_rule_config(
+        settings,
+        "long_message",
+        {
+            "enabled": True,
+            "delete_message": False,
+            "mute_enabled": True,
+            "mute_seconds": 600,
+        },
+    )
+    recorded: list[dict[str, object]] = []
+
+    async def fake_resolve_effective_action(context, chat_id: int, user_id: int, action: str, **kwargs):
+        return SimpleNamespace(action=action)
+
+    async def fake_execute(context, **kwargs):
+        raise RuntimeError("missing mute permission")
+
+    async def fake_record_violation(session, **kwargs):
+        recorded.append(kwargs)
+
+    monkeypatch.setattr(garbage_guard_service.ActionExecutor, "execute", fake_execute)
+    monkeypatch.setattr(garbage_guard_service, "resolve_effective_action", fake_resolve_effective_action)
+    monkeypatch.setattr(garbage_guard_service, "record_violation", fake_record_violation)
+
+    result = await apply_garbage_punishment(
+        SimpleNamespace(bot=object()),
+        object(),
+        settings=settings,
+        chat_id=-100123,
+        target_user_id=42,
+        target_label="Alice",
+        rule_id="long_message",
+        detail="消息长度 101 字，超过 100 字限制",
+        message_ids=[99],
+        record_message_id=99,
+    )
+
+    assert result.applied is False
+    assert result.action_label == "禁言成员"
+    assert recorded[0]["rule"] == "long_message"
