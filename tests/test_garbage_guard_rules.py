@@ -94,10 +94,10 @@ def test_long_message_and_long_name_are_independent_rules() -> None:
     set_rule_config(settings, "long_message", {"enabled": True, "message_max_length": 20})
     set_rule_config(settings, "long_name", {"enabled": False, "name_max_length": 2})
 
-    violation = detect_garbage_violation(settings, _message("1" * 21))
+    violation = detect_garbage_violation(settings, _message("1" * 20))
     assert violation is not None
     assert violation.rule_id == "long_message"
-    assert violation.detail == "消息长度 21 字，超过 20 字限制"
+    assert violation.detail == "消息长度 20 字，达到/超过 20 字限制"
 
     set_rule_config(settings, "long_message", {"enabled": False})
     violation = detect_garbage_violation(
@@ -204,7 +204,7 @@ def test_garbage_rule_text_shows_long_content_and_flood_conditions() -> None:
 
     assert long_rule["delete_message"] is True
     assert long_rule["notice_enabled"] is True
-    assert "实际触发条件: 超过 100 字触发" in long_text
+    assert "实际触发条件: 达到或超过 100 字触发" in long_text
     assert "当前效果: 删除消息 + 提示消息。" in long_text
     assert "实际触发条件: 5 秒内达到 5 条触发" in flood_text
 

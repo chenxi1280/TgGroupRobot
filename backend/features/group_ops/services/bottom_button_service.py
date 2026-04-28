@@ -208,14 +208,8 @@ async def generate_buttons(context: ContextTypes.DEFAULT_TYPE, session: AsyncSes
             pass
 
     sent = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=markup)
-    sent_message_id = sent.message_id
-    try:
-        await context.bot.delete_message(chat_id=chat_id, message_id=sent_message_id)
-        sent_message_id = None
-    except TelegramError:
-        pass
 
-    setting.generated_message_id = sent_message_id
+    setting.generated_message_id = sent.message_id
     setting.repeat_generate_enabled = False
     setting.last_generated_at = _now()
     setting.updated_at = _now()

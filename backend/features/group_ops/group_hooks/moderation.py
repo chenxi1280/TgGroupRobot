@@ -25,6 +25,17 @@ from .common import _schedule_message_delete
 
 log = structlog.get_logger(__name__)
 
+
+def _user_label(user) -> str:
+    if user is None:
+        return "频道身份发言"
+    if hasattr(user, "mention_html"):
+        try:
+            return user.mention_html()
+        except Exception:
+            pass
+    return getattr(user, "first_name", None) or getattr(user, "username", None) or "频道身份发言"
+
 async def _process_alliance_reply_ban(
     context: ContextTypes.DEFAULT_TYPE,
     db: Database,
@@ -173,26 +184,29 @@ async def _process_banned_word_check(
         if explicit_garbage:
             word = matched_words[0]
             detail = f"命中违禁词「{word.word}」"
+            target_user_id = user.id if getattr(user, "id", 0) > 0 else 0
             await ensure_chat(session, chat_id=chat.id, chat_type=chat.type, title=chat.title)
-            await ensure_user(
-                session,
-                user_id=user.id,
-                username=user.username,
-                first_name=user.first_name,
-                last_name=user.last_name,
-                language_code=user.language_code,
-            )
+            if target_user_id > 0:
+                await ensure_user(
+                    session,
+                    user_id=user.id,
+                    username=user.username,
+                    first_name=user.first_name,
+                    last_name=user.last_name,
+                    language_code=user.language_code,
+                )
             result = await apply_garbage_punishment(
                 context,
                 session,
                 settings=settings,
                 chat_id=chat.id,
-                target_user_id=user.id,
-                target_label=user.mention_html(),
+                target_user_id=target_user_id,
+                target_label=_user_label(user),
                 rule_id="banned_words",
                 detail=detail,
                 message_ids=[message.message_id],
                 record_message_id=message.message_id,
+                sender_chat_id=getattr(getattr(message, "sender_chat", None), "id", None),
             )
             await session.commit()
             await handle_garbage_result_fallback(
@@ -230,7 +244,7 @@ async def _process_banned_word_check(
         context,
         feature="违禁词",
         chat_id=chat.id,
-        user_id=user.id,
+        user_id=user.id if getattr(user, "id", 0) > 0 else 0,
         action="none",
         detail=detail,
         message=message,
@@ -243,6 +257,9 @@ async def _process_banned_word_check(
             await context.bot.send_message(chat_id=chat.id, text=notify_msg)
         except Exception as exc:
             log.warning("send_notify_failed", chat_id=chat.id, error=str(exc))
+
+    if getattr(user, "id", 0) <= 0:
+        return True
 
     if word.action == "mute":
         await execute_user_action(

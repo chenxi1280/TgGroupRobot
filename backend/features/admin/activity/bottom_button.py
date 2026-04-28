@@ -184,11 +184,17 @@ class BottomButtonAdminControllerMixin:
                         await answer_callback_query_safely(update, str(exc), show_alert=True)
                         await self._show_bottom_button_layout_menu(update, context, chat_id)
                         return
+                    setting = await get_bottom_button_setting(session, chat_id)
+                    if setting.enabled:
+                        await generate_bottom_buttons(context, session, chat_id)
                     await session.commit()
                     await self._show_bottom_button_layout_menu(update, context, chat_id)
                     return
                 if sub == "clear":
                     await clear_bottom_button_layouts(session, chat_id)
+                    setting = await get_bottom_button_setting(session, chat_id)
+                    if setting.enabled:
+                        await generate_bottom_buttons(context, session, chat_id)
                     await session.commit()
                     await self._show_bottom_button_layout_menu(update, context, chat_id)
                     return
@@ -201,11 +207,17 @@ class BottomButtonAdminControllerMixin:
                     return
                 if sub == "mode":
                     await update_layout_button(session, chat_id=chat_id, layout_id=layout_id, action_mode=callback_data.get(5))
+                    setting = await get_bottom_button_setting(session, chat_id)
+                    if setting.enabled:
+                        await generate_bottom_buttons(context, session, chat_id)
                     await session.commit()
                     await self._show_bottom_button_detail(update, context, chat_id, layout_id)
                     return
                 if sub == "delete":
                     await delete_layout_button(session, chat_id, layout_id)
+                    setting = await get_bottom_button_setting(session, chat_id)
+                    if setting.enabled:
+                        await generate_bottom_buttons(context, session, chat_id)
                     await session.commit()
                     await self._show_bottom_button_layout_menu(update, context, chat_id)
                     return

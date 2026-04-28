@@ -6,7 +6,7 @@ from telegram.ext import ContextTypes
 
 from backend.platform.db.runtime.session import Database
 from backend.platform.db.schema.models.core import TgUser
-from backend.platform.telegram.message_actor import is_sender_chat_actor, resolve_message_actor
+from backend.platform.telegram.message_actor import build_sender_chat_actor, is_sender_chat_actor, resolve_message_actor
 from backend.shared.services.module_settings_service import ModuleSettingsService
 from backend.shared.services.permission_service import is_user_admin
 
@@ -42,9 +42,10 @@ def _is_reserved_activity_trigger(message_text: str) -> bool:
 async def unified_group_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     chat = update.effective_chat
     message = update.effective_message
-    user = resolve_message_actor(update)
+    sender_chat = getattr(message, "sender_chat", None) if message is not None else None
+    user = build_sender_chat_actor(message) if sender_chat is not None and message is not None else resolve_message_actor(update)
     message_text = (message.text or message.caption or "") if message else ""
-    sender_chat_id = getattr(getattr(message, "sender_chat", None), "id", None)
+    sender_chat_id = getattr(sender_chat, "id", None)
 
     log.warning(
         "=== UNIFIED_GROUP_MESSAGE_HANDLER ENTRY ===",
@@ -131,7 +132,7 @@ async def unified_group_message_handler(update: Update, context: ContextTypes.DE
         return True
 
     if message_text:
-        if real_user_id is not None and not is_admin:
+        if (real_user_id is not None and not is_admin) or sender_chat_actor:
             deleted = await _process_banned_word_check(context, db, chat, user, message, message_text, settings)
             if deleted:
                 return True

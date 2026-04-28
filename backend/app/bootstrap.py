@@ -153,18 +153,20 @@ def _register_common_handlers(app: Application) -> None:
 
     app.add_handler(TypeHandler(Update, _raw_update_probe), group=-99)
 
-    # ==================== Group -4: 系统提示清理 ====================
+    # ==================== Group -5: 系统提示清理 ====================
     # 这类消息不依赖用户文本内容，必须早于风控处理；否则风控命中后抛出
     # ApplicationHandlerStop 会导致自动删除完全没有机会执行。
     app.add_handler(
         MessageHandler(filters.ChatType.GROUPS & filters.ALL, auto_delete_handler),
-        group=-4,
+        group=-5,
     )
 
-    # ==================== Group -3: 群风控入口（优先于业务处理）====================
+    # ==================== Group -4/-3: 群风控入口（优先于业务处理）====================
+    # PTB 同一个 group 内只执行第一个匹配的 handler；反刷屏和垃圾防护都匹配
+    # filters.ALL，必须拆到不同 group，否则后注册的长内容/违禁词等防护不会运行。
     app.add_handler(
         MessageHandler(filters.ChatType.GROUPS & filters.ALL, anti_flood_message_handler),
-        group=-3,
+        group=-4,
     )
     app.add_handler(
         MessageHandler(filters.ChatType.GROUPS & filters.ALL, anti_spam_message_handler),

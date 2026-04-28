@@ -7,6 +7,7 @@ import pytest
 
 from backend.features.group_ops import bottom_button_handler, text_trigger_runtime
 from backend.features.admin.activity import bottom_button as bottom_button_admin
+from backend.features.admin.activity import bottom_button_input
 from backend.platform.db.schema.models.expansion import AuctionItem, AuctionSetting, BottomButtonLayout, BottomButtonSetting
 from backend.features.activity.services.auction_service import format_auction_announcement, parse_auction_end_at, parse_bid_amount
 from backend.shared.services.base import ValidationError
@@ -155,7 +156,7 @@ async def test_bottom_button_add_layout_button_rejects_occupied_position(monkeyp
 
 
 @pytest.mark.asyncio
-async def test_bottom_button_generate_syncs_reply_keyboard_without_leaving_message(monkeypatch):
+async def test_bottom_button_generate_syncs_reply_keyboard_with_one_visible_message(monkeypatch):
     setting = BottomButtonSetting(
         chat_id=-1001,
         enabled=True,
@@ -200,8 +201,8 @@ async def test_bottom_button_generate_syncs_reply_keyboard_without_leaving_messa
 
     await bottom_button_service.generate_buttons(SimpleNamespace(bot=_Bot()), _Session(), -1001)
 
-    assert calls == [("delete", 88), ("send", None), ("delete", 99), ("flush", None)]
-    assert setting.generated_message_id is None
+    assert calls == [("delete", 88), ("send", None), ("flush", None)]
+    assert setting.generated_message_id == 99
     assert setting.repeat_generate_enabled is False
 
 
@@ -391,6 +392,64 @@ async def test_bottom_button_enable_generates_runtime_message_immediately(monkey
 
 
 @pytest.mark.asyncio
+async def test_bottom_button_add_layout_syncs_when_enabled(monkeypatch):
+    calls: list[tuple[str, int, object]] = []
+    setting = SimpleNamespace(enabled=True)
+
+    class _Session:
+        async def commit(self):
+            calls.append(("commit", 0, self))
+
+    class _SessionFactory:
+        def __call__(self):
+            return self
+
+        async def __aenter__(self):
+            self.session = _Session()
+            return self.session
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class _Controller(bottom_button_admin.BottomButtonAdminControllerMixin):
+        async def _show_bottom_button_layout_menu(self, update, context, chat_id: int):
+            calls.append(("layout_menu", chat_id, None))
+
+    async def fake_add(session, chat_id: int, *, row_no=None, col_no=None):
+        calls.append(("add", chat_id, (row_no, col_no)))
+
+    async def fake_get_setting(session, chat_id: int):
+        calls.append(("setting", chat_id, None))
+        return setting
+
+    async def fake_generate(context, session, chat_id: int):
+        calls.append(("generate", chat_id, session))
+
+    monkeypatch.setattr(bottom_button_admin, "add_layout_button", fake_add)
+    monkeypatch.setattr(bottom_button_admin, "get_bottom_button_setting", fake_get_setting)
+    monkeypatch.setattr(bottom_button_admin, "generate_bottom_buttons", fake_generate)
+
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=42),
+        callback_query=SimpleNamespace(data="btm:layout:-1001:add:1:1"),
+    )
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": SimpleNamespace(session_factory=_SessionFactory())}))
+
+    await _Controller()._handle_bottom_button(
+        update,
+        context,
+        -1001,
+        bottom_button_admin.CallbackParser.parse("btm:layout:-1001:add:1:1"),
+    )
+
+    assert calls[0] == ("add", -1001, (1, 1))
+    assert calls[1] == ("setting", -1001, None)
+    assert calls[2][0:2] == ("generate", -1001)
+    assert calls[3][0] == "commit"
+    assert calls[4] == ("layout_menu", -1001, None)
+
+
+@pytest.mark.asyncio
 async def test_bottom_button_disable_does_not_generate_runtime_message(monkeypatch):
     calls: list[str] = []
 
@@ -436,6 +495,62 @@ async def test_bottom_button_disable_does_not_generate_runtime_message(monkeypat
     )
 
     assert calls == ["setting", "commit", "menu"]
+
+
+@pytest.mark.asyncio
+async def test_bottom_button_text_input_syncs_when_enabled(monkeypatch):
+    calls: list[tuple[str, int, object]] = []
+    setting = SimpleNamespace(enabled=True)
+
+    class _Session:
+        async def commit(self):
+            calls.append(("commit", 0, self))
+
+    class _Admin:
+        async def _show_bottom_button_detail(self, update, context, chat_id: int, layout_id: int):
+            calls.append(("detail", chat_id, layout_id))
+
+    async def fake_update_layout(session, *, chat_id: int, layout_id: int, button_text=None, payload_text=None, action_mode=None):
+        calls.append(("update_layout", chat_id, (layout_id, button_text, payload_text, action_mode)))
+
+    async def fake_get_setting(session, chat_id: int):
+        calls.append(("setting", chat_id, None))
+        return setting
+
+    async def fake_generate(context, session, chat_id: int):
+        calls.append(("generate", chat_id, session))
+
+    async def fake_clear_state(session, *, target_chat_id: int, user_id: int):
+        calls.append(("clear_state", target_chat_id, user_id))
+
+    monkeypatch.setattr(bottom_button_input, "update_layout_button", fake_update_layout)
+    monkeypatch.setattr(bottom_button_input, "get_bottom_button_setting", fake_get_setting)
+    monkeypatch.setattr(bottom_button_input, "generate_bottom_buttons", fake_generate)
+    monkeypatch.setattr(bottom_button_input, "clear_private_admin_state", fake_clear_state)
+    monkeypatch.setattr(bottom_button_input, "admin_handler_instance", lambda: _Admin())
+
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=42),
+        effective_message=SimpleNamespace(reply_text=lambda *args, **kwargs: None),
+    )
+    state = SimpleNamespace(state_type="bottom_button_button_text_input", state_data={"layout_id": 7})
+
+    handled = await bottom_button_input.handle_bottom_button_admin_input(
+        update,
+        SimpleNamespace(),
+        _Session(),
+        state,
+        "签到",
+        target_chat_id=-1001,
+    )
+
+    assert handled is True
+    assert calls[0] == ("update_layout", -1001, (7, "签到", None, None))
+    assert calls[1] == ("setting", -1001, None)
+    assert calls[2][0:2] == ("generate", -1001)
+    assert calls[3] == ("clear_state", -1001, 42)
+    assert calls[4][0] == "commit"
+    assert calls[5] == ("detail", -1001, 7)
 
 
 @pytest.mark.asyncio

@@ -255,12 +255,12 @@ def detect_garbage_violation(settings: ChatSettings, message: Message) -> Garbag
     text = _message_text(message)
 
     long_message = get_rule_config(settings, "long_message")
-    if long_message["enabled"] and len(text) > int(long_message["message_max_length"]):
+    if long_message["enabled"] and len(text) >= int(long_message["message_max_length"]):
         max_length = int(long_message["message_max_length"])
         return GarbageViolation(
             rule_id="long_message",
             rule="long_message",
-            detail=f"消息长度 {len(text)} 字，超过 {max_length} 字限制",
+            detail=f"消息长度 {len(text)} 字，达到/超过 {max_length} 字限制",
             message_ids_to_delete=[message.message_id],
         )
 

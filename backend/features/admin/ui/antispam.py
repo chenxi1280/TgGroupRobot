@@ -90,7 +90,7 @@ def _rule_trigger_summary(rule_id: str, rule: dict, banned_word_count: int = 0) 
     if rule_id == "banned_words":
         return f"实际触发条件: 包含/模糊匹配，命中词库后触发（当前 {banned_word_count} 个词）"
     if rule_id == "long_message":
-        return f"实际触发条件: 超过 {int(rule.get('message_max_length', 100) or 100)} 字触发"
+        return f"实际触发条件: 达到或超过 {int(rule.get('message_max_length', 100) or 100)} 字触发"
     if rule_id == "long_name":
         return f"实际触发条件: 昵称超过 {int(rule.get('name_max_length', 20) or 20)} 字触发"
     if rule_id == "flood":
@@ -161,7 +161,7 @@ def format_garbage_guard_home_text(chat_title: str, settings) -> str:
             f"☂️ [{chat_title}] 垃圾防护功能",
             "",
             "拦截违禁词 - 命中词库后按处罚组合处理",
-            "禁止长内容 - 消息长度超过配置限额处罚",
+            "禁止长内容 - 消息长度达到配置限额处罚",
             "禁止长昵称 - 昵称字数超限额发言时处罚",
             "禁止转发引用 - 用户转发或引用会被处罚",
             "禁止发送按钮 - 当用户消息含按钮时处罚",

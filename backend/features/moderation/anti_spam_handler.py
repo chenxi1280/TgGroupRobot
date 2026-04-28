@@ -101,6 +101,7 @@ async def anti_spam_message_handler(update: Update, context: ContextTypes.DEFAUL
     message = update.effective_message
     sender_chat = message.sender_chat
     actor_id = normalize_moderation_actor_id(user.id if user is not None else None, sender_chat.id if sender_chat is not None else None)
+    real_user = user if sender_chat is None else None
 
     if chat.type == "private":
         return
@@ -227,34 +228,48 @@ async def anti_spam_message_handler(update: Update, context: ContextTypes.DEFAUL
             return
 
         # 垃圾防护规则对管理员与总白名单用户无效。
-        if await should_exempt_admin(context, chat.id, user.id if user is not None else None, True):
+        if await should_exempt_admin(context, chat.id, real_user.id if real_user is not None else None, True):
             await session.commit()
-            log.info("spam_skip_admin_exempt", chat_id=chat.id, user_id=user.id if user is not None else None)
+            log.info("spam_skip_admin_exempt", chat_id=chat.id, user_id=real_user.id if real_user is not None else None)
             return
 
-        if user is not None and is_global_whitelisted(settings, user.id):
+        if real_user is not None and is_global_whitelisted(settings, real_user.id):
             await session.commit()
-            log.info("spam_skip_global_whitelist", chat_id=chat.id, user_id=user.id)
+            log.info("spam_skip_global_whitelist", chat_id=chat.id, user_id=real_user.id)
             return
 
         garbage_violation = detect_garbage_violation(settings, message)
-        if garbage_violation is not None and user is not None and user.id > 0:
+        long_message_config = get_rule_config(settings, "long_message")
+        log.info(
+            "garbage_guard_runtime_check",
+            chat_id=chat.id,
+            user_id=real_user.id if real_user is not None else None,
+            sender_chat_id=sender_chat.id if sender_chat is not None else None,
+            text_length=len(getattr(message, "text", None) or getattr(message, "caption", None) or ""),
+            long_message_enabled=bool(long_message_config.get("enabled")),
+            long_message_max_length=int(long_message_config.get("message_max_length", 0) or 0),
+            violation_rule=garbage_violation.rule_id if garbage_violation is not None else None,
+        )
+        if garbage_violation is not None and (real_user is not None or sender_chat is not None):
             await ensure_chat(session, chat_id=chat.id, chat_type=chat.type, title=chat.title)
-            await ensure_user(
-                session,
-                user_id=user.id,
-                username=user.username,
-                first_name=user.first_name,
-                last_name=user.last_name,
-                language_code=user.language_code,
-            )
+            target_user_id = real_user.id if real_user is not None and real_user.id > 0 else 0
+            target_label = _user_label(real_user)
+            if target_user_id > 0:
+                await ensure_user(
+                    session,
+                    user_id=real_user.id,
+                    username=real_user.username,
+                    first_name=real_user.first_name,
+                    last_name=real_user.last_name,
+                    language_code=real_user.language_code,
+                )
             result = await apply_garbage_punishment(
                 context,
                 session,
                 settings=settings,
                 chat_id=chat.id,
-                target_user_id=user.id,
-                target_label=_user_label(user),
+                target_user_id=target_user_id,
+                target_label=target_label,
                 rule_id=garbage_violation.rule_id,
                 detail=garbage_violation.detail,
                 message_ids=garbage_violation.message_ids_to_delete,
@@ -276,7 +291,7 @@ async def anti_spam_message_handler(update: Update, context: ContextTypes.DEFAUL
                 log.info(
                     "garbage_guard_blocked",
                     chat_id=chat.id,
-                    user_id=user.id,
+                    user_id=target_user_id or actor_id,
                     rule=garbage_violation.rule,
                     action=result.action_label,
                 )

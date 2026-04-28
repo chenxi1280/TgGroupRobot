@@ -7,6 +7,7 @@ import pytest
 from backend.features.group_ops import auto_delete_config_handler, auto_delete_handler
 from backend.features.group_ops.auto_delete_handler import should_auto_delete_message
 from backend.app import bootstrap
+from backend.features.moderation import anti_flood_handler, anti_spam_handler
 from backend.features.admin.ui.auto_delete import auto_delete_config_keyboard
 
 
@@ -477,4 +478,31 @@ def test_auto_delete_handler_registered_before_moderation_stoppers(monkeypatch):
         for handler, group in registrations
         if getattr(handler, "callback", None) is auto_delete_handler.auto_delete_handler
     ]
-    assert auto_delete_groups == [-4]
+    assert auto_delete_groups == [-5]
+
+
+def test_flood_and_spam_handlers_registered_in_distinct_groups(monkeypatch):
+    registrations: list[tuple[object, int]] = []
+
+    class _App:
+        def add_handler(self, handler, group=0):
+            registrations.append((handler, group))
+
+    monkeypatch.setattr(bootstrap, "register_feature_routers", lambda app: None)
+    bootstrap._register_common_handlers(_App())
+
+    groups_by_callback = {
+        getattr(handler, "callback", None): group
+        for handler, group in registrations
+        if getattr(handler, "callback", None) is not None
+    }
+
+    assert groups_by_callback[auto_delete_handler.auto_delete_handler] < groups_by_callback[
+        anti_flood_handler.anti_flood_message_handler
+    ]
+    assert groups_by_callback[anti_flood_handler.anti_flood_message_handler] < groups_by_callback[
+        anti_spam_handler.anti_spam_message_handler
+    ]
+    assert groups_by_callback[anti_flood_handler.anti_flood_message_handler] != groups_by_callback[
+        anti_spam_handler.anti_spam_message_handler
+    ]
