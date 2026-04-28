@@ -117,7 +117,7 @@ def test_long_message_and_long_name_are_independent_rules() -> None:
 
 def test_garbage_rule_text_shows_delete_only_effect_and_runtime_scope() -> None:
     settings = _settings()
-    set_rule_config(settings, "banned_words", {"enabled": True, "delete_message": True})
+    set_rule_config(settings, "banned_words", {"enabled": True, "delete_message": True, "notice_enabled": False})
 
     text = format_garbage_rule_text("锅巴 群", settings, "banned_words", banned_word_count=2)
 
@@ -127,6 +127,45 @@ def test_garbage_rule_text_shows_delete_only_effect_and_runtime_scope() -> None:
     assert "禁言成员: 关闭" in text
     assert "提示消息: 关闭" in text
     assert "生效对象: 普通成员；管理员和总白名单用户不会触发。" in text
+
+
+def test_enabled_message_rules_default_to_delete_and_notice() -> None:
+    settings = _settings()
+    for rule_id in [
+        "banned_words",
+        "long_message",
+        "long_name",
+        "block_links",
+        "block_buttons",
+        "spam_user",
+        "block_forwards",
+        "flood",
+    ]:
+        set_rule_config(settings, rule_id, {"enabled": True})
+        rule = get_rule_config(settings, rule_id)
+        assert rule["delete_message"] is True, rule_id
+        assert rule["notice_enabled"] is True, rule_id
+
+
+def test_enabled_manual_warning_defaults_to_notice_but_not_delete_command() -> None:
+    settings = _settings()
+    set_rule_config(settings, "manual_warning", {"enabled": True})
+
+    rule = get_rule_config(settings, "manual_warning")
+
+    assert rule["warn_enabled"] is True
+    assert rule["delete_message"] is False
+    assert rule["notice_enabled"] is True
+
+
+def test_enabled_leave_ban_does_not_default_to_notice() -> None:
+    settings = _settings()
+    set_rule_config(settings, "leave_ban", {"enabled": True})
+
+    rule = get_rule_config(settings, "leave_ban")
+
+    assert rule["delete_message"] is True
+    assert rule["notice_enabled"] is False
 
 
 def test_garbage_rule_text_shows_full_punishment_combo() -> None:
@@ -159,11 +198,41 @@ def test_garbage_rule_text_shows_long_content_and_flood_conditions() -> None:
     set_rule_config(settings, "long_message", {"enabled": True, "message_max_length": 100})
     set_rule_config(settings, "flood", {"enabled": True, "messages": 5, "seconds": 5})
 
+    long_rule = get_rule_config(settings, "long_message")
     long_text = format_garbage_rule_text("锅巴 群", settings, "long_message")
     flood_text = format_garbage_rule_text("锅巴 群", settings, "flood")
 
+    assert long_rule["delete_message"] is True
+    assert long_rule["notice_enabled"] is True
     assert "实际触发条件: 超过 100 字触发" in long_text
+    assert "当前效果: 删除消息 + 提示消息。" in long_text
     assert "实际触发条件: 5 秒内达到 5 条触发" in flood_text
+
+
+def test_long_message_notice_can_still_be_disabled_explicitly() -> None:
+    settings = _settings()
+    set_rule_config(settings, "long_message", {"enabled": True, "message_max_length": 100})
+    set_rule_config(settings, "long_message", {"notice_enabled": False})
+
+    rule = get_rule_config(settings, "long_message")
+
+    assert rule["enabled"] is True
+    assert rule["delete_message"] is True
+    assert rule["notice_enabled"] is False
+    assert rule["notice_configured"] is True
+
+
+def test_long_message_delete_can_still_be_disabled_explicitly() -> None:
+    settings = _settings()
+    set_rule_config(settings, "long_message", {"enabled": True, "message_max_length": 100})
+    set_rule_config(settings, "long_message", {"delete_message": False, "mute_enabled": True})
+
+    rule = get_rule_config(settings, "long_message")
+
+    assert rule["enabled"] is True
+    assert rule["delete_message"] is False
+    assert rule["delete_configured"] is True
+    assert rule["notice_enabled"] is True
 
 
 @pytest.mark.asyncio

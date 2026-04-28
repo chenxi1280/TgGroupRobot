@@ -345,6 +345,64 @@ async def test_anti_spam_handler_records_final_action(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_long_message_over_100_deletes_and_notices_by_default(monkeypatch):
+    session = _Session()
+    update = _build_update()
+    context = _build_context(session)
+    settings = _settings_with_rule("long_message", {"enabled": True, "message_max_length": 100})
+    applied_configs: list[dict[str, object]] = []
+
+    update.effective_message = SimpleNamespace(
+        message_id=42,
+        sender_chat=None,
+        text="孩" * 101,
+        caption=None,
+        deleted=False,
+    )
+
+    async def fake_delete():
+        update.effective_message.deleted = True
+
+    update.effective_message.delete = fake_delete
+
+    async def fake_get_chat_settings(session, chat_id):
+        return settings
+
+    async def fake_should_exempt_admin(*args, **kwargs):
+        return False
+
+    async def fake_ensure_chat(*args, **kwargs):
+        return None
+
+    async def fake_ensure_user(*args, **kwargs):
+        return None
+
+    async def fake_apply_garbage_punishment(context, session, **kwargs):
+        config = anti_spam_handler.get_rule_config(kwargs["settings"], kwargs["rule_id"])
+        applied_configs.append(config)
+        return SimpleNamespace(
+            applied=True,
+            action_label="删除消息 + 提示消息",
+            delete_requested=True,
+            delete_applied=True,
+            escalation_requested=False,
+            escalation_applied=False,
+        )
+
+    monkeypatch.setattr(anti_spam_handler, "get_chat_settings", fake_get_chat_settings)
+    monkeypatch.setattr(anti_spam_handler, "should_exempt_admin", fake_should_exempt_admin)
+    monkeypatch.setattr(anti_spam_handler, "ensure_chat", fake_ensure_chat)
+    monkeypatch.setattr(anti_spam_handler, "ensure_user", fake_ensure_user)
+    monkeypatch.setattr(anti_spam_handler, "apply_garbage_punishment", fake_apply_garbage_punishment)
+
+    with pytest.raises(ApplicationHandlerStop):
+        await anti_spam_handler.anti_spam_message_handler(update, context)
+
+    assert applied_configs[0]["delete_message"] is True
+    assert applied_configs[0]["notice_enabled"] is True
+
+
+@pytest.mark.asyncio
 async def test_explicit_garbage_hit_falls_back_to_delete_even_when_other_action_applies(monkeypatch):
     session = _Session()
     update = _build_update()
@@ -482,6 +540,7 @@ async def test_all_message_garbage_rules_stop_and_fallback_delete(monkeypatch, r
     update.effective_user = user
     context = _build_context(session)
     applied_rules: list[str] = []
+    applied_configs: list[dict[str, object]] = []
 
     settings = _settings_with_rule(rule_id, updates)
 
@@ -499,6 +558,7 @@ async def test_all_message_garbage_rules_stop_and_fallback_delete(monkeypatch, r
 
     async def fake_apply_garbage_punishment(*args, **kwargs):
         applied_rules.append(kwargs["rule_id"])
+        applied_configs.append(anti_spam_handler.get_rule_config(kwargs["settings"], kwargs["rule_id"]))
         return SimpleNamespace(applied=False, action_label="未执行处罚")
 
     monkeypatch.setattr(anti_spam_handler, "get_chat_settings", fake_get_chat_settings)
@@ -511,6 +571,8 @@ async def test_all_message_garbage_rules_stop_and_fallback_delete(monkeypatch, r
         await anti_spam_handler.anti_spam_message_handler(update, context)
 
     assert applied_rules == [rule_id]
+    assert applied_configs[0]["delete_message"] is True
+    assert applied_configs[0]["notice_enabled"] is True
     assert message.deleted is True
 
 
@@ -707,6 +769,7 @@ async def test_explicit_flood_uses_garbage_guard_threshold_and_stops_on_failed_a
     context = _build_context(session)
     checked_args: list[tuple[int, int]] = []
     apply_details: list[str] = []
+    applied_configs: list[dict[str, object]] = []
 
     class _Message:
         message_id = 88
@@ -732,7 +795,7 @@ async def test_explicit_flood_uses_garbage_guard_threshold_and_stops_on_failed_a
         anti_flood_delete_notify=False,
         anti_flood_delete_notify_seconds=30,
     )
-    set_rule_config(settings, "flood", {"enabled": True, "messages": 3, "seconds": 7, "delete_message": True})
+    set_rule_config(settings, "flood", {"enabled": True, "messages": 3, "seconds": 7})
     settings.anti_flood_messages = 99
     settings.anti_flood_seconds = 99
 
@@ -761,6 +824,7 @@ async def test_explicit_flood_uses_garbage_guard_threshold_and_stops_on_failed_a
 
     async def fake_apply_garbage_punishment(*args, **kwargs):
         apply_details.append(kwargs["detail"])
+        applied_configs.append(anti_flood_handler.get_rule_config(kwargs["settings"], "flood"))
         return SimpleNamespace(applied=False, action_label="未执行处罚")
 
     monkeypatch.setattr(anti_flood_handler, "get_chat_settings", fake_get_chat_settings)
@@ -775,6 +839,8 @@ async def test_explicit_flood_uses_garbage_guard_threshold_and_stops_on_failed_a
 
     assert checked_args == [(3, 7)]
     assert apply_details == ["3.2 秒内发送 4 条消息，达到刷屏阈值"]
+    assert applied_configs[0]["delete_message"] is True
+    assert applied_configs[0]["notice_enabled"] is True
     assert update.effective_message.deleted is True
     assert session.commits == 2
 

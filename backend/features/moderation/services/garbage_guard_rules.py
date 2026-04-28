@@ -31,6 +31,29 @@ RULE_ORDER: tuple[RuleId, ...] = (
     "leave_ban",
 )
 
+DEFAULT_DELETE_ON_ENABLE_RULES: set[RuleId] = {
+    "banned_words",
+    "long_message",
+    "long_name",
+    "block_links",
+    "block_buttons",
+    "spam_user",
+    "block_forwards",
+    "flood",
+}
+
+DEFAULT_NOTICE_ON_ENABLE_RULES: set[RuleId] = {
+    "banned_words",
+    "long_message",
+    "long_name",
+    "block_links",
+    "block_buttons",
+    "spam_user",
+    "block_forwards",
+    "flood",
+    "manual_warning",
+}
+
 RULE_DEFINITIONS: dict[RuleId, GarbageRuleDefinition] = {
     "banned_words": GarbageRuleDefinition(
         "banned_words",
@@ -97,12 +120,14 @@ RULE_DEFINITIONS: dict[RuleId, GarbageRuleDefinition] = {
 DEFAULT_RULE_ACTION: dict[str, Any] = {
     "enabled": False,
     "delete_message": True,
+    "delete_configured": False,
     "warn_enabled": False,
     "warn_threshold": 3,
     "mute_enabled": False,
     "mute_seconds": 3600,
     "kick_enabled": False,
     "notice_enabled": False,
+    "notice_configured": False,
     "notice_text": "",
     "notice_delete_seconds": 10,
 }
@@ -172,10 +197,12 @@ def _merge_rule(rule_id: RuleId, raw: Any) -> dict[str, Any]:
     for bool_key in [
         "enabled",
         "delete_message",
+        "delete_configured",
         "warn_enabled",
         "mute_enabled",
         "kick_enabled",
         "notice_enabled",
+        "notice_configured",
         "check_no_username",
         "check_foreign_name",
     ]:
@@ -257,6 +284,14 @@ def get_garbage_config(settings: ChatSettings) -> dict[str, Any]:
         int(getattr(settings, "anti_flood_mute_duration", 3600) or 3600),
         1,
     )
+    for rule_id in DEFAULT_DELETE_ON_ENABLE_RULES:
+        rule = config["rules"][rule_id]
+        if bool(rule.get("enabled")) and not bool(rule.get("delete_configured")):
+            rule["delete_message"] = True
+    for rule_id in DEFAULT_NOTICE_ON_ENABLE_RULES:
+        rule = config["rules"][rule_id]
+        if bool(rule.get("enabled")) and not bool(rule.get("notice_configured")):
+            rule["notice_enabled"] = True
     return config
 
 
@@ -303,6 +338,10 @@ def get_rule_config(settings: ChatSettings, rule_id: RuleId) -> dict[str, Any]:
 def set_rule_config(settings: ChatSettings, rule_id: RuleId, updates: dict[str, Any]) -> dict[str, Any]:
     config = get_garbage_config(settings)
     rule = config["rules"].get(rule_id, _merge_rule(rule_id, None))
+    if "delete_message" in updates:
+        updates = {**updates, "delete_configured": True}
+    if "notice_enabled" in updates:
+        updates = {**updates, "notice_configured": True}
     rule.update(updates)
     config["rules"][rule_id] = _merge_rule(rule_id, rule)
     save_garbage_config(settings, config)
