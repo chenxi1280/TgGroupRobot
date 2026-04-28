@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import time
+
 import structlog
 from telegram import Update
+from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
 from backend.platform.db.runtime.session import Database
@@ -9,6 +12,9 @@ from backend.features.group_ops.services.group_daily_stats import record_group_l
 from backend.shared.services.module_settings_service import ModuleSettingsService
 
 log = structlog.get_logger(__name__)
+
+AUTO_DELETE_FAILURE_ALERT_TTL_SECONDS = 600
+AUTO_DELETE_FAILURE_ALERT_CACHE_KEY = "_auto_delete_failure_alerts"
 
 
 EXTRA_SYSTEM_MESSAGE_FIELDS: tuple[str, ...] = (
@@ -35,6 +41,38 @@ EXTRA_SYSTEM_MESSAGE_FIELDS: tuple[str, ...] = (
     "giveaway_winners",
     "giveaway_completed",
 )
+
+
+def _chat_member_status_value(member) -> str:
+    status = getattr(member, "status", "") or ""
+    return str(getattr(status, "value", status)).lower()
+
+
+def _has_delete_permission(member) -> bool:
+    status = _chat_member_status_value(member)
+    if status == "creator":
+        return True
+    return status == "administrator" and bool(getattr(member, "can_delete_messages", False))
+
+
+async def get_auto_delete_permission_warning(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+) -> str | None:
+    try:
+        me = await context.bot.get_me()
+        member = await context.bot.get_chat_member(chat_id, me.id)
+    except Exception as exc:
+        log.warning("auto_delete_permission_check_failed", chat_id=chat_id, error=str(exc))
+        return "⚠️ 权限提醒：暂时无法确认 Bot 删除消息权限，请确认 Bot 已在本群并具备「删除消息」权限。"
+
+    if _has_delete_permission(member):
+        return None
+
+    status = _chat_member_status_value(member)
+    if status != "administrator":
+        return "⚠️ 权限提醒：Bot 目前不是本群管理员，删除系统提示不会生效。请先把 Bot 设为管理员，并打开「删除消息」权限。"
+    return "⚠️ 权限提醒：Bot 当前缺少「删除消息」权限，删除系统提示不会生效。请在群管理权限里打开该权限。"
 
 
 def _all_auto_delete_switches_enabled(settings) -> bool:
@@ -100,6 +138,70 @@ def should_auto_delete_message(settings, update: Update, message) -> bool:
     return _all_auto_delete_switches_enabled(settings) and _has_extra_system_message(message)
 
 
+def _describe_system_message(message) -> str:
+    if bool(getattr(message, "new_chat_members", None)):
+        return "进群消息"
+    if bool(getattr(message, "left_chat_member", None)):
+        return "退群消息"
+    if bool(getattr(message, "pinned_message", None)):
+        return "置顶通知"
+    if bool(getattr(message, "new_chat_title", None)):
+        return "修改群名"
+    if bool(getattr(message, "new_chat_photo", None)) or bool(getattr(message, "delete_chat_photo", None)):
+        return "修改群头像"
+    if bool(getattr(message, "forum_topic_created", None)) or bool(getattr(message, "forum_topic_edited", None)):
+        return "话题提示"
+    return "系统提示"
+
+
+def _should_send_failure_alert(context: ContextTypes.DEFAULT_TYPE, chat_id: int, message_type: str) -> bool:
+    cache = context.application.bot_data.setdefault(AUTO_DELETE_FAILURE_ALERT_CACHE_KEY, {})
+    key = (chat_id, message_type)
+    now = time.monotonic()
+    last_sent_at = float(cache.get(key, 0) or 0)
+    if now - last_sent_at < AUTO_DELETE_FAILURE_ALERT_TTL_SECONDS:
+        return False
+    cache[key] = now
+    return True
+
+
+async def _notify_auto_delete_failure(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    error: Exception,
+) -> None:
+    chat = update.effective_chat
+    message = update.effective_message
+    if chat is None or message is None:
+        return
+
+    from_user = getattr(message, "from_user", None) or update.effective_user
+    if from_user is None or bool(getattr(from_user, "is_bot", False)):
+        return
+
+    message_type = _describe_system_message(message)
+    if not _should_send_failure_alert(context, chat.id, message_type):
+        return
+
+    chat_title = getattr(chat, "title", None) or f"群组 {chat.id}"
+    text = (
+        "⚠️ 删除系统提示未生效\n\n"
+        f"群组：{chat_title}\n"
+        f"提示类型：{message_type}\n"
+        f"失败原因：{error}\n\n"
+        "请把 Bot 设为群管理员，并打开「删除消息」权限；权限生效后，新产生的系统提示才会自动删除。"
+    )
+    try:
+        await context.bot.send_message(chat_id=from_user.id, text=text)
+    except TelegramError as exc:
+        log.warning(
+            "auto_delete_failure_alert_failed",
+            chat_id=chat.id,
+            user_id=getattr(from_user, "id", None),
+            error=str(exc),
+        )
+
+
 async def auto_delete_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """自动删除系统消息处理器"""
     if update.effective_chat is None or update.effective_message is None:
@@ -141,3 +243,4 @@ async def auto_delete_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             log.debug("auto_deleted_message", chat_id=chat.id, message_id=message.message_id)
         except Exception as e:
             log.warning("auto_delete_failed", chat_id=chat.id, message_id=message.message_id, error=str(e))
+            await _notify_auto_delete_failure(update, context, e)

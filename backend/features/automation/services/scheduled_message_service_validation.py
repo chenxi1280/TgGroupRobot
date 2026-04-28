@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime as dt
 from urllib.parse import urlparse
 
 from backend.shared.services.base import ValidationError
@@ -143,6 +144,11 @@ class ScheduledMessageValidationMixin:
     def validate_time_range(start_at, end_at) -> None:
         if start_at is not None and end_at is not None and start_at >= end_at:
             raise ValidationError("开始时间必须早于终止时间")
+
+    @staticmethod
+    def validate_future_end_at(end_at) -> None:
+        if end_at is not None and end_at <= int(dt.datetime.now(dt.UTC).timestamp()):
+            raise ValidationError("终止时间必须晚于当前时间")
 
     @classmethod
     def validate_media_type(cls, media_type: str) -> None:

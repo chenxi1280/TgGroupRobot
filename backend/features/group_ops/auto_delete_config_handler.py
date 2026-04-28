@@ -7,6 +7,7 @@ from telegram.error import TelegramError
 
 from backend.platform.db.runtime.session import Database
 from backend.features.admin.ui.auto_delete import auto_delete_config_keyboard
+from backend.features.group_ops.auto_delete_handler import get_auto_delete_permission_warning
 from backend.shared.services.module_settings_service import ModuleSettingsService
 from backend.shared.services.permission_service import PermissionPolicyService
 from backend.platform.telegram.errors import build_public_error_text
@@ -180,4 +181,8 @@ async def auto_delete_config_callback(update: Update, context: ContextTypes.DEFA
     text += f"总开关状态：{'✅ 已生效' if bool(getattr(settings, 'auto_delete_enabled', False)) else '❌ 未生效'}\n"
     text += f"当前明细：{_format_enabled_types(settings)}\n\n"
     text += "配置已更新"
+    if bool(getattr(settings, "auto_delete_enabled", False)):
+        permission_warning = await get_auto_delete_permission_warning(context, chat_id)
+        if permission_warning:
+            text += f"\n\n{permission_warning}"
     await _safe_edit_message(q, text, reply_markup=keyboard)

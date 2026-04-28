@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import pytest
+
+from backend.features.automation.services.scheduled_message_service import ScheduledMessageService
 from backend.features.automation.ui.scheduled_message_edit import sm_repeat_keyboard
+from backend.shared.services.base import ValidationError
 from backend.shared.time_ui import (
     build_back_keyboard,
     build_copy_time_keyboard,
@@ -66,3 +70,14 @@ def test_scheduled_message_repeat_keyboard_matches_unified_time_style() -> None:
     assert keyboard.inline_keyboard[0][0].text == "10分钟"
     assert keyboard.inline_keyboard[1][1].text == "✅ 2小时"
     assert keyboard.inline_keyboard[-1][0].text == "🔙 返回"
+
+
+def test_scheduled_message_end_at_must_be_future() -> None:
+    import datetime as dt
+
+    future_end_at = int(dt.datetime(2099, 1, 1, tzinfo=dt.UTC).timestamp())
+    ScheduledMessageService.validate_future_end_at(future_end_at)
+
+    past_end_at = int(dt.datetime(2000, 1, 1, tzinfo=dt.UTC).timestamp())
+    with pytest.raises(ValidationError):
+        ScheduledMessageService.validate_future_end_at(past_end_at)

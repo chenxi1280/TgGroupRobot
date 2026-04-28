@@ -24,6 +24,53 @@ from .common import _schedule_message_delete
 
 log = structlog.get_logger(__name__)
 
+BANNED_WORD_ACTION_FAILURE_NOTIFY_SECONDS = 300
+
+
+async def _notify_banned_word_action_failure(context: ContextTypes.DEFAULT_TYPE, chat_id: int, detail: str) -> None:
+    bot_data = getattr(getattr(context, "application", None), "bot_data", None)
+    cache_key = (chat_id, "banned_word_action_failure")
+    now = dt.datetime.now(dt.UTC)
+    if isinstance(bot_data, dict):
+        cache = bot_data.setdefault("_banned_word_action_failure_notified_at", {})
+        last_notified = cache.get(cache_key)
+        if isinstance(last_notified, dt.datetime):
+            elapsed = (now - last_notified).total_seconds()
+            if elapsed < BANNED_WORD_ACTION_FAILURE_NOTIFY_SECONDS:
+                return
+        cache[cache_key] = now
+
+    text = (
+        "⚠️ 违禁词已命中，但处罚动作没有成功执行。\n"
+        "请确认机器人仍是管理员，并拥有删除消息/禁言权限；也请重启机器人加载最新代码。"
+    )
+    try:
+        await context.bot.send_message(chat_id=chat_id, text=text)
+    except Exception as exc:
+        log.warning("banned_word_action_failure_notify_failed", chat_id=chat_id, detail=detail, error=str(exc))
+
+
+async def _delete_banned_word_message_fallback(context: ContextTypes.DEFAULT_TYPE, chat_id: int, message, detail: str) -> bool:
+    try:
+        await message.delete()
+        log.warning(
+            "banned_word_delete_fallback_succeeded",
+            chat_id=chat_id,
+            message_id=getattr(message, "message_id", None),
+            detail=detail,
+        )
+        return True
+    except Exception as exc:
+        log.warning(
+            "banned_word_delete_fallback_failed",
+            chat_id=chat_id,
+            message_id=getattr(message, "message_id", None),
+            detail=detail,
+            error=str(exc),
+        )
+        await _notify_banned_word_action_failure(context, chat_id, detail)
+        return False
+
 
 async def _process_alliance_reply_ban(
     context: ContextTypes.DEFAULT_TYPE,
@@ -184,7 +231,13 @@ async def _process_banned_word_check(
                 record_message_id=message.message_id,
             )
             await session.commit()
-            return result.applied
+            if result.applied:
+                return True
+            if bool(rule_config.get("delete_message")):
+                await _delete_banned_word_message_fallback(context, chat.id, message, f"word={word.word}")
+            else:
+                await _notify_banned_word_action_failure(context, chat.id, f"word={word.word}")
+            return True
 
     log.info(
         "unified_handler_banned_word_check_result",

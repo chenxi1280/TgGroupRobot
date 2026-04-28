@@ -14,6 +14,7 @@ from backend.features.automation.ads_handler import (
 )
 from backend.features.automation.services.ad_rotation_service import (
     _claim_due_rotation_rules,
+    _validate_future_end_time,
     compute_next_run_at,
     describe_delete_policy,
     describe_rule_mode,
@@ -22,6 +23,7 @@ from backend.features.automation.services.ad_rotation_service import (
     select_next_rotation_item,
 )
 from backend.features.automation.ui.ads import ads_copy_time_keyboard, ads_menu_keyboard, ads_rules_interval_keyboard, ads_rules_keyboard
+from backend.shared.services.base import ValidationError
 
 
 def test_parse_ads_config_with_schedule_and_image_id() -> None:
@@ -62,6 +64,13 @@ def test_compute_next_run_at_prefers_future_start() -> None:
     )
 
     assert compute_next_run_at(rule, now=now) == dt.datetime(2026, 4, 14, 4, 0, tzinfo=dt.UTC)
+
+
+def test_rotation_item_end_time_must_be_future() -> None:
+    _validate_future_end_time(dt.datetime(2099, 1, 1, tzinfo=dt.UTC))
+
+    with pytest.raises(ValidationError):
+        _validate_future_end_time(dt.datetime(2000, 1, 1, tzinfo=dt.UTC))
 
 
 def test_select_next_rotation_item_respects_cursor_and_wrap() -> None:

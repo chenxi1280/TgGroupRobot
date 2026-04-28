@@ -5,6 +5,8 @@ from types import SimpleNamespace
 import pytest
 
 from backend.features.group_ops.group_hooks import core as core_hooks
+from backend.features.group_ops.group_hooks import moderation as moderation_hooks
+from backend.features.moderation.services.garbage_guard_rules import set_rule_config
 
 
 class _FakeSession:
@@ -288,3 +290,170 @@ async def test_unified_group_handler_checks_banned_words_in_media_caption(monkey
 
     assert handled is True
     assert banned_word_calls == ["视频里的违禁词"]
+
+
+@pytest.mark.asyncio
+async def test_unified_group_handler_continues_banned_word_check_after_force_subscribe_fail_open(monkeypatch):
+    session = _FakeSession()
+    events: list[str] = []
+
+    async def fake_ensure(session, chat_id: int, **kwargs):
+        return _settings()
+
+    async def fake_is_admin(context, chat_id: int, user_id: int):
+        return False
+
+    async def fake_force_subscribe(context, chat, user, message, settings):
+        events.append("force_subscribe_fail_open")
+        return True
+
+    async def fake_banned_word(context, db, chat, user, message, message_text: str, settings):
+        events.append(f"banned_word:{message_text}")
+        return True
+
+    async def forbidden_auto_reply(*args, **kwargs):
+        raise AssertionError("banned words must stop later auto-reply processing")
+
+    monkeypatch.setattr(core_hooks.ModuleSettingsService, "ensure", fake_ensure)
+    monkeypatch.setattr(core_hooks, "is_user_admin", fake_is_admin)
+    monkeypatch.setattr(core_hooks, "_process_rename_monitor", _false)
+    monkeypatch.setattr(core_hooks, "_process_group_lock_controls", _false)
+    monkeypatch.setattr(core_hooks, "_process_night_mode", _false)
+    monkeypatch.setattr(core_hooks, "_process_alliance_joint_ban", _false)
+    monkeypatch.setattr(core_hooks, "_check_force_subscribe", fake_force_subscribe)
+    monkeypatch.setattr(core_hooks, "_process_new_member_limit", _false)
+    monkeypatch.setattr(core_hooks, "_process_garage_features", _false)
+    monkeypatch.setattr(core_hooks, "_process_banned_word_check", fake_banned_word)
+    monkeypatch.setattr(core_hooks, "_process_auto_reply", forbidden_auto_reply)
+
+    update = SimpleNamespace(
+        effective_chat=SimpleNamespace(id=-1001, type="supergroup", title="Test Group"),
+        effective_user=SimpleNamespace(
+            id=42,
+            username="alice",
+            first_name="Alice",
+            last_name=None,
+            language_code="zh-CN",
+        ),
+        effective_message=SimpleNamespace(text="违禁词测试", caption=None, message_id=10, sender_chat=None),
+    )
+
+    handled = await core_hooks.unified_group_message_handler(update, _context(session))
+
+    assert handled is True
+    assert events == ["force_subscribe_fail_open", "banned_word:违禁词测试"]
+
+
+@pytest.mark.asyncio
+async def test_banned_word_explicit_guard_falls_back_to_message_delete_when_executor_does_not_apply(monkeypatch):
+    session = _FakeSession()
+    settings = SimpleNamespace(anti_spam_rules={})
+    set_rule_config(settings, "banned_words", {"enabled": True, "delete_message": True})
+
+    class _User:
+        id = 42
+        username = "alice"
+        first_name = "Alice"
+        last_name = None
+        language_code = "zh-CN"
+
+        def mention_html(self):
+            return "Alice"
+
+    class _Message:
+        message_id = 10
+        deleted = False
+
+        async def delete(self):
+            self.deleted = True
+
+    async def fake_match_banned_words(session, chat_id: int, message_text: str):
+        return [SimpleNamespace(word="违禁词测试")]
+
+    async def noop(*args, **kwargs):
+        return None
+
+    async def fake_apply_garbage_punishment(*args, **kwargs):
+        return SimpleNamespace(applied=False)
+
+    monkeypatch.setattr(moderation_hooks, "match_banned_words", fake_match_banned_words)
+    monkeypatch.setattr(moderation_hooks, "ensure_chat", noop)
+    monkeypatch.setattr(moderation_hooks, "ensure_user", noop)
+    monkeypatch.setattr(moderation_hooks, "apply_garbage_punishment", fake_apply_garbage_punishment)
+
+    context = _context(session)
+    context.bot = SimpleNamespace()
+    db = context.application.bot_data["db"]
+    message = _Message()
+
+    handled = await moderation_hooks._process_banned_word_check(
+        context,
+        db,
+        SimpleNamespace(id=-1001, type="supergroup", title="Test Group"),
+        _User(),
+        message,
+        "违禁词测试",
+        settings,
+    )
+
+    assert handled is True
+    assert message.deleted is True
+
+
+@pytest.mark.asyncio
+async def test_banned_word_explicit_guard_notifies_when_all_actions_fail(monkeypatch):
+    session = _FakeSession()
+    settings = SimpleNamespace(anti_spam_rules={})
+    set_rule_config(settings, "banned_words", {"enabled": True, "delete_message": True})
+    sent_messages: list[tuple[int, str]] = []
+
+    class _User:
+        id = 42
+        username = "alice"
+        first_name = "Alice"
+        last_name = None
+        language_code = "zh-CN"
+
+        def mention_html(self):
+            return "Alice"
+
+    class _Message:
+        message_id = 10
+
+        async def delete(self):
+            raise RuntimeError("delete failed")
+
+    class _Bot:
+        async def send_message(self, chat_id: int, text: str, **kwargs):
+            sent_messages.append((chat_id, text))
+
+    async def fake_match_banned_words(session, chat_id: int, message_text: str):
+        return [SimpleNamespace(word="违禁词测试")]
+
+    async def noop(*args, **kwargs):
+        return None
+
+    async def fake_apply_garbage_punishment(*args, **kwargs):
+        return SimpleNamespace(applied=False)
+
+    monkeypatch.setattr(moderation_hooks, "match_banned_words", fake_match_banned_words)
+    monkeypatch.setattr(moderation_hooks, "ensure_chat", noop)
+    monkeypatch.setattr(moderation_hooks, "ensure_user", noop)
+    monkeypatch.setattr(moderation_hooks, "apply_garbage_punishment", fake_apply_garbage_punishment)
+
+    context = _context(session)
+    context.bot = _Bot()
+    db = context.application.bot_data["db"]
+
+    handled = await moderation_hooks._process_banned_word_check(
+        context,
+        db,
+        SimpleNamespace(id=-1001, type="supergroup", title="Test Group"),
+        _User(),
+        _Message(),
+        "违禁词测试",
+        settings,
+    )
+
+    assert handled is True
+    assert sent_messages == [(-1001, "⚠️ 违禁词已命中，但处罚动作没有成功执行。\n请确认机器人仍是管理员，并拥有删除消息/禁言权限；也请重启机器人加载最新代码。")]

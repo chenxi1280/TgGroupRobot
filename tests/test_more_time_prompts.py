@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 from types import SimpleNamespace
 
 import pytest
@@ -252,6 +251,31 @@ async def test_solitaire_deadline_prompt_uses_unified_copy_ui(monkeypatch):
     assert "完整示例：" in rendered[0][0]
     assert "最近整点示例" in rendered[0][0]
     assert rendered[0][2].inline_keyboard[0][0].to_dict()["copy_text"]["text"]
+
+
+@pytest.mark.asyncio
+async def test_solitaire_deadline_rejects_past_datetime(monkeypatch):
+    replies: list[str] = []
+
+    async def fake_get_user_state(session, chat_id: int, user_id: int):
+        return SimpleNamespace(state_data={"title": "聚餐", "description": None, "max_participants": None, "points_required": None})
+
+    async def _reply_text(text: str, **kwargs):
+        replies.append(text)
+
+    monkeypatch.setattr(solitaire_creation_wizard, "get_user_state", fake_get_user_state)
+
+    update = SimpleNamespace(
+        effective_chat=SimpleNamespace(id=-1001, type="supergroup"),
+        effective_user=SimpleNamespace(id=42),
+        effective_message=SimpleNamespace(text="2000-01-01 00:00", reply_text=_reply_text),
+    )
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb()}))
+
+    result = await solitaire_creation_wizard.solitaire_create_deadline_message(update, context)
+
+    assert result == solitaire_creation_wizard.WAIT_DEADLINE
+    assert replies and "截止时间必须是未来时间" in replies[0]
 
 
 @pytest.mark.asyncio

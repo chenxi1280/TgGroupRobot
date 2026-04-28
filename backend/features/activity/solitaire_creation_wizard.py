@@ -172,6 +172,9 @@ async def solitaire_create_deadline_message(update: Update, context: ContextType
         except ValueError:
             await update.effective_message.reply_text("时间格式错误，请使用 YYYY-MM-DD HH:MM 格式或 /skip 跳过")
             return WAIT_DEADLINE
+        if deadline <= dt.datetime.now(dt.timezone.utc):
+            await update.effective_message.reply_text("截止时间必须是未来时间，请重新输入或 /skip 跳过")
+            return WAIT_DEADLINE
 
     state_data["deadline"] = deadline
     async with db.session_factory() as session:

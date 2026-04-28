@@ -120,6 +120,48 @@ async def test_auto_delete_config_set_updates_settings_and_rerenders(monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_auto_delete_config_warns_when_bot_cannot_delete_messages(monkeypatch):
+    settings = SimpleNamespace(
+        auto_delete_enabled=False,
+        auto_delete_join=False,
+        auto_delete_left=False,
+        auto_delete_pinned=False,
+        auto_delete_avatar=False,
+        auto_delete_title=False,
+        auto_delete_anonymous=False,
+    )
+    session = _Session()
+    update, calls = _build_update("autodel:set:avatar:1:-100123")
+    db = SimpleNamespace(session_factory=_SessionFactory(session))
+
+    class _Bot:
+        async def get_me(self):
+            return SimpleNamespace(id=999)
+
+        async def get_chat_member(self, chat_id, user_id):
+            assert chat_id == -100123
+            assert user_id == 999
+            return SimpleNamespace(status="administrator", can_delete_messages=False)
+
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": db}), bot=_Bot())
+
+    async def fake_require_manage(*args, **kwargs):
+        return True, None
+
+    async def fake_ensure(*args, **kwargs):
+        return settings
+
+    monkeypatch.setattr(auto_delete_config_handler.PermissionPolicyService, "require_manage", fake_require_manage)
+    monkeypatch.setattr(auto_delete_config_handler.ModuleSettingsService, "ensure", fake_ensure)
+
+    await auto_delete_config_handler.auto_delete_config_callback(update, context)
+
+    text, _kwargs = calls["edits"][0]
+    assert "配置已更新" in text
+    assert "缺少「删除消息」权限" in text
+
+
+@pytest.mark.asyncio
 async def test_auto_delete_handler_uses_module_settings_and_deletes_matching_message(monkeypatch):
     settings = SimpleNamespace(
         auto_delete_enabled=True,
@@ -176,6 +218,63 @@ async def test_auto_delete_handler_uses_module_settings_and_deletes_matching_mes
 
     assert deleted == [1]
     assert session.commits == 1
+
+
+@pytest.mark.asyncio
+async def test_auto_delete_handler_notifies_actor_when_delete_fails(monkeypatch):
+    settings = SimpleNamespace(
+        auto_delete_enabled=True,
+        auto_delete_join=False,
+        auto_delete_left=False,
+        auto_delete_pinned=False,
+        auto_delete_anonymous=False,
+        auto_delete_title=True,
+        auto_delete_avatar=False,
+    )
+    session = _Session()
+    db = SimpleNamespace(session_factory=_SessionFactory(session))
+    notices: list[tuple[int, str]] = []
+
+    async def fake_delete():
+        raise RuntimeError("not enough rights to delete messages")
+
+    message = SimpleNamespace(
+        message_id=10,
+        new_chat_members=None,
+        left_chat_member=None,
+        pinned_message=None,
+        new_chat_title="新群名",
+        new_chat_photo=None,
+        delete_chat_photo=None,
+        from_user=SimpleNamespace(id=1001, is_bot=False),
+        delete=fake_delete,
+    )
+    update = SimpleNamespace(
+        effective_chat=SimpleNamespace(id=-100123, type="supergroup", title="Group"),
+        effective_message=message,
+        effective_user=SimpleNamespace(id=1001, is_bot=False),
+    )
+
+    class _Bot:
+        async def send_message(self, chat_id, text):
+            notices.append((chat_id, text))
+
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": db}), bot=_Bot())
+
+    async def fake_ensure(*args, **kwargs):
+        return settings
+
+    monkeypatch.setattr(auto_delete_handler.ModuleSettingsService, "ensure", fake_ensure)
+
+    await auto_delete_handler.auto_delete_handler(update, context)
+    await auto_delete_handler.auto_delete_handler(update, context)
+
+    assert session.commits == 2
+    assert len(notices) == 1
+    assert notices[0][0] == 1001
+    assert "删除系统提示未生效" in notices[0][1]
+    assert "修改群名" in notices[0][1]
+    assert "删除消息" in notices[0][1]
 
 
 @pytest.mark.asyncio

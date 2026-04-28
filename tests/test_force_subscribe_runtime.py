@@ -118,7 +118,8 @@ async def test_force_subscribe_rejects_legacy_numeric_target_without_blocking_me
     assert bot.get_chat_member_calls == []
     assert bot.messages[0]["chat_id"] == -100123
     assert "强制订阅配置异常" in bot.messages[0]["text"]
-    assert "已临时放行本次发言" in bot.messages[0]["text"]
+    assert "已临时跳过强制订阅校验" in bot.messages[0]["text"]
+    assert "普通成员仍会继续进入违禁词/垃圾防护检测" in bot.messages[0]["text"]
 
 
 @pytest.mark.asyncio

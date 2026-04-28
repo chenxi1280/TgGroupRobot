@@ -307,6 +307,11 @@ def _validate_item_window(start_time: dt.datetime | None, end_time: dt.datetime 
         raise ValidationError("开始时间必须早于结束时间")
 
 
+def _validate_future_end_time(end_time: dt.datetime | None) -> None:
+    if end_time is not None and end_time <= dt.datetime.now(dt.UTC):
+        raise ValidationError("结束时间必须晚于当前时间")
+
+
 async def update_rotation_item(
     session: AsyncSession,
     item_id: int,
@@ -345,6 +350,7 @@ async def update_rotation_item(
     if start_time is not UNSET:
         item.start_time = start_time
     if end_time is not UNSET:
+        _validate_future_end_time(end_time)
         item.end_time = end_time
     _validate_item_window(item.start_time, item.end_time)
     if enabled is not None:

@@ -42,6 +42,7 @@ class ScheduledMessageMutationMixin:
 
         start_at = kwargs.get("start_at")
         end_at = kwargs.get("end_at")
+        cls.validate_future_end_at(end_at)
         cls.validate_time_range(start_at, end_at)
 
         media_type = kwargs.get("media_type", "none")
@@ -107,6 +108,8 @@ class ScheduledMessageMutationMixin:
         if "day_start_hour" in kwargs or "day_end_hour" in kwargs:
             cls.validate_day_period(task.day_start_hour, task.day_end_hour)
 
+        if "end_at" in kwargs:
+            cls.validate_future_end_at(task.end_at)
         cls.validate_time_range(task.start_at, task.end_at)
 
         if task.enabled and not cls.has_sendable_content(task):
