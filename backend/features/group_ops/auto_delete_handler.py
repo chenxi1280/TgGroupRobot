@@ -158,8 +158,8 @@ def _should_send_failure_alert(context: ContextTypes.DEFAULT_TYPE, chat_id: int,
     cache = context.application.bot_data.setdefault(AUTO_DELETE_FAILURE_ALERT_CACHE_KEY, {})
     key = (chat_id, message_type)
     now = time.monotonic()
-    last_sent_at = float(cache.get(key, 0) or 0)
-    if now - last_sent_at < AUTO_DELETE_FAILURE_ALERT_TTL_SECONDS:
+    last_sent_at = cache.get(key)
+    if last_sent_at is not None and now - float(last_sent_at) < AUTO_DELETE_FAILURE_ALERT_TTL_SECONDS:
         return False
     cache[key] = now
     return True

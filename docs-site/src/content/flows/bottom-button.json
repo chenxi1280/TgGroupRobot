@@ -8,8 +8,7 @@
     "mode": "complete",
     "callbackPrefixes": [
       "adm:menu:bottom_button",
-      "btm:",
-      "btmrun:"
+      "btm:"
     ],
     "inputStates": [
       "bottom_button_text_input",
@@ -22,7 +21,7 @@
       "backend/features/admin/core/menu_dispatch.py",
       "backend/features/admin/runtime.py",
       "backend/features/admin/ui/admin_main_keyboards.py",
-      "backend/features/group_ops/bottom_button_router.py"
+      "backend/features/group_ops/bottom_button_handler.py"
     ],
     "alignmentStatus": "ok",
     "alignmentSummary": "真实回调审计通过。"
@@ -127,7 +126,7 @@
       "id": "home",
       "title": "底部按钮",
       "message": [
-        "配置周期发送的底部按钮消息和按钮点击运行时。"
+        "配置底部键盘文案、按钮布局和绑定事件。"
       ],
       "keyboard": [
         [
@@ -137,6 +136,13 @@
             "action": "toggle",
             "target": "home",
             "feedback": "底部按钮已开启。"
+          },
+          {
+            "label": "关闭",
+            "callbackData": "btm:toggle:{chat_id}:0",
+            "action": "toggle",
+            "target": "home",
+            "feedback": "底部按钮已关闭。"
           },
           {
             "label": "文本",
@@ -155,18 +161,11 @@
         ],
         [
           {
-            "label": "立即生成",
+            "label": "同步到底部键盘",
             "callbackData": "btm:generate:{chat_id}:now",
             "action": "goto",
             "target": "result",
-            "feedback": "已生成底部按钮消息。"
-          },
-          {
-            "label": "重复发送",
-            "callbackData": "btm:repeat:{chat_id}:1",
-            "action": "toggle",
-            "target": "home",
-            "feedback": "重复发送已开启。"
+            "feedback": "已同步到底部键盘。"
           }
         ],
         [
@@ -180,9 +179,7 @@
         ]
       ],
       "stateLines": [
-        "当前群组：演示群",
-        "输入提示：底部按钮的输入集中在 「设置底部文本」、「设置按钮文本」、「设置按钮 Payload」；按页面示例填写，填错可返回上一步重新输入。",
-        "进度提示：完成「底部按钮」前先检查必填项状态，最后通过 「立即生成」 确认效果或继续下一步。"
+        "当前群组：演示群"
       ]
     },
     {
@@ -203,6 +200,13 @@
         ],
         [
           {
+            "label": "清空按钮",
+            "callbackData": "btm:layout:{chat_id}:clear",
+            "action": "confirm",
+            "target": "result",
+            "feedback": "按钮已清空。"
+          },
+          {
             "label": "返回底部按钮",
             "callbackData": "btm:home:{chat_id}",
             "action": "back",
@@ -216,55 +220,109 @@
       "id": "button_detail",
       "title": "按钮详情",
       "message": [
-        "按钮可设置文本、payload 和点击模式。"
+        "按钮可设置文字、绑定事件和自定义触发词。"
       ],
       "keyboard": [
         [
           {
-            "label": "按钮文本",
+            "label": "修改文字",
             "callbackData": "btm:button:{chat_id}:text:1",
             "action": "input",
             "target": "button_text_input",
             "feedback": "请输入按钮文本。"
           },
           {
-            "label": "Payload",
-            "callbackData": "btm:button:{chat_id}:payload:1",
-            "action": "input",
-            "target": "payload_input",
-            "feedback": "请输入 payload。"
+            "label": "绑定事件",
+            "callbackData": "btm:button:{chat_id}:events:1",
+            "action": "goto",
+            "target": "event_menu",
+            "feedback": "请选择绑定事件。"
           }
         ],
         [
           {
-            "label": "发送模式",
-            "callbackData": "btm:button:{chat_id}:mode:1:send",
-            "action": "toggle",
-            "target": "button_detail",
-            "feedback": "已设置发送模式。"
-          },
-          {
-            "label": "填充模式",
-            "callbackData": "btm:button:{chat_id}:mode:1:fill",
-            "action": "toggle",
-            "target": "button_detail",
-            "feedback": "已设置填充模式。"
-          },
+            "label": "自定义触发词",
+            "callbackData": "btm:button:{chat_id}:payload:1",
+            "action": "input",
+            "target": "payload_input",
+            "feedback": "请输入触发词。"
+          }
+        ],
+        [
           {
             "label": "删除按钮",
             "callbackData": "btm:button:{chat_id}:delete:1",
             "action": "confirm",
             "target": "result",
             "feedback": "按钮已删除。"
+          },
+          {
+            "label": "返回布局",
+            "callbackData": "btm:layout:{chat_id}:edit",
+            "action": "back",
+            "target": "layout",
+            "feedback": "已返回按钮布局。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "event_menu",
+      "title": "绑定事件",
+      "message": [
+        "选择内置功能事件，或回到自定义触发词。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "积分",
+            "callbackData": "btm:button:{chat_id}:eventcat:1:points",
+            "action": "goto",
+            "target": "event_list",
+            "feedback": "已打开积分事件。"
+          },
+          {
+            "label": "自定义触发词",
+            "callbackData": "btm:button:{chat_id}:payload:1",
+            "action": "input",
+            "target": "payload_input",
+            "feedback": "请输入触发词。"
           }
         ],
         [
           {
-            "label": "运行时点击",
-            "callbackData": "btmrun:send:{chat_id}:1",
-            "action": "goto",
-            "target": "result",
-            "feedback": "用户点击后 Bot 会按 payload 发送。"
+            "label": "返回按钮详情",
+            "callbackData": "btm:button:{chat_id}:detail:1",
+            "action": "back",
+            "target": "button_detail",
+            "feedback": "已返回按钮详情。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "event_list",
+      "title": "选择事件",
+      "message": [
+        "点击具体事件后会保存到该按钮。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "签到",
+            "callbackData": "btm:button:{chat_id}:event:1:points.sign",
+            "action": "toggle",
+            "target": "event_list",
+            "feedback": "已绑定签到事件。"
+          }
+        ],
+        [
+          {
+            "label": "返回分类",
+            "callbackData": "btm:button:{chat_id}:events:1",
+            "action": "back",
+            "target": "event_menu",
+            "feedback": "已返回事件分类。"
           }
         ]
       ]
@@ -341,7 +399,7 @@
     },
     {
       "id": "payload_input",
-      "title": "设置按钮 Payload",
+      "title": "设置自定义触发词",
       "message": [
         "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
       ],
@@ -358,15 +416,15 @@
       ],
       "input": {
         "type": "text",
-        "prompt": "发送点击后发送的文本",
+        "prompt": "发送点击后触发的群内关键词",
         "placeholder": "我要联系客服",
         "clearCommand": "/clear",
         "examples": [
           {
-            "label": "Payload",
+            "label": "触发词",
             "value": "我要联系客服",
             "target": "result",
-            "feedback": "已填入：Payload。"
+            "feedback": "已填入：触发词。"
           }
         ],
         "errors": [

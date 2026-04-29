@@ -266,6 +266,7 @@ async def test_auto_delete_handler_notifies_actor_when_delete_fails(monkeypatch)
         return settings
 
     monkeypatch.setattr(auto_delete_handler.ModuleSettingsService, "ensure", fake_ensure)
+    monkeypatch.setattr(auto_delete_handler.time, "monotonic", lambda: 100.0)
 
     await auto_delete_handler.auto_delete_handler(update, context)
     await auto_delete_handler.auto_delete_handler(update, context)
