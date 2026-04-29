@@ -8,6 +8,7 @@ import pytest
 from backend.features.group_ops import bottom_button_handler, text_trigger_runtime
 from backend.features.admin.activity import bottom_button as bottom_button_admin
 from backend.features.admin.activity import bottom_button_input
+from backend.features.group_ops.services import bottom_button_events
 from backend.platform.db.schema.models.expansion import AuctionItem, AuctionSetting, BottomButtonLayout, BottomButtonSetting
 from backend.features.activity.services.auction_service import format_auction_announcement, parse_auction_end_at, parse_bid_amount
 from backend.shared.services.base import ValidationError
@@ -90,6 +91,110 @@ def test_bottom_button_runtime_markup_uses_reply_keyboard():
 def test_sanitize_button_text_rejects_empty():
     with pytest.raises(ValidationError):
         sanitize_button_text("   ")
+
+
+def test_bottom_button_event_label_describes_builtin_event():
+    layout = BottomButtonLayout(
+        id=1,
+        chat_id=-1001,
+        row_no=1,
+        col_no=1,
+        button_text="排行榜",
+        payload_text="points.rank",
+        action_mode="event",
+        sort_key=11,
+    )
+
+    assert bottom_button_service.describe_layout_action(layout) == "事件：积分排行榜"
+
+
+@pytest.mark.asyncio
+async def test_bottom_button_event_resolves_points_rank_alias(monkeypatch):
+    async def fake_get_chat_settings(session, chat_id: int):
+        assert chat_id == -1001
+        return SimpleNamespace(points_alias="查分", points_rank_alias="排行榜")
+
+    monkeypatch.setattr("backend.shared.services.chat_service.get_chat_settings", fake_get_chat_settings)
+    layout = BottomButtonLayout(
+        id=1,
+        chat_id=-1001,
+        row_no=1,
+        col_no=1,
+        button_text="榜单",
+        payload_text="points.rank",
+        action_mode="event",
+        sort_key=11,
+    )
+
+    payload = await bottom_button_service.resolve_layout_trigger_text(object(), -1001, layout)
+
+    assert payload == "排行榜"
+
+
+@pytest.mark.asyncio
+async def test_bottom_button_event_registry_resolves_member_event_texts(monkeypatch):
+    async def fake_get_chat_settings(session, chat_id: int):
+        return SimpleNamespace(points_alias="查分", points_rank_alias="精品榜")
+
+    async def fake_get_mall_setting(session, chat_id: int):
+        return SimpleNamespace(entry_command="商城入口")
+
+    async def fake_teacher_setting(session, chat_id: int):
+        return SimpleNamespace(
+            attendance_mode="keyword",
+            attendance_open_keyword="开工",
+            attendance_full_keyword="满员",
+            attendance_rest_keyword="休息中",
+        )
+
+    async def fake_car_review_setting(session, chat_id: int):
+        return SimpleNamespace(rank_command="车评榜")
+
+    monkeypatch.setattr("backend.shared.services.chat_service.get_chat_settings", fake_get_chat_settings)
+    monkeypatch.setattr(
+        "backend.features.points.services.points_extended_service.PointsExtendedService.get_or_create_mall_setting",
+        fake_get_mall_setting,
+    )
+    monkeypatch.setattr(
+        "backend.features.garage.services.garage_features_service.TeacherSearchService.get_setting",
+        fake_teacher_setting,
+    )
+    monkeypatch.setattr(
+        "backend.features.garage.services.garage_features_service.CarReviewService.get_setting",
+        fake_car_review_setting,
+    )
+
+    assert await bottom_button_events.resolve_event_trigger_text(object(), -1001, "points.balance") == "查分"
+    assert await bottom_button_events.resolve_event_trigger_text(object(), -1001, "points.mall") == "商城入口"
+    assert await bottom_button_events.resolve_event_trigger_text(object(), -1001, "teacher.attendance.full") == "满员"
+    assert await bottom_button_events.resolve_event_trigger_text(object(), -1001, "car_review.week_rank") == "本周车评榜"
+    assert await bottom_button_events.resolve_event_trigger_text(object(), -1001, "not.exists") is None
+
+
+@pytest.mark.asyncio
+async def test_bottom_button_event_registry_lists_and_resolves_custom_point_rank(monkeypatch):
+    custom_type = SimpleNamespace(id=5, name="精品分", rank_command="精品榜", enabled=True)
+
+    async def fake_list_custom_point_types(session, chat_id: int):
+        return [custom_type]
+
+    async def fake_get_custom_point_type(session, chat_id: int, type_id: int):
+        assert type_id == 5
+        return custom_type
+
+    monkeypatch.setattr(
+        "backend.features.points.services.points_extended_service.PointsExtendedService.list_custom_point_types",
+        fake_list_custom_point_types,
+    )
+    monkeypatch.setattr(
+        "backend.features.points.services.points_extended_service.PointsExtendedService.get_custom_point_type",
+        fake_get_custom_point_type,
+    )
+
+    events = await bottom_button_events.list_bottom_button_events(object(), -1001, category="points")
+
+    assert any(event.key == "points.custom_rank:5" and event.default_button_text == "精品分排行" for event in events)
+    assert await bottom_button_events.resolve_event_trigger_text(object(), -1001, "points.custom_rank:5") == "精品榜"
 
 
 @pytest.mark.asyncio
@@ -341,6 +446,374 @@ async def test_group_text_trigger_falls_back_to_teacher_search(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_group_text_trigger_handles_invite_rank(monkeypatch):
+    replies: list[str] = []
+
+    async def fake_points_trigger(update, context, payload: str):
+        return False
+
+    async def fake_leaderboard(session, chat_id: int, limit: int = 10):
+        return [(42, 3, "alice")]
+
+    async def fake_user_rank(session, chat_id: int, user_id: int):
+        return 1
+
+    class _Session:
+        async def commit(self):
+            return None
+
+    class _SessionFactory:
+        def __call__(self):
+            return self
+
+        async def __aenter__(self):
+            return _Session()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class _Message:
+        async def reply_text(self, text):
+            replies.append(text)
+
+    monkeypatch.setattr(text_trigger_runtime, "_try_points_text_trigger", fake_points_trigger)
+    monkeypatch.setattr("backend.features.invite.services.invite_service.get_invite_leaderboard", fake_leaderboard)
+    monkeypatch.setattr("backend.features.invite.services.invite_service.get_user_rank", fake_user_rank)
+
+    update = SimpleNamespace(
+        effective_chat=SimpleNamespace(id=-1001, type="supergroup"),
+        effective_user=SimpleNamespace(id=42),
+        effective_message=_Message(),
+    )
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": SimpleNamespace(session_factory=_SessionFactory())}))
+
+    handled = await text_trigger_runtime.try_group_text_trigger(update, context, -1001, "邀请排行")
+
+    assert handled is True
+    assert "邀请排行榜" in replies[0]
+    assert "alice - 3 人" in replies[0]
+
+
+@pytest.mark.asyncio
+async def test_group_text_trigger_handles_game_member_command(monkeypatch):
+    calls: list[str] = []
+
+    async def fake_points_trigger(update, context, payload: str):
+        return False
+
+    async def fake_game_handler(update, context):
+        calls.append(update.effective_message.text)
+        return True
+
+    monkeypatch.setattr(text_trigger_runtime, "_try_points_text_trigger", fake_points_trigger)
+    monkeypatch.setattr("backend.features.activity.game_message_actions.handle_game_message", fake_game_handler)
+
+    update = SimpleNamespace(
+        effective_chat=SimpleNamespace(id=-1001, type="supergroup"),
+        effective_user=SimpleNamespace(id=42),
+        effective_message=SimpleNamespace(text="黑杰克规则"),
+    )
+
+    handled = await text_trigger_runtime.try_group_text_trigger(update, SimpleNamespace(), -1001, "黑杰克规则")
+
+    assert handled is True
+    assert calls == ["黑杰克规则"]
+
+
+@pytest.mark.asyncio
+async def test_group_text_trigger_handles_teacher_rest_event_in_message_attendance_mode(monkeypatch):
+    calls: list[tuple[str, object]] = []
+
+    class _Session:
+        async def commit(self):
+            calls.append(("commit", None))
+
+    class _SessionFactory:
+        def __call__(self):
+            return self
+
+        async def __aenter__(self):
+            return _Session()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    async def fake_is_admin(context, chat_id: int, user_id: int):
+        return False
+
+    async def fake_teacher_setting(session, chat_id: int):
+        return SimpleNamespace(
+            attendance_mode="message",
+            attendance_full_keyword="满课",
+            attendance_rest_keyword="休息",
+            attendance_enabled=True,
+            delete_mode="none",
+        )
+
+    async def fake_car_review_setting(session, chat_id: int):
+        return SimpleNamespace(enabled=False)
+
+    async def fake_is_teacher(session, chat_id: int, user_id: int):
+        return True
+
+    async def fake_is_whitelisted(session, chat_id: int, user_id: int):
+        return False
+
+    async def fake_reply_attendance(context, session, chat, user, message, teacher_setting, *, is_teacher: bool, status: str):
+        calls.append(("attendance", status))
+
+    monkeypatch.setattr("backend.shared.services.permission_service.is_user_admin", fake_is_admin)
+    monkeypatch.setattr(
+        "backend.features.garage.services.garage_features_service.TeacherSearchService.get_setting",
+        fake_teacher_setting,
+    )
+    monkeypatch.setattr(
+        "backend.features.garage.services.garage_features_service.CarReviewService.get_setting",
+        fake_car_review_setting,
+    )
+    monkeypatch.setattr(
+        "backend.features.garage.services.garage_features_service.GarageAuthService.is_certified_teacher",
+        fake_is_teacher,
+    )
+    monkeypatch.setattr(
+        "backend.features.garage.services.garage_features_service.GarageAuthService.is_whitelisted",
+        fake_is_whitelisted,
+    )
+    monkeypatch.setattr(
+        "backend.features.group_ops.group_hooks.teacher_search._reply_attendance_checkin",
+        fake_reply_attendance,
+    )
+
+    update = SimpleNamespace(
+        effective_chat=SimpleNamespace(id=-1001, type="supergroup"),
+        effective_user=SimpleNamespace(id=42),
+        effective_message=SimpleNamespace(text="休息", message_id=99),
+    )
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": SimpleNamespace(session_factory=_SessionFactory())}))
+
+    handled = await text_trigger_runtime._try_garage_text_trigger(update, context, -1001, "休息")
+
+    assert handled is True
+    assert calls == [("attendance", "rest")]
+
+
+@pytest.mark.asyncio
+async def test_bottom_button_text_trigger_resolves_configured_event(monkeypatch):
+    calls: list[tuple[str, object]] = []
+    layout = BottomButtonLayout(
+        id=8,
+        chat_id=-1001,
+        row_no=1,
+        col_no=1,
+        button_text="排行榜",
+        payload_text="points.rank",
+        action_mode="event",
+        sort_key=11,
+    )
+
+    class _Session:
+        async def commit(self):
+            calls.append(("commit", None))
+
+    class _SessionFactory:
+        def __call__(self):
+            return self
+
+        async def __aenter__(self):
+            return _Session()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    async def fake_get_layout(session, chat_id: int, button_text: str):
+        calls.append(("layout", (chat_id, button_text)))
+        return layout
+
+    async def fake_resolve(session, chat_id: int, found_layout):
+        assert found_layout is layout
+        calls.append(("resolve", chat_id))
+        return "积分排行"
+
+    async def fake_group_trigger(update, context, chat_id: int, payload: str):
+        calls.append(("trigger", (chat_id, payload, update.effective_user.id)))
+        return True
+
+    monkeypatch.setattr(bottom_button_service, "get_enabled_layout_by_button_text", fake_get_layout)
+    monkeypatch.setattr(bottom_button_service, "resolve_layout_trigger_text", fake_resolve)
+    monkeypatch.setattr(text_trigger_runtime, "try_group_text_trigger", fake_group_trigger)
+
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=42),
+        effective_message=SimpleNamespace(reply_text=lambda *args, **kwargs: None),
+    )
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": SimpleNamespace(session_factory=_SessionFactory())}))
+
+    handled = await text_trigger_runtime.try_bottom_button_text_trigger(update, context, -1001, "排行榜")
+
+    assert handled is True
+    assert calls == [
+        ("layout", (-1001, "排行榜")),
+        ("resolve", -1001),
+        ("commit", None),
+        ("trigger", (-1001, "积分排行", 42)),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_bottom_button_custom_trigger_can_fall_through_to_auto_reply(monkeypatch):
+    calls: list[tuple[str, object]] = []
+    layout = BottomButtonLayout(
+        id=8,
+        chat_id=-1001,
+        row_no=1,
+        col_no=1,
+        button_text="帮助",
+        payload_text="帮助",
+        action_mode="send",
+        sort_key=11,
+    )
+
+    class _Session:
+        async def commit(self):
+            calls.append(("commit", None))
+
+    class _SessionFactory:
+        def __call__(self):
+            return self
+
+        async def __aenter__(self):
+            return _Session()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    async def fake_get_layout(session, chat_id: int, button_text: str):
+        return layout
+
+    async def fake_resolve(session, chat_id: int, found_layout):
+        return "帮助"
+
+    async def fake_group_trigger(update, context, chat_id: int, payload: str):
+        calls.append(("trigger", payload))
+        return False
+
+    async def fake_auto_reply(update, context, chat_id: int, payload: str):
+        calls.append(("auto_reply", payload))
+        return True
+
+    monkeypatch.setattr(bottom_button_service, "get_enabled_layout_by_button_text", fake_get_layout)
+    monkeypatch.setattr(bottom_button_service, "resolve_layout_trigger_text", fake_resolve)
+    monkeypatch.setattr(text_trigger_runtime, "try_group_text_trigger", fake_group_trigger)
+    monkeypatch.setattr(text_trigger_runtime, "_try_auto_reply_trigger", fake_auto_reply)
+
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=42),
+        effective_message=SimpleNamespace(reply_text=lambda *args, **kwargs: None),
+    )
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": SimpleNamespace(session_factory=_SessionFactory())}))
+
+    handled = await text_trigger_runtime.try_bottom_button_text_trigger(update, context, -1001, "帮助")
+
+    assert handled is True
+    assert calls == [("commit", None), ("trigger", "帮助"), ("auto_reply", "帮助")]
+
+
+@pytest.mark.asyncio
+async def test_bottom_button_event_dispatches_resolved_text_to_legacy_handlers(monkeypatch):
+    calls: list[tuple[str, object]] = []
+    layout = BottomButtonLayout(
+        id=8,
+        chat_id=-1001,
+        row_no=1,
+        col_no=1,
+        button_text="BJ玩法",
+        payload_text="game.blackjack.rules",
+        action_mode="event",
+        sort_key=11,
+    )
+
+    class _Session:
+        async def commit(self):
+            calls.append(("commit", None))
+
+    class _SessionFactory:
+        def __call__(self):
+            return self
+
+        async def __aenter__(self):
+            return _Session()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    async def fake_get_layout(session, chat_id: int, button_text: str):
+        return layout
+
+    async def fake_resolve(session, chat_id: int, found_layout):
+        return "黑杰克规则"
+
+    async def fake_points_trigger(update, context, payload: str):
+        calls.append(("points", payload))
+        return False
+
+    async def fake_game_handler(update, context):
+        calls.append(("game_text", update.effective_message.text))
+        return True
+
+    monkeypatch.setattr(bottom_button_service, "get_enabled_layout_by_button_text", fake_get_layout)
+    monkeypatch.setattr(bottom_button_service, "resolve_layout_trigger_text", fake_resolve)
+    monkeypatch.setattr(text_trigger_runtime, "_try_points_text_trigger", fake_points_trigger)
+    monkeypatch.setattr("backend.features.activity.game_message_actions.handle_game_message", fake_game_handler)
+
+    update = SimpleNamespace(
+        effective_chat=SimpleNamespace(id=-1001, type="supergroup"),
+        effective_user=SimpleNamespace(id=42),
+        effective_message=SimpleNamespace(text="BJ玩法", reply_text=lambda *args, **kwargs: None),
+    )
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": SimpleNamespace(session_factory=_SessionFactory())}))
+
+    handled = await text_trigger_runtime.try_bottom_button_text_trigger(update, context, -1001, "BJ玩法")
+
+    assert handled is True
+    assert calls == [("commit", None), ("points", "黑杰克规则"), ("game_text", "黑杰克规则")]
+
+
+@pytest.mark.asyncio
+async def test_engagement_trigger_does_not_create_reward_for_unmatched_payload():
+    calls: list[tuple[str, object]] = []
+
+    class _Session:
+        async def get(self, model, key):
+            calls.append(("get", key))
+            return None
+
+        async def commit(self):
+            calls.append(("commit", None))
+
+    class _SessionFactory:
+        def __call__(self):
+            return self
+
+        async def __aenter__(self):
+            return _Session()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    update = SimpleNamespace(
+        effective_chat=SimpleNamespace(id=-1001, type="supergroup"),
+        effective_user=SimpleNamespace(id=42),
+        effective_message=SimpleNamespace(text="帮助"),
+    )
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": SimpleNamespace(session_factory=_SessionFactory())}))
+
+    handled = await text_trigger_runtime._try_engagement_reward_trigger(update, context, -1001, "帮助")
+
+    assert handled is False
+    assert calls == [("get", -1001), ("commit", None)]
+
+
+@pytest.mark.asyncio
 async def test_bottom_button_enable_generates_runtime_message_immediately(monkeypatch):
     calls: list[tuple[str, int, object]] = []
 
@@ -389,6 +862,83 @@ async def test_bottom_button_enable_generates_runtime_message_immediately(monkey
     assert calls[1][0:2] == ("generate", -1001)
     assert calls[2][0] == "commit"
     assert calls[3] == ("menu", -1001, None)
+
+
+@pytest.mark.asyncio
+async def test_bottom_button_event_selection_saves_and_syncs_when_enabled(monkeypatch):
+    calls: list[tuple[str, int, object]] = []
+    setting = SimpleNamespace(enabled=True)
+
+    class _Session:
+        async def commit(self):
+            calls.append(("commit", 0, self))
+
+    class _SessionFactory:
+        def __call__(self):
+            return self
+
+        async def __aenter__(self):
+            self.session = _Session()
+            return self.session
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class _Controller(bottom_button_admin.BottomButtonAdminControllerMixin):
+        async def _show_bottom_button_detail(self, update, context, chat_id: int, layout_id: int):
+            calls.append(("detail", chat_id, layout_id))
+
+    async def fake_update_layout(session, *, chat_id: int, layout_id: int, button_text=None, payload_text=None, action_mode=None):
+        calls.append(("update_layout", chat_id, (layout_id, button_text, payload_text, action_mode)))
+
+    async def fake_get_layout(session, chat_id: int, layout_id: int):
+        return BottomButtonLayout(
+            id=layout_id,
+            chat_id=chat_id,
+            row_no=1,
+            col_no=1,
+            button_text="按钮",
+            payload_text="按钮",
+            action_mode="send",
+            sort_key=11,
+        )
+
+    async def fake_find_event(session, chat_id: int, event_key: str):
+        from backend.features.group_ops.services.bottom_button_events import STATIC_BOTTOM_BUTTON_EVENTS
+
+        return next(event for event in STATIC_BOTTOM_BUTTON_EVENTS if event.key == event_key)
+
+    async def fake_get_setting(session, chat_id: int):
+        calls.append(("setting", chat_id, None))
+        return setting
+
+    async def fake_generate(context, session, chat_id: int):
+        calls.append(("generate", chat_id, session))
+
+    monkeypatch.setattr(bottom_button_admin, "update_layout_button", fake_update_layout)
+    monkeypatch.setattr(bottom_button_admin, "get_bottom_button_layout", fake_get_layout)
+    monkeypatch.setattr(bottom_button_admin, "find_bottom_button_event", fake_find_event)
+    monkeypatch.setattr(bottom_button_admin, "get_bottom_button_setting", fake_get_setting)
+    monkeypatch.setattr(bottom_button_admin, "generate_bottom_buttons", fake_generate)
+
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=42),
+        callback_query=SimpleNamespace(data="btm:button:-1001:event:7:points.rank"),
+    )
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": SimpleNamespace(session_factory=_SessionFactory())}))
+
+    await _Controller()._handle_bottom_button(
+        update,
+        context,
+        -1001,
+        bottom_button_admin.CallbackParser.parse("btm:button:-1001:event:7:points.rank"),
+    )
+
+    assert calls[0] == ("update_layout", -1001, (7, "排行榜", "points.rank", "event"))
+    assert calls[1] == ("setting", -1001, None)
+    assert calls[2][0:2] == ("generate", -1001)
+    assert calls[3][0] == "commit"
+    assert calls[4] == ("detail", -1001, 7)
 
 
 @pytest.mark.asyncio

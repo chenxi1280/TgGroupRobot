@@ -12,10 +12,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.platform.db.schema.models.expansion import BottomButtonLayout, BottomButtonSetting
 from backend.shared.services.base import ValidationError
 from backend.shared.services.module_settings_service import ModuleSettingsService
+from backend.features.group_ops.services.bottom_button_events import (
+    BOTTOM_BUTTON_EVENT_LABELS,
+    BOTTOM_BUTTON_EVENT_OPTIONS,
+    get_event_label,
+    resolve_event_trigger_text,
+)
 
 
 MAX_BUTTON_COLS = 4
 MAX_LAYOUT_ROWS = 6
+BOTTOM_BUTTON_ACTION_MODES = {"send", "fill", "event"}
 
 
 def _now() -> dt.datetime:
@@ -72,6 +79,27 @@ async def list_layouts(session: AsyncSession, chat_id: int) -> list[BottomButton
 
 async def get_layout(session: AsyncSession, chat_id: int, layout_id: int) -> BottomButtonLayout | None:
     stmt = select(BottomButtonLayout).where(BottomButtonLayout.chat_id == chat_id, BottomButtonLayout.id == layout_id)
+    result = await session.execute(stmt)
+    return result.scalar_one_or_none()
+
+
+async def get_enabled_layout_by_button_text(
+    session: AsyncSession,
+    chat_id: int,
+    button_text: str,
+) -> BottomButtonLayout | None:
+    text = button_text.strip()
+    if not text:
+        return None
+    setting = await session.get(BottomButtonSetting, chat_id)
+    if setting is None or not setting.enabled:
+        return None
+    stmt = (
+        select(BottomButtonLayout)
+        .where(BottomButtonLayout.chat_id == chat_id, BottomButtonLayout.button_text == text)
+        .order_by(BottomButtonLayout.row_no.asc(), BottomButtonLayout.col_no.asc(), BottomButtonLayout.sort_key.asc())
+        .limit(1)
+    )
     result = await session.execute(stmt)
     return result.scalar_one_or_none()
 
@@ -161,12 +189,31 @@ async def update_layout_button(
     if payload_text is not None:
         layout.payload_text = sanitize_payload_text(payload_text)
     if action_mode is not None:
-        if action_mode not in {"send", "fill"}:
+        if action_mode not in BOTTOM_BUTTON_ACTION_MODES:
             raise ValidationError("按钮模式无效。")
         layout.action_mode = action_mode
     layout.updated_at = _now()
     await session.flush()
     return layout
+
+
+def describe_layout_action(layout: BottomButtonLayout) -> str:
+    if layout.action_mode == "event":
+        return f"事件：{get_event_label(layout.payload_text)}"
+    payload = (layout.payload_text or layout.button_text or "").strip()
+    return f"自定义触发词：{payload or '未设置'}"
+
+
+async def resolve_layout_trigger_text(
+    session: AsyncSession,
+    chat_id: int,
+    layout: BottomButtonLayout,
+) -> str | None:
+    if layout.action_mode != "event":
+        return (layout.payload_text or layout.button_text or "").strip() or None
+
+    event_key = (layout.payload_text or "").strip()
+    return await resolve_event_trigger_text(session, chat_id, event_key)
 
 
 def build_management_layout_preview(layouts: list[BottomButtonLayout]) -> str:

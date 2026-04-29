@@ -9,6 +9,7 @@ from backend.platform.db.schema.models.core import TgUser
 from backend.platform.telegram.message_actor import build_sender_chat_actor, is_sender_chat_actor, resolve_message_actor
 from backend.shared.services.module_settings_service import ModuleSettingsService
 from backend.shared.services.permission_service import is_user_admin
+from backend.features.group_ops.text_trigger_runtime import try_bottom_button_text_trigger
 
 from .controls import (
     _check_force_subscribe,
@@ -126,6 +127,10 @@ async def unified_group_message_handler(update: Update, context: ContextTypes.DE
         if not await _check_force_subscribe(context, chat, user, message, settings):
             return True
         if await _process_new_member_limit(context, db, chat, user, message, settings):
+            return True
+
+    if real_user_id is not None and message_text:
+        if await try_bottom_button_text_trigger(update, context, chat.id, message_text):
             return True
 
     if real_user_id is not None and await _process_garage_features(context, db, chat, user, message, message_text, settings, is_admin):

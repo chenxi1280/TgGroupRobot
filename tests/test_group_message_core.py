@@ -151,6 +151,101 @@ async def test_unified_group_handler_skips_auto_reply_for_auction_trigger(monkey
 
 
 @pytest.mark.asyncio
+async def test_unified_group_handler_bottom_button_event_runs_before_auto_reply(monkeypatch):
+    session = _FakeSession()
+    bottom_button_calls: list[tuple[int, str]] = []
+
+    async def fake_ensure(session, chat_id: int, **kwargs):
+        return _settings()
+
+    async def fake_is_admin(context, chat_id: int, user_id: int):
+        return False
+
+    async def fake_bottom_button_trigger(update, context, chat_id: int, message_text: str):
+        bottom_button_calls.append((chat_id, message_text))
+        return True
+
+    async def forbidden_auto_reply(*args, **kwargs):
+        raise AssertionError("matched bottom buttons should stop auto-reply processing")
+
+    monkeypatch.setattr(core_hooks.ModuleSettingsService, "ensure", fake_ensure)
+    monkeypatch.setattr(core_hooks, "is_user_admin", fake_is_admin)
+    monkeypatch.setattr(core_hooks, "_process_rename_monitor", _false)
+    monkeypatch.setattr(core_hooks, "_process_group_lock_controls", _false)
+    monkeypatch.setattr(core_hooks, "_process_night_mode", _false)
+    monkeypatch.setattr(core_hooks, "_process_alliance_joint_ban", _false)
+    monkeypatch.setattr(core_hooks, "_check_force_subscribe", _true)
+    monkeypatch.setattr(core_hooks, "_process_new_member_limit", _false)
+    monkeypatch.setattr(core_hooks, "_process_garage_features", _false)
+    monkeypatch.setattr(core_hooks, "try_bottom_button_text_trigger", fake_bottom_button_trigger)
+    monkeypatch.setattr(core_hooks, "_process_auto_reply", forbidden_auto_reply)
+
+    update = SimpleNamespace(
+        effective_chat=SimpleNamespace(id=-1001, type="supergroup", title="Test Group"),
+        effective_user=SimpleNamespace(
+            id=42,
+            username="alice",
+            first_name="Alice",
+            last_name=None,
+            language_code="zh-CN",
+        ),
+        effective_message=SimpleNamespace(text="排行榜", caption=None, message_id=10, sender_chat=None),
+    )
+
+    handled = await core_hooks.unified_group_message_handler(update, _context(session))
+
+    assert handled is True
+    assert bottom_button_calls == [(-1001, "排行榜")]
+
+
+@pytest.mark.asyncio
+async def test_unified_group_handler_bottom_button_runs_before_garage_features(monkeypatch):
+    session = _FakeSession()
+    bottom_button_calls: list[tuple[int, str]] = []
+
+    async def fake_ensure(session, chat_id: int, **kwargs):
+        return _settings()
+
+    async def fake_is_admin(context, chat_id: int, user_id: int):
+        return False
+
+    async def fake_bottom_button_trigger(update, context, chat_id: int, message_text: str):
+        bottom_button_calls.append((chat_id, message_text))
+        return True
+
+    async def forbidden_garage(*args, **kwargs):
+        raise AssertionError("matched bottom buttons should run before garage feature text handlers")
+
+    monkeypatch.setattr(core_hooks.ModuleSettingsService, "ensure", fake_ensure)
+    monkeypatch.setattr(core_hooks, "is_user_admin", fake_is_admin)
+    monkeypatch.setattr(core_hooks, "_process_rename_monitor", _false)
+    monkeypatch.setattr(core_hooks, "_process_group_lock_controls", _false)
+    monkeypatch.setattr(core_hooks, "_process_night_mode", _false)
+    monkeypatch.setattr(core_hooks, "_process_alliance_joint_ban", _false)
+    monkeypatch.setattr(core_hooks, "_check_force_subscribe", _true)
+    monkeypatch.setattr(core_hooks, "_process_new_member_limit", _false)
+    monkeypatch.setattr(core_hooks, "try_bottom_button_text_trigger", fake_bottom_button_trigger)
+    monkeypatch.setattr(core_hooks, "_process_garage_features", forbidden_garage)
+
+    update = SimpleNamespace(
+        effective_chat=SimpleNamespace(id=-1001, type="supergroup", title="Test Group"),
+        effective_user=SimpleNamespace(
+            id=42,
+            username="alice",
+            first_name="Alice",
+            last_name=None,
+            language_code="zh-CN",
+        ),
+        effective_message=SimpleNamespace(text="附近", caption=None, message_id=10, sender_chat=None),
+    )
+
+    handled = await core_hooks.unified_group_message_handler(update, _context(session))
+
+    assert handled is True
+    assert bottom_button_calls == [(-1001, "附近")]
+
+
+@pytest.mark.asyncio
 async def test_unified_group_handler_sender_chat_skips_user_checks_but_runs_auto_reply(monkeypatch):
     session = _FakeSession()
     ensure_calls: list[dict] = []

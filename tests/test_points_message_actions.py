@@ -277,3 +277,23 @@ async def test_text_trigger_unknown_returns_false_without_message_points() -> No
     assert replies == []
     assert added is False
     assert session.commits == 1
+
+
+@pytest.mark.asyncio
+async def test_points_mall_entry_reports_disabled() -> None:
+    session = _Session()
+    update, replies = _update("积分商城")
+
+    handled = await _call(
+        update,
+        session,
+        _settings(),
+        text_override="积分商城",
+        allow_admin_adjustment=False,
+        allow_level_checks=False,
+        allow_message_points=False,
+    )
+
+    assert handled is True
+    assert replies == ["积分商城未开启。"]
+    assert session.commits == 1

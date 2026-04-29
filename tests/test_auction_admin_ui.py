@@ -167,6 +167,125 @@ async def test_bottom_button_layout_menu_renders_position_controls(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_bottom_button_detail_shows_bound_event(monkeypatch):
+    captured: dict[str, object] = {}
+    layout = BottomButtonLayout(
+        id=7,
+        chat_id=-1001,
+        row_no=1,
+        col_no=1,
+        button_text="排行榜",
+        payload_text="points.rank",
+        action_mode="event",
+        sort_key=11,
+    )
+
+    async def fake_get_layout(session, chat_id: int, layout_id: int):
+        assert (chat_id, layout_id) == (-1001, 7)
+        return layout
+
+    async def fake_safe_edit(update, *, text, reply_markup):
+        captured["text"] = text
+        captured["keyboard"] = reply_markup.inline_keyboard
+
+    monkeypatch.setattr(bottom_button_admin, "get_bottom_button_layout", fake_get_layout)
+    monkeypatch.setattr(admin_handler._admin_handler.message_helper, "safe_edit", fake_safe_edit)
+
+    update = SimpleNamespace(effective_user=SimpleNamespace(id=42))
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(_FakeSession())}))
+
+    await admin_handler._admin_handler._show_bottom_button_detail(update, context, -1001, 7)
+
+    rows = [[button.text for button in row] for row in captured["keyboard"]]
+    assert "绑定事件：事件：积分排行榜" in captured["text"]
+    assert ["✏️ 修改文字", "🎯 绑定事件"] in rows
+    assert ["⌨️ 自定义触发词"] in rows
+
+
+@pytest.mark.asyncio
+async def test_bottom_button_event_menu_renders_categories(monkeypatch):
+    captured: dict[str, object] = {}
+    layout = BottomButtonLayout(
+        id=7,
+        chat_id=-1001,
+        row_no=1,
+        col_no=1,
+        button_text="排行榜",
+        payload_text="points.rank",
+        action_mode="event",
+        sort_key=11,
+    )
+
+    async def fake_get_layout(session, chat_id: int, layout_id: int):
+        return layout
+
+    async def fake_safe_edit(update, *, text, reply_markup):
+        captured["text"] = text
+        captured["keyboard"] = reply_markup.inline_keyboard
+
+    monkeypatch.setattr(bottom_button_admin, "get_bottom_button_layout", fake_get_layout)
+    monkeypatch.setattr(admin_handler._admin_handler.message_helper, "safe_edit", fake_safe_edit)
+
+    update = SimpleNamespace(effective_user=SimpleNamespace(id=42))
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(_FakeSession())}))
+
+    await admin_handler._admin_handler._show_bottom_button_event_menu(update, context, -1001, 7)
+
+    rows = [[button.text for button in row] for row in captured["keyboard"]]
+    callbacks = [[button.callback_data for button in row] for row in captured["keyboard"]]
+    assert "当前绑定：事件：积分排行榜" in captured["text"]
+    assert rows[0] == ["积分", "老师搜索"]
+    assert rows[1] == ["邀请", "活动"]
+    assert rows[2] == ["游戏", "车评"]
+    assert rows[3] == ["⌨️ 自定义触发词"]
+    assert callbacks[0][0] == "btm:button:-1001:eventcat:7:points"
+
+
+@pytest.mark.asyncio
+async def test_bottom_button_event_list_renders_category_events(monkeypatch):
+    captured: dict[str, object] = {}
+    layout = BottomButtonLayout(
+        id=7,
+        chat_id=-1001,
+        row_no=1,
+        col_no=1,
+        button_text="排行榜",
+        payload_text="points.rank",
+        action_mode="event",
+        sort_key=11,
+    )
+
+    async def fake_get_layout(session, chat_id: int, layout_id: int):
+        return layout
+
+    async def fake_list_events(session, chat_id: int, *, category: str | None = None):
+        assert category == "points"
+        from backend.features.group_ops.services.bottom_button_events import STATIC_BOTTOM_BUTTON_EVENTS
+
+        return [event for event in STATIC_BOTTOM_BUTTON_EVENTS if event.category == "points"]
+
+    async def fake_safe_edit(update, *, text, reply_markup):
+        captured["text"] = text
+        captured["keyboard"] = reply_markup.inline_keyboard
+
+    monkeypatch.setattr(bottom_button_admin, "get_bottom_button_layout", fake_get_layout)
+    monkeypatch.setattr(bottom_button_admin, "list_bottom_button_events", fake_list_events)
+    monkeypatch.setattr(admin_handler._admin_handler.message_helper, "safe_edit", fake_safe_edit)
+
+    update = SimpleNamespace(effective_user=SimpleNamespace(id=42))
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(_FakeSession())}))
+
+    await admin_handler._admin_handler._show_bottom_button_event_list(update, context, -1001, 7, "points")
+
+    rows = [[button.text for button in row] for row in captured["keyboard"]]
+    callbacks = [[button.callback_data for button in row] for row in captured["keyboard"]]
+    assert "⌨️ 底部按钮 | 积分" in captured["text"]
+    assert rows[0] == ["签到", "我的积分"]
+    assert rows[1] == ["✅ 积分排行榜", "积分商城"]
+    assert callbacks[1][0] == "btm:button:-1001:event:7:points.rank"
+
+
+@pytest.mark.asyncio
 async def test_unimplemented_feature_redirects_auction_todo_to_real_menu(monkeypatch):
     called: dict[str, int] = {}
 

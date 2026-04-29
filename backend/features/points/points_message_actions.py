@@ -220,6 +220,11 @@ async def handle_message_points_action(
         mall_setting = await points_extended_service.get_or_create_mall_setting(session, chat.id)
         level_setting = await points_extended_service.get_or_create_level_setting(session, chat.id)
 
+        if text and text == mall_setting.entry_command and not mall_setting.enabled:
+            await session.commit()
+            await update.effective_message.reply_text("积分商城未开启。")
+            return True
+
         if text and mall_setting.enabled and text == mall_setting.entry_command:
             products = await points_extended_service.list_on_sale_products(session, chat.id)
             await session.commit()

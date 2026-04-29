@@ -18,7 +18,15 @@ from backend.shared.services.user_service import ensure_user
 
 
 def _user_link_name(user) -> str:
-    return f"{format_user_display_name(user, user.id)}的链接"
+    display_name = " ".join(
+        part
+        for part in [
+            getattr(user, "first_name", None),
+            getattr(user, "last_name", None),
+        ]
+        if part
+    ).strip()
+    return f"{display_name or format_user_display_name(user, user.id)}的链接"
 
 
 def _relay_link(bot_username: str | None, link_id: int) -> str | None:

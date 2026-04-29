@@ -292,7 +292,7 @@ async def _process_auto_reply(
     chat,
     message,
     message_text: str,
-) -> None:
+) -> bool:
     log.info(
         "unified_handler_auto_reply_start",
         chat_id=chat.id,
@@ -312,7 +312,7 @@ async def _process_auto_reply(
     )
 
     if not (result.success and result.reply_content and result.rule is not None):
-        return
+        return False
 
     try:
         matched_rules = result.matched_rules or ([result.rule] if result.rule is not None else [])
@@ -354,5 +354,7 @@ async def _process_auto_reply(
             if matched_rules
             else 0,
         )
+        return True
     except Exception as exc:
         log.warning("auto_reply_send_failed", chat_id=chat.id, error=str(exc))
+        return False

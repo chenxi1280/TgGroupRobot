@@ -2,6 +2,14 @@ from __future__ import annotations
 
 from backend.features.admin.support import *
 from backend.features.group_ops.services.bottom_button_service import MAX_BUTTON_COLS, MAX_LAYOUT_ROWS
+from backend.features.group_ops.services.bottom_button_events import (
+    BOTTOM_BUTTON_EVENT_CATEGORIES,
+    CUSTOM_TRIGGER_CATEGORY,
+    decode_event_callback_key,
+    encode_event_callback_key,
+    find_bottom_button_event,
+    list_bottom_button_events,
+)
 
 class BottomButtonAdminControllerMixin:
     async def _show_bottom_button_menu(
@@ -114,21 +122,113 @@ class BottomButtonAdminControllerMixin:
                 "⌨️ 底部按钮 | 编辑按钮",
                 "",
                 f"按钮文字：{layout.button_text}",
+                f"绑定事件：{describe_layout_action(layout)}",
                 f"点击后发送：{layout.button_text}",
                 "",
-                "建议按钮文字不超过 4 个字，并与群内触发词保持一致。",
+                "按钮文字展示在输入框下方，绑定事件决定点击后实际执行的功能。",
             ]
         )
         keyboard = InlineKeyboardMarkup([
             [
                 InlineKeyboardButton("✏️ 修改文字", callback_data=f"btm:button:{chat_id}:text:{layout.id}"),
+                InlineKeyboardButton("🎯 绑定事件", callback_data=f"btm:button:{chat_id}:events:{layout.id}"),
             ],
+            [InlineKeyboardButton("⌨️ 自定义触发词", callback_data=f"btm:button:{chat_id}:payload:{layout.id}")],
             [
                 InlineKeyboardButton("❌ 删除按钮", callback_data=f"btm:button:{chat_id}:delete:{layout.id}"),
                 InlineKeyboardButton("🔙 返回", callback_data=f"btm:layout:{chat_id}:edit"),
             ],
         ])
         await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
+
+    async def _show_bottom_button_event_menu(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+        layout_id: int,
+    ) -> None:
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            layout = await get_bottom_button_layout(session, chat_id, layout_id)
+            await session.commit()
+        if layout is None:
+            await answer_callback_query_safely(update, "❌ 按钮不存在", show_alert=True)
+            await self._show_bottom_button_layout_menu(update, context, chat_id)
+            return
+
+        rows: list[list[InlineKeyboardButton]] = []
+        for index in range(0, len(BOTTOM_BUTTON_EVENT_CATEGORIES), 2):
+            row: list[InlineKeyboardButton] = []
+            for category, label in BOTTOM_BUTTON_EVENT_CATEGORIES[index:index + 2]:
+                if category == CUSTOM_TRIGGER_CATEGORY:
+                    row.append(InlineKeyboardButton("⌨️ " + label, callback_data=f"btm:button:{chat_id}:payload:{layout.id}"))
+                else:
+                    row.append(InlineKeyboardButton(label, callback_data=f"btm:button:{chat_id}:eventcat:{layout.id}:{category}"))
+            rows.append(row)
+        rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"btm:button:{chat_id}:detail:{layout.id}")])
+
+        text = "\n".join(
+            [
+                "⌨️ 底部按钮 | 绑定事件",
+                "",
+                f"按钮文字：{layout.button_text}",
+                f"当前绑定：{describe_layout_action(layout)}",
+                "",
+                "选择一个内置功能事件，或使用自定义触发词兼容群内已有入口。",
+            ]
+        )
+        await self.message_helper.safe_edit(update, text=text, reply_markup=InlineKeyboardMarkup(rows))
+
+    async def _show_bottom_button_event_list(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+        layout_id: int,
+        category: str,
+    ) -> None:
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            layout = await get_bottom_button_layout(session, chat_id, layout_id)
+            events = await list_bottom_button_events(session, chat_id, category=category)
+            await session.commit()
+        if layout is None:
+            await answer_callback_query_safely(update, "❌ 按钮不存在", show_alert=True)
+            await self._show_bottom_button_layout_menu(update, context, chat_id)
+            return
+
+        category_label = dict(BOTTOM_BUTTON_EVENT_CATEGORIES).get(category, "事件")
+        rows: list[list[InlineKeyboardButton]] = []
+        for index in range(0, len(events), 2):
+            row = []
+            for event in events[index:index + 2]:
+                prefix = "✅ " if layout.action_mode == "event" and layout.payload_text == event.key else ""
+                row.append(
+                    InlineKeyboardButton(
+                        prefix + event.label,
+                        callback_data=(
+                            f"btm:button:{chat_id}:event:{layout.id}:"
+                            f"{encode_event_callback_key(event.key)}"
+                        ),
+                    )
+                )
+            rows.append(row)
+        if not rows:
+            rows.append([InlineKeyboardButton("暂无可绑定事件", callback_data=f"btm:button:{chat_id}:events:{layout.id}")])
+        rows.append([InlineKeyboardButton("🔙 返回分类", callback_data=f"btm:button:{chat_id}:events:{layout.id}")])
+
+        text = "\n".join(
+            [
+                f"⌨️ 底部按钮 | {category_label}",
+                "",
+                f"按钮文字：{layout.button_text}",
+                f"当前绑定：{describe_layout_action(layout)}",
+                "",
+                "选择后会保存为后台事件；如果按钮文字还是“按钮”，会自动改成事件文案。",
+            ]
+        )
+        await self.message_helper.safe_edit(update, text=text, reply_markup=InlineKeyboardMarkup(rows))
 
     async def _handle_bottom_button(
         self,
@@ -207,6 +307,44 @@ class BottomButtonAdminControllerMixin:
                     return
                 if sub == "mode":
                     await update_layout_button(session, chat_id=chat_id, layout_id=layout_id, action_mode=callback_data.get(5))
+                    setting = await get_bottom_button_setting(session, chat_id)
+                    if setting.enabled:
+                        await generate_bottom_buttons(context, session, chat_id)
+                    await session.commit()
+                    await self._show_bottom_button_detail(update, context, chat_id, layout_id)
+                    return
+                if sub == "events":
+                    await session.commit()
+                    await self._show_bottom_button_event_menu(update, context, chat_id, layout_id)
+                    return
+                if sub == "eventcat":
+                    category = callback_data.get(5)
+                    await session.commit()
+                    await self._show_bottom_button_event_list(update, context, chat_id, layout_id, category)
+                    return
+                if sub == "event":
+                    event_key = decode_event_callback_key(callback_data.get(5))
+                    layout = await get_bottom_button_layout(session, chat_id, layout_id)
+                    event = await find_bottom_button_event(session, chat_id, event_key)
+                    if layout is None:
+                        await session.commit()
+                        await answer_callback_query_safely(update, "❌ 按钮不存在", show_alert=True)
+                        await self._show_bottom_button_layout_menu(update, context, chat_id)
+                        return
+                    if event is None:
+                        await session.commit()
+                        await answer_callback_query_safely(update, "事件类型无效", show_alert=True)
+                        await self._show_bottom_button_event_menu(update, context, chat_id, layout_id)
+                        return
+                    button_text = event.default_button_text if not (layout.button_text or "").strip() or layout.button_text == "按钮" else None
+                    await update_layout_button(
+                        session,
+                        chat_id=chat_id,
+                        layout_id=layout_id,
+                        button_text=button_text,
+                        action_mode="event",
+                        payload_text=event_key,
+                    )
                     setting = await get_bottom_button_setting(session, chat_id)
                     if setting.enabled:
                         await generate_bottom_buttons(context, session, chat_id)

@@ -62,6 +62,7 @@ async def handle_bottom_button_admin_input(
                 chat_id=target_chat_id,
                 layout_id=layout_id,
                 payload_text=text_value,
+                action_mode="send",
             )
     except ValidationError as exc:
         await update.effective_message.reply_text(str(exc))
