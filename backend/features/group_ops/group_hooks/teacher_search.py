@@ -4,6 +4,10 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
 from backend.features.garage.services.garage_features_service import TeacherSearchService
+from backend.features.garage.services.teacher_search_queries import (
+    teacher_attendance_status_label,
+    teacher_profile_completeness_label,
+)
 from backend.features.group_ops.text_trigger_runtime import is_reserved_group_text_command_for_chat
 
 from .common import _reply_garage_feedback
@@ -24,6 +28,13 @@ LOCATION_UPDATE_PROMPT = (
 )
 
 
+async def _get_auth_badge(session, chat_id: int) -> str:
+    from backend.features.garage.services.garage_features_service import GarageAuthService
+
+    settings = await GarageAuthService.get_settings(session, chat_id)
+    return getattr(settings, "garage_auth_badge", "🤝") or "🤝"
+
+
 async def _process_teacher_search_features(
     context: ContextTypes.DEFAULT_TYPE,
     session,
@@ -34,9 +45,16 @@ async def _process_teacher_search_features(
     teacher_setting,
     *,
     is_teacher: bool,
+    is_attendance_teacher: bool | None = None,
     is_admin: bool,
     is_whitelisted: bool,
 ) -> bool:
+    attendance_is_teacher = is_teacher if is_attendance_teacher is None else is_attendance_teacher
+    attendance_mode = getattr(teacher_setting, "attendance_mode", "message") or "message"
+    keyword_status = _resolve_attendance_keyword_status(text, teacher_setting)
+    if text == "开课打卡" and attendance_mode != "external":
+        keyword_status = "open"
+
     location_recording_enabled = teacher_setting.nearby_search_enabled or (
         teacher_setting.force_location_enabled and is_teacher
     )
@@ -56,6 +74,19 @@ async def _process_teacher_search_features(
 
     delete_mode = getattr(teacher_setting, "delete_mode", "none")
 
+    if keyword_status is not None and attendance_mode != "external":
+        await _reply_attendance_checkin(
+            context,
+            session,
+            chat,
+            user,
+            message,
+            teacher_setting,
+            is_teacher=attendance_is_teacher,
+            status=keyword_status,
+        )
+        return True
+
     if await _block_teacher_without_location(
         context,
         session,
@@ -70,27 +101,10 @@ async def _process_teacher_search_features(
     ):
         return True
 
-    attendance_mode = getattr(teacher_setting, "attendance_mode", "message") or "message"
-    keyword_status = _resolve_attendance_keyword_status(text, teacher_setting)
-    if text == "开课打卡" and attendance_mode != "external":
-        keyword_status = "open"
-    if keyword_status is not None and attendance_mode != "external":
-        await _reply_attendance_checkin(
-            context,
-            session,
-            chat,
-            user,
-            message,
-            teacher_setting,
-            is_teacher=is_teacher,
-            status=keyword_status,
-        )
-        return True
-
     if (
         teacher_setting.attendance_enabled
         and attendance_mode == "message"
-        and is_teacher
+        and attendance_is_teacher
         and text
         and not text.startswith("/")
     ):
@@ -317,6 +331,7 @@ async def _reply_open_course_teachers(
     delete_mode: str,
 ) -> None:
     rows = await TeacherSearchService.list_open_course_teachers(session, chat.id)
+    badge = await _get_auth_badge(session, chat.id)
     await session.commit()
     if not rows:
         await _reply_garage_feedback(
@@ -333,7 +348,8 @@ async def _reply_open_course_teachers(
             tg_user.first_name if tg_user and tg_user.first_name else f"用户{profile.user_id}"
         )
         extra = " / ".join(part for part in [profile.region_text, profile.price_text] if part)
-        lines.append(f"{idx}. {name}" + (f"  {extra}" if extra else ""))
+        status = teacher_attendance_status_label(profile)
+        lines.append(f"{idx}. {badge} {name} · {status}" + (f" · {extra}" if extra else ""))
     await _reply_garage_feedback(
         context,
         chat_id=chat.id,
@@ -384,6 +400,7 @@ async def _reply_nearby_teachers(
         only_open_course=getattr(teacher_setting, "only_open_course_enabled", True),
         limit=10,
     )
+    badge = await _get_auth_badge(session, chat.id)
     await session.commit()
     if not nearby:
         await _reply_garage_feedback(
@@ -402,7 +419,11 @@ async def _reply_nearby_teachers(
     for idx, item in enumerate(nearby, start=1):
         profile = item["profile"]
         extra = " / ".join(part for part in [profile.region_text, profile.price_text] if part)
-        lines.append(f"{idx}. {item['display_name']} · {item['distance_text']}" + (f" · {extra}" if extra else ""))
+        status = teacher_attendance_status_label(profile)
+        lines.append(
+            f"{idx}. {badge} {item['display_name']} · {status} · {item['distance_text']}"
+            + (f" · {extra}" if extra else "")
+        )
     await _reply_garage_feedback(
         context,
         chat_id=chat.id,
@@ -440,6 +461,7 @@ async def _reply_teacher_keyword_search(
         only_open_course=getattr(teacher_setting, "only_open_course_enabled", True),
         limit=10,
     )
+    badge = await _get_auth_badge(session, chat.id)
     await session.commit()
     if not rows:
         await _reply_garage_feedback(
@@ -457,7 +479,9 @@ async def _reply_teacher_keyword_search(
         )
         labels = " ".join(profile.labels or [])
         extra = " / ".join(part for part in [labels, profile.region_text, profile.price_text] if part)
-        lines.append(f"{idx}. {name}" + (f" · {extra}" if extra else ""))
+        status = teacher_attendance_status_label(profile)
+        completeness = teacher_profile_completeness_label(profile)
+        lines.append(f"{idx}. {badge} {name} · {status} · {completeness}" + (f" · {extra}" if extra else ""))
     await _reply_garage_feedback(
         context,
         chat_id=chat.id,

@@ -2,14 +2,81 @@ from __future__ import annotations
 
 import datetime as dt
 
+from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.features.garage.services.garage_auth_service import GarageAuthService
 from backend.features.nearby.services.nearby_profile_service import build_user_display_name, format_distance, haversine_distance_km
 from backend.platform.db.schema.models.core import TgUser
-from backend.platform.db.schema.models.garage_features import TeacherDailyAttendance, TeacherProfile, TeacherSearchSetting
+from backend.platform.db.schema.models.garage_features import (
+    GarageCertifiedTeacher,
+    TeacherDailyAttendance,
+    TeacherProfile,
+    TeacherSearchSetting,
+)
 from backend.shared.time_helper import LOCAL_TIMEZONE
+
+
+@dataclass
+class TeacherProfileView:
+    user_id: int
+    latitude: float | None = None
+    longitude: float | None = None
+    labels: list[str] | None = None
+    region_text: str | None = None
+    price_text: str | None = None
+    open_course_today: bool = False
+    open_course_status: str | None = None
+    last_location_at: dt.datetime | None = None
+    updated_at: dt.datetime | None = None
+
+
+def _teacher_search_biz_date() -> dt.date:
+    return dt.datetime.now(dt.UTC).astimezone(LOCAL_TIMEZONE).date()
+
+
+def _build_profile_view(
+    user_id: int,
+    profile: TeacherProfile | None,
+    attendance: TeacherDailyAttendance | None,
+) -> TeacherProfileView:
+    status = getattr(attendance, "status", None) if attendance is not None else None
+    return TeacherProfileView(
+        user_id=user_id,
+        latitude=getattr(profile, "latitude", None) if profile is not None else None,
+        longitude=getattr(profile, "longitude", None) if profile is not None else None,
+        labels=list(getattr(profile, "labels", None) or []),
+        region_text=getattr(profile, "region_text", None) if profile is not None else None,
+        price_text=getattr(profile, "price_text", None) if profile is not None else None,
+        open_course_today=status in {"open", "full"},
+        open_course_status=status,
+        last_location_at=getattr(profile, "last_location_at", None) if profile is not None else None,
+        updated_at=getattr(profile, "updated_at", None) if profile is not None else None,
+    )
+
+
+def teacher_attendance_status_label(profile: TeacherProfile | TeacherProfileView | None) -> str:
+    status = getattr(profile, "open_course_status", None)
+    return {
+        "open": "开课中",
+        "full": "满课",
+        "rest": "休息",
+    }.get(status, "未开课")
+
+
+def teacher_profile_completeness_label(profile: TeacherProfile | TeacherProfileView | None) -> str:
+    if profile is None:
+        return "未定位，资料待完善"
+    has_location = getattr(profile, "latitude", None) is not None and getattr(profile, "longitude", None) is not None
+    has_profile_text = bool(
+        (getattr(profile, "region_text", None) or "").strip()
+        or (getattr(profile, "price_text", None) or "").strip()
+        or (getattr(profile, "labels", None) or [])
+    )
+    location_label = "已定位" if has_location else "未定位"
+    profile_label = "资料完整" if has_profile_text else "资料待完善"
+    return f"{location_label}，{profile_label}"
 
 
 class TeacherSearchQueryMixin:
@@ -37,26 +104,80 @@ class TeacherSearchQueryMixin:
         return chat_id
 
     @staticmethod
+    async def is_certified_teacher_for_attendance_source(
+        session: AsyncSession,
+        source_chat_id: int,
+        user_id: int,
+    ) -> bool:
+        result = await session.execute(
+            select(TeacherSearchSetting.chat_id).where(
+                TeacherSearchSetting.attendance_enabled.is_(True),
+                TeacherSearchSetting.attendance_mode == "external",
+                TeacherSearchSetting.attendance_source_chat_id == source_chat_id,
+            )
+        )
+        target_chat_ids = [int(chat_id) for chat_id in result.scalars().all()]
+        for target_chat_id in target_chat_ids:
+            if await GarageAuthService.is_effective_certified_teacher(session, target_chat_id, user_id):
+                return True
+        return False
+
+    @staticmethod
     async def list_open_course_teachers(
         session: AsyncSession,
         chat_id: int,
-    ) -> list[tuple[TeacherProfile, TgUser | None]]:
-        today = dt.datetime.now(dt.UTC).astimezone(LOCAL_TIMEZONE).date()
+    ) -> list[tuple[TeacherProfileView, TgUser | None]]:
+        rows = await TeacherSearchQueryMixin.list_searchable_teachers(
+            session,
+            chat_id,
+            only_open_course=True,
+        )
+        return rows
+
+    @staticmethod
+    async def list_searchable_teachers(
+        session: AsyncSession,
+        chat_id: int,
+        *,
+        only_open_course: bool = False,
+    ) -> list[tuple[TeacherProfileView, TgUser | None]]:
+        today = _teacher_search_biz_date()
+        pool_chat_id = await GarageAuthService.resolve_teacher_pool_chat_id(session, chat_id)
         attendance_chat_id = await TeacherSearchQueryMixin.get_attendance_source_chat_id(session, chat_id)
         result = await session.execute(
-            select(TeacherProfile, TgUser)
+            select(GarageCertifiedTeacher, TeacherProfile, TgUser, TeacherDailyAttendance)
+            .join(
+                TeacherProfile,
+                (TeacherProfile.chat_id == chat_id)
+                & (TeacherProfile.user_id == GarageCertifiedTeacher.user_id),
+                isouter=True,
+            )
+            .join(TgUser, TgUser.id == GarageCertifiedTeacher.user_id, isouter=True)
             .join(
                 TeacherDailyAttendance,
                 (TeacherDailyAttendance.chat_id == attendance_chat_id)
-                & (TeacherDailyAttendance.user_id == TeacherProfile.user_id)
+                & (TeacherDailyAttendance.user_id == GarageCertifiedTeacher.user_id)
                 & (TeacherDailyAttendance.biz_date == today),
+                isouter=True,
             )
-            .join(TgUser, TgUser.id == TeacherProfile.user_id, isouter=True)
-            .where(TeacherProfile.chat_id == chat_id)
-            .where(TeacherDailyAttendance.status.in_(["open", "full"]))
-            .order_by(TeacherProfile.updated_at.desc())
+            .where(
+                GarageCertifiedTeacher.chat_id == pool_chat_id,
+                GarageCertifiedTeacher.enabled.is_(True),
+            )
+            .order_by(
+                TeacherDailyAttendance.created_at.desc().nullslast(),
+                TeacherProfile.updated_at.desc().nullslast(),
+                GarageCertifiedTeacher.created_at.asc(),
+                GarageCertifiedTeacher.id.asc(),
+            )
         )
-        return await TeacherSearchQueryMixin._filter_effective_teacher_rows(session, chat_id, list(result.all()))
+        rows: list[tuple[TeacherProfileView, TgUser | None]] = []
+        for teacher, profile, user, attendance in result.all():
+            profile_view = _build_profile_view(teacher.user_id, profile, attendance)
+            if only_open_course and getattr(profile_view, "open_course_status", None) not in {"open", "full"}:
+                continue
+            rows.append((profile_view, user))
+        return rows
 
     @staticmethod
     async def search_teachers_by_keyword(
@@ -66,7 +187,7 @@ class TeacherSearchQueryMixin:
         *,
         only_open_course: bool = True,
         limit: int = 10,
-    ) -> list[tuple[TeacherProfile, TgUser | None]]:
+    ) -> list[tuple[TeacherProfileView, TgUser | None]]:
         normalized = keyword.strip().lower()
         if not normalized:
             return []
@@ -75,26 +196,14 @@ class TeacherSearchQueryMixin:
         rows = (
             await TeacherSearchService.list_open_course_teachers(session, chat_id)
             if only_open_course
-            else await TeacherSearchQueryMixin._filter_effective_teacher_rows(
-                session,
-                chat_id,
-                list(
-                    (
-                        await session.execute(
-                            select(TeacherProfile, TgUser)
-                            .join(TgUser, TgUser.id == TeacherProfile.user_id, isouter=True)
-                            .where(TeacherProfile.chat_id == chat_id)
-                            .order_by(TeacherProfile.updated_at.desc())
-                        )
-                    ).all()
-                ),
-            )
+            else await TeacherSearchQueryMixin.list_searchable_teachers(session, chat_id)
         )
-        matches: list[tuple[TeacherProfile, TgUser | None]] = []
+        matches: list[tuple[TeacherProfileView, TgUser | None]] = []
         for profile, user in rows:
             first_name = (user.first_name or "") if user else ""
             last_name = (user.last_name or "") if user else ""
             parts = [
+                str(profile.user_id),
                 profile.region_text or "",
                 profile.price_text or "",
                 " ".join(profile.labels or []),
@@ -123,20 +232,7 @@ class TeacherSearchQueryMixin:
         rows = (
             await TeacherSearchService.list_open_course_teachers(session, chat_id)
             if only_open_course
-            else await TeacherSearchQueryMixin._filter_effective_teacher_rows(
-                session,
-                chat_id,
-                list(
-                    (
-                        await session.execute(
-                            select(TeacherProfile, TgUser)
-                            .join(TgUser, TgUser.id == TeacherProfile.user_id, isouter=True)
-                            .where(TeacherProfile.chat_id == chat_id)
-                            .order_by(TeacherProfile.updated_at.desc())
-                        )
-                    ).all()
-                ),
-            )
+            else await TeacherSearchQueryMixin.list_searchable_teachers(session, chat_id)
         )
         items: list[dict] = []
         for profile, user in rows:

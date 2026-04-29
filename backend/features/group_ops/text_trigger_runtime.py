@@ -158,6 +158,13 @@ async def _try_garage_text_trigger(
         teacher_setting = await TeacherSearchService.get_setting(session, chat_id)
         car_review_setting = await CarReviewService.get_setting(session, chat_id)
         is_teacher = await GarageAuthService.is_certified_teacher(session, chat_id, update.effective_user.id)
+        is_attendance_teacher = is_teacher
+        if not is_attendance_teacher and getattr(teacher_setting, "attendance_enabled", False):
+            is_attendance_teacher = await TeacherSearchService.is_certified_teacher_for_attendance_source(
+                session,
+                chat_id,
+                update.effective_user.id,
+            )
         is_whitelisted = await GarageAuthService.is_whitelisted(session, chat_id, update.effective_user.id)
         attendance_mode = getattr(teacher_setting, "attendance_mode", "message") or "message"
         if attendance_mode != "external":
@@ -174,7 +181,7 @@ async def _try_garage_text_trigger(
                         update.effective_user,
                         update.effective_message,
                         teacher_setting,
-                        is_teacher=is_teacher,
+                        is_teacher=is_attendance_teacher,
                         status=status,
                     )
                     return True
@@ -187,6 +194,7 @@ async def _try_garage_text_trigger(
             payload,
             teacher_setting,
             is_teacher=is_teacher,
+            is_attendance_teacher=is_attendance_teacher,
             is_admin=is_admin,
             is_whitelisted=is_whitelisted,
         ):

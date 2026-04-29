@@ -40,12 +40,6 @@ class TeacherSearchViewsMixin:
         nearby_on, nearby_off = _toggle_labels(setting.nearby_search_enabled)
         force_on, force_off = _toggle_labels(setting.force_location_enabled)
         delete_label = "不删除" if setting.delete_mode == "none" else "删除"
-        footer_label = (setting.footer_button_label or "").strip()
-        footer_text = footer_label or "无"
-        footer_row = [
-            InlineKeyboardButton("底部按钮：", callback_data=f"tsearch:footer:menu:{chat_id}"),
-            InlineKeyboardButton(footer_text, callback_data=f"tsearch:footer:menu:{chat_id}"),
-        ]
         text_lines = [
             "🔎 老师搜索",
             "",
@@ -73,7 +67,6 @@ class TeacherSearchViewsMixin:
         if getattr(setting, "nearby_search_enabled", False):
             text_lines.append(f"强制录入：{'✅ 启动' if setting.force_location_enabled else '❌ 关闭'}")
         text_lines.extend([
-            f"底部按钮：{footer_text}",
             f"删除消息：{delete_label}",
             f"开课老师：{len(open_teachers)} 人",
         ])
@@ -119,7 +112,6 @@ class TeacherSearchViewsMixin:
                 ]
             )
         keyboard_rows.extend([
-            footer_row,
             [
                 InlineKeyboardButton("删除消息：", callback_data=f"tsearch:home:{chat_id}"),
                 InlineKeyboardButton(
@@ -351,11 +343,14 @@ class TeacherSearchViewsMixin:
         chat_id: int,
         page: int = 0,
     ) -> None:
-        from backend.features.garage.services.garage_features_service import TeacherSearchService
+        from backend.features.garage.services.garage_features_service import GarageAuthService, TeacherSearchService
+        from backend.features.garage.services.teacher_search_queries import teacher_attendance_status_label
 
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
             rows = await TeacherSearchService.list_open_course_teachers(session, chat_id)
+            settings = await GarageAuthService.get_settings(session, chat_id)
+            badge = getattr(settings, "garage_auth_badge", "🤝") or "🤝"
             await session.commit()
 
         lines = ["🔎 老师搜索 | 开课老师", ""]
@@ -364,7 +359,7 @@ class TeacherSearchViewsMixin:
         else:
             for item, user in rows[page * 10: page * 10 + 10]:
                 name = f"@{user.username}" if user and user.username else str(item.user_id)
-                lines.append(f"- {name}")
+                lines.append(f"- {badge} {name} · {teacher_attendance_status_label(item)}")
         await self.message_helper.safe_edit(
             update,
             "\n".join(lines),

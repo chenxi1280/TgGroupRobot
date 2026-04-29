@@ -13,9 +13,12 @@ from backend.platform.db.schema.models.core import ChatSettings, TgChat, TgUser
 from backend.platform.db.schema.models.garage_features import (
     GarageCertifiedTeacher,
     GarageSpeechWhitelist,
+    TeacherDailyAttendance,
     TeacherProfile,
+    TeacherSearchSetting,
 )
 from backend.shared.services.chat_service import get_chat_settings
+from backend.shared.time_helper import LOCAL_TIMEZONE
 
 
 @dataclass(frozen=True)
@@ -30,6 +33,14 @@ class TeacherPoolInfo:
         if self.shared_via_alliance:
             return f"联盟共享认证池（来自：{self.pool_title}）"
         return "本群认证池"
+
+
+def _teacher_attendance_status_label(status: str | None) -> str:
+    return {
+        "open": "开课中",
+        "full": "满课",
+        "rest": "休息",
+    }.get(status, "未开课")
 
 
 class GarageAuthService:
@@ -322,8 +333,17 @@ class GarageAuthService:
     async def build_teacher_summary(session: AsyncSession, chat_id: int) -> str:
         settings = await GarageAuthService.get_settings(session, chat_id)
         pool_chat_id = await GarageAuthService._get_teacher_pool_chat_id(session, chat_id)
+        attendance_chat_id = chat_id
+        teacher_search_setting = await session.get(TeacherSearchSetting, chat_id)
+        if (
+            teacher_search_setting is not None
+            and teacher_search_setting.attendance_mode == "external"
+            and teacher_search_setting.attendance_source_chat_id is not None
+        ):
+            attendance_chat_id = int(teacher_search_setting.attendance_source_chat_id)
+        today = dt.datetime.now(dt.UTC).astimezone(LOCAL_TIMEZONE).date()
         result = await session.execute(
-            select(GarageCertifiedTeacher, TeacherProfile, TgUser)
+            select(GarageCertifiedTeacher, TeacherProfile, TgUser, TeacherDailyAttendance)
             .join(
                 TeacherProfile,
                 and_(
@@ -333,16 +353,35 @@ class GarageAuthService:
                 isouter=True,
             )
             .join(TgUser, TgUser.id == GarageCertifiedTeacher.user_id, isouter=True)
+            .join(
+                TeacherDailyAttendance,
+                and_(
+                    TeacherDailyAttendance.chat_id == attendance_chat_id,
+                    TeacherDailyAttendance.user_id == GarageCertifiedTeacher.user_id,
+                    TeacherDailyAttendance.biz_date == today,
+                ),
+                isouter=True,
+            )
             .where(
                 GarageCertifiedTeacher.chat_id == pool_chat_id,
                 GarageCertifiedTeacher.enabled.is_(True),
             )
             .order_by(GarageCertifiedTeacher.created_at.asc(), GarageCertifiedTeacher.id.asc())
         )
-        rows = list(result.all())
+        rows = []
+        for row in result.all():
+            if len(row) >= 4:
+                rows.append(row)
+            else:
+                teacher, profile, user = row
+                rows.append((teacher, profile, user, None))
 
         if settings.garage_summary_only_open_course:
-            rows = [row for row in rows if row[1] is not None and bool(row[1].open_course_today)]
+            rows = [
+                row
+                for row in rows
+                if row[3] is not None and row[3].status in {"open", "full"}
+            ]
 
         if not rows:
             return (
@@ -352,10 +391,11 @@ class GarageAuthService:
             )
 
         partition_by = settings.garage_summary_partition_by or "region"
+        badge = getattr(settings, "garage_auth_badge", "🤝") or "🤝"
         groups: OrderedDict[str, list[str]] = OrderedDict()
         total_count = 0
 
-        for teacher, profile, user in rows:
+        for teacher, profile, user, attendance in rows:
             if partition_by == "price":
                 key = (profile.price_text if profile else None) or "未分价位"
             else:
@@ -372,10 +412,22 @@ class GarageAuthService:
                 extras.append(profile.region_text)
             if labels:
                 extras.append(labels)
-            if profile and profile.open_course_today:
-                extras.append("开课中")
+            status = getattr(attendance, "status", None)
+            extras.append(_teacher_attendance_status_label(status))
+            if profile is None or not (
+                (profile.region_text or "").strip()
+                or (profile.price_text or "").strip()
+                or (profile.labels or [])
+            ):
+                extras.append("资料待完善")
+            if (
+                profile is None
+                or getattr(profile, "latitude", None) is None
+                or getattr(profile, "longitude", None) is None
+            ):
+                extras.append("未定位")
 
-            line = display_name
+            line = f"{badge} {display_name}"
             if extras:
                 line += f"（{' | '.join(extras)}）"
 

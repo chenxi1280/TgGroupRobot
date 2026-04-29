@@ -29,6 +29,13 @@ async def _process_garage_features(
         teacher_setting = await TeacherSearchService.get_setting(session, chat.id)
         car_review_setting = await CarReviewService.get_setting(session, chat.id)
         is_teacher = await GarageAuthService.is_certified_teacher(session, chat.id, user.id)
+        is_attendance_teacher = is_teacher
+        if not is_attendance_teacher and getattr(teacher_setting, "attendance_enabled", False):
+            is_attendance_teacher = await TeacherSearchService.is_certified_teacher_for_attendance_source(
+                session,
+                chat.id,
+                user.id,
+            )
         is_whitelisted = await GarageAuthService.is_whitelisted(session, chat.id, user.id)
 
         if await _process_garage_limit(
@@ -54,6 +61,7 @@ async def _process_garage_features(
             text,
             teacher_setting,
             is_teacher=is_teacher,
+            is_attendance_teacher=is_attendance_teacher,
             is_admin=is_admin,
             is_whitelisted=is_whitelisted,
         ):
@@ -69,6 +77,27 @@ async def _process_garage_features(
             car_review_setting,
         ):
             return True
+
+        if (
+            getattr(settings, "garage_auth_enabled", False)
+            and is_teacher
+            and text
+            and not text.startswith("/")
+        ):
+            from backend.features.nearby.services.nearby_profile_service import build_user_display_name
+            from backend.shared.services.publish_service import PublishService
+
+            badge = getattr(settings, "garage_auth_badge", "🤝") or "🤝"
+            display_name = build_user_display_name(user, user.id)
+            await session.commit()
+            await PublishService.send_temporary(
+                context,
+                chat_id=chat.id,
+                text=f"{badge} 认证老师 {display_name}",
+                delete_after_seconds=8,
+                reply_to_message_id=message.message_id,
+            )
+            return False
 
         await session.commit()
     return False

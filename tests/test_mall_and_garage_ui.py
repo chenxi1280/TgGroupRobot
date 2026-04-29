@@ -261,6 +261,5 @@ async def test_garage_auth_and_teacher_search_buttons_use_icons(monkeypatch):
     assert teacher_keyboard.inline_keyboard[1][0].text == "开课打卡："
     assert teacher_keyboard.inline_keyboard[2][0].text == "打卡模式："
     assert teacher_keyboard.inline_keyboard[3][0].text == "只显开课："
-    assert teacher_keyboard.inline_keyboard[7][0].text == "底部按钮："
-    assert teacher_keyboard.inline_keyboard[7][1].text == "车库入口"
-    assert teacher_keyboard.inline_keyboard[8][1].text == "删除"
+    assert all(row[0].text != "底部按钮：" for row in teacher_keyboard.inline_keyboard)
+    assert teacher_keyboard.inline_keyboard[7][1].text == "删除"

@@ -139,20 +139,19 @@ async def test_teacher_search_home_layout_matches_doc(monkeypatch):
         ["标签搜索：", "✅ 启动", "关闭"],
         ["开课打卡：", "启动", "✅ 关闭"],
         ["附近搜索：", "启动", "✅ 关闭"],
-        ["底部按钮：", "无"],
         ["删除消息：", "不删除"],
         ["📍 代录老师位置"],
         ["返回"],
     ]
-    assert captured["keyboard"][3][1].callback_data == "tsearch:footer:menu:-1001"
     assert all("打卡模式：" not in row for row in rows)
     assert all("只显开课：" not in row for row in rows)
     assert all("📝 手动替老师打卡" not in row for row in rows)
     assert all("强制录入：" not in row for row in rows)
+    assert all("底部按钮：" not in row for row in rows)
     assert "强制录入：✅ 启动" not in captured["text"]
     assert "只显开课：✅ 启动" not in captured["text"]
     assert "打卡模式：发言就是打卡" not in captured["text"]
-    assert "底部按钮：无" in captured["text"]
+    assert "底部按钮：无" not in captured["text"]
     assert "开课老师：2 人" in captured["text"]
     assert "📚 开课老师" not in {button for row in rows for button in row}
 
@@ -206,7 +205,6 @@ async def test_teacher_search_home_shows_dependent_rows_after_parent_enabled(mon
         ["📝 手动替老师打卡"],
         ["附近搜索：", "✅ 启动", "关闭"],
         ["强制录入：", "启动", "✅ 关闭"],
-        ["底部按钮：", "无"],
         ["删除消息：", "不删除"],
         ["📍 代录老师位置"],
         ["返回"],
