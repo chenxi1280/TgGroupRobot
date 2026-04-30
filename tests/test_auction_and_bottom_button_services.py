@@ -261,7 +261,7 @@ async def test_bottom_button_add_layout_button_rejects_occupied_position(monkeyp
 
 
 @pytest.mark.asyncio
-async def test_bottom_button_generate_syncs_reply_keyboard_with_one_visible_message(monkeypatch):
+async def test_bottom_button_generate_syncs_reply_keyboard_and_schedules_prompt_cleanup(monkeypatch):
     setting = BottomButtonSetting(
         chat_id=-1001,
         enabled=True,
@@ -280,6 +280,7 @@ async def test_bottom_button_generate_syncs_reply_keyboard_with_one_visible_mess
         sort_key=11,
     )
     calls: list[tuple[str, int | None]] = []
+    scheduled: list[str | None] = []
 
     async def fake_get_or_create_setting(session, chat_id: int):
         return setting
@@ -303,12 +304,40 @@ async def test_bottom_button_generate_syncs_reply_keyboard_with_one_visible_mess
 
     monkeypatch.setattr(bottom_button_service, "get_or_create_setting", fake_get_or_create_setting)
     monkeypatch.setattr(bottom_button_service, "list_layouts", fake_list_layouts)
+    monkeypatch.setattr(
+        bottom_button_service,
+        "spawn_background_task",
+        lambda _context, awaitable, *, name=None: (scheduled.append(name), awaitable.close())[0],
+    )
 
     await bottom_button_service.generate_buttons(SimpleNamespace(bot=_Bot()), _Session(), -1001)
 
     assert calls == [("delete", 88), ("send", None), ("flush", None)]
     assert setting.generated_message_id == 99
     assert setting.repeat_generate_enabled is False
+    assert scheduled == ["bottom_button.delete_generated_message"]
+
+
+@pytest.mark.asyncio
+async def test_bottom_button_generated_prompt_delete_keeps_keyboard_message_short_lived(monkeypatch):
+    calls: list[tuple[int, int]] = []
+
+    async def fake_sleep(seconds: int):
+        calls.append(("sleep", seconds))  # type: ignore[arg-type]
+
+    class _Bot:
+        async def delete_message(self, *, chat_id: int, message_id: int):
+            calls.append((chat_id, message_id))
+
+    monkeypatch.setattr(bottom_button_service.asyncio, "sleep", fake_sleep)
+
+    await bottom_button_service._delete_generated_message_later(
+        SimpleNamespace(bot=_Bot()),
+        chat_id=-1001,
+        message_id=99,
+    )
+
+    assert calls == [("sleep", bottom_button_service.GENERATED_MESSAGE_DELETE_DELAY_SECONDS), (-1001, 99)]
 
 
 @pytest.mark.asyncio

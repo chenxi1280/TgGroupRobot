@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import re
 
@@ -12,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.platform.db.schema.models.expansion import BottomButtonLayout, BottomButtonSetting
 from backend.shared.services.base import ValidationError
 from backend.shared.services.module_settings_service import ModuleSettingsService
+from backend.shared.async_tasks import spawn_background_task
 from backend.features.group_ops.services.bottom_button_events import (
     BOTTOM_BUTTON_EVENT_LABELS,
     BOTTOM_BUTTON_EVENT_OPTIONS,
@@ -23,6 +25,7 @@ from backend.features.group_ops.services.bottom_button_events import (
 MAX_BUTTON_COLS = 4
 MAX_LAYOUT_ROWS = 6
 BOTTOM_BUTTON_ACTION_MODES = {"send", "fill", "event"}
+GENERATED_MESSAGE_DELETE_DELAY_SECONDS = 5
 
 
 def _now() -> dt.datetime:
@@ -261,8 +264,34 @@ async def generate_buttons(context: ContextTypes.DEFAULT_TYPE, session: AsyncSes
     setting.last_generated_at = _now()
     setting.updated_at = _now()
     await session.flush()
+    _schedule_generated_message_delete(context, chat_id=chat_id, message_id=sent.message_id)
     return setting
 
 
 async def list_due_repeat_generate(session: AsyncSession) -> list[BottomButtonSetting]:
     return []
+
+
+async def _delete_generated_message_later(context: ContextTypes.DEFAULT_TYPE, *, chat_id: int, message_id: int) -> None:
+    try:
+        await asyncio.sleep(GENERATED_MESSAGE_DELETE_DELAY_SECONDS)
+        await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
+    except (asyncio.CancelledError,):
+        raise
+    except Exception:
+        return
+
+
+def _schedule_generated_message_delete(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    chat_id: int,
+    message_id: int | None,
+) -> None:
+    if not message_id:
+        return
+    spawn_background_task(
+        context,
+        _delete_generated_message_later(context, chat_id=chat_id, message_id=message_id),
+        name="bottom_button.delete_generated_message",
+    )
