@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import re
 
 from dataclasses import dataclass
 from sqlalchemy import select
@@ -77,6 +78,66 @@ def teacher_profile_completeness_label(profile: TeacherProfile | TeacherProfileV
     location_label = "已定位" if has_location else "未定位"
     profile_label = "资料完整" if has_profile_text else "资料待完善"
     return f"{location_label}，{profile_label}"
+
+
+def _normalize_search_text(value: str) -> str:
+    return re.sub(r"\s+", "", (value or "").strip().lower())
+
+
+def _keyword_price_ranges(normalized_keyword: str) -> list[tuple[float, float]]:
+    if not re.search(r"(左右|上下|附近|以内|以下|之内)", normalized_keyword):
+        return []
+    ranges: list[tuple[float, float]] = []
+    for raw in re.findall(r"\d+(?:\.\d+)?", normalized_keyword):
+        value = float(raw)
+        if "以内" in normalized_keyword or "以下" in normalized_keyword or "之内" in normalized_keyword:
+            ranges.append((0, value))
+        else:
+            ranges.append((max(0, value - 100), value + 100))
+    return ranges
+
+
+def _teacher_keyword_matches(
+    profile: TeacherProfileView,
+    user: TgUser | None,
+    keyword: str,
+) -> bool:
+    normalized = _normalize_search_text(keyword)
+    if not normalized:
+        return False
+
+    first_name = (user.first_name or "") if user else ""
+    last_name = (user.last_name or "") if user else ""
+    parts = [
+        str(profile.user_id),
+        profile.region_text or "",
+        profile.price_text or "",
+        " ".join(profile.labels or []),
+        user.username or "" if user else "",
+        first_name,
+        last_name,
+        "".join([first_name, last_name]),
+        " ".join(part for part in [first_name, last_name] if part),
+    ]
+    haystacks = [_normalize_search_text(part) for part in parts if part]
+    if any(normalized in haystack for haystack in haystacks):
+        return True
+
+    keyword_numbers = re.findall(r"\d+(?:\.\d+)?", normalized)
+    if keyword_numbers:
+        numeric_haystack = " ".join(parts)
+        haystack_numbers = [float(number) for number in re.findall(r"\d+(?:\.\d+)?", numeric_haystack)]
+        if any(
+            lower <= number <= upper
+            for lower, upper in _keyword_price_ranges(normalized)
+            for number in haystack_numbers
+        ):
+            return True
+        haystack_number_text = {str(int(number)) if number.is_integer() else str(number) for number in haystack_numbers}
+        if any(number in haystack_number_text for number in keyword_numbers):
+            return True
+
+    return False
 
 
 class TeacherSearchQueryMixin:
@@ -200,20 +261,7 @@ class TeacherSearchQueryMixin:
         )
         matches: list[tuple[TeacherProfileView, TgUser | None]] = []
         for profile, user in rows:
-            first_name = (user.first_name or "") if user else ""
-            last_name = (user.last_name or "") if user else ""
-            parts = [
-                str(profile.user_id),
-                profile.region_text or "",
-                profile.price_text or "",
-                " ".join(profile.labels or []),
-                user.username or "" if user else "",
-                first_name,
-                last_name,
-                "".join([first_name, last_name]),
-                " ".join(part for part in [first_name, last_name] if part),
-            ]
-            if normalized in " ".join(parts).lower():
+            if _teacher_keyword_matches(profile, user, normalized):
                 matches.append((profile, user))
         return matches[:limit]
 
@@ -225,6 +273,7 @@ class TeacherSearchQueryMixin:
         longitude: float,
         *,
         only_open_course: bool = True,
+        keyword: str | None = None,
         limit: int = 10,
     ) -> list[dict]:
         from backend.features.garage.services.teacher_search_service import TeacherSearchService
@@ -237,6 +286,8 @@ class TeacherSearchQueryMixin:
         items: list[dict] = []
         for profile, user in rows:
             if profile.latitude is None or profile.longitude is None:
+                continue
+            if keyword and not _teacher_keyword_matches(profile, user, keyword):
                 continue
             distance = haversine_distance_km(latitude, longitude, float(profile.latitude), float(profile.longitude))
             items.append(

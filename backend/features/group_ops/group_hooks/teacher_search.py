@@ -35,6 +35,17 @@ async def _get_auth_badge(session, chat_id: int) -> str:
     return getattr(settings, "garage_auth_badge", "🤝") or "🤝"
 
 
+def _parse_nearby_condition(text: str) -> str | None:
+    cleaned = (text or "").strip()
+    for prefix in ("附近老师", "附近"):
+        if not cleaned.startswith(prefix):
+            continue
+        keyword = cleaned[len(prefix):].strip()
+        keyword = keyword.lstrip("+＋,，:：- ")
+        return keyword
+    return None
+
+
 async def _process_teacher_search_features(
     context: ContextTypes.DEFAULT_TYPE,
     session,
@@ -119,12 +130,46 @@ async def _process_teacher_search_features(
         await _reply_open_course_teachers(context, session, chat, message, delete_mode=delete_mode)
         return True
 
-    if text == "附近":
-        await _reply_nearby_teachers(context, session, chat, user, message, teacher_setting, delete_mode=delete_mode)
+    nearby_condition = _parse_nearby_condition(text)
+    if nearby_condition is not None:
+        await _reply_nearby_teachers(
+            context,
+            session,
+            chat,
+            user,
+            message,
+            teacher_setting,
+            keyword=nearby_condition or None,
+            delete_mode=delete_mode,
+        )
         return True
 
     if text.startswith("老师搜索 "):
-        await _reply_teacher_keyword_search(context, session, chat, message, teacher_setting, text, delete_mode=delete_mode)
+        keyword = text.split(" ", 1)[1].strip()
+        nearby_keyword = _parse_nearby_condition(keyword)
+        if nearby_keyword is not None:
+            await _reply_nearby_teachers(
+                context,
+                session,
+                chat,
+                user,
+                message,
+                teacher_setting,
+                keyword=nearby_keyword or None,
+                delete_mode=delete_mode,
+            )
+        elif keyword in {"开课", "开课老师"}:
+            await _reply_open_course_teachers(context, session, chat, message, delete_mode=delete_mode)
+        else:
+            await _reply_teacher_keyword_search(
+                context,
+                session,
+                chat,
+                message,
+                teacher_setting,
+                keyword,
+                delete_mode=delete_mode,
+            )
         return True
 
     footer_label = (teacher_setting.footer_button_label or "").strip()
@@ -367,6 +412,7 @@ async def _reply_nearby_teachers(
     message,
     teacher_setting,
     *,
+    keyword: str | None = None,
     delete_mode: str,
 ) -> None:
     if not teacher_setting.nearby_search_enabled:
@@ -398,24 +444,33 @@ async def _reply_nearby_teachers(
         float(location.latitude),
         float(location.longitude),
         only_open_course=getattr(teacher_setting, "only_open_course_enabled", True),
+        keyword=keyword,
         limit=10,
     )
     badge = await _get_auth_badge(session, chat.id)
     await session.commit()
     if not nearby:
+        if keyword:
+            empty_text = (
+                "附近暂无符合条件的开课老师。"
+                if getattr(teacher_setting, "only_open_course_enabled", True)
+                else "附近暂无符合条件的老师。"
+            )
+        else:
+            empty_text = (
+                "附近暂无开课老师。"
+                if getattr(teacher_setting, "only_open_course_enabled", True)
+                else "附近暂无老师。"
+            )
         await _reply_garage_feedback(
             context,
             chat_id=chat.id,
             message_id=message.message_id,
-            text=(
-                "附近暂无开课老师。"
-                if getattr(teacher_setting, "only_open_course_enabled", True)
-                else "附近暂无老师。"
-            ),
+            text=empty_text,
             delete_mode=delete_mode,
         )
         return
-    lines = ["附近老师："]
+    lines = [f"附近老师：{keyword}" if keyword else "附近老师："]
     for idx, item in enumerate(nearby, start=1):
         profile = item["profile"]
         extra = " / ".join(part for part in [profile.region_text, profile.price_text] if part)
@@ -439,7 +494,7 @@ async def _reply_teacher_keyword_search(
     chat,
     message,
     teacher_setting,
-    text: str,
+    keyword: str,
     *,
     delete_mode: str,
 ) -> None:
@@ -453,14 +508,25 @@ async def _reply_teacher_keyword_search(
             delete_mode=delete_mode,
         )
         return
-    keyword = text.split(" ", 1)[1].strip()
+    only_open_course = getattr(teacher_setting, "only_open_course_enabled", True)
     rows = await TeacherSearchService.search_teachers_by_keyword(
         session,
         chat.id,
         keyword,
-        only_open_course=getattr(teacher_setting, "only_open_course_enabled", True),
+        only_open_course=only_open_course,
         limit=10,
     )
+    fallback_note = ""
+    if not rows and only_open_course:
+        rows = await TeacherSearchService.search_teachers_by_keyword(
+            session,
+            chat.id,
+            keyword,
+            only_open_course=False,
+            limit=10,
+        )
+        if rows:
+            fallback_note = "未找到今日开课匹配老师，已显示全部认证老师。"
     badge = await _get_auth_badge(session, chat.id)
     await session.commit()
     if not rows:
@@ -473,6 +539,8 @@ async def _reply_teacher_keyword_search(
         )
         return
     lines = [f"老师搜索：{keyword}"]
+    if fallback_note:
+        lines.append(fallback_note)
     for idx, (profile, tg_user) in enumerate(rows, start=1):
         name = f"@{tg_user.username}" if tg_user and tg_user.username else (
             tg_user.first_name if tg_user and tg_user.first_name else f"用户{profile.user_id}"
