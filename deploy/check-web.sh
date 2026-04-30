@@ -13,7 +13,7 @@ WEB_HOST="${TGGROUPROBOT_WEB_HOST:-robot.telema.cn}"
 DOCS_PUBLIC_URL="${TGGROUPROBOT_DOCS_PUBLIC_URL:-https://${WEB_HOST}/}"
 ADMIN_PUBLIC_URL="${TGGROUPROBOT_ADMIN_PUBLIC_URL:-https://${WEB_HOST}/admin/}"
 ADMIN_LOCAL_URL="${TGGROUPROBOT_ADMIN_LOCAL_URL:-http://127.0.0.1:${ADMIN_WEB_PORT:-8088}/admin/}"
-HOST_NGINX_HEALTH_URL="${TGGROUPROBOT_HOST_NGINX_HEALTH_URL:-http://127.0.0.1/healthz}"
+HOST_NGINX_HEALTH_URL="${TGGROUPROBOT_HOST_NGINX_HEALTH_URL:-https://${WEB_HOST}/healthz}"
 CURL_TIMEOUT_SECONDS="${CURL_TIMEOUT_SECONDS:-12}"
 CHECK_ATTEMPTS="${TGGROUPROBOT_CHECK_ATTEMPTS:-6}"
 CHECK_RETRY_DELAY_SECONDS="${TGGROUPROBOT_CHECK_RETRY_DELAY_SECONDS:-5}"
@@ -149,7 +149,7 @@ check_body() {
   local stderr_file
 
   stderr_file="$(mktemp)"
-  if ! body="$(curl -fsS --max-time "$CURL_TIMEOUT_SECONDS" "$@" "$url" 2>"$stderr_file")"; then
+  if ! body="$(curl -fsSL --max-time "$CURL_TIMEOUT_SECONDS" "$@" "$url" 2>"$stderr_file")"; then
     echo "BAD ${label}: ${url} -> curl failed" >&2
     sed 's/^/  /' "$stderr_file" >&2
     rm -f "$stderr_file"
@@ -173,7 +173,7 @@ check_host_nginx() {
   fi
 
   run_with_retries "host nginx health" \
-    check_body "host nginx health" "ok" "$HOST_NGINX_HEALTH_URL" -H "Host: ${WEB_HOST}"
+    check_body "host nginx health" "ok" "$HOST_NGINX_HEALTH_URL" --resolve "${WEB_HOST}:443:127.0.0.1"
   run_with_retries "docs via host nginx https" \
     check_url "docs via host nginx https" "https://${WEB_HOST}/" --resolve "${WEB_HOST}:443:127.0.0.1"
 

@@ -100,7 +100,7 @@ docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 docker logs --tail 80 tggrouprobot-bot
 docker inspect tggrouprobot-bot --format '{{json .Mounts}}'
 test -f /data/infra/www/robot.telema.cn/current/index.html
-curl -fsS -H 'Host: robot.telema.cn' http://127.0.0.1/healthz
+curl -fsS --resolve robot.telema.cn:443:127.0.0.1 https://robot.telema.cn/healthz
 readlink -f /data/tggrouprobot/current
 ```
 
