@@ -221,6 +221,7 @@ class DateTimeParser:
         Returns:
             int | None: 解析出的分钟数，失败返回 None
         """
+        raw_text = text
         text = text.strip().lower()
 
         try:
@@ -242,9 +243,13 @@ class DateTimeParser:
                 if parts[0]:
                     total_minutes += int(parts[0])
 
-            return total_minutes if total_minutes > 0 else None
+            if total_minutes > 0:
+                return total_minutes
+            log.warning("parse_minutes_failed", raw_value=raw_text)
+            return None
 
         except (ValueError, IndexError):
+            log.warning("parse_minutes_failed", raw_value=raw_text)
             return None
 
     @staticmethod
@@ -261,6 +266,7 @@ class DateTimeParser:
         try:
             return datetime.strptime(text.strip(), format)
         except ValueError:
+            log.warning("parse_datetime_failed", raw_value=text, format=format)
             return None
 
 

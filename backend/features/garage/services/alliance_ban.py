@@ -100,3 +100,63 @@ class AllianceBanMixin:
         if item is None:
             return None
         return setting, item
+
+    @classmethod
+    async def list_joint_ban_entries(
+        cls,
+        session: AsyncSession,
+        *,
+        chat_id: int,
+        limit: int = 20,
+    ) -> list[GroupAllianceBanPool]:
+        member = await cls.get_member(session, chat_id)
+        if member is None:
+            raise NotFoundError("当前群尚未加入联盟。")
+        result = await session.execute(
+            select(GroupAllianceBanPool)
+            .where(GroupAllianceBanPool.alliance_id == member.alliance_id)
+            .order_by(GroupAllianceBanPool.id.desc())
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
+    @classmethod
+    async def remove_joint_ban_entry(
+        cls,
+        session: AsyncSession,
+        *,
+        chat_id: int,
+        operator_user_id: int,
+        entry_id: int,
+    ) -> GroupAllianceBanPool:
+        member = await cls.get_member(session, chat_id)
+        if member is None:
+            raise NotFoundError("当前群尚未加入联盟。")
+
+        item = (
+            await session.execute(
+                select(GroupAllianceBanPool).where(
+                    GroupAllianceBanPool.id == entry_id,
+                    GroupAllianceBanPool.alliance_id == member.alliance_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if item is None:
+            raise NotFoundError("联合封禁条目不存在。")
+
+        await cls.append_audit(
+            session,
+            chat_id=chat_id,
+            alliance_id=member.alliance_id,
+            action="joint_ban_remove",
+            operator_user_id=operator_user_id,
+            payload={
+                "entry_id": entry_id,
+                "target_user_id": item.target_user_id,
+                "source_chat_id": item.source_chat_id,
+                "reason": item.reason,
+            },
+        )
+        await session.delete(item)
+        await session.flush()
+        return item

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import structlog
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -17,6 +18,8 @@ from backend.platform.db.schema.models.core import Solitaire, SolitaireEntry
 from backend.platform.db.schema.models.enums import SolitaireStatus
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
+
+log = structlog.get_logger(__name__)
 
 
 async def join_solitaire_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -104,7 +107,14 @@ async def join_solitaire_callback(update: Update, context: ContextTypes.DEFAULT_
                         )
                     except Exception as exc:
                         if "Message is not modified" not in str(exc):
-                            pass
+                            log.warning(
+                                "solitaire_join_message_refresh_failed",
+                                chat_id=solitaire.chat_id,
+                                solitaire_id=solitaire_id,
+                                message_id=solitaire.message_id,
+                                user_id=user_id,
+                                error=str(exc),
+                            )
             await q.answer("参与成功！")
             await context.bot.send_message(
                 chat_id=update.effective_chat.id,

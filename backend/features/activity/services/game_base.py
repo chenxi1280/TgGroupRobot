@@ -4,6 +4,7 @@ import datetime as dt
 import re
 from decimal import Decimal, InvalidOperation
 
+import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +16,7 @@ from backend.shared.services.module_settings_service import ModuleSettingsServic
 from backend.shared.ui.message_config_panel import format_completion_lines
 
 MAX_GAME_BET_POINTS = 500
+log = structlog.get_logger(__name__)
 
 
 def now_utc() -> dt.datetime:
@@ -92,6 +94,11 @@ def get_round_points_chat_id(round_obj, default_chat_id: int) -> int:
     try:
         return int(data.get("points_chat_id") or default_chat_id)
     except (TypeError, ValueError):
+        log.warning(
+            "game_round_points_chat_id_parse_failed",
+            default_chat_id=default_chat_id,
+            raw_value=data.get("points_chat_id"),
+        )
         return int(default_chat_id)
 
 
@@ -200,4 +207,9 @@ def get_rake_ratio_value(setting: GameSetting) -> Decimal:
     try:
         return Decimal(setting.rake_ratio or "0")
     except InvalidOperation:
+        log.warning(
+            "game_rake_ratio_parse_failed",
+            chat_id=getattr(setting, "chat_id", None),
+            raw_value=setting.rake_ratio,
+        )
         return Decimal("0")

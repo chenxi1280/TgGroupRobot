@@ -280,6 +280,13 @@ class BottomButtonAdminControllerMixin:
                     try:
                         await add_layout_button(session, chat_id, row_no=row_no, col_no=col_no)
                     except ValidationError as exc:
+                        log.warning(
+                            "bottom_button_layout_add_validation_failed",
+                            chat_id=chat_id,
+                            row_no=row_no,
+                            col_no=col_no,
+                            error=str(exc),
+                        )
                         await session.commit()
                         await answer_callback_query_safely(update, str(exc), show_alert=True)
                         await self._show_bottom_button_layout_menu(update, context, chat_id)

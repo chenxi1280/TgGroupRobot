@@ -178,8 +178,10 @@ async def test_garage_forward_audit_menu_renders_filters(monkeypatch):
 
     text, keyboard = rendered[0]
     assert "当前筛选：成功" in text
+    assert "自动保留最近 30 天日志" in text
     assert "✅ #9" in text
     assert keyboard.inline_keyboard[0][1].text.startswith("✅ ✅ 成功")
+    assert keyboard.inline_keyboard[2][0].callback_data == "gfw:audit_cleanup:-100123:s"
     assert keyboard.inline_keyboard[-1][0].callback_data == "gfw:home:-100123"
 
 

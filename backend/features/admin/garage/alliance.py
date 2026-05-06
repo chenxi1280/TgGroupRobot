@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from backend.features.admin.support import *
+from backend.shared.services.base import NotFoundError
 
 
 class GarageAllianceAdminMixin:
@@ -47,6 +48,7 @@ class GarageAllianceAdminMixin:
         )
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("💥 查看联盟成员", callback_data=f"ali:members:{chat_id}")],
+            [InlineKeyboardButton("📋 联合封禁名单", callback_data=f"ali:jointban:list:{chat_id}")],
             [
                 InlineKeyboardButton("⚙️ 联合封禁：", callback_data=f"ali:home:{chat_id}"),
                 InlineKeyboardButton("✅ 启动" if joint_ban_enabled else "启动", callback_data=f"ali:jointban:toggle:{chat_id}:1"),
@@ -93,6 +95,48 @@ class GarageAllianceAdminMixin:
             lines.append(f"{index}. {title}{owner_mark}")
         keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"ali:home:{chat_id}")]])
         await self.message_helper.safe_edit(update, "\n".join(lines), reply_markup=keyboard)
+
+    async def _show_alliance_joint_ban_menu(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+    ) -> None:
+        from backend.features.garage.services.alliance_service import AllianceService
+
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            alliance = await AllianceService.get_alliance_by_chat(session, chat_id)
+            if alliance is None:
+                await session.commit()
+                await self._show_alliance_menu(update, context, chat_id)
+                return
+            entries = await AllianceService.list_joint_ban_entries(session, chat_id=chat_id, limit=10)
+            await session.commit()
+
+        lines = [
+            "🖐 联盟功能 | 联合封禁名单",
+            "",
+            f"联盟：{alliance.name}",
+            f"当前记录：{len(entries)} 条",
+            "",
+        ]
+        keyboard_rows: list[list[InlineKeyboardButton]] = []
+        if entries:
+            for item in entries:
+                timestamp = item.created_at.strftime("%m-%d %H:%M") if item.created_at else "--"
+                lines.append(
+                    f"🚫 #{item.id}｜用户 {item.target_user_id}｜来源群 {item.source_chat_id}｜{timestamp}"
+                )
+                lines.append(f"原因：{item.reason or '-'}")
+                lines.append("")
+                keyboard_rows.append(
+                    [InlineKeyboardButton(f"🗑 移除 #{item.id} / {item.target_user_id}", callback_data=f"ali:jointban:remove:{chat_id}:{item.id}")]
+                )
+        else:
+            lines.append("暂无联合封禁记录")
+        keyboard_rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"ali:home:{chat_id}")])
+        await self.message_helper.safe_edit(update, "\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard_rows))
 
     async def _handle_alliance(
         self,
@@ -161,6 +205,31 @@ class GarageAllianceAdminMixin:
             await self._show_alliance_menu(update, context, chat_id)
             return
 
+        if action == "jointban" and callback_data.get(2) == "list":
+            await self._show_alliance_joint_ban_menu(update, context, chat_id)
+            return
+
+        if action == "jointban" and callback_data.get(2) == "remove":
+            entry_id = callback_data.get_int_optional(4)
+            if entry_id is None:
+                await answer_callback_query_safely(update, "无效联合封禁条目", show_alert=True)
+                return
+            try:
+                async with db.session_factory() as session:
+                    await AllianceService.remove_joint_ban_entry(
+                        session,
+                        chat_id=chat_id,
+                        operator_user_id=update.effective_user.id,
+                        entry_id=entry_id,
+                    )
+                    await session.commit()
+            except (NotFoundError, ValidationError) as exc:
+                await answer_callback_query_safely(update, str(exc), show_alert=True)
+                return
+            await answer_callback_query_safely(update, "已移除联合封禁条目")
+            await self._show_alliance_joint_ban_menu(update, context, chat_id)
+            return
+
         if action == "invite" and callback_data.get(2) == "show":
             async with db.session_factory() as session:
                 try:
@@ -197,4 +266,3 @@ class GarageAllianceAdminMixin:
             return
 
         await self._show_alliance_menu(update, context, chat_id)
-

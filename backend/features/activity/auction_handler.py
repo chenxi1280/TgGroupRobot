@@ -221,8 +221,14 @@ async def auction_group_message_handler(update: Update, context: ContextTypes.DE
                 if setting.pin_message_enabled:
                     try:
                         await context.bot.pin_chat_message(chat.id, sent.message_id, disable_notification=True)
-                    except TelegramError:
-                        pass
+                    except TelegramError as exc:
+                        log.warning(
+                            "auction_pin_message_failed",
+                            chat_id=chat.id,
+                            auction_id=item.id,
+                            message_id=sent.message_id,
+                            error=str(exc),
+                        )
                 await clear_user_state(session, chat.id, user.id)
                 await session.commit()
                 return True

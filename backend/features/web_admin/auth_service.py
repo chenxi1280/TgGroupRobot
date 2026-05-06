@@ -6,6 +6,7 @@ import hmac
 import secrets
 from dataclasses import dataclass
 
+import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +16,7 @@ from backend.platform.db.schema.models.core import AdminAccount, AdminAuditLog, 
 
 SESSION_COOKIE_NAME = "tgg_admin_session"
 _PBKDF2_ITERATIONS = 260_000
+log = structlog.get_logger(__name__)
 
 
 @dataclass(slots=True)
@@ -47,6 +49,7 @@ def verify_password(password: str, password_hash: str) -> bool:
         algorithm, iterations_raw, salt, expected = (password_hash or "").split("$", 3)
         iterations = int(iterations_raw)
     except (TypeError, ValueError):
+        log.warning("admin_password_hash_parse_failed", password_hash=password_hash)
         return False
     if algorithm != "pbkdf2_sha256" or iterations <= 0:
         return False

@@ -35,6 +35,7 @@ def _parse_expire_at(state_data: dict[str, Any] | None) -> dt.datetime | None:
     try:
         parsed = dt.datetime.fromisoformat(raw)
     except ValueError:
+        log.warning("conversation_state_expire_at_parse_failed", expire_at_raw=raw)
         return None
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=dt.UTC)

@@ -331,3 +331,38 @@ async def test_handle_garage_forward_audit_routes_with_short_code(monkeypatch):
     )
 
     assert calls == [(-100123, "skipped")]
+
+
+@pytest.mark.asyncio
+async def test_handle_garage_forward_manual_audit_cleanup(monkeypatch):
+    cleanup_calls: list[tuple[int, str | None]] = []
+    shown: list[tuple[int, str]] = []
+    answers: list[str] = []
+
+    async def fake_purge_expired_audits(session, *, chat_id: int | None = None, result: str | None = None, **kwargs):
+        cleanup_calls.append((chat_id, result))
+        return 3
+
+    async def fake_show(update, context, chat_id: int, *, result: str = "all"):
+        shown.append((chat_id, result))
+
+    async def fake_answer(update, text: str, show_alert: bool = False):
+        answers.append(text)
+
+    monkeypatch.setattr(GarageForwardService, "purge_expired_audits", fake_purge_expired_audits)
+    monkeypatch.setattr(admin_handler._admin_handler, "_show_garage_forward_audit_menu", fake_show)
+    monkeypatch.setattr(admin_handler, "answer_callback_query_safely", fake_answer)
+
+    update = SimpleNamespace(effective_user=SimpleNamespace(id=1))
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": SimpleNamespace(session_factory=_SessionFactory())}))
+
+    await admin_handler._admin_handler._handle_garage_forward(
+        update,
+        context,
+        -100123,
+        CallbackParser.parse("gfw:audit_cleanup:-100123:f"),
+    )
+
+    assert cleanup_calls == [(-100123, "failed")]
+    assert answers == ["已清理 3 条超期日志。"]
+    assert shown == [(-100123, "failed")]

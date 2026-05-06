@@ -20,6 +20,9 @@ class _FakeResult:
     def scalar_one(self):
         return self._value
 
+    def all(self):
+        return self._value
+
 
 class _FakeSession:
     def __init__(self, *, execute_value=None) -> None:
@@ -313,3 +316,80 @@ async def test_garage_forward_claim_slot_reclaims_stale_placeholder():
     assert result is not None
     assert session.added
     assert session.flush_calls >= 2
+
+
+@pytest.mark.asyncio
+async def test_garage_forward_purge_expired_audits_filters_by_chat_and_result():
+    class _PurgeSession(_FakeSession):
+        def __init__(self) -> None:
+            super().__init__()
+            self.statements: list[str] = []
+
+        async def execute(self, stmt):
+            self.statements.append(str(stmt))
+            if len(self.statements) == 1:
+                return _FakeResult([(11,), (12,)])
+            return _FakeResult(None)
+
+    session = _PurgeSession()
+
+    deleted = await GarageForwardService.purge_expired_audits(
+        session,
+        chat_id=-10001,
+        result="failed",
+        now=dt.datetime(2026, 5, 6, tzinfo=dt.UTC),
+    )
+
+    assert deleted == 2
+    assert "garage_forward_audit_logs.chat_id = :chat_id_1" in session.statements[0]
+    assert "garage_forward_audit_logs.result = :result_1" in session.statements[0]
+    assert "DELETE FROM bot.garage_forward_audit_logs" in session.statements[1]
+    assert session.flush_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_remove_joint_ban_entry_deletes_item_and_records_audit(monkeypatch):
+    entry = SimpleNamespace(
+        id=8,
+        alliance_id=9,
+        target_user_id=12345,
+        source_chat_id=-10002,
+        reason="reply_t_command",
+    )
+    session = _FakeSession(execute_value=entry)
+    audit_calls: list[dict] = []
+
+    async def fake_get_member(inner_session, chat_id):
+        return SimpleNamespace(alliance_id=9)
+
+    async def fake_append_audit(*args, **kwargs):
+        audit_calls.append(kwargs)
+        return None
+
+    monkeypatch.setattr(AllianceService, "get_member", fake_get_member)
+    monkeypatch.setattr(AllianceService, "append_audit", fake_append_audit)
+
+    removed = await AllianceService.remove_joint_ban_entry(
+        session,
+        chat_id=-10001,
+        operator_user_id=7,
+        entry_id=8,
+    )
+
+    assert removed is entry
+    assert session.deleted == [entry]
+    assert session.flush_calls == 1
+    assert audit_calls == [
+        {
+            "chat_id": -10001,
+            "alliance_id": 9,
+            "action": "joint_ban_remove",
+            "operator_user_id": 7,
+            "payload": {
+                "entry_id": 8,
+                "target_user_id": 12345,
+                "source_chat_id": -10002,
+                "reason": "reply_t_command",
+            },
+        }
+    ]

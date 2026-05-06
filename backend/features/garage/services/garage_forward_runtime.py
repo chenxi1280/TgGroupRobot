@@ -2,15 +2,19 @@ from __future__ import annotations
 
 import datetime as dt
 
-from sqlalchemy import func, select
+import structlog
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.platform.db.schema.models.alliance import GarageForwardAuditLog, GarageForwardMessageMap
 
+log = structlog.get_logger(__name__)
+
 
 class GarageForwardRuntimeMixin:
     _STALE_FORWARD_SLOT_TTL = dt.timedelta(minutes=10)
+    AUDIT_RETENTION_DAYS = 30
 
     @staticmethod
     async def already_forwarded(
@@ -159,3 +163,62 @@ class GarageForwardRuntimeMixin:
             .limit(limit)
         )
         return list(result.scalars().all())
+
+    @classmethod
+    def get_audit_retention_cutoff(
+        cls,
+        *,
+        now: dt.datetime | None = None,
+        retention_days: int | None = None,
+    ) -> dt.datetime:
+        reference = now or dt.datetime.now(dt.UTC)
+        days = retention_days if retention_days is not None else cls.AUDIT_RETENTION_DAYS
+        return reference - dt.timedelta(days=max(int(days), 1))
+
+    @staticmethod
+    async def purge_audits(
+        session: AsyncSession,
+        *,
+        before: dt.datetime,
+        chat_id: int | None = None,
+        result: str | None = None,
+    ) -> int:
+        stmt = select(GarageForwardAuditLog.id).where(GarageForwardAuditLog.created_at < before)
+        if chat_id is not None:
+            stmt = stmt.where(GarageForwardAuditLog.chat_id == chat_id)
+        if result and result != "all":
+            stmt = stmt.where(GarageForwardAuditLog.result == result)
+        result_rows = await session.execute(stmt)
+        audit_ids = [int(row[0]) for row in result_rows.all()]
+        if not audit_ids:
+            return 0
+        await session.execute(delete(GarageForwardAuditLog).where(GarageForwardAuditLog.id.in_(audit_ids)))
+        await session.flush()
+        return len(audit_ids)
+
+    @classmethod
+    async def purge_expired_audits(
+        cls,
+        session: AsyncSession,
+        *,
+        chat_id: int | None = None,
+        result: str | None = None,
+        now: dt.datetime | None = None,
+        retention_days: int | None = None,
+    ) -> int:
+        cutoff = cls.get_audit_retention_cutoff(now=now, retention_days=retention_days)
+        deleted = await cls.purge_audits(
+            session,
+            before=cutoff,
+            chat_id=chat_id,
+            result=result,
+        )
+        if deleted:
+            log.info(
+                "garage_forward_audit_cleanup_completed",
+                deleted_count=deleted,
+                chat_id=chat_id,
+                result=result or "all",
+                before=cutoff.isoformat(),
+            )
+        return deleted

@@ -17,11 +17,7 @@ CLASSIFIED_NON_PRIVATE_STATES = {
     ConversationStateType.auction_wait_start_price.value,
     ConversationStateType.auction_wait_end_at.value,
     ConversationStateType.auction_wait_confirm.value,
-    ConversationStateType.control_permission_config.value,
-    ConversationStateType.force_subscribe_config.value,
-    ConversationStateType.group_lock_config.value,
     ConversationStateType.invite_link_buttons_input.value,
-    ConversationStateType.name_change_monitor_config.value,
     ConversationStateType.scheduled_create.value,
     ConversationStateType.sm_edit_day_start.value,
     ConversationStateType.sm_edit_day_end.value,
@@ -92,6 +88,7 @@ def test_teacher_search_attendance_states_registered_for_private_input() -> None
     assert ConversationStateType.teacher_search_attendance_full_input.value in handlers
     assert ConversationStateType.teacher_search_attendance_rest_input.value in handlers
     assert ConversationStateType.teacher_search_member_location_input.value in handlers
+    assert ConversationStateType.teacher_footer_button_input.value in handlers
 
 
 def test_conversation_state_types_are_registered_or_classified() -> None:

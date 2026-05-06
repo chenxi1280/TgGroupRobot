@@ -93,7 +93,13 @@ class CoreNavigationMixin:
         try:
             tg_chat = await self.message_helper._bot.get_chat(chat_id)
             return tg_chat.title or f"群组{chat_id}"
-        except (TelegramError, AttributeError, Exception):
+        except (TelegramError, AttributeError, Exception) as exc:
+            log.warning(
+                "admin_chat_title_lookup_failed",
+                chat_id=chat_id,
+                db_title=db_title,
+                error=str(exc),
+            )
             return db_title or f"群组{chat_id}"
 
     async def _set_current_chat(

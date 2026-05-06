@@ -127,6 +127,7 @@ class GarageForwardAdminMixin:
             "🔁 车库转发 | 转发日志",
             "",
             f"当前筛选：{title_map.get(normalized_result, '全部')}",
+            f"保留策略：自动保留最近 {GarageForwardService.AUDIT_RETENTION_DAYS} 天日志",
             (
                 f"📊 全部 {counts.get('all', 0)}"
                 f"｜✅ 成功 {counts.get('success', 0)}"
@@ -167,6 +168,12 @@ class GarageForwardAdminMixin:
                     ("✅ " if normalized_result == "failed" else "") + f"❌ 失败({counts.get('failed', 0)})",
                     callback_data=f"gfw:audit:{chat_id}:{_gfw_audit_result_code('failed')}",
                 ),
+            ],
+            [
+                InlineKeyboardButton(
+                    f"🧹 清理 {GarageForwardService.AUDIT_RETENTION_DAYS} 天前{title_map.get(normalized_result, '全部')}日志",
+                    callback_data=f"gfw:audit_cleanup:{chat_id}:{_gfw_audit_result_code(normalized_result)}",
+                )
             ],
             [InlineKeyboardButton("🔙 返回", callback_data=f"gfw:home:{chat_id}")],
         ])
@@ -349,6 +356,26 @@ class GarageForwardAdminMixin:
 
         if action == "audit":
             result = _normalize_gfw_audit_result(callback_data.get(3) or "a")
+            await self._show_garage_forward_audit_menu(update, context, chat_id, result=result)
+            return
+
+        if action == "audit_cleanup":
+            result = _normalize_gfw_audit_result(callback_data.get(3) or "a")
+            purge_result = None if result == "all" else result
+            async with db.session_factory() as session:
+                deleted = await GarageForwardService.purge_expired_audits(
+                    session,
+                    chat_id=chat_id,
+                    result=purge_result,
+                )
+                await session.commit()
+            log.info(
+                "garage_forward_audit_manual_cleanup",
+                chat_id=chat_id,
+                result=result,
+                deleted_count=deleted,
+            )
+            await answer_callback_query_safely(update, f"已清理 {deleted} 条超期日志。")
             await self._show_garage_forward_audit_menu(update, context, chat_id, result=result)
             return
 

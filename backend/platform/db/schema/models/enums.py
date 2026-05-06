@@ -127,10 +127,6 @@ class ConversationStateType(str, enum.Enum):
     nearby_edit_method = "nearby_edit_method"  # 编辑周边资料方式
     nearby_edit_address = "nearby_edit_address"  # 编辑周边资料备注
     nearby_edit_location = "nearby_edit_location"  # 编辑周边资料定位
-    control_permission_config = "control_permission_config"  # 控制权限配置流程
-    group_lock_config = "group_lock_config"  # 旧版关群设置配置流程
-    name_change_monitor_config = "name_change_monitor_config"  # 改名监控配置流程
-    force_subscribe_config = "force_subscribe_config"  # 强制关注配置流程
     alliance_create_name_input = "alliance_create_name_input"  # 联盟名称输入
     alliance_join_code_input = "alliance_join_code_input"  # 联盟邀请码输入
     garage_forward_source_input = "garage_forward_source_input"  # 车库转发来源频道输入
@@ -142,6 +138,7 @@ class ConversationStateType(str, enum.Enum):
     garage_whitelist_input = "garage_whitelist_input"  # 车库发言白名单输入
     garage_limit_interval_input = "garage_limit_interval_input"  # 车库限制间隔输入
     garage_limit_max_count_input = "garage_limit_max_count_input"  # 车库限制次数输入
+    teacher_footer_button_input = "teacher_footer_button_input"  # 老师搜索底部按钮文案（兼容旧状态）
     teacher_search_footer_text_input = "teacher_footer_text_input"  # 老师搜索底部按钮文字
     teacher_search_footer_link_input = "teacher_footer_link_input"  # 老师搜索底部按钮链接
     teacher_search_attendance_target_input = "teacher_attend_target_input"  # 老师搜索代打卡目标

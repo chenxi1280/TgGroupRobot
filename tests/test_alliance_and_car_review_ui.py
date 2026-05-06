@@ -64,8 +64,50 @@ async def test_alliance_menu_shows_member_count_and_joint_ban_status(monkeypatch
     text, keyboard = rendered[0]
     assert "👥 联盟成员：2 个" in text
     assert "联合封禁状态：❌ 关闭" in text
-    assert keyboard.inline_keyboard[1][0].text == "⚙️ 联合封禁："
-    assert keyboard.inline_keyboard[1][2].text == "✅ 关闭"
+    assert keyboard.inline_keyboard[1][0].text == "📋 联合封禁名单"
+    assert keyboard.inline_keyboard[2][0].text == "⚙️ 联合封禁："
+    assert keyboard.inline_keyboard[2][2].text == "✅ 关闭"
+
+
+@pytest.mark.asyncio
+async def test_alliance_joint_ban_menu_lists_entries(monkeypatch):
+    rendered: list[tuple[str, object]] = []
+
+    async def fake_get_alliance_by_chat(session, chat_id: int):
+        return SimpleNamespace(alliance_id=3, name="测试联盟", owner_chat_id=chat_id)
+
+    async def fake_list_joint_ban_entries(session, *, chat_id: int, limit: int = 10):
+        assert chat_id == -100123
+        assert limit == 10
+        return [
+            SimpleNamespace(
+                id=12,
+                target_user_id=5566,
+                source_chat_id=-1009,
+                reason="reply_t_command",
+                created_at=None,
+            )
+        ]
+
+    async def fake_safe_edit(update, text, reply_markup):
+        rendered.append((text, reply_markup))
+
+    from backend.features.garage.services.alliance_service import AllianceService
+
+    monkeypatch.setattr(AllianceService, "get_alliance_by_chat", fake_get_alliance_by_chat)
+    monkeypatch.setattr(AllianceService, "list_joint_ban_entries", fake_list_joint_ban_entries)
+    monkeypatch.setattr(admin_handler._admin_handler.message_helper, "safe_edit", fake_safe_edit)
+
+    update = SimpleNamespace()
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}))
+
+    await admin_handler._admin_handler._show_alliance_joint_ban_menu(update, context, -100123)
+
+    text, keyboard = rendered[0]
+    assert "联合封禁名单" in text
+    assert "用户 5566" in text
+    assert "原因：reply_t_command" in text
+    assert keyboard.inline_keyboard[0][0].callback_data == "ali:jointban:remove:-100123:12"
 
 
 @pytest.mark.asyncio
