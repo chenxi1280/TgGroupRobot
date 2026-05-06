@@ -151,7 +151,8 @@ async def diagnose_force_subscribe_targets(context: ContextTypes.DEFAULT_TYPE, s
             continue
         try:
             target_chat = await bot.get_chat(chat_id=target)
-        except Exception:
+        except Exception as exc:
+            log.warning("force_subscribe_target_lookup_failed", target=target, error=str(exc))
             diagnostics.append(f"绑定目标{index}机器人无法访问，请确认机器人已加入并有权限。")
             continue
         if getattr(target_chat, "type", None) not in {"channel", "group", "supergroup"}:
@@ -164,7 +165,8 @@ async def diagnose_force_subscribe_targets(context: ContextTypes.DEFAULT_TYPE, s
             continue
         try:
             bot_member = await bot.get_chat_member(chat_id=target, user_id=bot_id)
-        except Exception:
+        except Exception as exc:
+            log.warning("force_subscribe_bot_member_lookup_failed", target=target, bot_id=bot_id, error=str(exc))
             diagnostics.append(f"绑定目标{index}无法确认机器人权限，请重新检查目标频道/群组。")
             continue
         if getattr(bot_member, "status", None) not in {"administrator", "creator"}:

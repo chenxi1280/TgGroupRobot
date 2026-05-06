@@ -142,7 +142,8 @@ def build_item_markup(item: AdCampaign) -> InlineKeyboardMarkup | None:
         return None
     try:
         normalized = ScheduledMessageService.normalize_buttons_config(buttons)
-    except Exception:
+    except Exception as exc:
+        log.warning("ad_rotation_buttons_normalize_failed", error=str(exc))
         return None
 
     keyboard_rows: list[list[InlineKeyboardButton]] = []
@@ -488,7 +489,8 @@ async def _delete_message_safely(
         return
     try:
         await PublishService.delete(context, chat_id=chat_id, message_id=message_id)
-    except Exception:
+    except Exception as exc:
+        log.warning("ad_rotation_message_delete_failed", chat_id=chat_id, message_id=message_id, error=str(exc))
         return
 
 
@@ -502,7 +504,8 @@ async def _unpin_message_safely(
         return
     try:
         await PublishService.unpin(context, chat_id=chat_id, message_id=message_id)
-    except Exception:
+    except Exception as exc:
+        log.warning("ad_rotation_message_unpin_failed", chat_id=chat_id, message_id=message_id, error=str(exc))
         return
 
 

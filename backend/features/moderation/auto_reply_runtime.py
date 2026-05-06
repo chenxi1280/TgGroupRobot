@@ -311,5 +311,6 @@ async def _delete_later(message, delay_seconds: int) -> None:
         raise
     try:
         await message.delete()
-    except Exception:
+    except Exception as exc:
+        log.warning("auto_reply_message_delete_failed", chat_id=chat_id, message_id=message_id, error=str(exc))
         return

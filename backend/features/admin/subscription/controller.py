@@ -30,7 +30,8 @@ class SubscriptionAdminControllerMixin:
         try:
             me = await context.bot.get_me()
             member = await context.bot.get_chat_member(chat_id, me.id)
-        except Exception:
+        except Exception as exc:
+            log.warning("subscription_bot_admin_health_check_failed", chat_id=chat_id, error=str(exc))
             return "⚪ 权限检查：暂未获取到机器人权限，请确认机器人已在群内并具备管理员权限"
 
         status = getattr(member, "status", "")

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 
+import structlog
 from sqlalchemy import select
 from telegram import ChatPermissions, Update
 from telegram.ext import ContextTypes
@@ -58,6 +59,8 @@ from backend.platform.telegram.errors import answer_callback_query_safely, mark_
 from backend.shared.i18n.strings import t
 from backend.shared.services.chat_service import ensure_chat, get_chat_settings
 from backend.shared.services.user_service import ensure_user
+
+log = structlog.get_logger(__name__)
 from backend.features.moderation.services.user_action_runtime import restrict_user_safely
 from backend.features.verification.verification_callbacks import verify_callback
 from backend.features.verification.verification_messages import verify_message_handler
@@ -115,8 +118,8 @@ async def _track_invite_for_member(context: ContextTypes.DEFAULT_TYPE, session, 
                         chat_id=link.created_by_user_id,
                         text=f"🎉 恭喜！您邀请的 {member.first_name or member.username or '用户'} 加入了群组 {chat.title}",
                     )
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log.warning("invite_award_notify_failed", chat_id=chat.id, member_user_id=member.id, error=str(exc))
 
 
 async def _send_verification_prompt(
@@ -197,8 +200,8 @@ async def new_members_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
                 if started:
                     try:
                         await _restrict_for_verification(context, chat.id, u.id)
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        log.warning("self_review_restrict_failed", chat_id=chat.id, user_id=u.id, error=str(exc))
                 continue
 
             if settings.verification_mode == "mute":
@@ -211,8 +214,8 @@ async def new_members_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
                         action="mute",
                         mute_seconds=int(getattr(settings, "verification_direct_mute_duration", 0) or 0),
                     )
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log.warning("verification_direct_punishment_failed", chat_id=chat.id, user_id=u.id, error=str(exc))
                 continue
 
             ch = await create_or_replace_challenge(
@@ -296,7 +299,14 @@ async def new_members_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
                         reply_markup=admin_verify_keyboard(u.id, ch.token),
                         parse_mode="HTML",
                     )
-            except Exception:
+            except Exception as exc:
+                log.warning(
+                    "verification_prompt_send_failed",
+                    chat_id=chat.id,
+                    user_id=u.id,
+                    mode=settings.verification_mode,
+                    error=str(exc),
+                )
                 prompt_sent = False
 
             if not prompt_sent:
@@ -306,8 +316,8 @@ async def new_members_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
                 await _unrestrict_and_notify(context, chat.id, u.id, settings.language)
                 try:
                     await context.bot.send_message(chat_id=chat.id, text=f"⚠️ {mention} 验证提示发送失败，已临时放行。请管理员检查机器人在本群发言权限。", parse_mode="HTML")
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log.warning("verification_prompt_failure_notice_failed", chat_id=chat.id, user_id=u.id, error=str(exc))
 
         if welcomed_members:
             sent_doc_welcome = await WelcomeService.send_for_mode(
@@ -327,7 +337,7 @@ async def new_members_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
                     )
                     try:
                         await context.bot.send_message(chat_id=chat.id, text=welcome_text, parse_mode="HTML")
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        log.warning("welcome_message_send_failed", chat_id=chat.id, user_id=u.id, error=str(exc))
 
         await session.commit()

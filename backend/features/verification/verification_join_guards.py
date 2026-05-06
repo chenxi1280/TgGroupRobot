@@ -211,5 +211,6 @@ async def _cleanup_notice(message, delete_after_seconds: int) -> None:
         raise
     try:
         await message.delete()
-    except Exception:
+    except Exception as exc:
+        log.warning("verification_guard_message_delete_failed", chat_id=chat_id, message_id=message.message_id, error=str(exc))
         return

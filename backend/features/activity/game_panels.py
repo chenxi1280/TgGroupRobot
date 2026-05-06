@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import structlog
 from sqlalchemy import func, select
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
@@ -14,6 +15,8 @@ from backend.features.activity.services.game_service import (
 )
 from backend.platform.db.runtime.session import Database
 from backend.platform.db.schema.models.expansion import GameParticipant
+
+log = structlog.get_logger(__name__)
 
 
 def k3_panel_keyboard(chat_id: int) -> InlineKeyboardMarkup:
@@ -151,8 +154,14 @@ async def render_panel_message(
                 reply_markup=reply_markup,
             )
             return message_id
-        except Exception:
-            pass
+        except Exception as exc:
+            log.warning(
+                "game_panel_edit_failed",
+                chat_id=chat_id,
+                message_id=message_id,
+                create_if_missing=create_if_missing,
+                error=str(exc),
+            )
     if not create_if_missing:
         return message_id or 0
     sent = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup)

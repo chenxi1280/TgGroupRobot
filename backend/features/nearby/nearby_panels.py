@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime as dt
 import html
 
+import structlog
 from telegram import InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
@@ -25,6 +26,8 @@ from backend.platform.db.runtime.session import Database
 _LOCAL_TZ = dt.timezone(dt.timedelta(hours=8))
 _PAGE_SIZE = 5
 
+log = structlog.get_logger(__name__)
+
 
 async def reply_or_edit(
     update: Update,
@@ -40,8 +43,8 @@ async def reply_or_edit(
                 parse_mode=parse_mode,
             )
             return
-        except Exception:
-            pass
+        except Exception as exc:
+            log.warning("nearby_panel_edit_failed", error=str(exc))
 
     if update.effective_message is not None:
         await update.effective_message.reply_text(

@@ -97,8 +97,8 @@ class PrivateConfigHandler:
         """发送错误提示消息"""
         try:
             await update.effective_message.reply_text(f"❌ {message}\n\n请使用 /cancel 取消当前配置。")
-        except Exception:
-            pass
+        except Exception as exc:
+            log.warning("private_config_error_reply_failed", error=str(exc), message=message)
 
     async def _handle_quick_publish_input(
         self,

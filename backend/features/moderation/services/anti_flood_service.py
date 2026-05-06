@@ -266,7 +266,8 @@ async def execute_flood_punishment(
                 log.warning("ban_chat_member_failed", chat_id=chat_id, user_id=user_id, error=str(e))
                 return False
 
-    except Exception:
+    except Exception as exc:
+        log.warning("anti_flood_apply_failed", chat_id=chat_id, user_id=user_id, action=action, error=str(exc))
         return False
 
     return False

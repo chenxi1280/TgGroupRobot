@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import datetime as dt
 
+import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.platform.db.schema.models.core import AdCampaign
 from backend.shared.services.base import ServiceBase
 from backend.shared.services.result import CreateResult
+
+log = structlog.get_logger(__name__)
 
 
 async def create_ad_campaign(
@@ -50,7 +53,8 @@ async def create_ad_campaign(
         session.add(ad)
         await session.flush()
         return CreateResult(success=True, reason="ok", entity=ad, entity_id=ad.id)
-    except Exception:
+    except Exception as exc:
+        log.warning("create_ad_campaign_failed", chat_id=chat_id, created_by_user_id=created_by_user_id, error=str(exc))
         return CreateResult(success=False, reason="error")
 
 

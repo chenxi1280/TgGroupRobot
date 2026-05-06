@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 
+import structlog
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes, ConversationHandler
 
@@ -14,6 +15,8 @@ from backend.features.activity.solitaire_shared import WAIT_CONFIG
 from backend.features.activity.ui.solitaire import get_join_solitaire_keyboard
 from backend.platform.db.runtime.session import Database
 from backend.platform.state.state_service import clear_user_state, get_user_state
+
+log = structlog.get_logger(__name__)
 
 
 async def solitaire_create_config_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int | None:
@@ -53,9 +56,12 @@ async def solitaire_create_config_message(update: Update, context: ContextTypes.
                 deadline=deadline,
             )
             if result.success:
-                await _publish_created_solitaire(update, context, session, result, target_chat_id, chat.id, user.id)
+                published = await _publish_created_solitaire(update, context, session, result, target_chat_id, chat.id, user.id)
+                if not published:
+                    await update.effective_message.reply_text("❌ 接龙创建失败，请检查机器人在目标群的发言权限后重试。")
+                    return WAIT_CONFIG
             else:
-                await update.effective_message.reply_text(f"❌ 创建失败: {result.error or '未知错误'}")
+                await update.effective_message.reply_text("❌ 创建失败，请稍后重试。")
     except Exception as exc:
         await update.effective_message.reply_text(f"❌ 配置格式错误，请检查后重试\n\n错误: {str(exc)}")
         return WAIT_CONFIG
@@ -122,7 +128,7 @@ async def _publish_created_solitaire(
     target_chat_id: int,
     state_chat_id: int,
     user_id: int,
-) -> None:
+) -> bool:
     text_msg = format_solitaire_message(result.entity)
     try:
         keyboard = get_join_solitaire_keyboard(result.entity.id)
@@ -133,8 +139,17 @@ async def _publish_created_solitaire(
         )
         result.entity.message_id = group_message.message_id
         await session.commit()
-    except Exception:
-        pass
+    except Exception as exc:
+        await session.rollback()
+        log.warning(
+            "solitaire_publish_failed",
+            solitaire_id=result.entity.id,
+            target_chat_id=target_chat_id,
+            state_chat_id=state_chat_id,
+            user_id=user_id,
+            error=str(exc),
+        )
+        return False
 
     keyboard = InlineKeyboardMarkup(
         [
@@ -148,3 +163,4 @@ async def _publish_created_solitaire(
     )
     await clear_user_state(session, state_chat_id, user_id)
     await session.commit()
+    return True

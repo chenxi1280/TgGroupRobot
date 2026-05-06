@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import structlog
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -18,6 +19,8 @@ from backend.shared.services.base import ValidationError
 from backend.shared.services.publish_service import PublishService
 from backend.shared.services.user_service import ensure_user
 
+log = structlog.get_logger(__name__)
+
 
 async def _delete_source_if_needed(
     context: ContextTypes.DEFAULT_TYPE,
@@ -29,7 +32,8 @@ async def _delete_source_if_needed(
         return
     try:
         await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
-    except Exception:
+    except Exception as exc:
+        log.warning("guess_source_delete_failed", chat_id=chat_id, message_id=message_id, error=str(exc))
         return
 
 

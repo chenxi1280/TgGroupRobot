@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import asyncio
 
+import structlog
 from telegram.ext import ContextTypes
 
 from backend.shared.async_tasks import spawn_background_task
 from backend.shared.services.publish_service import PublishService
+
+log = structlog.get_logger(__name__)
 
 
 async def _maybe_delete_trigger_message(
@@ -19,7 +22,8 @@ async def _maybe_delete_trigger_message(
         return
     try:
         await PublishService.delete(context, chat_id=chat_id, message_id=message_id)
-    except Exception:
+    except Exception as exc:
+        log.warning("group_hook_trigger_delete_failed", chat_id=chat_id, message_id=message_id, error=str(exc))
         return
 
 
@@ -68,7 +72,8 @@ async def _delete_message_later(message, seconds: int) -> None:
         raise
     try:
         await message.delete()
-    except Exception:
+    except Exception as exc:
+        log.warning("group_hook_message_delete_failed", chat_id=chat_id, message_id=message.message_id, error=str(exc))
         return
 
 

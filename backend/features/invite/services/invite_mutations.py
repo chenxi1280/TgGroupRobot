@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime as dt
 from collections.abc import Awaitable, Callable
 
+import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 from telegram import Bot
 
@@ -12,6 +13,8 @@ from backend.platform.db.schema.models.core import InviteLink
 from backend.platform.db.schema.models.enums import InviteLinkStatus
 
 InviteLinkLookup = Callable[[AsyncSession, int, int], Awaitable[InviteLink | None]]
+
+log = structlog.get_logger(__name__)
 
 
 async def revoke_invite_link_impl(
@@ -38,7 +41,8 @@ async def revoke_invite_link_impl(
         await bot.revoke_chat_invite_link(chat_id=invite_link.chat_id, invite_link=invite_link.invite_link)
         invite_link.status = InviteLinkStatus.revoked.value
         return RevokeResult(success=True, reason="ok")
-    except Exception:
+    except Exception as exc:
+        log.warning("revoke_invite_link_failed", link_id=link_id, chat_id=chat_id, error=str(exc))
         return RevokeResult(success=False, reason="error")
 
 
@@ -72,7 +76,13 @@ async def update_invite_link_info_impl(
             invite_link.status = InviteLinkStatus.expired.value
 
         return True
-    except Exception:
+    except Exception as exc:
+        log.warning(
+            "expire_invite_link_failed",
+            link_id=getattr(invite_link, "id", None),
+            chat_id=getattr(invite_link, "chat_id", None),
+            error=str(exc),
+        )
         if invite_link:
             invite_link.status = InviteLinkStatus.expired.value
         return True

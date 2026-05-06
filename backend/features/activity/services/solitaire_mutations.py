@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime as dt
 from collections.abc import Awaitable, Callable
 
+import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.features.activity.services.solitaire_queries import get_solitaire, get_solitaire_in_chat
@@ -13,6 +14,8 @@ from backend.shared.services.result import CloseResult, CreateResult, JoinResult
 
 SolitaireLookup = Callable[[AsyncSession, int], Awaitable[Solitaire | None]]
 ScopedSolitaireLookup = Callable[[AsyncSession, int, int], Awaitable[Solitaire | None]]
+
+log = structlog.get_logger(__name__)
 
 
 async def create_solitaire(
@@ -67,8 +70,14 @@ async def create_solitaire(
             entity_id=solitaire.id,
             message_id=None,
         )
-    except Exception:
-        return CreateResult(success=False, reason="error")
+    except Exception as exc:
+        log.exception(
+            "create_solitaire_failed",
+            chat_id=chat_id,
+            created_by_user_id=created_by_user_id,
+            error=str(exc),
+        )
+        return CreateResult(success=False, reason="error", error="接龙创建失败，请稍后重试")
 
 
 async def join_solitaire(

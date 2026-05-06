@@ -71,8 +71,8 @@ async def lottery_create_start_impl(
         if update.callback_query:
             try:
                 await update.callback_query.edit_message_text(f"发生错误: {str(exc)}")
-            except Exception:
-                pass
+            except Exception as edit_exc:
+                log.warning("lottery_message_error_feedback_failed", error=str(edit_exc))
 
 
 async def lottery_message_handler_impl(

@@ -26,14 +26,21 @@ from .common import _schedule_message_delete
 log = structlog.get_logger(__name__)
 
 
+async def _reply_text_safely(message, text: str, *, event: str, **fields) -> None:
+    try:
+        await message.reply_text(text)
+    except Exception as exc:
+        log.warning(event, error=str(exc), **fields)
+
+
 def _user_label(user) -> str:
     if user is None:
         return "频道身份发言"
     if hasattr(user, "mention_html"):
         try:
             return user.mention_html()
-        except Exception:
-            pass
+        except Exception as exc:
+            log.warning("user_mention_html_failed", error=str(exc), user_id=getattr(user, "id", None))
     return getattr(user, "first_name", None) or getattr(user, "username", None) or "频道身份发言"
 
 async def _process_alliance_reply_ban(
@@ -70,10 +77,13 @@ async def _process_alliance_reply_ban(
             sender_chat_id=getattr(getattr(message.reply_to_message, "sender_chat", None), "id", None),
         )
         if not action_result.punishment_applied:
-            try:
-                await message.reply_text("联合封禁失败，请检查机器人封禁权限。")
-            except Exception:
-                pass
+            await _reply_text_safely(
+                message,
+                "联合封禁失败，请检查机器人封禁权限。",
+                event="alliance_reply_ban_feedback_failed",
+                chat_id=chat.id,
+                target_user_id=target_user.id,
+            )
             return True
         try:
             async with db.session_factory() as session:
@@ -87,22 +97,31 @@ async def _process_alliance_reply_ban(
                 await session.commit()
         except Exception as exc:
             log.warning("alliance_ban_pool_append_failed", chat_id=chat.id, target_user_id=target_user.id, error=str(exc))
-            try:
-                await message.reply_text("当前群已封禁目标用户，但加入联盟封禁名单失败。")
-            except Exception:
-                pass
+            await _reply_text_safely(
+                message,
+                "当前群已封禁目标用户，但加入联盟封禁名单失败。",
+                event="alliance_reply_ban_feedback_failed",
+                chat_id=chat.id,
+                target_user_id=target_user.id,
+            )
             return True
-        try:
-            await message.reply_text("已加入联盟联合封禁名单，并在当前群执行封禁。")
-        except Exception:
-            pass
+        await _reply_text_safely(
+            message,
+            "已加入联盟联合封禁名单，并在当前群执行封禁。",
+            event="alliance_reply_ban_feedback_failed",
+            chat_id=chat.id,
+            target_user_id=target_user.id,
+        )
         return True
     except Exception as exc:
         log.warning("alliance_reply_ban_failed", chat_id=chat.id, user_id=user.id, error=str(exc))
-        try:
-            await message.reply_text("联合封禁失败，请确认当前群已加入联盟。")
-        except Exception:
-            pass
+        await _reply_text_safely(
+            message,
+            "联合封禁失败，请确认当前群已加入联盟。",
+            event="alliance_reply_ban_feedback_failed",
+            chat_id=chat.id,
+            user_id=user.id,
+        )
         return False
 
 

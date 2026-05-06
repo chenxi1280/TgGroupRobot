@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import re
 
+import structlog
 from sqlalchemy import func, or_, select
 from telegram.ext import ContextTypes
 
 from backend.platform.db.schema.models.core import ConversationState, TgUser
+
+log = structlog.get_logger(__name__)
 
 
 def user_mention_html(user_id: int) -> str:
@@ -47,7 +50,8 @@ async def resolve_username_to_user_id(context: ContextTypes.DEFAULT_TYPE, messag
         target_id = target_chat.id
         if isinstance(target_id, int) and target_id > 0:
             return target_id
-    except Exception:
+    except Exception as exc:
+        log.warning("resolve_username_to_user_id_failed", username=username, error=str(exc))
         return None
     return None
 

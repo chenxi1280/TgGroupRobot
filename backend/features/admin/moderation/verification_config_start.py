@@ -114,5 +114,6 @@ class VerificationConfigStartMixin:
 
         try:
             await q.edit_message_text(text, parse_mode="Markdown", reply_markup=keyboard)
-        except Exception:
+        except Exception as exc:
+            log.warning("verification_config_markdown_edit_failed", target_chat_id=target_chat_id, user_id=user.id, error=str(exc))
             await q.edit_message_text(text.replace("```", ""), reply_markup=keyboard)

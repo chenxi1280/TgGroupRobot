@@ -33,7 +33,8 @@ def build_auto_reply_markup(rule) -> InlineKeyboardMarkup | None:
         return None
     try:
         normalized = normalize_auto_reply_button_rows(raw_buttons)
-    except Exception:
+    except Exception as exc:
+        log.warning("auto_reply_markup_normalize_failed", error=str(exc))
         return None
 
     keyboard_rows: list[list[InlineKeyboardButton]] = []

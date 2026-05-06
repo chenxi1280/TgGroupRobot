@@ -124,8 +124,8 @@ def _message_entity_text(message: object, entity: object) -> str:
     if callable(parse_entity):
         try:
             return parse_entity(entity)
-        except Exception:
-            pass
+        except Exception as exc:
+            log.warning("lottery_entity_parse_failed", error=str(exc))
     text = getattr(message, "text", None) or getattr(message, "caption", None) or ""
     offset = int(getattr(entity, "offset", 0) or 0)
     length = int(getattr(entity, "length", 0) or 0)
@@ -150,7 +150,8 @@ async def _resolve_username_to_user_id(session, context: ContextTypes.DEFAULT_TY
         return None
     try:
         target_chat = await bot.get_chat(f"@{normalized}")
-    except Exception:
+    except Exception as exc:
+        log.warning("lottery_target_username_lookup_failed", username=normalized, error=str(exc))
         return None
     target_id = target_chat.id
     if isinstance(target_id, int) and target_id > 0:
@@ -809,8 +810,8 @@ async def _create_and_publish_lottery(
     if setting.publish_pin_enabled and lottery.message_id:
         try:
             await context.bot.pin_chat_message(chat_id=target_chat_id, message_id=lottery.message_id)
-        except Exception:
-            pass
+        except Exception as exc:
+            log.warning("lottery_publish_pin_failed", lottery_id=lottery.id, chat_id=target_chat_id, message_id=lottery.message_id, error=str(exc))
     log.info("lottery_announcement_sent", lottery_id=lottery.id, target_chat_id=target_chat_id)
     return lottery
 

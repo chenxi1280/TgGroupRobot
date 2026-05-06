@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import structlog
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -11,6 +12,8 @@ from backend.shared.services.permission_service import PermissionPolicyService
 
 _ADMIN_ADD_COMMANDS = {"加积分", "加分"}
 _ADMIN_DEDUCT_COMMANDS = {"扣积分", "扣分"}
+
+log = structlog.get_logger(__name__)
 
 
 def _user_label(user) -> str:
@@ -276,13 +279,13 @@ async def handle_message_points_action(
                     await session.commit()
                     try:
                         await message.delete()
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        log.warning("points_block_message_delete_failed", chat_id=chat.id, user_id=user.id, error=str(exc))
                     if should_send_level_block_notice_func(context, chat.id, user.id):
                         try:
                             await update.effective_chat.send_message("当前积分等级不足，无法发送此类消息。")
-                        except Exception:
-                            pass
+                        except Exception as exc:
+                            log.warning("points_level_block_notice_failed", chat_id=chat.id, user_id=user.id, error=str(exc))
                     return True
 
         if not text or not settings.message_points_enabled or not allow_message_points:

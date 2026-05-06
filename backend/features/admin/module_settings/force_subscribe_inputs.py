@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from urllib.parse import parse_qs, urlparse
 
+import structlog
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
@@ -22,6 +23,8 @@ from backend.features.group_ops.group_hooks.control_force_subscribe import (
 )
 from backend.shared.services.base import ValidationError
 from backend.shared.ui.button_input import is_clear_button_input, parse_button_rows
+
+log = structlog.get_logger(__name__)
 
 
 def parse_force_subscribe_buttons_input(raw_text: str) -> list[list[dict]]:
@@ -56,7 +59,8 @@ def build_force_subscribe_preview_markup(
             normalized = ScheduledMessageService.normalize_buttons_config(custom_buttons)
             for row in normalized:
                 rows.append([InlineKeyboardButton(item["text"], url=item["url"]) for item in row])
-        except Exception:
+        except Exception as exc:
+            log.warning("force_subscribe_preview_buttons_normalize_failed", error=str(exc))
             rows = []
     if not rows:
         fallback_buttons = [
@@ -83,7 +87,8 @@ async def build_force_subscribe_preview_markup_async(
             normalized = ScheduledMessageService.normalize_buttons_config(custom_buttons)
             for row in normalized:
                 rows.append([InlineKeyboardButton(item["text"], url=item["url"]) for item in row])
-        except Exception:
+        except Exception as exc:
+            log.warning("force_subscribe_preview_buttons_normalize_failed", error=str(exc))
             rows = []
     if not rows:
         for value in (
@@ -185,7 +190,8 @@ async def _validate_force_subscribe_target(update: Update, context: ContextTypes
 
     try:
         target_chat = await context.bot.get_chat(chat_id=target)
-    except Exception:
+    except Exception as exc:
+        log.warning("force_subscribe_target_chat_lookup_failed", target=target, error=str(exc))
         await message.reply_text("无法访问该频道/群组，请确认机器人已加入目标并具备管理员权限。")
         return False
 
@@ -200,7 +206,8 @@ async def _validate_force_subscribe_target(update: Update, context: ContextTypes
     if bot_id is not None:
         try:
             bot_member = await context.bot.get_chat_member(chat_id=target, user_id=bot_id)
-        except Exception:
+        except Exception as exc:
+            log.warning("force_subscribe_target_bot_member_lookup_failed", target=target, bot_id=bot_id, error=str(exc))
             await message.reply_text("无法确认机器人在目标频道/群组中的权限，请先将机器人加入并设为管理员。")
             return False
         if getattr(bot_member, "status", None) not in {"administrator", "creator"}:

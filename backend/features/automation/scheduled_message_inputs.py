@@ -82,7 +82,8 @@ class ScheduledMessageInputMixin:
                     else:
                         try:
                             buttons = parse_buttons_text(text)
-                        except Exception:
+                        except Exception as exc:
+                            log.warning("scheduled_message_button_parse_failed", error=str(exc))
                             await session.rollback()
                             await update.effective_message.reply_text(
                                 "❌ 按钮格式错误，请使用 文本|链接 或 JSON 重新输入"

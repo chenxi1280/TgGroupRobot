@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import re
 
+import structlog
 from backend.features.moderation.auto_reply_buttons import normalize_auto_reply_button_rows
 from backend.platform.db.schema.models.enums import AutoReplyMatchType
 from backend.shared.services.result import CreateResult
+
+log = structlog.get_logger(__name__)
 
 
 def validate_create_inputs(
@@ -28,7 +31,8 @@ def validate_create_inputs(
     if buttons:
         try:
             normalized_buttons = normalize_auto_reply_button_rows(buttons)
-        except Exception:
+        except Exception as exc:
+            log.warning("auto_reply_button_validation_failed", error=str(exc))
             return CreateResult(success=False, reason="invalid_buttons"), [], []
 
     valid_types = [e.value for e in AutoReplyMatchType]

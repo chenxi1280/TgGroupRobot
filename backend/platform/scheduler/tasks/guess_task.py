@@ -45,7 +45,14 @@ class GuessTask(ScheduledTask):
                             text=text,
                             parse_mode="Markdown",
                         )
-                    except Exception:
+                    except Exception as exc:
+                        log.warning(
+                            "guess_deadline_notice_edit_failed",
+                            event_id=event_id,
+                            chat_id=event.chat_id,
+                            message_id=event.announcement_message_id,
+                            error=str(exc),
+                        )
                         try:
                             msg = await PublishService.send(context, chat_id=event.chat_id, text=text, parse_mode="Markdown")
                             event.announcement_message_id = msg.message_id

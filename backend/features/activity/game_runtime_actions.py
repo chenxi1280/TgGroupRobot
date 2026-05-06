@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import structlog
 from sqlalchemy import func, select
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -33,6 +34,8 @@ from backend.shared.callback_parser import CallbackParser
 from backend.shared.services.base import ValidationError
 from backend.shared.services.user_service import ensure_user
 
+log = structlog.get_logger(__name__)
+
 
 async def handle_game_runtime_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
@@ -65,8 +68,14 @@ async def handle_game_runtime_callback(update: Update, context: ContextTypes.DEF
                     text=format_blackjack_round_text(participant),
                     reply_markup=blackjack_round_keyboard(chat_id),
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                log.warning(
+                    "blackjack_refresh_edit_failed",
+                    chat_id=chat_id,
+                    message_id=round_obj.announcement_message_id,
+                    user_id=user.id,
+                    error=str(exc),
+                )
         await answer_callback_query_safely(update, "已刷新黑杰克面板", show_alert=False)
         return
 
@@ -200,8 +209,14 @@ async def handle_game_runtime_callback(update: Update, context: ContextTypes.DEF
                     text=format_blackjack_round_text(participant, reveal_dealer=bool(outcome), outcome=outcome),
                     reply_markup=None if outcome else blackjack_round_keyboard(chat_id),
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                log.warning(
+                    "blackjack_round_runtime_edit_failed",
+                    chat_id=chat_id,
+                    message_id=round_obj.announcement_message_id,
+                    user_id=user.id,
+                    error=str(exc),
+                )
         await show_blackjack_panel(context, db, chat_id)
         await answer_callback_query_safely(update, "已更新当前对局", show_alert=False)
         return

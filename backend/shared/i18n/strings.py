@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import structlog
 
 STRINGS: dict[str, dict[str, str]] = {
     "zh-CN": {
@@ -52,6 +53,8 @@ STRINGS: dict[str, dict[str, str]] = {
     },
 }
 
+log = structlog.get_logger(__name__)
+
 
 def t(lang: str | None, key: str, **kwargs: object) -> str:
     lang = lang or "zh-CN"
@@ -59,8 +62,8 @@ def t(lang: str | None, key: str, **kwargs: object) -> str:
     template = table.get(key) or STRINGS["zh-CN"].get(key) or key
     try:
         return template.format(**kwargs)
-    except Exception:
+    except Exception as exc:
+        log.warning("string_format_failed", locale=locale, key=key, error=str(exc))
         return template
-
 
 

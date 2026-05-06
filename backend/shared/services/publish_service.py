@@ -4,10 +4,13 @@ import asyncio
 from dataclasses import dataclass
 from typing import Any
 
+import structlog
 from telegram import InlineKeyboardMarkup, Message
 from telegram.ext import ContextTypes
 
 from backend.shared.async_tasks import spawn_background_task
+
+log = structlog.get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -240,8 +243,13 @@ class PublishService:
                     reply_markup=reply_markup,
                     **kwargs,
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                log.warning(
+                    "publish_safe_edit_fallback_to_send",
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    error=str(exc),
+                )
         return await PublishService.send(
             context,
             chat_id=chat_id,
@@ -297,5 +305,6 @@ class PublishService:
             raise
         try:
             await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
-        except Exception:
+        except Exception as exc:
+            log.warning("publish_delete_later_failed", chat_id=chat_id, message_id=message_id, error=str(exc))
             return

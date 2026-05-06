@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import structlog
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -26,6 +27,8 @@ from backend.platform.db.runtime.session import Database
 from backend.shared.i18n.strings import t
 from backend.shared.services.chat_service import get_chat_settings
 from backend.features.moderation.services.user_action_runtime import execute_user_action
+
+log = structlog.get_logger(__name__)
 
 
 async def verify_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -65,8 +68,8 @@ async def verify_message_handler(update: Update, context: ContextTypes.DEFAULT_T
         if result and result.solved:
             try:
                 await update.effective_message.reply_text("✅ 验证成功！")
-            except Exception:
-                pass
+            except Exception as exc:
+                log.warning("verification_success_reply_failed", chat_id=chat.id, user_id=user.id, error=str(exc))
             if settings.join_self_review_enabled and not is_self_review_question(ch.question):
                 async with db.session_factory() as next_session:
                     started = await start_self_review_if_needed(context, next_session, chat, user, settings)
@@ -74,8 +77,8 @@ async def verify_message_handler(update: Update, context: ContextTypes.DEFAULT_T
                 if started:
                     try:
                         await update.effective_message.reply_text(f"📝 请继续发送：{SELF_REVIEW_EXPECTED_ANSWER}")
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        log.warning("verification_self_review_prompt_failed", chat_id=chat.id, user_id=user.id, error=str(exc))
                     return
             await unrestrict_and_notify(context, chat.id, user.id, settings.language)
             await send_after_verify_welcome(context, chat.id, user.id)
@@ -93,13 +96,14 @@ async def verify_message_handler(update: Update, context: ContextTypes.DEFAULT_T
                     )
                     async with db.session_factory() as next_session:
                         await mark_challenge_released(next_session, chat.id, user.id)
-                        await next_session.commit()
+                    await next_session.commit()
                     await update.effective_message.reply_text("❌ 自助审核失败，已拒绝入群。")
-                except Exception:
+                except Exception as exc:
+                    log.warning("verification_self_review_fail_reply_failed", chat_id=chat.id, user_id=user.id, error=str(exc))
                     try:
                         await update.effective_message.reply_text("❌ 处理失败，请检查机器人禁言/踢人权限。")
-                    except Exception:
-                        pass
+                    except Exception as fallback_exc:
+                        log.warning("verification_self_review_fail_fallback_reply_failed", chat_id=chat.id, user_id=user.id, error=str(fallback_exc))
                 return
             wrong_action = getattr(settings, "verification_wrong_action", "none") or "none"
             if not is_self_review_question(ch.question) and wrong_action != "none":
@@ -107,16 +111,17 @@ async def verify_message_handler(update: Update, context: ContextTypes.DEFAULT_T
                     await apply_verification_punishment(context, chat.id, user.id, settings, action=wrong_action)
                     async with db.session_factory() as next_session:
                         await mark_challenge_released(next_session, chat.id, user.id)
-                        await next_session.commit()
+                    await next_session.commit()
                     await update.effective_message.reply_text("❌ 答案错误，已按本群配置处理。")
-                except Exception:
+                except Exception as exc:
+                    log.warning("verification_wrong_answer_reply_failed", chat_id=chat.id, user_id=user.id, error=str(exc))
                     try:
                         await update.effective_message.reply_text("❌ 处理失败，请检查机器人禁言/踢人权限。")
-                    except Exception:
-                        pass
+                    except Exception as fallback_exc:
+                        log.warning("verification_wrong_answer_fallback_reply_failed", chat_id=chat.id, user_id=user.id, error=str(fallback_exc))
                 return
             prompt = render_self_review_question(ch.question) if is_self_review_question(ch.question) else ch.question
             try:
                 await update.effective_message.reply_text(f"❌ 答案错误，请重试。\n\n{prompt}")
-            except Exception:
-                pass
+            except Exception as exc:
+                log.warning("verification_retry_prompt_failed", chat_id=chat.id, user_id=user.id, error=str(exc))

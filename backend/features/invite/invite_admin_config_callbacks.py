@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import structlog
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
@@ -16,6 +17,8 @@ from backend.platform.telegram.errors import answer_callback_query_safely, mark_
 from backend.shared.callback_parser import CallbackParser
 from backend.shared.chat_context import PrivateChatContext
 from backend.shared.services.chat_service import get_chat_settings
+
+log = structlog.get_logger(__name__)
 
 
 async def _resolve_invite_target_chat_id(
@@ -135,7 +138,13 @@ async def invite_link_reset_callback(update: Update, context: ContextTypes.DEFAU
         for link in links:
             try:
                 await context.bot.revoke_chat_invite_link(chat_id=target_chat_id, invite_link=link.invite_link)
-            except Exception:
+            except Exception as exc:
+                log.warning(
+                    "invite_bulk_revoke_failed",
+                    chat_id=target_chat_id,
+                    link_id=getattr(link, "id", None),
+                    error=str(exc),
+                )
                 continue
     await q.answer(toast, show_alert=True)
     mark_callback_query_answered(update)

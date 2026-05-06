@@ -307,8 +307,14 @@ class LotteryParticipationMixin:
                 if result_pin_enabled and result_message_id is not None:
                     try:
                         await context.bot.pin_chat_message(chat_id=result_chat_id, message_id=result_message_id)
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        log.warning(
+                            "lottery_result_pin_failed",
+                            lottery_id=lottery_id,
+                            chat_id=result_chat_id,
+                            message_id=result_message_id,
+                            error=str(exc),
+                        )
                 await q.answer(f"🎉 参与成功！当前人数: {participant_count}，已满员开奖！", show_alert=True)
             else:
                 await q.answer(f"🎉 参与成功！当前人数: {participant_count}", show_alert=True)

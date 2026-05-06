@@ -51,3 +51,24 @@ async def test_get_solitaire_in_chat_accepts_matching_chat(monkeypatch):
     result = await solitaire_service.get_solitaire_in_chat(_Session(), -1001, 12)
 
     assert result is solitaire
+
+
+@pytest.mark.asyncio
+async def test_create_solitaire_returns_generic_error_when_flush_fails():
+    class _Session:
+        def add(self, obj) -> None:
+            return None
+
+        async def flush(self) -> None:
+            raise RuntimeError("db down")
+
+    result = await solitaire_service.create_solitaire(
+        _Session(),
+        chat_id=-1001,
+        created_by_user_id=42,
+        title="测试接龙",
+    )
+
+    assert result.success is False
+    assert result.reason == "error"
+    assert result.error == "接龙创建失败，请稍后重试"

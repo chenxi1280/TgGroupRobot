@@ -52,8 +52,8 @@ class GameTask(ScheduledTask):
             try:
                 await show_k3_panel(app, db, chat_id, create_if_missing=create_k3)
                 await show_blackjack_panel(app, db, chat_id, create_if_missing=create_blackjack)
-            except Exception:
-                pass
+            except Exception as exc:
+                log.warning("game_schedule_panel_refresh_failed", chat_id=chat_id, error=str(exc))
         for round_id in due_k3_round_ids:
             async with db.session_factory() as session:
                 summary = await settle_k3_round(session, round_id)
@@ -70,8 +70,8 @@ class GameTask(ScheduledTask):
                 await session.commit()
             try:
                 await show_k3_panel(app, db, chat_id)
-            except Exception:
-                pass
+            except Exception as exc:
+                log.warning("game_k3_panel_refresh_failed", chat_id=chat_id, round_id=round_id, error=str(exc))
         for round_id in due_blackjack_round_ids:
             async with db.session_factory() as session:
                 summary = await settle_blackjack_round(session, round_id)
@@ -88,8 +88,8 @@ class GameTask(ScheduledTask):
                 await session.commit()
             try:
                 await show_blackjack_panel(app, db, chat_id)
-            except Exception:
-                pass
+            except Exception as exc:
+                log.warning("game_blackjack_panel_refresh_failed", chat_id=chat_id, round_id=round_id, error=str(exc))
 
     async def _send_k3_summary(self, app, summary: dict) -> None:
         round_obj = summary["round"]
@@ -132,7 +132,13 @@ class GameTask(ScheduledTask):
                     message_id=round_obj.announcement_message_id,
                     text=text,
                 )
-            except Exception:
+            except Exception as exc:
+                log.warning(
+                    "blackjack_summary_edit_failed",
+                    chat_id=round_obj.chat_id,
+                    message_id=round_obj.announcement_message_id,
+                    error=str(exc),
+                )
                 await PublishService.send(context, chat_id=round_obj.chat_id, text=text)
         else:
             await PublishService.send(context, chat_id=round_obj.chat_id, text=text)

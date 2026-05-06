@@ -38,7 +38,8 @@ async def callback_handler_action(
         if action == "close":
             try:
                 await q.message.delete()
-            except Exception:
+            except Exception as exc:
+                log.warning("nearby_panel_delete_failed", error=str(exc))
                 await q.edit_message_text("已关闭。")
             return
 

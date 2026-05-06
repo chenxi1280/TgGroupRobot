@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 
+import structlog
 from telegram import Update
 from telegram.error import BadRequest
 from telegram.ext import ContextTypes
@@ -17,6 +18,8 @@ from backend.platform.db.runtime.session import Database
 from backend.platform.db.schema.models.enums import SolitaireStatus
 from backend.shared.callback_parser import CallbackParser
 from backend.shared.chat_context import PrivateChatContext
+
+log = structlog.get_logger(__name__)
 
 
 def _parse_scoped_solitaire_callback(cb: CallbackParser) -> tuple[int | None, int]:
@@ -65,8 +68,8 @@ async def solitaire_refresh_callback(update: Update, context: ContextTypes.DEFAU
                         chat_id=solitaire.chat_id,
                         text=f"⏰ 接龙已截止\n\n{solitaire.title}\n参与人数: {len(solitaire.entries_rel)} 人",
                     )
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log.warning("solitaire_deadline_notice_failed", chat_id=solitaire.chat_id, solitaire_id=solitaire.id, error=str(exc))
 
         text = format_solitaire_message(solitaire, show_closed=False)
         is_active = solitaire.status == SolitaireStatus.active.value
@@ -117,8 +120,8 @@ async def solitaire_close_callback(update: Update, context: ContextTypes.DEFAULT
                     chat_id=result.entity.chat_id,
                     text=f"🔴 接龙已结束\n\n{result.entity.title}\n参与人数: {entries_count} 人",
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                log.warning("solitaire_close_notice_failed", chat_id=result.entity.chat_id, solitaire_id=result.entity.id, error=str(exc))
 
             if result.entity.message_id:
                 try:
@@ -127,13 +130,19 @@ async def solitaire_close_callback(update: Update, context: ContextTypes.DEFAULT
                         message_id=result.entity.message_id,
                         text=format_solitaire_message(result.entity, show_closed=False),
                     )
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log.warning(
+                        "solitaire_close_message_edit_failed",
+                        chat_id=result.entity.chat_id,
+                        solitaire_id=result.entity.id,
+                        message_id=result.entity.message_id,
+                        error=str(exc),
+                    )
 
             try:
                 await context.bot.send_message(chat_id=user.id, text=format_solitaire_message(result.entity, show_closed=False))
-            except Exception:
-                pass
+            except Exception as exc:
+                log.warning("solitaire_dm_summary_failed", user_id=user.id, solitaire_id=result.entity.id, error=str(exc))
 
             await q.edit_message_text(
                 format_solitaire_message(result.entity, show_closed=False),

@@ -51,14 +51,19 @@ async def moderation_message_handler(update: Update, context: ContextTypes.DEFAU
     if should_delete:
         try:
             await update.effective_message.delete()
-        except Exception:
+        except Exception as exc:
+            log.warning(
+                "moderation_delete_failed",
+                chat_id=chat.id,
+                message_id=update.effective_message.message_id,
+                error=str(exc),
+            )
             return
         # 轻提示，避免刷屏：这里只在删除后短提示一次（可扩展为按策略/频率）
         try:
             await context.bot.send_message(chat_id=chat.id, text=t(settings.language, "moderation.deleted"))
         except Exception as e:
             log.warning("send_moderation_notification_failed", chat_id=chat.id, error=str(e))
-
 
 
 

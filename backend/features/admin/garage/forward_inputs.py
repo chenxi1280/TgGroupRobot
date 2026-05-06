@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import structlog
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -11,6 +12,8 @@ from backend.features.admin.garage.input_runtime import (
 )
 from backend.shared.services.base import ValidationError
 from backend.shared.ui.button_input import is_clear_button_input
+
+log = structlog.get_logger(__name__)
 
 
 async def handle_garage_forward_input(
@@ -155,12 +158,14 @@ async def _handle_source_input(
         source_channel_id = int(raw_value)
         try:
             remote_chat = await context.bot.get_chat(source_channel_id)
-        except Exception:
+        except Exception as exc:
+            log.warning("garage_forward_source_lookup_failed", raw_value=raw_value, error=str(exc))
             remote_chat = None
     else:
         try:
             remote_chat = await context.bot.get_chat(raw_value)
-        except Exception:
+        except Exception as exc:
+            log.warning("garage_forward_source_lookup_failed", raw_value=raw_value, error=str(exc))
             remote_chat = None
         if remote_chat is not None:
             source_channel_id = int(remote_chat.id)

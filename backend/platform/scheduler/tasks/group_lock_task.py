@@ -35,7 +35,8 @@ def _is_closed_now(settings: ChatSettings) -> bool:
     try:
         open_hour, open_minute = [int(x) for x in open_time.split(':', 1)]
         close_hour, close_minute = [int(x) for x in close_time.split(':', 1)]
-    except Exception:
+    except Exception as exc:
+        log.warning("group_lock_schedule_parse_failed", open_time=open_time, close_time=close_time, error=str(exc))
         return False
 
     now = dt.datetime.now().time()

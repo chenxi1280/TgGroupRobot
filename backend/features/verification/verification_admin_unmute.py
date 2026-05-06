@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import structlog
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -14,6 +15,8 @@ from backend.features.verification.verification_runtime import unrestrict_and_no
 from backend.platform.db.runtime.session import Database
 from backend.shared.services.chat_service import get_chat_settings
 from backend.shared.services.permission_service import PermissionPolicyService
+
+log = structlog.get_logger(__name__)
 
 
 async def try_admin_manual_unmute_impl(
@@ -47,8 +50,8 @@ async def try_admin_manual_unmute_impl(
         if target_user_id is None:
             try:
                 await message.reply_text("请回复目标用户消息或使用“解封 @用户ID / 解封 @username / 解封 用户名”。")
-            except Exception:
-                pass
+            except Exception as exc:
+                log.warning("verification_unmute_hint_failed", chat_id=chat.id, actor_user_id=actor.id, error=str(exc))
             return True
         settings = await get_chat_settings(session, chat.id)
         await mark_challenge_released(session, chat.id, target_user_id)
@@ -59,6 +62,6 @@ async def try_admin_manual_unmute_impl(
             f"✅ 管理员解封完成\n管理员: {actor.mention_html()}\n用户: {user_mention_html(target_user_id)}\n方式: 文本解封",
             parse_mode="HTML",
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        log.warning("verification_unmute_success_reply_failed", chat_id=chat.id, actor_user_id=actor.id, target_user_id=target_user_id, error=str(exc))
     return True

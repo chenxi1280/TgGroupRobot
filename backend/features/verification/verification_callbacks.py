@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import structlog
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -14,6 +15,8 @@ from backend.platform.db.runtime.session import Database
 from backend.platform.telegram.errors import answer_callback_query_safely, mark_callback_query_answered
 from backend.shared.i18n.strings import t
 from backend.shared.services.chat_service import get_chat_settings
+
+log = structlog.get_logger(__name__)
 
 
 def _parse_verify_callback_data(data: str) -> tuple[str, str]:
@@ -61,7 +64,8 @@ async def verify_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         if action == "decline":
             try:
                 await apply_verification_punishment(context, chat.id, update.effective_user.id, settings)
-            except Exception:
+            except Exception as exc:
+                log.warning("verification_decline_punishment_failed", chat_id=chat.id, user_id=update.effective_user.id, error=str(exc))
                 await session.commit()
                 await answer_callback_query_safely(update, "处理失败，请检查机器人禁言/踢人权限", show_alert=True)
                 return

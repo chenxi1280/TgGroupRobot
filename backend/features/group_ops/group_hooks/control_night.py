@@ -21,7 +21,8 @@ def _is_night_time(settings) -> bool:
     try:
         start_hour, start_minute = [int(x) for x in start_time.split(":", 1)]
         end_hour, end_minute = [int(x) for x in end_time.split(":", 1)]
-    except Exception:
+    except Exception as exc:
+        log.warning("night_mode_schedule_parse_failed", start_time=start_time, end_time=end_time, error=str(exc))
         return False
     now = dt.datetime.now().time()
     now_min = now.hour * 60 + now.minute

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import structlog
 from sqlalchemy import func, select
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -35,6 +36,8 @@ from backend.shared.services.base import ValidationError
 from backend.shared.services.publish_service import PublishService
 from backend.shared.services.user_service import ensure_user
 
+log = structlog.get_logger(__name__)
+
 
 async def delete_source_if_needed(
     context: ContextTypes.DEFAULT_TYPE,
@@ -46,7 +49,8 @@ async def delete_source_if_needed(
         return
     try:
         await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
-    except Exception:
+    except Exception as exc:
+        log.warning("game_delete_source_failed", chat_id=chat_id, message_id=message_id, error=str(exc))
         return
 
 
@@ -379,8 +383,20 @@ async def handle_game_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                     text=format_blackjack_round_text(participant, reveal_dealer=bool(outcome), outcome=outcome),
                     reply_markup=None if outcome else blackjack_round_keyboard(chat.id),
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                log.warning(
+                    "blackjack_round_edit_failed",
+                    chat_id=chat.id,
+                    message_id=round_obj.announcement_message_id,
+                    user_id=user.id,
+                    error=str(exc),
+                )
+                await PublishService.reply(
+                    context,
+                    chat_id=chat.id,
+                    text=format_blackjack_round_text(participant, reveal_dealer=bool(outcome), outcome=outcome),
+                    reply_to_message_id=update.effective_message.message_id,
+                )
         else:
             await PublishService.reply(
                 context,

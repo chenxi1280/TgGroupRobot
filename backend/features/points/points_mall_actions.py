@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import structlog
 from telegram import Update
 from telegram.ext import ContextTypes
 
 from backend.platform.db.runtime.session import Database
 from backend.platform.telegram.errors import answer_callback_query_safely, mark_callback_query_answered
 from backend.shared.services.publish_service import PublishService
+
+log = structlog.get_logger(__name__)
 
 
 async def show_mall_catalog_action(
@@ -43,8 +46,8 @@ async def show_mall_catalog_action(
                     reply_markup=keyboard_builder(chat_id, products),
                 )
                 return
-            except Exception:
-                pass
+            except Exception as exc:
+                log.warning("mall_catalog_edit_caption_failed", chat_id=chat_id, error=str(exc))
         await update.callback_query.edit_message_text(
             text,
             reply_markup=keyboard_builder(chat_id, products),

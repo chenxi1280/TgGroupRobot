@@ -126,7 +126,8 @@ async def verification_timeout_help_callback_impl(update: Update, context: Conte
             )
             await query.answer("已通知管理员，请等待处理", show_alert=True)
             mark_callback_query_answered(update)
-        except Exception:
+        except Exception as exc:
+            log.warning("verification_admin_notify_success_feedback_failed", chat_id=chat.id, user_id=actor.id, target_user_id=target_user_id, error=str(exc))
             await answer_callback_query_safely(update, "通知管理员失败，请稍后重试", show_alert=True)
         return
 

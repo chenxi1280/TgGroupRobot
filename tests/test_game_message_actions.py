@@ -139,3 +139,46 @@ async def test_game_runtime_refresh_callback_returns_visible_feedback(monkeypatc
 
     assert shown == [-1001]
     assert query.answers == [{"text": "已刷新快三面板", "show_alert": False}]
+
+
+@pytest.mark.asyncio
+async def test_blackjack_action_falls_back_to_reply_when_edit_fails(monkeypatch):
+    replies: list[str] = []
+
+    async def fake_get_or_create_setting(session, chat_id: int):
+        return SimpleNamespace(delete_game_message_mode="keep")
+
+    async def fake_get_active_blackjack_round(session, chat_id: int, user_id: int):
+        round_obj = SimpleNamespace(announcement_message_id=321)
+        participant = SimpleNamespace(choice_data={"player_cards": [10, 9]})
+        return round_obj, participant
+
+    async def fake_blackjack_hit(session, round_obj, participant):
+        return round_obj, participant, "push"
+
+    async def fake_reply(context, *, chat_id: int, text: str, reply_to_message_id: int, **kwargs):
+        replies.append(text)
+        return SimpleNamespace(ok=True, message_id=100)
+
+    async def fake_show_blackjack_panel(context, db, chat_id: int):
+        return None
+
+    async def fail_edit_message_text(**kwargs):
+        raise RuntimeError("message missing")
+
+    monkeypatch.setattr(game_message_actions, "get_or_create_setting", fake_get_or_create_setting)
+    monkeypatch.setattr(game_message_actions, "get_active_blackjack_round", fake_get_active_blackjack_round)
+    monkeypatch.setattr(game_message_actions, "blackjack_hit", fake_blackjack_hit)
+    monkeypatch.setattr(game_message_actions, "show_blackjack_panel", fake_show_blackjack_panel)
+    monkeypatch.setattr(game_message_actions, "format_blackjack_round_text", lambda participant, **kwargs: "round text")
+    monkeypatch.setattr(game_message_actions.PublishService, "reply", fake_reply)
+
+    context = SimpleNamespace(
+        application=SimpleNamespace(bot_data={"db": _Db()}),
+        bot=SimpleNamespace(edit_message_text=fail_edit_message_text),
+    )
+
+    handled = await game_message_actions.handle_game_message(_group_update("要牌"), context)
+
+    assert handled is True
+    assert replies == ["round text"]

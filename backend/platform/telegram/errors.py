@@ -2,11 +2,14 @@ from __future__ import annotations
 
 from collections import deque
 
+import structlog
 from telegram import Update
 
 _ANSWERED_CACHE_LIMIT = 2048
 _ANSWERED_CALLBACK_IDS: set[str] = set()
 _ANSWERED_CALLBACK_QUEUE: deque[str] = deque()
+
+log = structlog.get_logger(__name__)
 
 
 def _get_callback_query_token(update: Update) -> str | None:
@@ -77,11 +80,13 @@ async def answer_callback_query_safely(
     try:
         await update.callback_query.answer(text=safe_text, show_alert=show_alert)
         _remember_callback_query_answered(update)
-    except Exception:
+    except Exception as exc:
+        log.warning("callback_query_answer_failed", error=str(exc), used_fallback=False)
         try:
             await update.callback_query.answer(text=fallback_text, show_alert=show_alert)
             _remember_callback_query_answered(update)
-        except Exception:
+        except Exception as fallback_exc:
+            log.warning("callback_query_answer_failed", error=str(fallback_exc), used_fallback=True)
             return
 
 

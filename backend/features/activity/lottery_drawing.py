@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 
+import structlog
 from telegram import Update
 from telegram.ext import ContextTypes
 from sqlalchemy import select
@@ -20,6 +21,8 @@ from backend.features.activity.services.lottery_subscription import (
     requires_lottery_subscribe,
 )
 from backend.features.activity.ui.lottery import manual_draw_summary_keyboard
+
+log = structlog.get_logger(__name__)
 
 
 class LotteryDrawMixin:
@@ -134,8 +137,14 @@ class LotteryDrawMixin:
                     if setting.result_pin_enabled:
                         try:
                             await context.bot.pin_chat_message(chat_id=lottery.chat_id, message_id=sent.message_id)
-                        except Exception:
-                            pass
+                        except Exception as exc:
+                            log.warning(
+                                "lottery_manual_draw_pin_failed",
+                                lottery_id=lottery.id,
+                                chat_id=lottery.chat_id,
+                                message_id=sent.message_id,
+                                error=str(exc),
+                            )
                     await session.commit()
                     await self.message_helper.safe_edit(update, text="✅ 已在群内完成开奖并发布结果。")
                 else:

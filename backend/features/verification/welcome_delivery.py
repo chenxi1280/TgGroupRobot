@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import asyncio
 
+import structlog
 from telegram.ext import ContextTypes
 
 from backend.platform.db.schema.models.enums import WelcomeDeleteMode
 from backend.shared.async_tasks import spawn_background_task
+
+log = structlog.get_logger(__name__)
 
 
 async def send_rendered_payload(context: ContextTypes.DEFAULT_TYPE, chat_id: int, *, payload):
@@ -32,7 +35,8 @@ async def send_rendered_payload(context: ContextTypes.DEFAULT_TYPE, chat_id: int
             reply_markup=payload.reply_markup,
             parse_mode=payload.parse_mode,
         )
-    except Exception:
+    except Exception as exc:
+        log.warning("welcome_payload_send_failed", chat_id=chat_id, error=str(exc))
         return None
 
 
@@ -40,8 +44,8 @@ async def apply_welcome_delete_strategy(session, welcome, message_id: int, conte
     if welcome.delete_mode == WelcomeDeleteMode.delete_prev.value and welcome.last_sent_message_id:
         try:
             await context.bot.delete_message(chat_id=chat_id, message_id=welcome.last_sent_message_id)
-        except Exception:
-            pass
+        except Exception as exc:
+            log.warning("welcome_previous_message_delete_failed", chat_id=chat_id, message_id=welcome.last_sent_message_id, error=str(exc))
         welcome.last_sent_message_id = message_id
         await session.flush()
         return
@@ -70,5 +74,6 @@ async def delete_welcome_later(context: ContextTypes.DEFAULT_TYPE, chat_id: int,
         raise
     try:
         await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
-    except Exception:
+    except Exception as exc:
+        log.warning("welcome_message_delete_failed", chat_id=chat_id, message_id=message_id, error=str(exc))
         return

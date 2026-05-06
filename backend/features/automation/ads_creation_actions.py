@@ -160,7 +160,8 @@ async def ads_create_config_message_action(
 
             try:
                 config = parse_ads_config_func(text)
-            except Exception:
+            except Exception as exc:
+                log.warning("ads_config_parse_failed", user_id=update.effective_user.id, error=str(exc))
                 await session.commit()
                 await update.effective_message.reply_text("❌ 配置格式错误，请检查后重试")
                 return

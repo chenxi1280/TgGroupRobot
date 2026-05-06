@@ -291,7 +291,13 @@ class GarageForwardAdminMixin:
                         reply_markup=reply_markup,
                     )
                     success += 1
-                except Exception:
+                except Exception as exc:
+                    log.warning(
+                        "garage_forward_buttons_apply_failed",
+                        chat_id=chat_id,
+                        message_id=int(item.target_message_id),
+                        error=str(exc),
+                    )
                     failed += 1
 
             async with db.session_factory() as session:
@@ -347,4 +353,3 @@ class GarageForwardAdminMixin:
             return
 
         await self._show_garage_forward_prompt(update, context, chat_id)
-

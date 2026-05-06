@@ -2,8 +2,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import structlog
+
 if TYPE_CHECKING:
     from telegram.ext import Application
+
+log = structlog.get_logger(__name__)
 
 
 async def validate_user_permission(
@@ -35,7 +39,13 @@ async def validate_bot_permission(
         if required_permission == "is_administrator":
             return bot_member.status in ["administrator", "creator"]
         return True
-    except Exception:
+    except Exception as exc:
+        log.warning(
+            "validate_bot_permission_failed",
+            chat_id=chat_id,
+            required_permission=required_permission,
+            error=str(exc),
+        )
         return False
 
 
@@ -49,7 +59,8 @@ async def validate_user_in_group(
         chat = await bot.get_chat(chat_id)
         member = await chat.get_member(user_id)
         return member is not None
-    except Exception:
+    except Exception as exc:
+        log.warning("validate_user_membership_failed", chat_id=chat_id, user_id=user_id, error=str(exc))
         return False
 
 
