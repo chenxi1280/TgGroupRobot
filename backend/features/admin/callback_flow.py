@@ -72,7 +72,7 @@ async def group_admin_callback_impl(update: Update, context: ContextTypes.DEFAUL
 
         if cb.get(1) == "toggle":
             field = cb.get(2)
-            if hasattr(settings, field):
+            if field in SETTINGS_TOGGLE_FIELDS and hasattr(settings, field):
                 setattr(settings, field, not bool(getattr(settings, field)))
                 await session.commit()
                 await admin_runtime.message_helper.safe_edit(

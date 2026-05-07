@@ -16,6 +16,7 @@ from backend.platform.state.conversation_state_service import ConversationStateS
 from backend.shared.callback_parser import CallbackParser
 from backend.platform.config.core.settings import get_settings
 from backend.platform.db.schema.models.enums import ConversationStateType
+from backend.platform.db.runtime.session import Database
 from backend.platform.telegram.errors import (
     answer_callback_query_safely,
     mark_callback_query_answered,

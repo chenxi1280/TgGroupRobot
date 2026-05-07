@@ -1275,7 +1275,8 @@ async def parse_lottery_config_message(update: Update, context: ContextTypes.DEF
         await update.effective_message.reply_text(f"❌ 配置错误: {exc}\n\n请重新发送配置，或使用 /cancel 取消。")
         await session.commit()
     except Exception as exc:
-        await update.effective_message.reply_text(f"❌ 解析失败: {exc}\n\n请检查格式后重新发送。")
+        log.exception("lottery_parse_failed", error=str(exc))
+        await update.effective_message.reply_text("❌ 解析失败，请检查格式后重新发送。")
         await session.rollback()
 
 

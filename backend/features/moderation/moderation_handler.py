@@ -21,7 +21,7 @@ async def moderation_message_handler(update: Update, context: ContextTypes.DEFAU
     if chat.type == "private":
         return
 
-    text = update.effective_message.text or ""
+    text = update.effective_message.text or update.effective_message.caption or ""
     if not text:
         return
 

@@ -171,7 +171,6 @@ class LotteryParticipationMixin:
                                 )
                                 if current_balance < lottery.participation_cost:
                                     error_msg = f"{point_type_name}不足，无法参与"
-                                    await session.rollback()
                                 else:
                                     await PointsExtendedService.adjust_custom_points(
                                         session,
@@ -193,7 +192,6 @@ class LotteryParticipationMixin:
                                 )
                                 if not success:
                                     error_msg = "积分不足，无法参与"
-                                    await session.rollback()
 
                 if not error_msg:
                     joined_lottery = lottery

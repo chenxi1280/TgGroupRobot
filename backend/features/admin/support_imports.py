@@ -145,7 +145,7 @@ from backend.shared.handlers.base.base_handler import BaseHandler
 from backend.shared.handlers.base.chat_resolver import ChatResolver
 from backend.shared.i18n.strings import t
 from backend.shared.services.base import ValidationError
-from backend.shared.services.chat_service import ensure_chat, get_chat_settings, get_settings_toggle_rows
+from backend.shared.services.chat_service import ensure_chat, get_chat_settings, get_settings_toggle_rows, SETTINGS_TOGGLE_FIELDS
 from backend.shared.services.command_config_service import (
     ensure_command_enabled,
     get_command_config,

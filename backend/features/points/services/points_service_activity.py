@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime as dt
 
 from sqlalchemy import and_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.features.points.services.points_service_accounts import change_points, get_balance
@@ -100,7 +101,18 @@ async def sign_in(
         points_awarded=total_points,
     )
     session.add(sign_log)
-    await session.flush()
+    try:
+        await session.flush()
+    except IntegrityError:
+        await session.rollback()
+        bal = await get_balance(session, chat_id, user_id)
+        return SignResult(
+            success=False,
+            balance=bal,
+            consecutive_days=stats.consecutive_sign_days,
+            bonus_points=0,
+            reason="already_signed",
+        )
 
     success, balance = await change_points(
         session,

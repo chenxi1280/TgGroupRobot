@@ -251,7 +251,7 @@ async def execute_flood_punishment(
                 await _tracker.mark_muted(chat_id, user_id, mute_duration)
                 return True
             except Exception as e:
-                log.warning("ban_chat_member_failed", chat_id=chat_id, user_id=user_id, error=str(e))
+                log.warning("restrict_chat_member_failed", chat_id=chat_id, user_id=user_id, error=str(e))
                 return False
 
         elif action == "ban":

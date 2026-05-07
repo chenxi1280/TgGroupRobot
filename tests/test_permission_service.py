@@ -46,26 +46,35 @@ async def test_permission_policy_allows_bot_admin_without_group_check(monkeypatc
 
 @pytest.mark.asyncio
 async def test_permission_policy_allows_group_admin_for_common_capability(monkeypatch):
-    ctx = _ctx("")
-
-    async def fake_is_user_admin(*args, **kwargs):
-        return True
-
-    monkeypatch.setattr("backend.shared.services.permission_service.is_user_admin", fake_is_user_admin)
+    admin_member = SimpleNamespace(status="administrator", can_promote_members=True)
+    bot = SimpleNamespace(get_chat_member=_async_return(admin_member))
+    ctx = SimpleNamespace(
+        application=SimpleNamespace(bot_data={"settings": SimpleNamespace(bot_admin_ids="")}),
+        bot=bot,
+    )
 
     assert await PermissionPolicyService.can_manage(ctx, -1001, 2002, capability="settings") is True
 
 
 @pytest.mark.asyncio
 async def test_permission_policy_denies_non_admin_for_common_capability(monkeypatch):
-    ctx = _ctx("")
-
-    async def fake_is_user_admin(*args, **kwargs):
-        return False
-
-    monkeypatch.setattr("backend.shared.services.permission_service.is_user_admin", fake_is_user_admin)
+    non_admin = SimpleNamespace(status="member")
+    bot = SimpleNamespace(get_chat_member=_async_return(non_admin))
+    ctx = SimpleNamespace(
+        application=SimpleNamespace(bot_data={"settings": SimpleNamespace(bot_admin_ids="")}),
+        bot=bot,
+    )
 
     assert await PermissionPolicyService.can_manage(ctx, -1001, 2002, capability="settings") is False
+
+
+def _async_return(value):
+    """返回异步结果的辅助函数"""
+
+    async def _inner(*args, **kwargs):
+        return value
+
+    return _inner
 
 
 @pytest.mark.asyncio

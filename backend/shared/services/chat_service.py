@@ -12,6 +12,20 @@ from backend.shared.services.module_settings_service import ModuleSettingsServic
 # ==================== 辅助函数 ====================
 
 
+# 允许通过 toggle 回调切换的字段白名单（仅布尔类型字段）
+SETTINGS_TOGGLE_FIELDS: set[str] = {
+    "sign_enabled",
+    "welcome_enabled",
+    "verification_enabled",
+    "moderation_enabled",
+    "moderation_block_links",
+    "anti_flood_enabled",
+    "anti_spam_enabled",
+    "ads_enabled",
+    "monetization_enabled",
+}
+
+
 def get_settings_toggle_rows(settings: ChatSettings) -> list[tuple[str, str, bool]]:
     """
     生成设置开关行数据

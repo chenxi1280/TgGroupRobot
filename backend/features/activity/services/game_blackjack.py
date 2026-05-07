@@ -140,9 +140,14 @@ async def blackjack_hit(
 ) -> tuple[GameRound, GameParticipant, str | None]:
     data = dict(round_obj.result_data or {})
     deck = list(data.get("deck") or [])
-    if not deck:
-        deck = build_blackjack_deck()
     player_cards = list(data.get("player_cards") or [])
+    if not deck:
+        # 牌组耗尽（极小概率），从完整牌组中移除已使用的牌
+        all_cards = build_blackjack_deck()
+        used = set(player_cards) | set(data.get("dealer_cards") or [])
+        deck = [c for c in all_cards if c not in used]
+        if not deck:
+            return round_obj, participant, await finalize_blackjack_round(session, round_obj, participant, "draw")
     player_cards.append(deck.pop())
     data["deck"] = deck
     data["player_cards"] = player_cards

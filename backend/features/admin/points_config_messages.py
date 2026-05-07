@@ -117,6 +117,9 @@ async def handle_points_config_message(update, context: ContextTypes.DEFAULT_TYP
                 setattr(settings, field, value if value > 0 else None)
             elif field in ["points_alias", "points_rank_alias"]:
                 setattr(settings, field, text.strip())
+                # 更新后清除积分别名缓存，使新别名立即生效
+                from backend.features.points.points_handler import get_points_alias_handler
+                get_points_alias_handler().clear_cache(chat_id)
             else:
                 setattr(settings, field, int(text.strip()))
 

@@ -167,8 +167,7 @@ class PermissionPolicyService:
 
         try:
             if not hasattr(context, "bot") or context.bot is None:
-                is_admin = await is_user_admin(context, chat_id, user_id)
-                return PermissionDecision(True, "group_admin") if is_admin else PermissionDecision(False, "group_admin_required")
+                return PermissionDecision(False, "bot_unavailable")
 
             member = await context.bot.get_chat_member(chat_id=chat_id, user_id=user_id)
             if member.status not in ("administrator", "creator"):

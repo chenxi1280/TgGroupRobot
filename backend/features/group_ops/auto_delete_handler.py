@@ -158,6 +158,11 @@ def _should_send_failure_alert(context: ContextTypes.DEFAULT_TYPE, chat_id: int,
     cache = context.application.bot_data.setdefault(AUTO_DELETE_FAILURE_ALERT_CACHE_KEY, {})
     key = (chat_id, message_type)
     now = time.monotonic()
+    # 驱逐超过 TTL 的旧条目，防止内存泄漏
+    if len(cache) > 1000:
+        stale = [k for k, v in cache.items() if now - float(v) > AUTO_DELETE_FAILURE_ALERT_TTL_SECONDS]
+        for k in stale:
+            cache.pop(k, None)
     last_sent_at = cache.get(key)
     if last_sent_at is not None and now - float(last_sent_at) < AUTO_DELETE_FAILURE_ALERT_TTL_SECONDS:
         return False

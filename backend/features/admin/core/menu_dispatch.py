@@ -140,7 +140,7 @@ class CoreMenuDispatchMixin:
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
             settings = await get_chat_settings(session, chat_id)
-            if hasattr(settings, field):
+            if field in SETTINGS_TOGGLE_FIELDS and hasattr(settings, field):
                 current = bool(getattr(settings, field))
                 setattr(settings, field, not current)
                 await session.commit()

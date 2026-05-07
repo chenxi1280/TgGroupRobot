@@ -63,4 +63,7 @@ async def bottom_button_runtime_callback(update: Update, context: ContextTypes.D
         return
 
     await answer_callback_query_safely(update, f"已发送：{layout.button_text}")
-    await context.bot.send_message(chat_id=chat_id, text=payload)
+    try:
+        await context.bot.send_message(chat_id=chat_id, text=payload)
+    except Exception as exc:
+        log.warning("bottom_button_send_message_failed", chat_id=chat_id, layout_id=layout_id, error=str(exc))

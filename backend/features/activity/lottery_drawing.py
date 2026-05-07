@@ -133,7 +133,13 @@ class LotteryDrawMixin:
                 announcement = generate_lottery_announcement(lottery, winners, users)
 
                 if target_chat_id is not None and update.effective_chat and update.effective_chat.type == "private":
-                    sent = await context.bot.send_message(chat_id=lottery.chat_id, text=announcement, parse_mode="HTML")
+                    try:
+                        sent = await context.bot.send_message(chat_id=lottery.chat_id, text=announcement, parse_mode="HTML")
+                    except Exception as exc:
+                        log.error("lottery_manual_draw_send_failed", lottery_id=lottery.id, chat_id=lottery.chat_id, error=str(exc))
+                        await session.rollback()
+                        await self.message_helper.safe_edit(update, text="❌ 开奖结果发送失败，可能机器人已被移出群组。")
+                        return
                     if setting.result_pin_enabled:
                         try:
                             await context.bot.pin_chat_message(chat_id=lottery.chat_id, message_id=sent.message_id)

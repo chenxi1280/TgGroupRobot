@@ -257,8 +257,8 @@ async def generate_buttons(context: ContextTypes.DEFAULT_TYPE, session: AsyncSes
                 chat_id=chat_id,
                 message_id=setting.generated_message_id,
             )
-        except TelegramError:
-            pass
+        except TelegramError as exc:
+            log.warning("bottom_button_delete_old_failed", chat_id=chat_id, message_id=setting.generated_message_id, error=str(exc))
 
     sent = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=markup)
 

@@ -57,6 +57,12 @@ class PointsHandler(BaseHandler):
         cache = context.application.bot_data.setdefault("points_level_block_notice", {})
         key = (chat_id, user_id)
         now = dt.datetime.now(dt.UTC)
+        # 驱逐超过 10 分钟的旧条目，防止内存泄漏
+        if len(cache) > 1000:
+            cutoff = now - dt.timedelta(minutes=10)
+            stale = [k for k, v in cache.items() if isinstance(v, dt.datetime) and v < cutoff]
+            for k in stale:
+                cache.pop(k, None)
         last_sent = cache.get(key)
         if isinstance(last_sent, dt.datetime) and (now - last_sent).total_seconds() < 60:
             return False

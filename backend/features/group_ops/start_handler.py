@@ -254,11 +254,15 @@ async def _send_guide_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     text = format_group_guide_message(bot_username=context.bot.username)
 
     # 发送引导消息（使用 send_message 而不是 reply_text，因为消息会被删除）
-    msg = await context.bot.send_message(
-        chat_id=chat.id,
-        text=text,
-        reply_markup=keyboard
-    )
+    try:
+        msg = await context.bot.send_message(
+            chat_id=chat.id,
+            text=text,
+            reply_markup=keyboard
+        )
+    except Exception as exc:
+        log.warning("start_guide_send_failed", chat_id=chat.id, error=str(exc))
+        return
 
     # 删除用户发送的消息
     try:

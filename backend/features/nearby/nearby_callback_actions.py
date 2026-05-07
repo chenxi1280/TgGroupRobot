@@ -89,4 +89,4 @@ async def callback_handler_action(
         await reply_or_edit_func(update, "未知操作。")
     except Exception as exc:
         log.exception("nearby_callback_error", data=data, error=str(exc))
-        await q.edit_message_text(f"操作失败: {exc}")
+        await q.edit_message_text("操作失败，请稍后重试。")
