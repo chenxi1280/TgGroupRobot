@@ -180,14 +180,7 @@ class GarageReviewActionsMixin:
                     await answer_callback_query_safely(update, "该报告当前状态不可再次审核", show_alert=True)
                     await self._show_car_review_report_detail(update, context, chat_id, report_id, status=status)
                     return
-                approver_enforced = False
-                if setting.approver_user_id:
-                    try:
-                        approver_enforced = await is_user_admin(context, chat_id, setting.approver_user_id)
-                    except Exception as exc:
-                        log.warning("car_review_approver_check_failed", chat_id=chat_id, report_id=report_id, approver_user_id=setting.approver_user_id, error=str(exc))
-                        approver_enforced = False
-                if approver_enforced and update.effective_user.id != setting.approver_user_id:
+                if setting.approver_user_id and update.effective_user.id != setting.approver_user_id:
                     await session.commit()
                     await answer_callback_query_safely(update, "仅指定审核人可以处理该报告", show_alert=True)
                     await self._show_car_review_report_detail(update, context, chat_id, report_id, status=status)

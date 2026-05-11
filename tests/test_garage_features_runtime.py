@@ -7,6 +7,7 @@ import pytest
 
 import backend.features.group_ops.group_message_handler as group_message_handler
 import backend.features.group_ops.group_hooks.car_review as car_review_hook
+from backend.features.admin.garage import review_submit
 from backend.features.group_ops.group_message_handler import _process_garage_features
 from backend.platform.db.schema.models.core import TgUser
 from backend.platform.db.schema.models.garage_features import CarReviewAuditLog, CarReviewReport, TeacherProfile, TeacherSearchSetting
@@ -295,6 +296,53 @@ async def test_search_teachers_by_keyword_matches_full_name(monkeypatch):
     )
 
     assert matches == rows
+
+
+@pytest.mark.asyncio
+async def test_search_teachers_by_keyword_filters_by_review_score(monkeypatch):
+    rows = [
+        (
+            SimpleNamespace(
+                user_id=1,
+                region_text="A区",
+                price_text="100",
+                labels=["新人"],
+                avg_score=92.5,
+                review_count=3,
+                updated_at=dt.datetime.now(dt.UTC),
+            ),
+            SimpleNamespace(id=1, username="teacher_a", first_name="小", last_name="雪"),
+        ),
+        (
+            SimpleNamespace(
+                user_id=2,
+                region_text="B区",
+                price_text="90",
+                labels=["新人"],
+                avg_score=80,
+                review_count=4,
+                updated_at=dt.datetime.now(dt.UTC),
+            ),
+            SimpleNamespace(id=2, username="teacher_b", first_name="小", last_name="夏"),
+        ),
+    ]
+
+    async def fake_list_searchable_teachers(session, chat_id, *, only_open_course=False):
+        return rows
+
+    monkeypatch.setattr(
+        "backend.features.garage.services.teacher_search_queries.TeacherSearchQueryMixin.list_searchable_teachers",
+        fake_list_searchable_teachers,
+    )
+
+    matches = await TeacherSearchService.search_teachers_by_keyword(
+        _FakeSession(),
+        -1001,
+        "90分以上",
+        only_open_course=False,
+    )
+
+    assert matches == [rows[0]]
 
 
 @pytest.mark.asyncio
@@ -1315,6 +1363,176 @@ async def test_process_garage_features_tag_search_displays_status_and_profile_st
 
 
 @pytest.mark.asyncio
+async def test_process_garage_features_car_review_submit_entry_returns_private_link(monkeypatch):
+    session = _FakeSession()
+    db = _FakeDb(session)
+    replies: list[dict[str, object]] = []
+
+    async def fake_get_teacher_setting(*args, **kwargs):
+        return SimpleNamespace(
+            nearby_search_enabled=False,
+            attendance_enabled=False,
+            force_location_enabled=False,
+            footer_button_label=None,
+        )
+
+    async def fake_get_car_review_setting(*args, **kwargs):
+        return SimpleNamespace(
+            enabled=True,
+            rank_command="出击排行",
+            submit_command="提交报告",
+            approver_user_id=9001,
+        )
+
+    async def fake_is_teacher(*args, **kwargs):
+        return False
+
+    async def fake_is_whitelisted(*args, **kwargs):
+        return False
+
+    async def fake_reply(context, *, chat_id, text, reply_to_message_id=None, reply_markup=None, **kwargs):
+        replies.append({"chat_id": chat_id, "text": text, "reply_markup": reply_markup})
+
+    monkeypatch.setattr(TeacherSearchService, "get_setting", fake_get_teacher_setting)
+    monkeypatch.setattr(CarReviewService, "get_setting", fake_get_car_review_setting)
+    monkeypatch.setattr(GarageAuthService, "is_certified_teacher", fake_is_teacher)
+    monkeypatch.setattr(GarageAuthService, "is_whitelisted", fake_is_whitelisted)
+    monkeypatch.setattr(group_message_handler.PublishService, "reply", fake_reply)
+
+    handled = await _process_garage_features(
+        SimpleNamespace(application=SimpleNamespace(bot_data={}), bot=SimpleNamespace(username="test_bot")),
+        db,
+        SimpleNamespace(id=-1001, title="测试群"),
+        SimpleNamespace(id=42),
+        SimpleNamespace(message_id=9, location=None, reply_to_message=None),
+        "提交车评",
+        SimpleNamespace(garage_limit_enabled=False),
+        False,
+    )
+
+    assert handled is True
+    assert "到机器人私聊提交车评" in replies[0]["text"]
+    button = replies[0]["reply_markup"].inline_keyboard[0][0]
+    assert button.url == "https://t.me/test_bot?start=crvsub_-1001"
+
+
+@pytest.mark.asyncio
+async def test_private_car_review_submit_teacher_input_enters_body_state(monkeypatch):
+    teacher = SimpleNamespace(id=77, username="teacher77", first_name="T", last_name=None)
+    session = _FakeSession(execute_results=[_ExecuteResult(scalar=teacher)], get_map={(TgUser, 77): teacher})
+    replies: list[str] = []
+    states: list[dict[str, object]] = []
+
+    async def fake_get_setting(*args, **kwargs):
+        return SimpleNamespace(enabled=True, approver_user_id=9001)
+
+    async def fake_is_effective_teacher(*args, **kwargs):
+        return True
+
+    async def fake_list_custom_fields(*args, **kwargs):
+        return [SimpleNamespace(field_label="颜值", enabled=True), SimpleNamespace(field_label="过程", enabled=True)]
+
+    async def fake_set_user_state(session, **kwargs):
+        states.append(kwargs)
+
+    async def fake_reply_text(text, **kwargs):
+        replies.append(text)
+
+    monkeypatch.setattr(CarReviewService, "get_setting", fake_get_setting)
+    monkeypatch.setattr(CarReviewService, "list_custom_fields", fake_list_custom_fields)
+    monkeypatch.setattr(GarageAuthService, "is_effective_certified_teacher", fake_is_effective_teacher)
+    monkeypatch.setattr(review_submit, "set_user_state", fake_set_user_state)
+
+    await review_submit.handle_car_review_submit_input(
+        SimpleNamespace(
+            effective_message=SimpleNamespace(reply_text=fake_reply_text),
+            effective_user=SimpleNamespace(id=42),
+        ),
+        SimpleNamespace(),
+        session,
+        SimpleNamespace(
+            chat_id=42,
+            state_type=review_submit.TEACHER_STATE,
+            state_data={"target_chat_id": -1001},
+        ),
+        "@teacher77",
+    )
+
+    assert states == [
+        {
+            "chat_id": 42,
+            "user_id": 42,
+            "state_type": review_submit.BODY_STATE,
+            "state_data": {"target_chat_id": -1001, "teacher_user_id": 77},
+        }
+    ]
+    assert "已选择老师" in replies[0]
+    assert "颜值" in replies[0]
+
+
+@pytest.mark.asyncio
+async def test_private_car_review_submit_body_creates_pending_report_and_notifies_approver(monkeypatch):
+    session = _FakeSession(
+        get_map={
+            (TgUser, 77): SimpleNamespace(id=77, username="teacher77", first_name="T", last_name=None),
+        }
+    )
+    replies: list[str] = []
+    cleared: list[tuple[int, int]] = []
+    sent: list[dict[str, object]] = []
+    created: list[dict[str, object]] = []
+
+    async def fake_get_setting(*args, **kwargs):
+        return SimpleNamespace(enabled=True, approver_user_id=9001, review_mode="simple")
+
+    async def fake_list_custom_fields(*args, **kwargs):
+        return []
+
+    async def fake_create_report(session, **kwargs):
+        created.append(kwargs)
+        return SimpleNamespace(report_id=5)
+
+    async def fake_clear_user_state(session, *, chat_id, user_id):
+        cleared.append((chat_id, user_id))
+
+    async def fake_send(context, **kwargs):
+        sent.append(kwargs)
+
+    async def fake_reply_text(text, **kwargs):
+        replies.append(text)
+
+    monkeypatch.setattr(CarReviewService, "get_setting", fake_get_setting)
+    monkeypatch.setattr(CarReviewService, "list_custom_fields", fake_list_custom_fields)
+    monkeypatch.setattr(CarReviewService, "create_report", fake_create_report)
+    monkeypatch.setattr(review_submit, "clear_user_state", fake_clear_user_state)
+    monkeypatch.setattr(review_submit.PublishService, "send", fake_send)
+
+    await review_submit.handle_car_review_submit_input(
+        SimpleNamespace(
+            effective_message=SimpleNamespace(reply_text=fake_reply_text, photo=None, video=None, document=None),
+            effective_user=SimpleNamespace(id=42, username="author42", first_name="A", last_name=None),
+        ),
+        SimpleNamespace(),
+        session,
+        SimpleNamespace(
+            chat_id=42,
+            state_type=review_submit.BODY_STATE,
+            state_data={"target_chat_id": -1001, "teacher_user_id": 77},
+        ),
+        "服务不错",
+    )
+
+    assert created[0]["chat_id"] == -1001
+    assert created[0]["teacher_user_id"] == 77
+    assert created[0]["author_user_id"] == 42
+    assert created[0]["review_text"] == "服务不错"
+    assert cleared == [(42, 42)]
+    assert replies == ["车评已提交，等待审核。报告ID：5"]
+    assert sent[0]["chat_id"] == 9001
+    assert "报告ID：5" in sent[0]["text"]
+
+
+@pytest.mark.asyncio
 async def test_process_garage_features_submits_car_review_pending_admin_review(monkeypatch):
     session = _FakeSession(get_map={(TgUser, 77): SimpleNamespace(id=77, username="teacher77", first_name="T", last_name=None), (TgUser, 42): SimpleNamespace(id=42, username="author42", first_name="A", last_name=None)})
     db = _FakeDb(session)
@@ -1335,7 +1553,7 @@ async def test_process_garage_features_submits_car_review_pending_admin_review(m
             enabled=True,
             rank_command="出击排行",
             submit_command="提交报告",
-            approver_user_id=None,
+            approver_user_id=9001,
             reward_points=100,
             publish_to_main_group=True,
             template_text="【老师】{teacher}\n【留名】{author}\n【评价】{review}\n【综合】{total_score}",
@@ -1384,7 +1602,7 @@ async def test_process_garage_features_submits_car_review_pending_admin_review(m
     )
 
     assert handled is True
-    assert any("等待管理员审核" in text for text in replies)
+    assert any("等待审核" in text for text in replies)
 
 
 @pytest.mark.asyncio
@@ -1927,10 +2145,10 @@ async def test_process_garage_features_keyword_attendance_mode_ignores_normal_te
 
 
 @pytest.mark.asyncio
-async def test_process_garage_features_certified_teacher_sends_temporary_badge_on_normal_text(monkeypatch):
+async def test_process_garage_features_certified_teacher_reacts_on_normal_text(monkeypatch):
     session = _FakeSession()
     db = _FakeDb(session)
-    sent: list[dict[str, object]] = []
+    reactions: list[dict[str, object]] = []
 
     async def fake_get_teacher_setting(*args, **kwargs):
         return SimpleNamespace(
@@ -1950,24 +2168,17 @@ async def test_process_garage_features_certified_teacher_sends_temporary_badge_o
     async def fake_is_whitelisted(*args, **kwargs):
         return False
 
-    async def fake_send_temporary(context, *, chat_id, text, delete_after_seconds, reply_to_message_id=None, **kwargs):
-        sent.append(
-            {
-                "chat_id": chat_id,
-                "text": text,
-                "delete_after_seconds": delete_after_seconds,
-                "reply_to_message_id": reply_to_message_id,
-            }
-        )
+    class _Bot:
+        async def set_message_reaction(self, **kwargs):
+            reactions.append(kwargs)
 
     monkeypatch.setattr(TeacherSearchService, "get_setting", fake_get_teacher_setting)
     monkeypatch.setattr(CarReviewService, "get_setting", fake_get_car_review_setting)
     monkeypatch.setattr(GarageAuthService, "is_certified_teacher", fake_is_teacher)
     monkeypatch.setattr(GarageAuthService, "is_whitelisted", fake_is_whitelisted)
-    monkeypatch.setattr(group_message_handler.PublishService, "send_temporary", fake_send_temporary)
 
     handled = await _process_garage_features(
-        SimpleNamespace(application=SimpleNamespace(bot_data={})),
+        SimpleNamespace(application=SimpleNamespace(bot_data={}), bot=_Bot()),
         db,
         SimpleNamespace(id=-1001, title="测试群"),
         SimpleNamespace(id=42, username="teacher42", first_name="老师", last_name=None),
@@ -1982,12 +2193,11 @@ async def test_process_garage_features_certified_teacher_sends_temporary_badge_o
     )
 
     assert handled is False
-    assert sent == [
+    assert reactions == [
         {
             "chat_id": -1001,
-            "text": "🚗 认证老师 @teacher42",
-            "delete_after_seconds": 8,
-            "reply_to_message_id": 9,
+            "message_id": 9,
+            "reaction": "👍",
         }
     ]
     assert session.commits == 1

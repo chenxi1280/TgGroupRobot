@@ -196,6 +196,21 @@ async def _handle_teacher_self_location_start(update: Update, context: ContextTy
     return True
 
 
+async def _handle_car_review_submit_start(update: Update, context: ContextTypes.DEFAULT_TYPE, payload: str) -> bool:
+    if not payload.startswith("crvsub_"):
+        return False
+    try:
+        target_chat_id = int(payload.removeprefix("crvsub_"))
+    except ValueError:
+        if update.effective_message is not None:
+            await update.effective_message.reply_text("车评提交入口无效，请回群重新点击“提交车评”。")
+        return True
+
+    from backend.features.admin.garage.review_submit import start_car_review_submit_flow
+
+    return await start_car_review_submit_flow(update, context, target_chat_id)
+
+
 async def _list_teacher_self_chats(context: ContextTypes.DEFAULT_TYPE, user_id: int):
     from backend.features.garage.services.garage_features_service import GarageAuthService
 
@@ -304,6 +319,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         if payload and await _handle_teacher_location_start(update, context, payload):
             return
         if payload and await _handle_teacher_self_location_start(update, context, payload):
+            return
+        if payload and await _handle_car_review_submit_start(update, context, payload):
             return
 
         # 私聊中显示群组列表

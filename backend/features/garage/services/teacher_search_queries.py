@@ -29,6 +29,8 @@ class TeacherProfileView:
     price_text: str | None = None
     open_course_today: bool = False
     open_course_status: str | None = None
+    avg_score: float = 0.0
+    review_count: int = 0
     last_location_at: dt.datetime | None = None
     updated_at: dt.datetime | None = None
 
@@ -97,6 +99,24 @@ def _keyword_price_ranges(normalized_keyword: str) -> list[tuple[float, float]]:
     return ranges
 
 
+def _keyword_score_threshold(normalized_keyword: str) -> float | None:
+    if normalized_keyword in {"高分", "高评分", "高评价"}:
+        return 90.0
+    if not re.search(r"(分|评分|均分|score|>=|以上|不低于)", normalized_keyword):
+        return None
+    match = re.search(r"(?:评分|均分|score)?(?:>=|不低于)?(\d+(?:\.\d+)?)(?:分)?(?:以上)?", normalized_keyword)
+    if match is None:
+        return None
+    return float(match.group(1))
+
+
+def _teacher_score_matches(profile: TeacherProfileView, normalized_keyword: str) -> bool:
+    threshold = _keyword_score_threshold(normalized_keyword)
+    if threshold is None:
+        return False
+    return int(getattr(profile, "review_count", 0) or 0) > 0 and float(getattr(profile, "avg_score", 0.0) or 0.0) >= threshold
+
+
 def _teacher_keyword_matches(
     profile: TeacherProfileView,
     user: TgUser | None,
@@ -105,6 +125,8 @@ def _teacher_keyword_matches(
     normalized = _normalize_search_text(keyword)
     if not normalized:
         return False
+    if _keyword_score_threshold(normalized) is not None:
+        return _teacher_score_matches(profile, normalized)
 
     first_name = (user.first_name or "") if user else ""
     last_name = (user.last_name or "") if user else ""
@@ -113,6 +135,9 @@ def _teacher_keyword_matches(
         profile.region_text or "",
         profile.price_text or "",
         " ".join(profile.labels or []),
+        f"{float(getattr(profile, 'avg_score', 0.0) or 0.0):g}分"
+        if int(getattr(profile, "review_count", 0) or 0)
+        else "",
         user.username or "" if user else "",
         first_name,
         last_name,
@@ -136,6 +161,9 @@ def _teacher_keyword_matches(
         haystack_number_text = {str(int(number)) if number.is_integer() else str(number) for number in haystack_numbers}
         if any(number in haystack_number_text for number in keyword_numbers):
             return True
+
+    if _teacher_score_matches(profile, normalized):
+        return True
 
     return False
 
@@ -238,6 +266,18 @@ class TeacherSearchQueryMixin:
             if only_open_course and getattr(profile_view, "open_course_status", None) not in {"open", "full"}:
                 continue
             rows.append((profile_view, user))
+        if rows:
+            from backend.features.garage.services.car_review_reports import CarReviewReportMixin
+
+            stats_map = await CarReviewReportMixin.get_teacher_review_stats_map(
+                session,
+                chat_id,
+                [profile.user_id for profile, _user in rows],
+            )
+            for profile, _user in rows:
+                stats = stats_map.get(profile.user_id) or {}
+                profile.review_count = int(stats.get("count", 0) or 0)
+                profile.avg_score = float(stats.get("avg_score", 0.0) or 0.0)
         return rows
 
     @staticmethod
@@ -263,6 +303,13 @@ class TeacherSearchQueryMixin:
         for profile, user in rows:
             if _teacher_keyword_matches(profile, user, normalized):
                 matches.append((profile, user))
+        matches.sort(
+            key=lambda row: (
+                -float(getattr(row[0], "avg_score", 0.0) or 0.0),
+                -int(getattr(row[0], "review_count", 0) or 0),
+                row[0].user_id,
+            )
+        )
         return matches[:limit]
 
     @staticmethod

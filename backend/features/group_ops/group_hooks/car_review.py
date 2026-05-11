@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass
 
 import structlog
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
 from backend.features.garage.services.garage_features_service import CarReviewService
@@ -102,7 +103,13 @@ async def _process_car_review_features(
         await _reply_car_review_rankings(context, session, chat, message, title=title, since=since)
         return True
 
-    submit_command = car_review_setting.submit_command.strip()
+    submit_command = car_review_setting.submit_command.strip() or "提交报告"
+    if text in {submit_command, "提交车评"} and getattr(message, "reply_to_message", None) is None:
+        if await is_reserved_group_text_command_for_chat(session, chat.id, text):
+            return False
+        await _reply_car_review_submit_entry(context, session, chat, message, car_review_setting)
+        return True
+
     if submit_command and text.startswith(submit_command):
         if await is_reserved_group_text_command_for_chat(session, chat.id, text):
             return False
@@ -113,6 +120,39 @@ async def _process_car_review_features(
         return True
 
     return False
+
+
+async def _reply_car_review_submit_entry(
+    context: ContextTypes.DEFAULT_TYPE,
+    session,
+    chat,
+    message,
+    car_review_setting,
+) -> None:
+    if not getattr(car_review_setting, "approver_user_id", None):
+        await session.commit()
+        await PublishService.reply(
+            context,
+            chat_id=chat.id,
+            text="车评系统还没有配置审核人，请管理员先在车评系统里指定审核人。",
+            reply_to_message_id=message.message_id,
+        )
+        return
+
+    bot_username = getattr(getattr(context, "bot", None), "username", None)
+    reply_markup = None
+    if bot_username:
+        reply_markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("去私聊提交车评", url=f"https://t.me/{bot_username}?start=crvsub_{chat.id}")],
+        ])
+    await session.commit()
+    await PublishService.reply(
+        context,
+        chat_id=chat.id,
+        text="请点击下方按钮到机器人私聊提交车评。进入后先发送老师 @用户名 或 Telegram ID。",
+        reply_to_message_id=message.message_id,
+        reply_markup=reply_markup,
+    )
 
 
 async def _reply_car_review_rankings(
@@ -162,6 +202,15 @@ async def _submit_car_review(
             context,
             chat_id=chat.id,
             text="提交车评请回复目标老师的消息后再发送指令。",
+            reply_to_message_id=message.message_id,
+        )
+        return
+    if not getattr(car_review_setting, "approver_user_id", None):
+        await session.commit()
+        await PublishService.reply(
+            context,
+            chat_id=chat.id,
+            text="车评系统还没有配置审核人，请管理员先在车评系统里指定审核人。",
             reply_to_message_id=message.message_id,
         )
         return

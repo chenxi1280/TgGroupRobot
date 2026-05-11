@@ -167,6 +167,7 @@ async def test_bottom_button_event_registry_resolves_member_event_texts(monkeypa
     assert await bottom_button_events.resolve_event_trigger_text(object(), -1001, "points.balance") == "查分"
     assert await bottom_button_events.resolve_event_trigger_text(object(), -1001, "points.mall") == "商城入口"
     assert await bottom_button_events.resolve_event_trigger_text(object(), -1001, "teacher.attendance.full") == "满员"
+    assert await bottom_button_events.resolve_event_trigger_text(object(), -1001, "car_review.submit") == "提交车评"
     assert await bottom_button_events.resolve_event_trigger_text(object(), -1001, "car_review.week_rank") == "本周车评榜"
     assert await bottom_button_events.resolve_event_trigger_text(object(), -1001, "not.exists") is None
 

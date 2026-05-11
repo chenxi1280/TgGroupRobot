@@ -159,6 +159,8 @@ class ConversationStateType(str, enum.Enum):
     car_review_reward_points_input = "car_review_reward_points_input"  # 车评奖励积分
     car_review_field_add_input = "car_review_field_add_input"  # 车评新增自定义项
     car_review_field_label_input = "car_review_field_label_input"  # 车评自定义项名称
+    car_review_submit_teacher_input = "car_review_submit_teacher_input"  # 私聊提交车评目标老师
+    car_review_submit_body_input = "car_review_submit_body_input"  # 私聊提交车评内容
     auction_wait_title = "auction_wait_title"  # 拍卖标题输入
     auction_wait_start_price = "auction_wait_start_price"  # 拍卖起拍价输入
     auction_wait_end_at = "auction_wait_end_at"  # 拍卖截止时间输入

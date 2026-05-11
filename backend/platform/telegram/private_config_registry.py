@@ -200,6 +200,14 @@ def build_private_config_handlers() -> dict[str, ConfigHandler]:
     _register_states(
         handlers,
         [
+            "car_review_submit_teacher_input",
+            "car_review_submit_body_input",
+        ],
+        full_args_handler("backend.features.admin.garage.review_submit", "handle_car_review_submit_input"),
+    )
+    _register_states(
+        handlers,
+        [
             "garage_badge_input",
             "garage_teacher_input",
             "garage_whitelist_input",

@@ -128,6 +128,7 @@ STATIC_BOTTOM_BUTTON_EVENTS: tuple[BottomButtonEvent, ...] = (
     _text_event("game.blackjack.panel", "黑杰克面板", "game", "黑杰克", "黑杰克"),
     _text_event("game.blackjack.rules", "黑杰克规则", "game", "黑杰克规则", "黑杰克规则"),
     _text_event("game.blackjack.stats", "黑杰克统计", "game", "黑杰克统计", "黑杰克统计"),
+    _text_event("car_review.submit", "提交车评", "car_review", "提交车评", "提交车评"),
     BottomButtonEvent("car_review.rank", "车评排行", "car_review", "车评排行", _resolve_car_review_rank),
     BottomButtonEvent("car_review.week_rank", "本周车评排行", "car_review", "本周车评", _resolve_car_review_rank),
     BottomButtonEvent("car_review.month_rank", "本月车评排行", "car_review", "本月车评", _resolve_car_review_rank),

@@ -284,6 +284,47 @@ class CarReviewReportMixin:
         return {"count": count, "avg_score": round(avg, 2)}
 
     @staticmethod
+    async def get_teacher_review_stats_map(
+        session: AsyncSession,
+        chat_id: int,
+        teacher_user_ids: list[int],
+    ) -> dict[int, dict[str, float | int]]:
+        user_ids = sorted({int(user_id) for user_id in teacher_user_ids if user_id is not None})
+        if not user_ids:
+            return {}
+        result = await session.execute(
+            select(CarReviewReport)
+            .where(
+                CarReviewReport.chat_id == chat_id,
+                CarReviewReport.teacher_user_id.in_(user_ids),
+                CarReviewReport.report_status.in_(["approved", "published"]),
+            )
+            .order_by(CarReviewReport.report_id.desc())
+        )
+        stats: dict[int, dict[str, float | int]] = {
+            user_id: {"count": 0, "avg_score": 0.0, "_score_total": 0.0, "_score_count": 0}
+            for user_id in user_ids
+        }
+        for report in result.scalars().all():
+            teacher_user_id = int(report.teacher_user_id)
+            item = stats.setdefault(
+                teacher_user_id,
+                {"count": 0, "avg_score": 0.0, "_score_total": 0.0, "_score_count": 0},
+            )
+            item["count"] = int(item["count"]) + 1
+            score_value = (report.scores or {}).get("total_score")
+            if isinstance(score_value, (int, float)):
+                item["_score_total"] = float(item["_score_total"]) + float(score_value)
+                item["_score_count"] = int(item["_score_count"]) + 1
+        cleaned: dict[int, dict[str, float | int]] = {}
+        for user_id, item in stats.items():
+            score_count = int(item.pop("_score_count"))
+            score_total = float(item.pop("_score_total"))
+            item["avg_score"] = round(score_total / score_count, 2) if score_count else 0.0
+            cleaned[user_id] = item
+        return cleaned
+
+    @staticmethod
     async def refresh_teacher_board_info(
         session: AsyncSession,
         chat_id: int,

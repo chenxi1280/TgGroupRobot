@@ -547,9 +547,16 @@ async def _reply_teacher_keyword_search(
         )
         labels = " ".join(profile.labels or [])
         extra = " / ".join(part for part in [labels, profile.region_text, profile.price_text] if part)
+        score_extra = ""
+        if getattr(profile, "review_count", 0):
+            score_extra = f" · 均分 {float(getattr(profile, 'avg_score', 0.0) or 0.0):g} · {int(profile.review_count)} 条"
         status = teacher_attendance_status_label(profile)
         completeness = teacher_profile_completeness_label(profile)
-        lines.append(f"{idx}. {badge} {name} · {status} · {completeness}" + (f" · {extra}" if extra else ""))
+        lines.append(
+            f"{idx}. {badge} {name} · {status} · {completeness}"
+            + score_extra
+            + (f" · {extra}" if extra else "")
+        )
     await _reply_garage_feedback(
         context,
         chat_id=chat.id,
