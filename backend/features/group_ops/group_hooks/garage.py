@@ -79,6 +79,7 @@ async def _process_garage_features(
             message,
             text,
             teacher_setting,
+            settings,
             is_teacher=is_teacher,
             is_attendance_teacher=is_attendance_teacher,
             is_admin=is_admin,
@@ -94,6 +95,7 @@ async def _process_garage_features(
             message,
             text,
             car_review_setting,
+            settings,
         ):
             return True
 

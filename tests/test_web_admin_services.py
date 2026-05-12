@@ -9,7 +9,13 @@ from backend.features.web_admin.announcement_service import (
     format_announcement_line,
 )
 from backend.features.web_admin.auth_service import ensure_bootstrap_admin, hash_password, verify_password
-from backend.features.web_admin.card_service import COPY_CARD_LIMIT, KEY_SPECS
+from backend.features.web_admin.card_service import (
+    COPY_CARD_LIMIT,
+    KEY_SPECS,
+    is_card_voided,
+    serialize_batch,
+    serialize_card,
+)
 
 
 class _ScalarResult:
@@ -45,6 +51,47 @@ def test_admin_password_hash_verifies_and_rejects_wrong_password() -> None:
 def test_key_specs_match_first_version_contract() -> None:
     assert [item["days"] for item in KEY_SPECS] == [30, 60, 90, 365]
     assert COPY_CARD_LIMIT == 40
+
+
+def test_voided_card_serializes_as_unusable() -> None:
+    card = SimpleNamespace(
+        id=7,
+        batch_id=2,
+        card_code_plain="TGR-ABCD",
+        spec_days=30,
+        duration_seconds=30 * 86400,
+        used=False,
+        used_by_chat_id=None,
+        used_by_user_id=None,
+        used_at=None,
+        copy_status="voided",
+        export_status="voided",
+        created_at=None,
+    )
+
+    payload = serialize_card(card)
+
+    assert is_card_voided(card)
+    assert payload["status"] == "voided"
+    assert payload["voided"] is True
+
+
+def test_batch_available_count_excludes_voided_cards() -> None:
+    batch = SimpleNamespace(
+        id=2,
+        batch_no="RK202605120001",
+        spec_days=30,
+        quantity=10,
+        copy_count=0,
+        export_count=0,
+        created_at=None,
+    )
+
+    payload = serialize_batch(batch, used_count=3, voided_count=2)
+
+    assert payload["used_count"] == 3
+    assert payload["voided_count"] == 2
+    assert payload["available_count"] == 5
 
 
 @pytest.mark.asyncio

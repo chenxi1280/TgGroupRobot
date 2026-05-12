@@ -42,6 +42,9 @@
       <nav class="tabs">
         <button class="tab active" data-tab="keys">卡密管理</button>
         <button class="tab" data-tab="announcement">公告栏配置</button>
+        <button class="tab" data-tab="platform">公共配置</button>
+        <button class="tab" data-tab="accounts">后台账号</button>
+        <button class="tab" data-tab="audit">操作日志</button>
       </nav>
 
       <section id="tabKeys" class="tab-panel">
@@ -88,6 +91,7 @@
                   <option value="">全部</option>
                   <option value="available">可用</option>
                   <option value="used">已激活</option>
+                  <option value="voided">已作废</option>
                 </select>
               </label>
               <label class="wide">
@@ -105,6 +109,7 @@
             <div class="actions">
               <button id="copySelectedBtn" type="button">复制选中</button>
               <button id="copySelectedMetaBtn" type="button" class="ghost">复制选中+规格</button>
+              <button id="voidSelectedBtn" type="button" class="ghost">作废选中</button>
               <button id="exportBtn" type="button" class="ghost">导出 XLSX</button>
             </div>
           </div>
@@ -140,6 +145,7 @@
                   <th>规格</th>
                   <th>数量</th>
                   <th>已激活</th>
+                  <th>已作废</th>
                   <th>复制次数</th>
                   <th>导出次数</th>
                   <th>创建时间</th>
@@ -176,6 +182,70 @@
             </label>
             <button type="submit">保存公告配置</button>
           </form>
+        </section>
+      </section>
+
+      <section id="tabPlatform" class="tab-panel hidden">
+        <section class="panel narrow">
+          <div class="panel-head">
+            <h2>平台公共配置</h2>
+            <span class="pill">不配置单群功能</span>
+          </div>
+          <form id="platformConfigForm" class="form-stack">
+            <label><span>平台名称</span><input id="platformName" maxlength="80"></label>
+            <label><span>Bot 展示名称</span><input id="botDisplayName" maxlength="80"></label>
+            <label><span>后台标题</span><input id="webAdminTitle" maxlength="80"></label>
+            <label><span>维护提示</span><input id="maintenanceNotice" maxlength="500"></label>
+            <label><span>公共联系方式</span><input id="contactText" maxlength="200"></label>
+            <label><span>公共帮助文案</span><textarea id="helpText" rows="5" maxlength="1000"></textarea></label>
+            <button type="submit">保存公共配置</button>
+          </form>
+        </section>
+      </section>
+
+      <section id="tabAccounts" class="tab-panel hidden">
+        <div class="grid two">
+          <section class="panel">
+            <div class="panel-head"><h2>新增后台账号</h2></div>
+            <form id="accountForm" class="form-grid">
+              <label><span>账号</span><input id="accountUsername" required maxlength="64"></label>
+              <label><span>显示名</span><input id="accountDisplayName" maxlength="64"></label>
+              <label><span>初始密码</span><input id="accountPassword" type="password" required minlength="6" maxlength="128"></label>
+              <button type="submit">创建账号</button>
+            </form>
+          </section>
+          <section class="panel">
+            <div class="panel-head"><h2>修改当前密码</h2></div>
+            <form id="passwordForm" class="form-grid">
+              <label><span>原密码</span><input id="oldPassword" type="password" required></label>
+              <label><span>新密码</span><input id="newPassword" type="password" required minlength="6"></label>
+              <button type="submit">修改密码</button>
+            </form>
+          </section>
+        </div>
+        <section class="panel">
+          <div class="panel-head"><h2>后台账号列表</h2></div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>ID</th><th>账号</th><th>显示名</th><th>状态</th><th>最后登录</th><th>操作</th></tr></thead>
+              <tbody id="accountsBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section id="tabAudit" class="tab-panel hidden">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>操作日志</h2>
+            <button id="refreshAuditBtn" type="button" class="ghost">刷新</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>时间</th><th>操作人</th><th>动作</th><th>对象</th><th>详情</th></tr></thead>
+              <tbody id="auditBody"></tbody>
+            </table>
+          </div>
         </section>
       </section>
     </section>

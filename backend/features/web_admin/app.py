@@ -7,6 +7,7 @@ from typing import AsyncIterator
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.features.web_admin.announcement_service import (
@@ -15,10 +16,13 @@ from backend.features.web_admin.announcement_service import (
 )
 from backend.features.web_admin.auth_service import (
     SESSION_COOKIE_NAME,
+    append_audit,
     get_account_by_session_token,
+    hash_password,
     login_admin,
     logout_session,
     serialize_admin,
+    verify_password,
 )
 from backend.features.web_admin.card_service import (
     COPY_CARD_LIMIT,
@@ -28,10 +32,11 @@ from backend.features.web_admin.card_service import (
     list_batches,
     list_cards,
     rows_for_export,
+    void_cards,
 )
 from backend.platform.config.core.settings import Settings
 from backend.platform.db.runtime.session import Database
-from backend.platform.db.schema.models.core import AdminAccount
+from backend.platform.db.schema.models.core import AdminAccount, AdminAuditLog, AppSetting
 
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -52,11 +57,49 @@ class CopyCardsRequest(BaseModel):
     with_meta: bool = False
 
 
+class VoidCardsRequest(BaseModel):
+    card_ids: list[int] = Field(..., min_length=1, max_length=500)
+
+
 class AnnouncementRequest(BaseModel):
     enabled: bool = True
     entry_text: str = Field(default="", max_length=500)
     target_url: str = Field(default="", max_length=500)
     message_text: str = Field(default="", max_length=2000)
+
+
+class PlatformConfigRequest(BaseModel):
+    platform_name: str = Field(default="", max_length=80)
+    bot_display_name: str = Field(default="", max_length=80)
+    web_admin_title: str = Field(default="", max_length=80)
+    maintenance_notice: str = Field(default="", max_length=500)
+    contact_text: str = Field(default="", max_length=200)
+    help_text: str = Field(default="", max_length=1000)
+
+
+class AdminAccountRequest(BaseModel):
+    username: str = Field(..., min_length=1, max_length=64)
+    password: str = Field(..., min_length=6, max_length=128)
+    display_name: str = Field(default="", max_length=64)
+
+
+class AdminPasswordRequest(BaseModel):
+    password: str = Field(..., min_length=6, max_length=128)
+
+
+class CurrentPasswordRequest(BaseModel):
+    old_password: str = Field(..., min_length=1, max_length=128)
+    new_password: str = Field(..., min_length=6, max_length=128)
+
+
+PLATFORM_CONFIG_KEYS = {
+    "platform_name": "platform_name",
+    "bot_display_name": "bot_display_name",
+    "web_admin_title": "web_admin_title",
+    "maintenance_notice": "maintenance_notice",
+    "contact_text": "contact_text",
+    "help_text": "help_text",
+}
 
 
 async def _session(request: Request) -> AsyncIterator[AsyncSession]:
@@ -82,6 +125,24 @@ def _ok(data=None, message: str = "ok") -> dict:
 
 def _bad_request(exc: ValueError) -> HTTPException:
     return HTTPException(status_code=400, detail=str(exc))
+
+
+async def _settings_dict(session: AsyncSession, keys: dict[str, str]) -> dict[str, str]:
+    rows = (
+        await session.execute(select(AppSetting).where(AppSetting.key.in_(keys.values())))
+    ).scalars().all()
+    by_key = {row.key: row.value for row in rows}
+    return {name: by_key.get(setting_key, "") for name, setting_key in keys.items()}
+
+
+async def _upsert_settings(session: AsyncSession, values: dict[str, str]) -> None:
+    for key, value in values.items():
+        item = await session.get(AppSetting, key)
+        if item is None:
+            session.add(AppSetting(key=key, value=value))
+        else:
+            item.value = value
+    await session.flush()
 
 
 def create_admin_web_app(db: Database, settings: Settings) -> FastAPI:
@@ -229,6 +290,19 @@ def create_admin_web_app(db: Database, settings: Settings) -> FastAPI:
             "truncated": result.truncated,
         })
 
+    @app.post("/admin/api/keys/void")
+    async def api_void_keys(
+        payload: VoidCardsRequest,
+        admin: AdminAccount = Depends(_current_admin),
+        session: AsyncSession = Depends(_session),
+    ):
+        try:
+            result = await void_cards(session, admin=admin, card_ids=payload.card_ids)
+        except ValueError as exc:
+            raise _bad_request(exc) from exc
+        await session.commit()
+        return _ok(result, "卡密已作废")
+
     @app.get("/admin/api/keys/export")
     async def api_export_keys(
         spec_days: int | None = None,
@@ -268,7 +342,7 @@ def create_admin_web_app(db: Database, settings: Settings) -> FastAPI:
             sheet.append([
                 row.get("card_code") or "历史卡密无明文",
                 row.get("spec_days") or "",
-                "已激活" if row.get("used") else "可用",
+                "已作废" if row.get("voided") else ("已激活" if row.get("used") else "可用"),
                 row.get("used_by_chat_title") or "",
                 row.get("used_by_user_text") or "",
                 row.get("owner_text") or "",
@@ -313,5 +387,180 @@ def create_admin_web_app(db: Database, settings: Settings) -> FastAPI:
             raise _bad_request(exc) from exc
         await session.commit()
         return _ok(data, "公告栏配置已保存")
+
+    @app.get("/admin/api/platform-config")
+    async def api_get_platform_config(
+        admin: AdminAccount = Depends(_current_admin),
+        session: AsyncSession = Depends(_session),
+    ):
+        _ = admin
+        return _ok(await _settings_dict(session, PLATFORM_CONFIG_KEYS))
+
+    @app.put("/admin/api/platform-config")
+    async def api_update_platform_config(
+        payload: PlatformConfigRequest,
+        admin: AdminAccount = Depends(_current_admin),
+        session: AsyncSession = Depends(_session),
+    ):
+        values = {
+            PLATFORM_CONFIG_KEYS[key]: str(value or "").strip()
+            for key, value in payload.model_dump().items()
+        }
+        await _upsert_settings(session, values)
+        await append_audit(
+            session,
+            admin_account_id=admin.id,
+            action="platform_config.update",
+            target_type="app_settings",
+            target_id="platform_config",
+            detail=payload.model_dump(),
+        )
+        await session.commit()
+        return _ok(await _settings_dict(session, PLATFORM_CONFIG_KEYS), "平台公共配置已保存")
+
+    @app.get("/admin/api/accounts")
+    async def api_list_accounts(
+        admin: AdminAccount = Depends(_current_admin),
+        session: AsyncSession = Depends(_session),
+    ):
+        _ = admin
+        accounts = (
+            await session.execute(select(AdminAccount).order_by(AdminAccount.id.asc()))
+        ).scalars().all()
+        return _ok({"items": [serialize_admin(account) for account in accounts]})
+
+    @app.post("/admin/api/accounts")
+    async def api_create_account(
+        payload: AdminAccountRequest,
+        admin: AdminAccount = Depends(_current_admin),
+        session: AsyncSession = Depends(_session),
+    ):
+        username = payload.username.strip()
+        if not username:
+            raise HTTPException(status_code=400, detail="后台账号不能为空")
+        existing = (
+            await session.execute(select(AdminAccount).where(AdminAccount.username == username).limit(1))
+        ).scalar_one_or_none()
+        if existing is not None:
+            raise HTTPException(status_code=400, detail="后台账号已存在")
+        account = AdminAccount(
+            username=username,
+            password_hash=hash_password(payload.password),
+            display_name=(payload.display_name.strip() or username),
+            status="active",
+        )
+        session.add(account)
+        await session.flush()
+        await append_audit(
+            session,
+            admin_account_id=admin.id,
+            action="admin_account.create",
+            target_type="admin_account",
+            target_id=str(account.id),
+            detail={"username": username},
+        )
+        await session.commit()
+        return _ok(serialize_admin(account), "后台账号已创建")
+
+    @app.post("/admin/api/accounts/{account_id}/status")
+    async def api_update_account_status(
+        account_id: int,
+        status: str,
+        admin: AdminAccount = Depends(_current_admin),
+        session: AsyncSession = Depends(_session),
+    ):
+        if status not in {"active", "disabled"}:
+            raise HTTPException(status_code=400, detail="账号状态无效")
+        account = await session.get(AdminAccount, account_id)
+        if account is None:
+            raise HTTPException(status_code=404, detail="后台账号不存在")
+        if account.id == admin.id and status != "active":
+            raise HTTPException(status_code=400, detail="不能禁用当前登录账号")
+        account.status = status
+        await append_audit(
+            session,
+            admin_account_id=admin.id,
+            action="admin_account.status",
+            target_type="admin_account",
+            target_id=str(account.id),
+            detail={"status": status},
+        )
+        await session.commit()
+        return _ok(serialize_admin(account), "账号状态已更新")
+
+    @app.post("/admin/api/accounts/{account_id}/password")
+    async def api_reset_account_password(
+        account_id: int,
+        payload: AdminPasswordRequest,
+        admin: AdminAccount = Depends(_current_admin),
+        session: AsyncSession = Depends(_session),
+    ):
+        account = await session.get(AdminAccount, account_id)
+        if account is None:
+            raise HTTPException(status_code=404, detail="后台账号不存在")
+        account.password_hash = hash_password(payload.password)
+        await append_audit(
+            session,
+            admin_account_id=admin.id,
+            action="admin_account.password_reset",
+            target_type="admin_account",
+            target_id=str(account.id),
+            detail={},
+        )
+        await session.commit()
+        return _ok(serialize_admin(account), "账号密码已重置")
+
+    @app.post("/admin/api/auth/change-password")
+    async def api_change_current_password(
+        payload: CurrentPasswordRequest,
+        admin: AdminAccount = Depends(_current_admin),
+        session: AsyncSession = Depends(_session),
+    ):
+        account = await session.get(AdminAccount, admin.id)
+        if account is None or not verify_password(payload.old_password, account.password_hash):
+            raise HTTPException(status_code=400, detail="原密码错误")
+        account.password_hash = hash_password(payload.new_password)
+        await append_audit(
+            session,
+            admin_account_id=admin.id,
+            action="admin.password_change",
+            target_type="admin_account",
+            target_id=str(admin.id),
+            detail={},
+        )
+        await session.commit()
+        return _ok(message="密码已修改")
+
+    @app.get("/admin/api/audit-logs")
+    async def api_list_audit_logs(
+        limit: int = Query(default=100, ge=1, le=500),
+        offset: int = Query(default=0, ge=0),
+        admin: AdminAccount = Depends(_current_admin),
+        session: AsyncSession = Depends(_session),
+    ):
+        _ = admin
+        total = int((await session.execute(select(func.count(AdminAuditLog.id)))).scalar() or 0)
+        rows = (
+            await session.execute(
+                select(AdminAuditLog, AdminAccount.username, AdminAccount.display_name)
+                .outerjoin(AdminAccount, AdminAccount.id == AdminAuditLog.admin_account_id)
+                .order_by(AdminAuditLog.created_at.desc(), AdminAuditLog.id.desc())
+                .limit(limit)
+                .offset(offset)
+            )
+        ).all()
+        items = []
+        for log, username, display_name in rows:
+            items.append({
+                "id": log.id,
+                "admin_account_id": log.admin_account_id,
+                "admin_text": display_name or username or "",
+                "action": log.action,
+                "target_type": log.target_type,
+                "target_id": log.target_id,
+                "detail": log.detail or {},
+                "created_at": log.created_at.isoformat() if log.created_at else None,
+            })
+        return _ok({"items": items, "total": total})
 
     return app

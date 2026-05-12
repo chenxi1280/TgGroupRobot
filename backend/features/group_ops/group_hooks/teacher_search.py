@@ -9,6 +9,7 @@ from backend.features.garage.services.teacher_search_queries import (
     teacher_profile_completeness_label,
 )
 from backend.features.group_ops.text_trigger_runtime import is_reserved_group_text_command_for_chat
+from backend.shared.services.command_config_service import is_command_enabled
 
 from .common import _reply_garage_feedback
 
@@ -54,6 +55,7 @@ async def _process_teacher_search_features(
     message,
     text: str,
     teacher_setting,
+    chat_settings=None,
     *,
     is_teacher: bool,
     is_attendance_teacher: bool | None = None,
@@ -127,11 +129,17 @@ async def _process_teacher_search_features(
         )
 
     if text == "开课老师":
+        if chat_settings is not None and not is_command_enabled(chat_settings, "open_teachers"):
+            await message.reply_text("该指令已关闭。")
+            return True
         await _reply_open_course_teachers(context, session, chat, message, delete_mode=delete_mode)
         return True
 
     nearby_condition = _parse_nearby_condition(text)
     if nearby_condition is not None:
+        if chat_settings is not None and not is_command_enabled(chat_settings, "nearby"):
+            await message.reply_text("该指令已关闭。")
+            return True
         await _reply_nearby_teachers(
             context,
             session,
@@ -145,6 +153,9 @@ async def _process_teacher_search_features(
         return True
 
     if text.startswith("老师搜索 "):
+        if chat_settings is not None and not is_command_enabled(chat_settings, "teacher_search"):
+            await message.reply_text("该指令已关闭。")
+            return True
         keyword = text.split(" ", 1)[1].strip()
         nearby_keyword = _parse_nearby_condition(keyword)
         if nearby_keyword is not None:
@@ -178,6 +189,9 @@ async def _process_teacher_search_features(
         is_teacher_search_entry
         and not await is_reserved_group_text_command_for_chat(session, chat.id, text)
     ):
+        if chat_settings is not None and not is_command_enabled(chat_settings, "teacher_search"):
+            await message.reply_text("该指令已关闭。")
+            return True
         await session.commit()
         await _reply_garage_feedback(
             context,

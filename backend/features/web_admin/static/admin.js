@@ -3,6 +3,7 @@ const state = {
   copyLimit: 40,
   cards: [],
   generatedText: '',
+  currentAdminId: null,
 }
 
 const $ = (id) => document.getElementById(id)
@@ -94,8 +95,10 @@ const renderCards = (items) => {
   $('selectAllCards').checked = false
   show($('cardsEmpty'), items.length === 0)
   $('cardsBody').innerHTML = items.map((card) => {
-    const status = card.used ? '<span class="status-used">已激活</span>' : '<span class="status-free">可用</span>'
-    const disabled = card.has_plaintext ? '' : 'disabled'
+    const status = card.voided
+      ? '<span class="status-used">已作废</span>'
+      : (card.used ? '<span class="status-used">已激活</span>' : '<span class="status-free">可用</span>')
+    const disabled = card.has_plaintext && !card.used && !card.voided ? '' : 'disabled'
     return `
       <tr>
         <td><input class="card-check" type="checkbox" value="${escapeHtml(card.id)}" ${disabled}></td>
@@ -118,6 +121,7 @@ const renderBatches = (items) => {
       <td>${escapeHtml(batch.spec_days)}天</td>
       <td>${escapeHtml(batch.quantity)}</td>
       <td>${escapeHtml(batch.used_count)}</td>
+      <td>${escapeHtml(batch.voided_count || 0)}</td>
       <td>${escapeHtml(batch.copy_count)}</td>
       <td>${escapeHtml(batch.export_count)}</td>
       <td>${escapeHtml(formatTime(batch.created_at))}</td>
@@ -157,7 +161,58 @@ const loadAnnouncement = async () => {
   $('announcementMessage').value = data.message_text || ''
 }
 
+const loadPlatformConfig = async () => {
+  const response = await api('/admin/api/platform-config')
+  const data = response.data
+  $('platformName').value = data.platform_name || ''
+  $('botDisplayName').value = data.bot_display_name || ''
+  $('webAdminTitle').value = data.web_admin_title || ''
+  $('maintenanceNotice').value = data.maintenance_notice || ''
+  $('contactText').value = data.contact_text || ''
+  $('helpText').value = data.help_text || ''
+}
+
+const renderAccounts = (items) => {
+  $('accountsBody').innerHTML = items.map((account) => {
+    const nextStatus = account.status === 'active' ? 'disabled' : 'active'
+    const label = account.status === 'active' ? '禁用' : '启用'
+    const disabled = account.id === state.currentAdminId && account.status === 'active' ? 'disabled' : ''
+    return `
+      <tr>
+        <td>${escapeHtml(account.id)}</td>
+        <td>${escapeHtml(account.username)}</td>
+        <td>${escapeHtml(account.display_name || '')}</td>
+        <td>${account.status === 'active' ? '启用' : '禁用'}</td>
+        <td>${escapeHtml(formatTime(account.last_login_at))}</td>
+        <td>
+          <button class="account-status-btn ghost" type="button" data-id="${escapeHtml(account.id)}" data-status="${nextStatus}" ${disabled}>${label}</button>
+          <button class="account-reset-btn ghost" type="button" data-id="${escapeHtml(account.id)}">重置密码</button>
+        </td>
+      </tr>
+    `
+  }).join('')
+}
+
+const loadAccounts = async () => {
+  const response = await api('/admin/api/accounts')
+  renderAccounts(response.data.items || [])
+}
+
+const loadAuditLogs = async () => {
+  const response = await api('/admin/api/audit-logs?limit=100')
+  $('auditBody').innerHTML = (response.data.items || []).map((item) => `
+    <tr>
+      <td>${escapeHtml(formatTime(item.created_at))}</td>
+      <td>${escapeHtml(item.admin_text || item.admin_account_id || '')}</td>
+      <td>${escapeHtml(item.action)}</td>
+      <td>${escapeHtml([item.target_type, item.target_id].filter(Boolean).join(':'))}</td>
+      <td>${escapeHtml(JSON.stringify(item.detail || {}))}</td>
+    </tr>
+  `).join('')
+}
+
 const showAdminPanel = async (admin) => {
+  state.currentAdminId = admin.id
   $('currentAdmin').textContent = admin.display_name || admin.username
   show($('loginPanel'), false)
   show($('adminPanel'), true)
@@ -165,7 +220,7 @@ const showAdminPanel = async (admin) => {
   state.specs = specs.data.items || []
   state.copyLimit = specs.data.copy_limit || 40
   fillSpecSelects()
-  await Promise.all([loadKeys(), loadAnnouncement()])
+  await Promise.all([loadKeys(), loadAnnouncement(), loadPlatformConfig(), loadAccounts(), loadAuditLogs()])
 }
 
 const boot = async () => {
@@ -206,6 +261,9 @@ document.querySelectorAll('.tab').forEach((button) => {
     button.classList.add('active')
     show($('tabKeys'), button.dataset.tab === 'keys')
     show($('tabAnnouncement'), button.dataset.tab === 'announcement')
+    show($('tabPlatform'), button.dataset.tab === 'platform')
+    show($('tabAccounts'), button.dataset.tab === 'accounts')
+    show($('tabAudit'), button.dataset.tab === 'audit')
   })
 })
 
@@ -274,6 +332,25 @@ const copySelected = async (withMeta) => {
 $('copySelectedBtn').addEventListener('click', () => copySelected(false))
 $('copySelectedMetaBtn').addEventListener('click', () => copySelected(true))
 
+$('voidSelectedBtn').addEventListener('click', async () => {
+  const ids = selectedCardIds()
+  if (!ids.length) {
+    toast('请先选择未激活卡密')
+    return
+  }
+  if (!window.confirm(`确认作废选中的 ${ids.length} 条卡密？作废后不可核销。`)) return
+  try {
+    const response = await api('/admin/api/keys/void', {
+      method: 'POST',
+      body: JSON.stringify({ card_ids: ids }),
+    })
+    toast(`已作废 ${response.data.changed} 条卡密`)
+    await loadKeys()
+  } catch (error) {
+    toast(error.message)
+  }
+})
+
 $('exportBtn').addEventListener('click', () => {
   const params = currentFilters()
   params.delete('limit')
@@ -297,5 +374,89 @@ $('announcementForm').addEventListener('submit', async (event) => {
     toast(error.message)
   }
 })
+
+$('platformConfigForm').addEventListener('submit', async (event) => {
+  event.preventDefault()
+  try {
+    await api('/admin/api/platform-config', {
+      method: 'PUT',
+      body: JSON.stringify({
+        platform_name: $('platformName').value,
+        bot_display_name: $('botDisplayName').value,
+        web_admin_title: $('webAdminTitle').value,
+        maintenance_notice: $('maintenanceNotice').value,
+        contact_text: $('contactText').value,
+        help_text: $('helpText').value,
+      }),
+    })
+    toast('平台公共配置已保存')
+  } catch (error) {
+    toast(error.message)
+  }
+})
+
+$('accountForm').addEventListener('submit', async (event) => {
+  event.preventDefault()
+  try {
+    await api('/admin/api/accounts', {
+      method: 'POST',
+      body: JSON.stringify({
+        username: $('accountUsername').value.trim(),
+        display_name: $('accountDisplayName').value.trim(),
+        password: $('accountPassword').value,
+      }),
+    })
+    $('accountForm').reset()
+    toast('后台账号已创建')
+    await loadAccounts()
+  } catch (error) {
+    toast(error.message)
+  }
+})
+
+$('accountsBody').addEventListener('click', async (event) => {
+  const statusButton = event.target.closest('.account-status-btn')
+  const resetButton = event.target.closest('.account-reset-btn')
+  try {
+    if (statusButton) {
+      await api(`/admin/api/accounts/${statusButton.dataset.id}/status?status=${statusButton.dataset.status}`, {
+        method: 'POST',
+        body: '{}',
+      })
+      toast('账号状态已更新')
+      await loadAccounts()
+    }
+    if (resetButton) {
+      const password = window.prompt('请输入新密码，至少 6 位')
+      if (!password) return
+      await api(`/admin/api/accounts/${resetButton.dataset.id}/password`, {
+        method: 'POST',
+        body: JSON.stringify({ password }),
+      })
+      toast('账号密码已重置')
+    }
+  } catch (error) {
+    toast(error.message)
+  }
+})
+
+$('passwordForm').addEventListener('submit', async (event) => {
+  event.preventDefault()
+  try {
+    await api('/admin/api/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({
+        old_password: $('oldPassword').value,
+        new_password: $('newPassword').value,
+      }),
+    })
+    $('passwordForm').reset()
+    toast('密码已修改')
+  } catch (error) {
+    toast(error.message)
+  }
+})
+
+$('refreshAuditBtn').addEventListener('click', loadAuditLogs)
 
 boot()

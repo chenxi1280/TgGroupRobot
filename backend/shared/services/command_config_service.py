@@ -22,6 +22,13 @@ COMMAND_DEFINITIONS: list[dict[str, Any]] = [
     {"key": "mydata", "label": "/mydata", "allow_alias": True},
     {"key": "nearby", "label": "/nearby", "allow_alias": True},
     {"key": "list", "label": "/list", "allow_alias": True},
+    {"key": "teacher_search", "label": "老师搜索", "allow_alias": False},
+    {"key": "open_teachers", "label": "开课老师", "allow_alias": False},
+    {"key": "car_review", "label": "报告/车评", "allow_alias": False},
+    {"key": "car_review_rank", "label": "车评排行", "allow_alias": False},
+    {"key": "invite_rank", "label": "邀请排行", "allow_alias": False},
+    {"key": "lottery", "label": "抽奖", "allow_alias": False},
+    {"key": "solitaire", "label": "接龙", "allow_alias": False},
 ]
 
 
@@ -82,6 +89,9 @@ def is_command_enabled(settings, key: str) -> bool:
 def get_command_alias(settings, key: str) -> str | None:
     if not bool(getattr(settings, "command_config_enabled", False)):
         return None
+    definition = next((item for item in COMMAND_DEFINITIONS if item["key"] == key), None)
+    if definition is not None and not definition.get("allow_alias", True):
+        return None
     config = get_command_config(settings)
     return config["commands"].get(key, {}).get("alias")
 
@@ -95,6 +105,9 @@ def set_command_enabled(settings, key: str, enabled: bool) -> None:
 
 
 def set_command_alias(settings, key: str, alias: str | None) -> None:
+    definition = next((item for item in COMMAND_DEFINITIONS if item["key"] == key), None)
+    if definition is not None and not definition.get("allow_alias", True):
+        return
     config = get_command_config(settings)
     if key not in config["commands"]:
         return
@@ -126,3 +139,8 @@ async def ensure_command_enabled(
         await update.effective_message.reply_text(deny_text)
         return False
     return True
+
+
+async def is_group_text_command_enabled(session, chat_id: int, command_key: str) -> bool:
+    settings = await get_chat_settings(session, chat_id)
+    return is_command_enabled(settings, command_key)

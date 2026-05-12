@@ -188,6 +188,17 @@ async def redeem_renewal_card(
         )
         return RenewalRedeemResult(success=False, message="卡密已使用")
 
+    if str(getattr(card, "copy_status", "") or "") == "voided":
+        await _create_renewal_audit_log(
+            session,
+            chat_id=chat_id,
+            operator_user_id=operator_user_id,
+            action="failed",
+            reason="card_voided",
+            payload={"card_id": card.id, "masked_card": masked_code},
+        )
+        return RenewalRedeemResult(success=False, message="卡密已作废")
+
     subscription = await get_or_create_chat_subscription(session, chat_id)
     current_plan = await get_plan(session, subscription.plan_id)
     if current_plan is None or current_plan.code == "free":

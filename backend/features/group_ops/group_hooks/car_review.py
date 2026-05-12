@@ -13,6 +13,7 @@ from backend.features.garage.services.garage_features_service import CarReviewSe
 from backend.features.group_ops.text_trigger_runtime import is_reserved_group_text_command_for_chat
 from backend.features.nearby.services.nearby_profile_service import build_user_display_name
 from backend.platform.db.schema.models.core import TgUser
+from backend.shared.services.command_config_service import is_command_enabled
 from backend.shared.services.formatters import format_user_display_name
 from backend.shared.services.publish_service import PublishService
 from backend.shared.time_helper import LOCAL_TIMEZONE
@@ -90,6 +91,7 @@ async def _process_car_review_features(
     message,
     text: str,
     car_review_setting,
+    chat_settings=None,
 ) -> bool:
     if not getattr(car_review_setting, "enabled", False):
         return False
@@ -99,6 +101,14 @@ async def _process_car_review_features(
     if rank_request is not None:
         if await is_reserved_group_text_command_for_chat(session, chat.id, text):
             return False
+        if chat_settings is not None and not is_command_enabled(chat_settings, "car_review_rank"):
+            await PublishService.reply(
+                context,
+                chat_id=chat.id,
+                text="该指令已关闭。",
+                reply_to_message_id=message.message_id,
+            )
+            return True
         title, since = rank_request
         await _reply_car_review_rankings(context, session, chat, message, title=title, since=since)
         return True
@@ -107,12 +117,28 @@ async def _process_car_review_features(
     if text in {submit_command, "提交车评"} and getattr(message, "reply_to_message", None) is None:
         if await is_reserved_group_text_command_for_chat(session, chat.id, text):
             return False
+        if chat_settings is not None and not is_command_enabled(chat_settings, "car_review"):
+            await PublishService.reply(
+                context,
+                chat_id=chat.id,
+                text="该指令已关闭。",
+                reply_to_message_id=message.message_id,
+            )
+            return True
         await _reply_car_review_submit_entry(context, session, chat, message, car_review_setting)
         return True
 
     if submit_command and text.startswith(submit_command):
         if await is_reserved_group_text_command_for_chat(session, chat.id, text):
             return False
+        if chat_settings is not None and not is_command_enabled(chat_settings, "car_review"):
+            await PublishService.reply(
+                context,
+                chat_id=chat.id,
+                text="该指令已关闭。",
+                reply_to_message_id=message.message_id,
+            )
+            return True
         await _submit_car_review(context, session, chat, user, message, text, submit_command, car_review_setting)
         return True
 

@@ -5,6 +5,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from backend.platform.db.runtime.session import Database
+from backend.shared.services.command_config_service import is_group_text_command_enabled
 
 log = structlog.get_logger(__name__)
 
@@ -234,6 +235,13 @@ async def _try_invite_trigger(
         return False
     if update.effective_chat.id != chat_id:
         return False
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        if payload == "邀请排行" and not await is_group_text_command_enabled(session, chat_id, "invite_rank"):
+            await session.commit()
+            await update.effective_message.reply_text("该指令已关闭。")
+            return True
+        await session.commit()
     if payload == "邀请":
         from backend.features.invite.invite_user_callbacks import link_command
 
@@ -247,7 +255,6 @@ async def _try_invite_trigger(
 
     from backend.features.invite.services.invite_service import get_invite_leaderboard, get_user_rank
 
-    db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
         leaderboard = await get_invite_leaderboard(session, chat_id, limit=10)
         user_rank = await get_user_rank(session, chat_id, update.effective_user.id)

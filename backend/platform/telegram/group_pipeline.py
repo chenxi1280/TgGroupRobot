@@ -1,8 +1,8 @@
 """群聊消息处理器
 
 按优先级处理群聊消息：
-1. 核心功能层（违禁词检测、自动回复）
-2. 业务功能层（验证、抽奖、接龙、审核、积分）
+1. 核心功能层（群控、强制关注、违禁词、自动回复）
+2. 业务功能层（验证优先，然后抽奖、接龙、审核、积分）
 """
 from __future__ import annotations
 
@@ -53,11 +53,11 @@ class GroupMessageHandler:
             from backend.features.verification.verification_handler import verify_message_handler
 
             self._business_handlers = [
+                ("verification", verify_message_handler),
                 ("auction", auction_group_message_handler),
                 ("engagement", engagement_message_handler),
                 ("game", game_message_handler),
                 ("guess", guess_message_handler),
-                ("verification", verify_message_handler),
                 ("lottery", lottery_message_handler),
                 ("solitaire", solitaire_join_message_handler),
                 ("moderation", moderation_message_handler),

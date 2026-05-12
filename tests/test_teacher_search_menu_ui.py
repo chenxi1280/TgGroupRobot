@@ -923,11 +923,12 @@ async def test_teacher_self_home_button_shows_group_profile(monkeypatch):
 
     assert "群组：测试群" in captured["text"]
     assert "服务定位：已设置" in captured["text"]
+    assert "老师本人仅可更新服务定位" in captured["text"]
     callbacks = [button.callback_data for row in captured["reply_markup"].inline_keyboard for button in row]
     assert "teacher:self:location:-1001" in callbacks
-    assert "teacher:self:region:-1001" in callbacks
-    assert "teacher:self:price:-1001" in callbacks
-    assert "teacher:self:labels:-1001" in callbacks
+    assert "teacher:self:region:-1001" not in callbacks
+    assert "teacher:self:price:-1001" not in callbacks
+    assert "teacher:self:labels:-1001" not in callbacks
 
 
 @pytest.mark.asyncio
@@ -965,6 +966,34 @@ async def test_teacher_self_location_button_starts_location_state(monkeypatch):
         {"target_chat_id": -1001},
     )
     assert "更新服务定位" in captured["text"]
+    assert captured["reply_markup"].inline_keyboard[0][0].callback_data == "teacher:self:home:-1001"
+
+
+@pytest.mark.asyncio
+async def test_teacher_self_profile_edit_buttons_are_blocked(monkeypatch):
+    captured: dict[str, object] = {}
+    session = _SessionContext()
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(session)}))
+
+    async def fake_is_teacher(session, chat_id: int, user_id: int):
+        return True
+
+    async def fake_safe_edit(update, text, reply_markup=None):
+        captured["text"] = text
+        captured["reply_markup"] = reply_markup
+
+    monkeypatch.setattr(GarageAuthService, "is_effective_certified_teacher", fake_is_teacher)
+    monkeypatch.setattr(admin_handler._admin_handler.message_helper, "safe_edit", fake_safe_edit)
+
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=123),
+        effective_chat=SimpleNamespace(type="private"),
+        callback_query=SimpleNamespace(data="teacher:self:price:-1001"),
+    )
+
+    await teacher_self_callback(update, context)
+
+    assert "老师本人仅可更新服务定位" in captured["text"]
     assert captured["reply_markup"].inline_keyboard[0][0].callback_data == "teacher:self:home:-1001"
 
 

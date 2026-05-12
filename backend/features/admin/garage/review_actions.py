@@ -181,10 +181,19 @@ class GarageReviewActionsMixin:
                     await self._show_car_review_report_detail(update, context, chat_id, report_id, status=status)
                     return
                 if setting.approver_user_id and update.effective_user.id != setting.approver_user_id:
-                    await session.commit()
-                    await answer_callback_query_safely(update, "仅指定审核人可以处理该报告", show_alert=True)
-                    await self._show_car_review_report_detail(update, context, chat_id, report_id, status=status)
-                    return
+                    approver_is_admin = await is_user_admin(context, chat_id, setting.approver_user_id)
+                    if not approver_is_admin:
+                        log.warning(
+                            "car_review_approver_not_admin_allow_admin_fallback",
+                            chat_id=chat_id,
+                            approver_user_id=setting.approver_user_id,
+                            operator_user_id=update.effective_user.id,
+                        )
+                    else:
+                        await session.commit()
+                        await answer_callback_query_safely(update, "仅指定审核人可以处理该报告", show_alert=True)
+                        await self._show_car_review_report_detail(update, context, chat_id, report_id, status=status)
+                        return
                 if sub == "approve":
                     report = await CarReviewService.approve_report(
                         session,

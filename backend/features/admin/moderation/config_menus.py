@@ -33,7 +33,10 @@ class ModerationConfigMenusMixin:
             entry = config["commands"].get(key, {})
             status = "✅" if entry.get("enabled", True) else "❌"
             alias = entry.get("alias") or "未设置"
-            lines.append(f"{status} {label}（别名：{alias}）")
+            if item.get("allow_alias", True):
+                lines.append(f"{status} {label}（别名：{alias}）")
+            else:
+                lines.append(f"{status} {label}")
 
         keyboard_rows = [
             [
@@ -71,25 +74,32 @@ class ModerationConfigMenusMixin:
         if entry is None:
             await answer_callback_query_safely(update, "未识别的命令配置项，请返回后重试", show_alert=True)
             return
-        label = next((item["label"] for item in list_command_definitions() if item["key"] == command_key), command_key)
+        definition = next((item for item in list_command_definitions() if item["key"] == command_key), None)
+        label = definition["label"] if definition else command_key
         enabled = bool(entry.get("enabled", True))
         alias = entry.get("alias") or "未设置"
+        alias_line = f"别名: {alias}\n" if not definition or definition.get("allow_alias", True) else ""
+        help_text = "你可以设置别名（无需输入 /），或关闭该命令。" if alias_line else "该入口为固定中文触发词，只支持启停。"
         text = (
             f"⌨️ 命令配置 | {label}\n\n"
             f"状态: {'✅ 启用' if enabled else '❌ 关闭'}\n"
-            f"别名: {alias}\n\n"
-            "你可以设置别名（无需输入 /），或关闭该命令。"
+            f"{alias_line}\n"
+            f"{help_text}"
         )
-        keyboard = InlineKeyboardMarkup([
+        rows = [
             [
                 InlineKeyboardButton("⚙️ 状态：", callback_data=f"adm:gcmd:{chat_id}:detail:{command_key}"),
                 InlineKeyboardButton("✅ 启用" if enabled else "启用", callback_data=f"adm:gcmd:{chat_id}:toggle:{command_key}"),
                 InlineKeyboardButton("关闭" if enabled else "❌ 关闭", callback_data=f"adm:gcmd:{chat_id}:toggle:{command_key}"),
             ],
-            [InlineKeyboardButton("✏️ 设置别名", callback_data=f"adm:gcmd:{chat_id}:alias:{command_key}")],
-            [InlineKeyboardButton("🧹 清空别名", callback_data=f"adm:gcmd:{chat_id}:clear_alias:{command_key}")],
-            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:gcmd:{chat_id}")],
-        ])
+        ]
+        if not definition or definition.get("allow_alias", True):
+            rows.extend([
+                [InlineKeyboardButton("✏️ 设置别名", callback_data=f"adm:gcmd:{chat_id}:alias:{command_key}")],
+                [InlineKeyboardButton("🧹 清空别名", callback_data=f"adm:gcmd:{chat_id}:clear_alias:{command_key}")],
+            ])
+        rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:gcmd:{chat_id}")])
+        keyboard = InlineKeyboardMarkup(rows)
         await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
 
     async def _show_punishment_policy_menu(

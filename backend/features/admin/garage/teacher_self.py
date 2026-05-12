@@ -12,24 +12,11 @@ from backend.platform.db.schema.models.enums import ConversationStateType
 from backend.platform.db.runtime.session import Database
 from backend.platform.state.state_service import clear_user_state
 from backend.shared.callback_parser import CallbackParser
-from backend.shared.services.base import ValidationError
 
 SELF_LOCATION_STATE = ConversationStateType.teacher_self_location_input.value
-SELF_REGION_STATE = ConversationStateType.teacher_self_region_input.value
-SELF_PRICE_STATE = ConversationStateType.teacher_self_price_input.value
-SELF_LABELS_STATE = ConversationStateType.teacher_self_labels_input.value
 SELF_STATE_TYPES = {
     SELF_LOCATION_STATE,
-    SELF_REGION_STATE,
-    SELF_PRICE_STATE,
-    SELF_LABELS_STATE,
 }
-_CLEAR_VALUES = {"清空", "无"}
-
-
-def _is_clear_input(value: str) -> bool:
-    stripped = value.strip()
-    return stripped.lower().startswith("/clear") or stripped in _CLEAR_VALUES
 
 
 def _teacher_self_list_keyboard(chat_rows: list[tuple[int, str]]) -> InlineKeyboardMarkup:
@@ -43,9 +30,6 @@ def _teacher_self_list_keyboard(chat_rows: list[tuple[int, str]]) -> InlineKeybo
 def _teacher_self_home_keyboard(chat_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📍 更新服务定位", callback_data=f"teacher:self:location:{chat_id}")],
-        [InlineKeyboardButton("🗺 更新地区/地址", callback_data=f"teacher:self:region:{chat_id}")],
-        [InlineKeyboardButton("💰 更新价格", callback_data=f"teacher:self:price:{chat_id}")],
-        [InlineKeyboardButton("🏷 更新服务标签", callback_data=f"teacher:self:labels:{chat_id}")],
         [InlineKeyboardButton("🔙 返回", callback_data="teacher:self:list")],
     ])
 
@@ -130,6 +114,8 @@ async def show_teacher_self_home(
         f"地区/地址：{profile.region_text if profile and profile.region_text else '未设置'}",
         f"价格：{profile.price_text if profile and profile.price_text else '未设置'}",
         f"服务标签：{labels}",
+        "",
+        "资料由管理员维护；老师本人仅可更新服务定位。",
     ]
     await admin_handler_instance().message_helper.safe_edit(
         update,
@@ -225,43 +211,13 @@ async def teacher_self_callback(update: Update, context: ContextTypes.DEFAULT_TY
             ),
         )
         return
-    if action == "region":
-        await _start_teacher_self_state(
+    if action in {"region", "price", "labels"}:
+        await admin_handler_instance().message_helper.safe_edit(
             update,
-            context,
-            chat_id=chat_id,
-            state_type=SELF_REGION_STATE,
-            prompt_text=(
-                "🗺 更新地区/地址\n\n"
-                "请输入你在该群展示的地区或地址。\n"
-                "输入 /clear 可清空。"
-            ),
-        )
-        return
-    if action == "price":
-        await _start_teacher_self_state(
-            update,
-            context,
-            chat_id=chat_id,
-            state_type=SELF_PRICE_STATE,
-            prompt_text=(
-                "💰 更新价格\n\n"
-                "请输入你在该群展示的价格信息。\n"
-                "输入 /clear 可清空。"
-            ),
-        )
-        return
-    if action == "labels":
-        await _start_teacher_self_state(
-            update,
-            context,
-            chat_id=chat_id,
-            state_type=SELF_LABELS_STATE,
-            prompt_text=(
-                "🏷 更新服务标签\n\n"
-                "请输入服务标签，多个标签可用空格、逗号、顿号或换行分隔。\n"
-                "输入 /clear 可清空。"
-            ),
+            "老师资料由管理员维护；老师本人仅可更新服务定位。",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔙 返回", callback_data=f"teacher:self:home:{chat_id}")]
+            ]),
         )
         return
 
@@ -313,57 +269,6 @@ async def handle_teacher_self_input(
         await _clear_teacher_self_state(session, update.effective_user.id)
         await session.commit()
         await update.effective_message.reply_text("✅ 已更新该群的服务定位。", reply_markup=ReplyKeyboardRemove())
-        await show_teacher_self_home(update, context, target_chat_id)
-        return
-
-    if state_type == SELF_REGION_STATE:
-        try:
-            await TeacherSearchService.update_teacher_region_text(
-                session,
-                chat_id=target_chat_id,
-                user_id=update.effective_user.id,
-                region_text=None if _is_clear_input(message_text) else message_text,
-            )
-        except ValidationError as exc:
-            await update.effective_message.reply_text(str(exc), reply_markup=ReplyKeyboardRemove())
-            return
-        await _clear_teacher_self_state(session, update.effective_user.id)
-        await session.commit()
-        await update.effective_message.reply_text("✅ 已更新地区/地址。", reply_markup=ReplyKeyboardRemove())
-        await show_teacher_self_home(update, context, target_chat_id)
-        return
-
-    if state_type == SELF_PRICE_STATE:
-        try:
-            await TeacherSearchService.update_teacher_price_text(
-                session,
-                chat_id=target_chat_id,
-                user_id=update.effective_user.id,
-                price_text=None if _is_clear_input(message_text) else message_text,
-            )
-        except ValidationError as exc:
-            await update.effective_message.reply_text(str(exc), reply_markup=ReplyKeyboardRemove())
-            return
-        await _clear_teacher_self_state(session, update.effective_user.id)
-        await session.commit()
-        await update.effective_message.reply_text("✅ 已更新价格。", reply_markup=ReplyKeyboardRemove())
-        await show_teacher_self_home(update, context, target_chat_id)
-        return
-
-    if state_type == SELF_LABELS_STATE:
-        try:
-            await TeacherSearchService.update_teacher_labels(
-                session,
-                chat_id=target_chat_id,
-                user_id=update.effective_user.id,
-                labels=None if _is_clear_input(message_text) else message_text,
-            )
-        except ValidationError as exc:
-            await update.effective_message.reply_text(str(exc), reply_markup=ReplyKeyboardRemove())
-            return
-        await _clear_teacher_self_state(session, update.effective_user.id)
-        await session.commit()
-        await update.effective_message.reply_text("✅ 已更新服务标签。", reply_markup=ReplyKeyboardRemove())
         await show_teacher_self_home(update, context, target_chat_id)
         return
 

@@ -7,6 +7,7 @@ import pytest
 from backend.features.group_ops.group_hooks import core as core_hooks
 from backend.features.group_ops.group_hooks import moderation as moderation_hooks
 from backend.features.moderation.services.garbage_guard_rules import set_rule_config
+from backend.platform.telegram.group_pipeline import GroupMessageHandler
 
 
 class _FakeSession:
@@ -661,3 +662,11 @@ async def test_banned_word_explicit_guard_notifies_when_all_actions_fail(monkeyp
 
     assert handled is True
     assert sent_messages == [(-1001, "⚠️ 垃圾防护已命中，但处罚动作没有成功执行。\n请检查机器人是否仍是管理员，并拥有删除消息/禁言权限；也请重启机器人加载最新代码。")]
+
+
+def test_group_business_handlers_run_verification_before_activity() -> None:
+    names = [name for name, _handler in GroupMessageHandler()._get_business_handlers()]
+
+    assert names.index("verification") < names.index("auction")
+    assert names.index("verification") < names.index("game")
+    assert names.index("verification") < names.index("lottery")
