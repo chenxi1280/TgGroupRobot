@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from telegram.error import NetworkError
 
 from backend.features.activity import lottery_handler
+import backend.features.activity.lottery_message_callbacks as lottery_message_callbacks
 import backend.features.activity.lottery_creation as lottery_creation_module
 import backend.features.activity.lottery_drawing as lottery_drawing_module
 import backend.features.activity.lottery_participation as lottery_participation_module
@@ -684,6 +685,56 @@ async def test_lottery_subscribe_notice_auto_deletes_after_30_seconds(monkeypatc
     assert answers and answers[0][1] is True
     assert sent_messages and sent_messages[0]["reply_markup"] is not None
     assert scheduled == [(sent_notice, 30, "activity.lottery_subscribe_notice_delete")]
+
+
+@pytest.mark.asyncio
+async def test_join_lottery_callback_respects_command_disable(monkeypatch):
+    answers: list[tuple[str, bool]] = []
+    joined: list[int] = []
+
+    class _Session:
+        async def commit(self):
+            return None
+
+    class _Db:
+        def session_factory(self):
+            return self
+
+        async def __aenter__(self):
+            return _Session()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class _Query:
+        data = "join_lottery_55"
+
+        async def answer(self, text: str | None = None, show_alert: bool = False):
+            answers.append((text or "", show_alert))
+
+    class _Handler:
+        message_helper = SimpleNamespace(safe_edit=lambda *args, **kwargs: None)
+
+        async def handle_join(self, update, context, lottery_id: int):
+            joined.append(lottery_id)
+
+    async def fake_enabled(session, chat_id: int, command_key: str):
+        assert (chat_id, command_key) == (-1001, "lottery")
+        return False
+
+    monkeypatch.setattr(lottery_message_callbacks, "is_group_text_command_enabled", fake_enabled)
+
+    update = SimpleNamespace(
+        callback_query=_Query(),
+        effective_chat=SimpleNamespace(id=-1001, type="supergroup"),
+        effective_user=SimpleNamespace(id=42),
+    )
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}))
+
+    await lottery_message_callbacks.join_lottery_callback_impl(update, context, handler=_Handler())
+
+    assert answers == [("抽奖入口已关闭。", True)]
+    assert joined == []
 
 
 def test_lottery_join_success_message_mentions_user_and_count_without_preset():

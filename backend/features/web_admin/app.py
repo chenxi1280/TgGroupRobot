@@ -21,6 +21,7 @@ from backend.features.web_admin.auth_service import (
     hash_password,
     login_admin,
     logout_session,
+    revoke_admin_sessions,
     serialize_admin,
     verify_password,
 )
@@ -477,6 +478,8 @@ def create_admin_web_app(db: Database, settings: Settings) -> FastAPI:
         if account.id == admin.id and status != "active":
             raise HTTPException(status_code=400, detail="不能禁用当前登录账号")
         account.status = status
+        if status == "disabled":
+            await revoke_admin_sessions(session, admin_account_id=account.id)
         await append_audit(
             session,
             admin_account_id=admin.id,
@@ -499,6 +502,7 @@ def create_admin_web_app(db: Database, settings: Settings) -> FastAPI:
         if account is None:
             raise HTTPException(status_code=404, detail="后台账号不存在")
         account.password_hash = hash_password(payload.password)
+        await revoke_admin_sessions(session, admin_account_id=account.id)
         await append_audit(
             session,
             admin_account_id=admin.id,
@@ -513,6 +517,7 @@ def create_admin_web_app(db: Database, settings: Settings) -> FastAPI:
     @app.post("/admin/api/auth/change-password")
     async def api_change_current_password(
         payload: CurrentPasswordRequest,
+        request: Request,
         admin: AdminAccount = Depends(_current_admin),
         session: AsyncSession = Depends(_session),
     ):
@@ -520,6 +525,11 @@ def create_admin_web_app(db: Database, settings: Settings) -> FastAPI:
         if account is None or not verify_password(payload.old_password, account.password_hash):
             raise HTTPException(status_code=400, detail="原密码错误")
         account.password_hash = hash_password(payload.new_password)
+        await revoke_admin_sessions(
+            session,
+            admin_account_id=admin.id,
+            except_token=request.cookies.get(SESSION_COOKIE_NAME),
+        )
         await append_audit(
             session,
             admin_account_id=admin.id,

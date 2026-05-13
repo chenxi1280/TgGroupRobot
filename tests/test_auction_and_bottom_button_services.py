@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -507,6 +508,7 @@ async def test_group_text_trigger_handles_invite_rank(monkeypatch):
             replies.append(text)
 
     monkeypatch.setattr(text_trigger_runtime, "_try_points_text_trigger", fake_points_trigger)
+    monkeypatch.setattr(text_trigger_runtime, "is_group_text_command_enabled", AsyncMock(return_value=True))
     monkeypatch.setattr("backend.features.invite.services.invite_service.get_invite_leaderboard", fake_leaderboard)
     monkeypatch.setattr("backend.features.invite.services.invite_service.get_user_rank", fake_user_rank)
 

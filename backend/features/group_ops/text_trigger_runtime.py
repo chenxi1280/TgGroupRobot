@@ -142,6 +142,7 @@ async def _try_garage_text_trigger(
         _reply_attendance_checkin,
     )
     from backend.shared.services.permission_service import is_user_admin
+    from backend.shared.services.chat_service import get_chat_settings
 
     db: Database = context.application.bot_data["db"]
     try:
@@ -186,6 +187,7 @@ async def _try_garage_text_trigger(
                         status=status,
                     )
                     return True
+        chat_settings = await get_chat_settings(session, chat_id)
         if await _process_teacher_search_features(
             context,
             session,
@@ -194,6 +196,7 @@ async def _try_garage_text_trigger(
             update.effective_message,
             payload,
             teacher_setting,
+            chat_settings,
             is_teacher=is_teacher,
             is_attendance_teacher=is_attendance_teacher,
             is_admin=is_admin,
@@ -208,6 +211,7 @@ async def _try_garage_text_trigger(
             update.effective_message,
             payload,
             car_review_setting,
+            chat_settings,
         )
         if not handled:
             await session.commit()
@@ -235,13 +239,6 @@ async def _try_invite_trigger(
         return False
     if update.effective_chat.id != chat_id:
         return False
-    db: Database = context.application.bot_data["db"]
-    async with db.session_factory() as session:
-        if payload == "邀请排行" and not await is_group_text_command_enabled(session, chat_id, "invite_rank"):
-            await session.commit()
-            await update.effective_message.reply_text("该指令已关闭。")
-            return True
-        await session.commit()
     if payload == "邀请":
         from backend.features.invite.invite_user_callbacks import link_command
 
@@ -252,6 +249,14 @@ async def _try_invite_trigger(
 
         await link_stat_command(update, context)
         return True
+
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        if not await is_group_text_command_enabled(session, chat_id, "invite_rank"):
+            await session.commit()
+            await update.effective_message.reply_text("该指令已关闭。")
+            return True
+        await session.commit()
 
     from backend.features.invite.services.invite_service import get_invite_leaderboard, get_user_rank
 

@@ -7,7 +7,7 @@ import secrets
 from dataclasses import dataclass
 
 import structlog
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.platform.config.core.settings import Settings
@@ -181,6 +181,25 @@ async def logout_session(session: AsyncSession, token: str | None, account: Admi
             target_id=str(account.id),
             detail={},
         )
+
+
+async def revoke_admin_sessions(
+    session: AsyncSession,
+    *,
+    admin_account_id: int,
+    except_token: str | None = None,
+) -> int:
+    statement = (
+        update(AdminSession)
+        .where(AdminSession.admin_account_id == admin_account_id)
+        .where(AdminSession.revoked_at.is_(None))
+    )
+    if except_token:
+        statement = statement.where(AdminSession.token_hash != hash_token(except_token))
+
+    result = await session.execute(statement.values(revoked_at=_utcnow()))
+    await session.flush()
+    return int(getattr(result, "rowcount", 0) or 0)
 
 
 async def append_audit(

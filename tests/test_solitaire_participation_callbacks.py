@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -71,6 +72,7 @@ async def test_join_solitaire_callback_logs_refresh_failure(monkeypatch):
     monkeypatch.setattr(callbacks, "join_solitaire", fake_join_solitaire)
     monkeypatch.setattr(callbacks, "format_solitaire_message", lambda solitaire: "接龙文本")
     monkeypatch.setattr(callbacks, "get_join_solitaire_keyboard", lambda solitaire_id: None)
+    monkeypatch.setattr(callbacks, "is_group_text_command_enabled", AsyncMock(return_value=True))
     monkeypatch.setattr(callbacks.log, "warning", fake_warning)
 
     class _FreshSession(_Session):
@@ -124,3 +126,73 @@ async def test_join_solitaire_callback_logs_refresh_failure(monkeypatch):
             "error": "edit failed",
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_join_solitaire_callback_respects_command_disable(monkeypatch):
+    answers: list[tuple[str, bool]] = []
+    sent_messages: list[str] = []
+
+    async def fake_get_solitaire(session, solitaire_id: int):
+        return SimpleNamespace(
+            id=solitaire_id,
+            chat_id=-10001,
+            status=SolitaireStatus.active.value,
+            max_participants=0,
+            entries_rel=[],
+            points_required=0,
+            message_id=8899,
+        )
+
+    async def fake_answer(text: str | None = None, show_alert: bool = False, *args, **kwargs):
+        answers.append((text or "", show_alert))
+
+    async def fake_send_message(*, chat_id: int, text: str, **kwargs):
+        sent_messages.append(text)
+
+    monkeypatch.setattr(callbacks, "get_solitaire", fake_get_solitaire)
+    monkeypatch.setattr(callbacks, "is_group_text_command_enabled", AsyncMock(return_value=False))
+
+    update = SimpleNamespace(
+        callback_query=SimpleNamespace(data="join_solitaire:7", answer=fake_answer, message=SimpleNamespace(message_id=321)),
+        effective_chat=SimpleNamespace(id=-10001),
+        effective_user=SimpleNamespace(id=42, username="tester", first_name="Tester"),
+    )
+    context = SimpleNamespace(
+        application=SimpleNamespace(bot_data={"db": _Db()}),
+        bot=SimpleNamespace(send_message=fake_send_message),
+    )
+
+    await callbacks.join_solitaire_callback(update, context)
+
+    assert answers == [("接龙入口已关闭。", True)]
+    assert sent_messages == []
+
+
+@pytest.mark.asyncio
+async def test_solitaire_reply_join_respects_command_disable(monkeypatch):
+    replies: list[str] = []
+
+    async def fake_get_chat_solitaires(session, chat_id: int, active_only: bool = True):
+        return [SimpleNamespace(id=7, message_id=321)]
+
+    async def fake_reply_text(text: str, *args, **kwargs):
+        replies.append(text)
+
+    monkeypatch.setattr(callbacks, "get_chat_solitaires", fake_get_chat_solitaires)
+    monkeypatch.setattr(callbacks, "is_group_text_command_enabled", AsyncMock(return_value=False))
+
+    update = SimpleNamespace(
+        effective_chat=SimpleNamespace(id=-10001),
+        effective_user=SimpleNamespace(id=42, username="tester", first_name="Tester"),
+        effective_message=SimpleNamespace(
+            text="报名",
+            reply_to_message=SimpleNamespace(message_id=321),
+            reply_text=fake_reply_text,
+        ),
+    )
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}))
+
+    await callbacks.solitaire_join_message_handler(update, context)
+
+    assert replies == ["接龙入口已关闭。"]

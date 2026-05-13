@@ -12,6 +12,7 @@ from backend.features.activity.services.lottery_service_parsing import (
     decode_selection_mode,
 )
 from backend.platform.db.runtime.session import Database
+from backend.shared.services.command_config_service import is_group_text_command_enabled
 from backend.shared.handlers.base.state_helper import StateHelper
 
 log = structlog.get_logger(__name__)
@@ -116,9 +117,9 @@ async def join_lottery_callback_impl(update: Update, context: ContextTypes.DEFAU
     if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
         return
     q = update.callback_query
-    await q.answer()
     chat = update.effective_chat
     if chat.type == "private":
+        await q.answer()
         await handler.message_helper.safe_edit(update, "请在群里使用。")
         return
     data = q.data
@@ -127,8 +128,17 @@ async def join_lottery_callback_impl(update: Update, context: ContextTypes.DEFAU
     try:
         lottery_id = int(data.split("_")[-1])
     except (ValueError, IndexError):
+        await q.answer()
         await handler.message_helper.safe_edit(update, "无效的抽奖。")
         return
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        if not await is_group_text_command_enabled(session, chat.id, "lottery"):
+            await session.commit()
+            await q.answer("抽奖入口已关闭。", show_alert=True)
+            return
+        await session.commit()
+    await q.answer()
     await handler.handle_join(update, context, lottery_id)
 
 

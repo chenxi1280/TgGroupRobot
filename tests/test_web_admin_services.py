@@ -8,7 +8,13 @@ from backend.features.web_admin.announcement_service import (
     DEFAULT_ANNOUNCEMENT_TEXT,
     format_announcement_line,
 )
-from backend.features.web_admin.auth_service import ensure_bootstrap_admin, hash_password, verify_password
+from backend.features.web_admin.auth_service import (
+    ensure_bootstrap_admin,
+    hash_password,
+    hash_token,
+    revoke_admin_sessions,
+    verify_password,
+)
 from backend.features.web_admin.card_service import (
     COPY_CARD_LIMIT,
     KEY_SPECS,
@@ -41,11 +47,43 @@ class _FakeSession:
         return None
 
 
+class _RowCountResult:
+    rowcount = 2
+
+
+class _FakeRevokeSession:
+    def __init__(self):
+        self.statements = []
+        self.flushed = False
+
+    async def execute(self, statement):
+        self.statements.append(statement)
+        return _RowCountResult()
+
+    async def flush(self):
+        self.flushed = True
+
+
 def test_admin_password_hash_verifies_and_rejects_wrong_password() -> None:
     stored = hash_password("secret-pass")
 
     assert verify_password("secret-pass", stored)
     assert not verify_password("wrong-pass", stored)
+
+
+@pytest.mark.asyncio
+async def test_revoke_admin_sessions_targets_active_sessions_and_can_keep_current_token() -> None:
+    session = _FakeRevokeSession()
+
+    count = await revoke_admin_sessions(session, admin_account_id=7, except_token="current-token")
+
+    sql = str(session.statements[0].compile(compile_kwargs={"literal_binds": True}))
+    assert count == 2
+    assert session.flushed is True
+    assert "admin_sessions" in sql
+    assert "admin_account_id = 7" in sql
+    assert "revoked_at IS NULL" in sql
+    assert hash_token("current-token") in sql
 
 
 def test_key_specs_match_first_version_contract() -> None:

@@ -16,6 +16,7 @@ from backend.features.activity.ui.solitaire import get_join_solitaire_keyboard
 from backend.platform.db.runtime.session import Database
 from backend.platform.db.schema.models.core import Solitaire, SolitaireEntry
 from backend.platform.db.schema.models.enums import SolitaireStatus
+from backend.shared.services.command_config_service import is_group_text_command_enabled
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
@@ -26,7 +27,6 @@ async def join_solitaire_callback(update: Update, context: ContextTypes.DEFAULT_
     if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
         return
     q = update.callback_query
-    await q.answer()
 
     data = q.data or ""
     if not data.startswith("join_solitaire:"):
@@ -47,6 +47,9 @@ async def join_solitaire_callback(update: Update, context: ContextTypes.DEFAULT_
         if not solitaire:
             await q.answer()
             await context.bot.send_message(chat_id=update.effective_chat.id, text="❌ 接龙不存在", parse_mode="HTML")
+            return
+        if not await is_group_text_command_enabled(session, solitaire.chat_id, "solitaire"):
+            await q.answer("接龙入口已关闭。", show_alert=True)
             return
         if solitaire.status != SolitaireStatus.active.value:
             await q.answer()
@@ -191,6 +194,10 @@ async def solitaire_join_message_handler(update: Update, context: ContextTypes.D
         solitaires = await get_chat_solitaires(session, chat.id, active_only=True)
         target_solitaire = next((item for item in solitaires if item.message_id == message.reply_to_message.message_id), None)
         if not target_solitaire:
+            return
+        if not await is_group_text_command_enabled(session, chat.id, "solitaire"):
+            await session.commit()
+            await message.reply_text("接龙入口已关闭。")
             return
 
         existing_result = await session.execute(

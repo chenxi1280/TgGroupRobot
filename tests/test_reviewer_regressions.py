@@ -40,11 +40,11 @@ def test_group_dispatcher_exposes_expected_business_handler_matrix():
     dispatcher = GroupMessageHandler()
 
     assert [name for name, _ in dispatcher._get_business_handlers()] == [
+        "verification",
         "auction",
         "engagement",
         "game",
         "guess",
-        "verification",
         "lottery",
         "solitaire",
         "moderation",
