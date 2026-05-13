@@ -1778,7 +1778,7 @@ def build_flows() -> dict[str, dict[str, Any]]:
         "底部按钮",
         "bottom_button",
         ["btm:"],
-        ["配置底部键盘文案、按钮布局和绑定事件。"],
+        ["配置底部键盘文案、按钮布局和绑定事件。", "必填步骤：先设置底部文本，再配置按钮布局，最后同步到底部键盘。"],
         [
             [
                 button("开启", f"btm:toggle:{CHAT}:1", "toggle", "result", "底部按钮已开启。"),
