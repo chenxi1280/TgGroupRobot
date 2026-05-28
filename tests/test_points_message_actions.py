@@ -120,6 +120,9 @@ async def _call(update, session: _Session, settings, **overrides):
     async def get_leaderboard(*args, **kwargs):
         return []
 
+    async def get_daily_points_leaderboard(*args, **kwargs):
+        return []
+
     async def require_manage(*args, **kwargs):
         return True, None
 
@@ -133,10 +136,12 @@ async def _call(update, session: _Session, settings, **overrides):
         get_balance_func=get_balance,
         get_user_rank_func=get_user_rank,
         get_leaderboard_func=get_leaderboard,
+        get_daily_points_leaderboard_func=get_daily_points_leaderboard,
         format_sign_in_success_message_func=lambda **kwargs: "签到成功",
         format_sign_in_already_message_func=lambda **kwargs: "今日已签到",
         format_balance_message_func=lambda balance, rank: f"余额 {balance} 排名 {rank}",
         format_leaderboard_message_func=lambda rows: f"排行 {len(rows)}",
+        format_daily_points_leaderboard_message_func=lambda rows: f"今日排行 {len(rows)}",
         add_message_points_func=add_message_points,
         required_level_permission_func=lambda message: None,
         should_send_level_block_notice_func=lambda *args, **kwargs: False,
@@ -181,6 +186,52 @@ async def test_plain_points_alias_queries_balance() -> None:
 
 
 @pytest.mark.asyncio
+async def test_blank_points_alias_falls_back_to_default_balance_keyword() -> None:
+    session = _Session()
+    update, replies = _update("积分")
+
+    async def get_balance(*args, **kwargs):
+        return 18
+
+    async def get_rank(*args, **kwargs):
+        return 3
+
+    await _call(
+        update,
+        session,
+        _settings(points_alias=""),
+        get_balance_func=get_balance,
+        get_user_rank_func=get_rank,
+    )
+
+    assert replies == ["余额 18 排名 3"]
+    assert session.commits == 1
+
+
+@pytest.mark.asyncio
+async def test_default_points_keyword_still_works_after_alias_is_renamed() -> None:
+    session = _Session()
+    update, replies = _update("积分")
+
+    async def get_balance(*args, **kwargs):
+        return 18
+
+    async def get_rank(*args, **kwargs):
+        return 3
+
+    await _call(
+        update,
+        session,
+        _settings(points_alias="查分"),
+        get_balance_func=get_balance,
+        get_user_rank_func=get_rank,
+    )
+
+    assert replies == ["余额 18 排名 3"]
+    assert session.commits == 1
+
+
+@pytest.mark.asyncio
 async def test_plain_points_rank_alias_queries_leaderboard() -> None:
     session = _Session()
     update, replies = _update("积分榜")
@@ -196,6 +247,64 @@ async def test_plain_points_rank_alias_queries_leaderboard() -> None:
     )
 
     assert replies == ["排行 1"]
+    assert session.commits == 1
+
+
+@pytest.mark.asyncio
+async def test_default_points_rank_keyword_still_works_after_alias_is_renamed() -> None:
+    session = _Session()
+    update, replies = _update("积分排行")
+
+    async def get_leaderboard(*args, **kwargs):
+        return [(77, 42, "alice")]
+
+    await _call(
+        update,
+        session,
+        _settings(points_rank_alias="排行榜"),
+        get_leaderboard_func=get_leaderboard,
+    )
+
+    assert replies == ["排行 1"]
+    assert session.commits == 1
+
+
+@pytest.mark.asyncio
+async def test_blank_points_rank_alias_falls_back_to_default_rank_keyword() -> None:
+    session = _Session()
+    update, replies = _update("积分排行")
+
+    async def get_leaderboard(*args, **kwargs):
+        return [(77, 42, "alice")]
+
+    await _call(
+        update,
+        session,
+        _settings(points_rank_alias=""),
+        get_leaderboard_func=get_leaderboard,
+    )
+
+    assert replies == ["排行 1"]
+    assert session.commits == 1
+
+
+@pytest.mark.asyncio
+async def test_today_points_queries_daily_leaderboard() -> None:
+    session = _Session()
+    update, replies = _update("今日积分")
+
+    async def get_daily_leaderboard(*args, **kwargs):
+        return [(77, 12, "alice"), (88, 5, None)]
+
+    await _call(
+        update,
+        session,
+        _settings(),
+        get_daily_points_leaderboard_func=get_daily_leaderboard,
+        format_daily_points_leaderboard_message_func=lambda rows: f"今日排行 {len(rows)}",
+    )
+
+    assert replies == ["今日排行 2"]
     assert session.commits == 1
 
 

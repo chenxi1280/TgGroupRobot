@@ -45,3 +45,16 @@ def format_leaderboard_message(
         name = username or f"用户{user_id}"
         msg += f"{i}. {name} - {balance} 积分\n"
     return msg
+
+
+def format_daily_points_leaderboard_message(
+    leaderboard: list[tuple[int, int, str | None]],
+) -> str:
+    if not leaderboard:
+        return "今日暂无积分获得记录"
+
+    msg = "🏆 今日积分排行（前10名）\n\n"
+    for i, (user_id, earned_points, username) in enumerate(leaderboard, 1):
+        name = username or f"用户{user_id}"
+        msg += f"{i}. {name} - 今日获得 {earned_points} 积分\n"
+    return msg

@@ -14,6 +14,9 @@ from backend.shared.services.permission_service import PermissionPolicyService
 
 _ADMIN_ADD_COMMANDS = {"加积分", "加分"}
 _ADMIN_DEDUCT_COMMANDS = {"扣积分", "扣分"}
+_DEFAULT_POINTS_ALIAS = "积分"
+_DEFAULT_POINTS_RANK_ALIAS = "积分排行"
+_TODAY_POINTS_ALIAS = "今日积分"
 
 log = structlog.get_logger(__name__)
 
@@ -28,6 +31,16 @@ class _CustomPointCommandDeps:
 
 def _user_label(user) -> str:
     return format_user_display_name(user, user.id)
+
+
+def _setting_text(settings, attr_name: str, default: str) -> str:
+    value = str(getattr(settings, attr_name, "") or "").strip()
+    return value or default
+
+
+def _setting_keywords(settings, attr_name: str, default: str) -> set[str]:
+    configured = _setting_text(settings, attr_name, default)
+    return {default, configured}
 
 
 def _parse_admin_adjustment(text: str) -> tuple[int, str, str] | None:
@@ -174,10 +187,12 @@ async def handle_message_points_action(
     get_balance_func,
     get_user_rank_func,
     get_leaderboard_func,
+    get_daily_points_leaderboard_func,
     format_sign_in_success_message_func,
     format_sign_in_already_message_func,
     format_balance_message_func,
     format_leaderboard_message_func,
+    format_daily_points_leaderboard_message_func,
     add_message_points_func,
     required_level_permission_func,
     should_send_level_block_notice_func,
@@ -258,16 +273,22 @@ async def handle_message_points_action(
             await update.effective_message.reply_text(msg)
             return True
 
-        points_rank_alias = getattr(settings, "points_rank_alias", "积分排行")
-        points_alias = getattr(settings, "points_alias", "积分")
+        points_rank_keywords = _setting_keywords(settings, "points_rank_alias", _DEFAULT_POINTS_RANK_ALIAS)
+        points_keywords = _setting_keywords(settings, "points_alias", _DEFAULT_POINTS_ALIAS)
 
-        if text == points_rank_alias:
+        if text in points_rank_keywords:
             leaderboard = await get_leaderboard_func(session, chat.id, limit=10)
             await session.commit()
             await update.effective_message.reply_text(format_leaderboard_message_func(leaderboard))
             return True
 
-        if text == points_alias:
+        if text == _TODAY_POINTS_ALIAS:
+            leaderboard = await get_daily_points_leaderboard_func(session, chat.id, limit=10)
+            await session.commit()
+            await update.effective_message.reply_text(format_daily_points_leaderboard_message_func(leaderboard))
+            return True
+
+        if text in points_keywords:
             balance = await get_balance_func(session, chat.id, user.id)
             rank = await get_user_rank_func(session, chat.id, user.id)
             await session.commit()
