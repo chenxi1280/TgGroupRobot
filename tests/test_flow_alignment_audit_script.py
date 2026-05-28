@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 import subprocess
 import sys
@@ -8,6 +9,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "docs-site/scripts/audit_flow_alignment.py"
+
+
+def load_audit_module():
+    spec = importlib.util.spec_from_file_location("audit_flow_alignment", SCRIPT)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 def run_audit_script(*args: str) -> subprocess.CompletedProcess[str]:
@@ -40,6 +50,23 @@ def test_flow_alignment_audit_reports_reverse_mapping_stats_without_blocking() -
     assert set(payload["duplicateSummary"]) == {"同一能力多入口", "旧入口兼容", "真实重复实现"}
     if payload["findings"]:
         assert payload["sample"]
+
+
+def test_flow_alignment_audit_extracts_antispam_two_button_row_templates() -> None:
+    audit = load_audit_module()
+    evidence = audit.callback_evidence_from_backend()
+
+    callbacks = [
+        "gg:toggle:{rule_id}:enabled:{chat_id}",
+        "gg:cycle:{rule_id}:messages:{chat_id}",
+    ]
+
+    for callback in callbacks:
+        matches = audit.callback_evidence_matches(callback, evidence)
+        assert any(
+            match.kind == "template" and match.path == "backend/features/admin/ui/antispam.py"
+            for match in matches
+        )
 
 
 def test_flow_alignment_audit_builds_feature_coverage_matrix() -> None:

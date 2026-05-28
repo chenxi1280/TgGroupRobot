@@ -117,6 +117,15 @@ STATIC_CALLBACK_ROOTS = {
     "vfy_help",
 }
 
+CALLBACK_HELPER_ARG_INDEXES = {
+    "_two_button_row": (1, 3),
+}
+
+CALLBACK_HELPER_KEYWORDS = {
+    "left_callback",
+    "right_callback",
+}
+
 
 @dataclass(frozen=True)
 class Finding:
@@ -303,6 +312,14 @@ def call_name(node: ast.Call) -> str:
     return ""
 
 
+def helper_callback_nodes(node: ast.Call) -> list[ast.AST]:
+    helper_name = call_name(node)
+    arg_indexes = CALLBACK_HELPER_ARG_INDEXES.get(helper_name, ())
+    nodes = [node.args[index] for index in arg_indexes if index < len(node.args)]
+    nodes.extend(keyword.value for keyword in node.keywords if keyword.arg in CALLBACK_HELPER_KEYWORDS)
+    return nodes
+
+
 def is_broad_route_pattern(pattern: str) -> bool:
     stripped = pattern.lstrip("^")
     if stripped.startswith("(adm|ali|gfw|grg|tsearch|crv|auc|btm|gm|guess|act|qpub):"):
@@ -346,6 +363,17 @@ def callback_evidence_from_backend() -> list[CallbackEvidence]:
                     )
 
             if isinstance(node, ast.Call):
+                for callback_node in helper_callback_nodes(node):
+                    for pattern, raw in expression_to_patterns(callback_node):
+                        evidence.append(
+                            CallbackEvidence(
+                                kind="template",
+                                raw=raw,
+                                path=rel_path,
+                                regex=re.compile(f"^{pattern}$"),
+                            )
+                        )
+
                 if call_name(node) == "action_button" and len(node.args) >= 2:
                     for pattern, raw in expression_to_patterns(node.args[1]):
                         evidence.append(
