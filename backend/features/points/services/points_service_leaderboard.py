@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime as dt
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.features.points.services.points_service_accounts import get_balance
@@ -43,7 +43,7 @@ async def get_user_rank(
 
     result = await session.execute(
         select(func.count(PointsAccount.id)).where(
-            func.and_(
+            and_(
                 PointsAccount.chat_id == chat_id,
                 PointsAccount.balance > user_balance,
             )
