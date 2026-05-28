@@ -139,6 +139,7 @@ async def test_verification_restrict_failure_does_not_send_challenge_prompt(monk
     async def fake_create_challenge(*args, **kwargs):
         return challenge
 
+
     class _RestrictFailBot:
         def __init__(self) -> None:
             self.messages: list[dict] = []
@@ -169,6 +170,55 @@ async def test_verification_restrict_failure_does_not_send_challenge_prompt(monk
     assert challenge.solved is True
     assert challenge.timeout_handled is True
     assert bot.messages == []
+
+
+@pytest.mark.asyncio
+async def test_invite_notify_sends_for_new_invite_even_without_points_award(monkeypatch):
+    link = SimpleNamespace(id=77, chat_id=-100123, created_by_user_id=555, member_count=0)
+
+    class _LinkResult:
+        def scalar_one_or_none(self):
+            return link
+
+    class _InviteSession(_Session):
+        async def execute(self, stmt):
+            return _LinkResult()
+
+    sent: list[dict] = []
+
+    class _InviteBot:
+        async def send_message(self, **kwargs):
+            sent.append(kwargs)
+
+    async def fake_track_and_award_invite(session, **kwargs):
+        return True, False, "invite_points_disabled"
+
+    monkeypatch.setattr(verification_handler, "track_and_award_invite", fake_track_and_award_invite)
+
+    context = SimpleNamespace(
+        application=SimpleNamespace(
+            bot_data={"invite_join_hints": {(-100123, 99): {"invite_link": "https://t.me/+demo"}}}
+        ),
+        bot=_InviteBot(),
+        user_data={},
+    )
+    settings = _settings(invite_link_notify=True)
+
+    await verification_handler._track_invite_for_member(
+        context,
+        _InviteSession(),
+        SimpleNamespace(id=-100123, title="测试群"),
+        _member(),
+        settings,
+    )
+
+    assert link.member_count == 1
+    assert sent == [
+        {
+            "chat_id": 555,
+            "text": "🎉 恭喜！您邀请的 New 加入了群组 测试群",
+        }
+    ]
 
 
 @pytest.mark.asyncio

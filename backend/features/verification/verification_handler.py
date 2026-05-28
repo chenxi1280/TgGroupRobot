@@ -80,6 +80,16 @@ async def invite_link_join_hint_handler(update: Update, context: ContextTypes.DE
     _cache_invite_join_hint(context, chat_id=chat.id, user_id=from_user.id, invite_link=invite_link)
 
 
+async def _send_invite_join_notify(context: ContextTypes.DEFAULT_TYPE, chat, member, *, inviter_user_id: int) -> None:
+    try:
+        await context.bot.send_message(
+            chat_id=inviter_user_id,
+            text=f"🎉 恭喜！您邀请的 {member.first_name or member.username or '用户'} 加入了群组 {chat.title}",
+        )
+    except Exception as exc:
+        log.warning("invite_join_notify_failed", chat_id=chat.id, member_user_id=member.id, error=str(exc))
+
+
 async def _track_invite_for_member(context: ContextTypes.DEFAULT_TYPE, session, chat, member, settings) -> None:
     invite_hint = _pop_invite_join_hint(context, chat_id=chat.id, user_id=member.id)
     user_data = getattr(context, "user_data", None)
@@ -103,7 +113,7 @@ async def _track_invite_for_member(context: ContextTypes.DEFAULT_TYPE, session, 
             link = link_result.scalar_one_or_none()
 
     if link and link.chat_id == chat.id and link.created_by_user_id:
-        is_new, awarded, _ = await track_and_award_invite(
+        is_new, _awarded, _reason = await track_and_award_invite(
             session,
             chat_id=chat.id,
             inviter_user_id=link.created_by_user_id,
@@ -112,14 +122,8 @@ async def _track_invite_for_member(context: ContextTypes.DEFAULT_TYPE, session, 
         )
         if is_new:
             link.member_count += 1
-            if awarded and getattr(settings, "invite_link_notify", True):
-                try:
-                    await context.bot.send_message(
-                        chat_id=link.created_by_user_id,
-                        text=f"🎉 恭喜！您邀请的 {member.first_name or member.username or '用户'} 加入了群组 {chat.title}",
-                    )
-                except Exception as exc:
-                    log.warning("invite_award_notify_failed", chat_id=chat.id, member_user_id=member.id, error=str(exc))
+            if getattr(settings, "invite_link_notify", True):
+                await _send_invite_join_notify(context, chat, member, inviter_user_id=link.created_by_user_id)
 
 
 async def _send_verification_prompt(

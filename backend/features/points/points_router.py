@@ -34,10 +34,6 @@ class PointsRouter(BaseRouter):
         app.add_handler(CommandHandler("points", points_command))
         app.add_handler(CommandHandler("rank", points_rank_command))
         
-        # 回调处理器
-        app.add_handler(CallbackQueryHandler(points_config_callback, pattern=r"^pts:"))
-        app.add_handler(CallbackQueryHandler(mall_callback, pattern=r"^mall:"))
-        
         # 积分配置流程对话
         points_config_conv = ConversationHandler(
             entry_points=[CallbackQueryHandler(points_config_callback, pattern=r"^pts:edit:")],
@@ -48,11 +44,16 @@ class PointsRouter(BaseRouter):
             },
             fallbacks=[
                 CommandHandler("cancel", points_config_cancel_callback),
+                CallbackQueryHandler(points_config_cancel_callback, pattern=r"^pts:home:-?\d+$"),
                 CallbackQueryHandler(points_config_cancel_callback, pattern=r"^adm:menu:"),
             ],
             per_chat=True,
         )
         app.add_handler(points_config_conv)
+
+        # 回调处理器
+        app.add_handler(CallbackQueryHandler(points_config_callback, pattern=r"^pts:"))
+        app.add_handler(CallbackQueryHandler(mall_callback, pattern=r"^mall:"))
 
         # 注意：积分消息处理器已移至 __main__.py 的 _register_common_handlers 中统一管理
 

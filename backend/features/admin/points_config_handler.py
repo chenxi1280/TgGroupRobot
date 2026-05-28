@@ -263,7 +263,7 @@ _points_config_handler = PointsConfigHandler()
 
 
 # 适配器函数（供 Router 注册）
-async def points_config_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def points_config_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int | None:
     """积分配置回调处理器（适配器函数）"""
     if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
         return

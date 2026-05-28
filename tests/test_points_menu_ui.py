@@ -3,9 +3,11 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+from telegram.ext import CallbackQueryHandler, ConversationHandler
 
 from backend.features.admin import points_config_handler
 from backend.features.admin.ui.points import points_config_keyboard, points_rule_keyboard
+from backend.features.points.points_router import PointsRouter
 
 
 class _SessionContext:
@@ -29,6 +31,14 @@ class _FakeDb:
 
     def session_factory(self):
         return self._session
+
+
+class _HandlerApp:
+    def __init__(self) -> None:
+        self.handlers = []
+
+    def add_handler(self, handler) -> None:
+        self.handlers.append(handler)
 
 
 def _build_settings():
@@ -96,6 +106,39 @@ def test_points_rule_keyboards_keep_existing_real_actions():
         ["📈 设置每日上限"],
         ["🔙 返回"],
     ]
+
+
+def test_points_edit_conversation_is_registered_before_generic_pts_callback():
+    app = _HandlerApp()
+
+    PointsRouter().register(app)
+
+    pts_handlers = [
+        handler
+        for handler in app.handlers
+        if isinstance(handler, ConversationHandler)
+        or (
+            isinstance(handler, CallbackQueryHandler)
+            and getattr(getattr(handler, "pattern", None), "pattern", "") == "^pts:"
+        )
+    ]
+
+    assert isinstance(pts_handlers[0], ConversationHandler)
+
+
+def test_points_edit_conversation_back_button_exits_wait_state():
+    app = _HandlerApp()
+
+    PointsRouter().register(app)
+
+    conversation = next(handler for handler in app.handlers if isinstance(handler, ConversationHandler))
+    fallback_patterns = [
+        getattr(getattr(handler, "pattern", None), "pattern", "")
+        for handler in conversation.fallbacks
+        if isinstance(handler, CallbackQueryHandler)
+    ]
+
+    assert any("pts:home" in pattern for pattern in fallback_patterns)
 
 
 @pytest.mark.asyncio
