@@ -12,6 +12,7 @@ from backend.features.moderation.services.garbage_guard_rules import (
     set_global_whitelist_user_ids,
     set_rule_config,
 )
+from backend.features.moderation.services.quick_reply_actions import match_quick_reply_action
 from backend.features.moderation.services import garbage_guard_service
 from backend.features.moderation.services.garbage_guard_service import apply_garbage_punishment, detect_garbage_violation
 from backend.features.moderation.services.moderation_warning_service import WarningResult
@@ -156,6 +157,31 @@ def test_enabled_manual_warning_defaults_to_notice_but_not_delete_command() -> N
     assert rule["warn_enabled"] is True
     assert rule["delete_message"] is False
     assert rule["notice_enabled"] is True
+
+
+def test_quick_reply_actions_default_to_j_mute_and_t_kick_when_enabled() -> None:
+    settings = _settings()
+    set_rule_config(settings, "quick_reply_actions", {"enabled": True})
+
+    rule = get_rule_config(settings, "quick_reply_actions")
+
+    assert rule["mute_keyword"] == "j"
+    assert rule["kick_keyword"] == "t"
+    assert match_quick_reply_action(settings, "j") == "mute"
+    assert match_quick_reply_action(settings, "T") == "kick"
+
+
+def test_quick_reply_actions_support_per_group_keywords() -> None:
+    settings = _settings()
+    set_rule_config(
+        settings,
+        "quick_reply_actions",
+        {"enabled": True, "mute_keyword": "禁言", "kick_keyword": "踢"},
+    )
+
+    assert match_quick_reply_action(settings, "禁言") == "mute"
+    assert match_quick_reply_action(settings, "踢") == "kick"
+    assert match_quick_reply_action(settings, "j") is None
 
 
 def test_enabled_leave_ban_does_not_default_to_notice() -> None:

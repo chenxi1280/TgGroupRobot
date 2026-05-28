@@ -354,7 +354,7 @@ async def test_remove_joint_ban_entry_deletes_item_and_records_audit(monkeypatch
         alliance_id=9,
         target_user_id=12345,
         source_chat_id=-10002,
-        reason="reply_t_command",
+        reason="reply_team_command",
     )
     session = _FakeSession(execute_value=entry)
     audit_calls: list[dict] = []
@@ -389,7 +389,7 @@ async def test_remove_joint_ban_entry_deletes_item_and_records_audit(monkeypatch
                 "entry_id": 8,
                 "target_user_id": 12345,
                 "source_chat_id": -10002,
-                "reason": "reply_t_command",
+                "reason": "reply_team_command",
             },
         }
     ]

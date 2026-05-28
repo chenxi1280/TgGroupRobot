@@ -23,6 +23,10 @@ from backend.features.moderation.services.garbage_guard_service import (
     handle_garbage_result_fallback,
     notify_garbage_action_failure,
 )
+from backend.features.moderation.services.quick_reply_actions import (
+    apply_quick_reply_action,
+    match_quick_reply_action,
+)
 from backend.features.moderation.services.moderation_service import (
     build_moderation_action_label,
     build_moderation_notice,
@@ -46,6 +50,56 @@ def _user_label(user) -> str:
 
 def _is_manual_warning_text(text: str) -> bool:
     return text.strip().lower() in {"warn", "警告"}
+
+
+async def _process_quick_reply_action(
+    context: ContextTypes.DEFAULT_TYPE,
+    session,
+    *,
+    settings,
+    chat,
+    user,
+    message,
+) -> bool:
+    reply_to_message = getattr(message, "reply_to_message", None)
+    if user is None or reply_to_message is None:
+        return False
+    action = match_quick_reply_action(settings, message.text or "")
+    if action is None:
+        return False
+    if not await should_exempt_admin(context, chat.id, user.id, True):
+        return False
+
+    target = getattr(reply_to_message, "from_user", None)
+    if target is None or target.id <= 0:
+        return False
+    if is_global_whitelisted(settings, target.id):
+        return False
+    if await should_exempt_admin(context, chat.id, target.id, True):
+        return False
+
+    await ensure_chat(session, chat_id=chat.id, chat_type=chat.type, title=chat.title)
+    await ensure_user(
+        session,
+        user_id=target.id,
+        username=target.username,
+        first_name=target.first_name,
+        last_name=target.last_name,
+        language_code=target.language_code,
+    )
+    await apply_quick_reply_action(
+        context,
+        session,
+        settings=settings,
+        chat_id=chat.id,
+        target_user_id=target.id,
+        target_label=_user_label(target),
+        action=action,
+        actor_user_id=user.id,
+        command_message=message,
+        target_message_id=getattr(reply_to_message, "message_id", None),
+    )
+    return True
 
 
 async def execute_spam_punishment(
@@ -177,6 +231,17 @@ async def anti_spam_message_handler(update: Update, context: ContextTypes.DEFAUL
                         delete_after_seconds=int(config.get("notice_delete_seconds", 10) or 10),
                     )
                 raise ApplicationHandlerStop
+
+        if await _process_quick_reply_action(
+            context,
+            session,
+            settings=settings,
+            chat=chat,
+            user=user,
+            message=message,
+        ):
+            await session.commit()
+            raise ApplicationHandlerStop
 
         manual_config = get_rule_config(settings, "manual_warning")
         if bool(manual_config.get("enabled")) and _is_manual_warning_text(message.text or "") and message.reply_to_message is not None:

@@ -224,7 +224,8 @@ def test_garbage_guard_home_keyboard_uses_screenshot_order() -> None:
     assert rows[2] == ["❌ 禁止发送按钮", "❌ 禁止垃圾用户"]
     assert rows[3] == ["❌ 禁止转发引用", "❌ 禁止发言刷屏"]
     assert rows[4] == ["❌ 人工警告", "❌ 离群封禁"]
-    assert rows[5][0].startswith("📄 总白名单管理")
+    assert rows[5] == ["❌ 快捷回复操作"]
+    assert rows[6][0].startswith("📄 总白名单管理")
 
 
 @pytest.mark.asyncio
@@ -300,6 +301,22 @@ def test_garbage_guard_banned_words_rule_exposes_add_entry() -> None:
     assert ["➕ 添加违禁词"] in rows
     assert "banned_word:add:-100123" in callbacks
     assert "实际触发条件: 包含/模糊匹配，命中词库后触发（当前 0 个词）" in text
+
+
+def test_garbage_guard_quick_reply_rule_exposes_keyword_inputs() -> None:
+    settings = SimpleNamespace(anti_spam_rules={}, anti_flood_enabled=False)
+    keyboard = garbage_guard_rule_keyboard(settings, -100123, "quick_reply_actions")
+    text = format_garbage_rule_text("锅巴 群", settings, "quick_reply_actions", banned_word_count=0)
+    labels = [button.text for row in keyboard.inline_keyboard for button in row]
+    callbacks = [button.callback_data for row in keyboard.inline_keyboard for button in row]
+
+    assert "⚙️ 禁言回复词:" in labels
+    assert "j" in labels
+    assert "⚙️ 踢出回复词:" in labels
+    assert "t" in labels
+    assert "gg:input:quick_reply_actions:mute_keyword:-100123" in callbacks
+    assert "gg:input:quick_reply_actions:kick_keyword:-100123" in callbacks
+    assert "实际触发条件: 管理员引用成员消息后回复 j 禁言，回复 t 踢出" in text
 
 
 def test_all_garbage_guard_rules_can_enable_with_tracked_json_assignment() -> None:

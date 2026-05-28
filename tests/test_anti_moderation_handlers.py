@@ -693,6 +693,98 @@ async def test_manual_warning_stops_and_fallback_deletes_when_actions_fail(monke
 
 
 @pytest.mark.asyncio
+async def test_quick_reply_mute_uses_configured_reply_keyword(monkeypatch):
+    session = _Session()
+    update = _build_update()
+    context = _build_context(session)
+    target = _FakeUser(user_id=456)
+    update.effective_message = SimpleNamespace(
+        message_id=42,
+        sender_chat=None,
+        text="j",
+        caption=None,
+        reply_to_message=SimpleNamespace(message_id=41, from_user=target),
+    )
+    settings = _settings_with_rule("quick_reply_actions", {"enabled": True})
+    applied: list[dict[str, object]] = []
+
+    async def fake_get_chat_settings(session, chat_id):
+        return settings
+
+    async def fake_should_exempt_admin(context, chat_id, user_id, default):
+        return user_id == update.effective_user.id
+
+    async def fake_ensure_chat(*args, **kwargs):
+        return None
+
+    async def fake_ensure_user(*args, **kwargs):
+        return None
+
+    async def fake_apply_quick_reply_action(context, session, **kwargs):
+        applied.append(kwargs)
+        return SimpleNamespace(applied=True)
+
+    monkeypatch.setattr(anti_spam_handler, "get_chat_settings", fake_get_chat_settings)
+    monkeypatch.setattr(anti_spam_handler, "should_exempt_admin", fake_should_exempt_admin)
+    monkeypatch.setattr(anti_spam_handler, "ensure_chat", fake_ensure_chat)
+    monkeypatch.setattr(anti_spam_handler, "ensure_user", fake_ensure_user)
+    monkeypatch.setattr(anti_spam_handler, "apply_quick_reply_action", fake_apply_quick_reply_action)
+
+    with pytest.raises(ApplicationHandlerStop):
+        await anti_spam_handler.anti_spam_message_handler(update, context)
+
+    assert applied[0]["action"] == "mute"
+    assert applied[0]["target_user_id"] == 456
+    assert applied[0]["actor_user_id"] == update.effective_user.id
+    assert applied[0]["target_message_id"] == 41
+
+
+@pytest.mark.asyncio
+async def test_quick_reply_kick_accepts_uppercase_configured_keyword(monkeypatch):
+    session = _Session()
+    update = _build_update()
+    context = _build_context(session)
+    target = _FakeUser(user_id=456)
+    update.effective_message = SimpleNamespace(
+        message_id=42,
+        sender_chat=None,
+        text="T",
+        caption=None,
+        reply_to_message=SimpleNamespace(message_id=41, from_user=target),
+    )
+    settings = _settings_with_rule("quick_reply_actions", {"enabled": True, "kick_keyword": "t"})
+    applied: list[dict[str, object]] = []
+
+    async def fake_get_chat_settings(session, chat_id):
+        return settings
+
+    async def fake_should_exempt_admin(context, chat_id, user_id, default):
+        return user_id == update.effective_user.id
+
+    async def fake_ensure_chat(*args, **kwargs):
+        return None
+
+    async def fake_ensure_user(*args, **kwargs):
+        return None
+
+    async def fake_apply_quick_reply_action(context, session, **kwargs):
+        applied.append(kwargs)
+        return SimpleNamespace(applied=True)
+
+    monkeypatch.setattr(anti_spam_handler, "get_chat_settings", fake_get_chat_settings)
+    monkeypatch.setattr(anti_spam_handler, "should_exempt_admin", fake_should_exempt_admin)
+    monkeypatch.setattr(anti_spam_handler, "ensure_chat", fake_ensure_chat)
+    monkeypatch.setattr(anti_spam_handler, "ensure_user", fake_ensure_user)
+    monkeypatch.setattr(anti_spam_handler, "apply_quick_reply_action", fake_apply_quick_reply_action)
+
+    with pytest.raises(ApplicationHandlerStop):
+        await anti_spam_handler.anti_spam_message_handler(update, context)
+
+    assert applied[0]["action"] == "kick"
+    assert applied[0]["target_user_id"] == 456
+
+
+@pytest.mark.asyncio
 async def test_leave_ban_fallbacks_and_notifies_when_delete_and_ban_fail(monkeypatch):
     session = _Session()
     update = _build_update()

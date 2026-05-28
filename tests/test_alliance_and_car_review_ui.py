@@ -64,6 +64,8 @@ async def test_alliance_menu_shows_member_count_and_joint_ban_status(monkeypatch
     text, keyboard = rendered[0]
     assert "👥 联盟成员：2 个" in text
     assert "联合封禁状态：❌ 关闭" in text
+    assert "联盟群使用 team 指令封禁用户" in text
+    assert "联盟群使用 t 指令封禁用户" not in text
     assert keyboard.inline_keyboard[1][0].text == "📋 联合封禁名单"
     assert keyboard.inline_keyboard[2][0].text == "⚙️ 联合封禁："
     assert keyboard.inline_keyboard[2][2].text == "✅ 关闭"
@@ -84,7 +86,7 @@ async def test_alliance_joint_ban_menu_lists_entries(monkeypatch):
                 id=12,
                 target_user_id=5566,
                 source_chat_id=-1009,
-                reason="reply_t_command",
+                reason="reply_team_command",
                 created_at=None,
             )
         ]
@@ -106,7 +108,7 @@ async def test_alliance_joint_ban_menu_lists_entries(monkeypatch):
     text, keyboard = rendered[0]
     assert "联合封禁名单" in text
     assert "用户 5566" in text
-    assert "原因：reply_t_command" in text
+    assert "原因：reply_team_command" in text
     assert keyboard.inline_keyboard[0][0].callback_data == "ali:jointban:remove:-100123:12"
 
 

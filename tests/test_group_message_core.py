@@ -58,6 +58,71 @@ async def _true(*args, **kwargs):
     return True
 
 
+async def _reply_noop(*args, **kwargs):
+    return None
+
+
+@pytest.mark.asyncio
+async def test_alliance_reply_ban_uses_team_command(monkeypatch) -> None:
+    session = _FakeSession()
+    calls: list[dict] = []
+
+    async def fake_get_member(session, chat_id: int):
+        return SimpleNamespace(alliance_id=9)
+
+    async def fake_execute_user_action(context, **kwargs):
+        calls.append({"execute": kwargs})
+        return SimpleNamespace(punishment_applied=True)
+
+    async def fake_add_joint_ban_entry(session, **kwargs):
+        calls.append({"joint_ban": kwargs})
+
+    monkeypatch.setattr(moderation_hooks.AllianceService, "get_member", fake_get_member)
+    monkeypatch.setattr(moderation_hooks, "execute_user_action", fake_execute_user_action)
+    monkeypatch.setattr(moderation_hooks.AllianceService, "add_joint_ban_entry", fake_add_joint_ban_entry)
+    context = _context(session)
+
+    handled = await moderation_hooks._process_alliance_reply_ban(
+        context,
+        context.application.bot_data["db"],
+        SimpleNamespace(id=-1001, type="supergroup", title="Test Group"),
+        SimpleNamespace(id=7),
+        SimpleNamespace(
+            reply_to_message=SimpleNamespace(
+                message_id=41,
+                from_user=SimpleNamespace(id=456),
+                sender_chat=None,
+            ),
+            reply_text=_reply_noop,
+        ),
+        "team",
+    )
+
+    assert handled is True
+    assert calls[0]["execute"]["user_id"] == 456
+    assert calls[1]["joint_ban"]["reason"] == "reply_team_command"
+
+
+@pytest.mark.asyncio
+async def test_alliance_reply_ban_ignores_old_t_command(monkeypatch) -> None:
+    async def forbidden_get_member(*args, **kwargs):
+        raise AssertionError("old t command must not reach alliance lookup")
+
+    monkeypatch.setattr(moderation_hooks.AllianceService, "get_member", forbidden_get_member)
+    context = _context(_FakeSession())
+
+    handled = await moderation_hooks._process_alliance_reply_ban(
+        context,
+        context.application.bot_data["db"],
+        SimpleNamespace(id=-1001, type="supergroup", title="Test Group"),
+        SimpleNamespace(id=7),
+        SimpleNamespace(reply_to_message=SimpleNamespace(from_user=SimpleNamespace(id=456))),
+        "t",
+    )
+
+    assert handled is False
+
+
 @pytest.mark.asyncio
 async def test_unified_group_handler_processes_auto_reply_for_normal_user(monkeypatch):
     session = _FakeSession()

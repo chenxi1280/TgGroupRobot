@@ -51,7 +51,7 @@ async def _process_alliance_reply_ban(
     message,
     message_text: str,
 ) -> bool:
-    if message_text.strip().lower() != "t" or message.reply_to_message is None:
+    if message_text.strip().lower() != "team" or message.reply_to_message is None:
         return False
 
     target_user = getattr(message.reply_to_message, "from_user", None)
@@ -92,7 +92,7 @@ async def _process_alliance_reply_ban(
                     chat_id=chat.id,
                     operator_user_id=user.id,
                     target_user_id=target_user.id,
-                    reason="reply_t_command",
+                    reason="reply_team_command",
                 )
                 await session.commit()
         except Exception as exc:

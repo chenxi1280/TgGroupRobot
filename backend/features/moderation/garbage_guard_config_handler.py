@@ -24,6 +24,7 @@ from backend.features.moderation.services.garbage_guard_rules import (
     set_global_whitelist_user_ids,
     set_rule_config,
 )
+from backend.features.moderation.services.quick_reply_actions import parse_quick_reply_keyword_input
 from backend.platform.db.runtime.session import Database
 from backend.platform.db.schema.models.core import ConversationState
 from backend.platform.db.schema.models.enums import ConversationStateType
@@ -118,7 +119,7 @@ async def garbage_guard_config_callback(update: Update, context: ContextTypes.DE
     elif op in {"clear"}:
         chat_id = cb.get_int_optional(3)
     elif op == "input":
-        chat_id = cb.get_int_optional(3)
+        chat_id = cb.get_int_optional(4) if cb.get(2) == "quick_reply_actions" else cb.get_int_optional(3)
     else:
         chat_id = cb.get_int_optional(4) if cb.length() >= 5 else cb.get_int_optional(3)
 
@@ -169,6 +170,31 @@ async def garbage_guard_config_callback(update: Update, context: ContextTypes.DE
             q,
             "📄 总白名单管理\n\n请输入用户 ID，多个 ID 可用空格、逗号或换行分隔。\n发送“清空”可清空白名单。",
         )
+        return
+
+    if op == "input" and cb.get(2) == "quick_reply_actions":
+        field = cb.get(3)
+        if field not in {"mute_keyword", "kick_keyword"}:
+            await answer_callback_query_safely(update, "无效的快捷回复配置项", show_alert=True)
+            return
+        async with db.session_factory() as session:
+            await ModuleSettingsService.ensure(
+                session,
+                chat_id=chat_id,
+                chat_type="supergroup" if chat_id < 0 else "private",
+                user_id=update.effective_user.id,
+            )
+            await ConversationStateService.clear(session, chat_id, update.effective_user.id)
+            await ConversationStateService.start(
+                session,
+                chat_id=chat_id,
+                user_id=update.effective_user.id,
+                state_type=ConversationStateType.garbage_guard_quick_reply_keyword.value,
+                state_data={"target_chat_id": chat_id, "field": field},
+            )
+            await session.commit()
+        label = "禁言回复词" if field == "mute_keyword" else "踢出回复词"
+        await _edit_config_message(q, f"👮 快捷回复操作\n\n请输入新的{label}，例如：j 或 T。\n不能包含空格或换行。")
         return
 
     if op == "clear" and cb.get(2) == "whitelist":
@@ -222,6 +248,10 @@ async def garbage_guard_whitelist_message_handler(
     state: ConversationState,
     message_text: str,
 ) -> None:
+    if state.state_type == ConversationStateType.garbage_guard_quick_reply_keyword.value:
+        await garbage_guard_quick_reply_keyword_message_handler(update, context, session, state, message_text)
+        return
+
     if update.effective_user is None or update.effective_message is None:
         return
 
@@ -259,3 +289,60 @@ async def garbage_guard_whitelist_message_handler(
         "✅ 总白名单已更新\n\n" + format_garbage_whitelist_text(chat_title, settings),
         reply_markup=garbage_guard_whitelist_keyboard(target_chat_id),
     )
+
+
+async def garbage_guard_quick_reply_keyword_message_handler(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    session: AsyncSession,
+    state: ConversationState,
+    message_text: str,
+) -> None:
+    if update.effective_user is None or update.effective_message is None:
+        return
+
+    target_chat_id = state.state_data.get("target_chat_id") if state.state_data else state.chat_id
+    field = state.state_data.get("field") if state.state_data else None
+    if not isinstance(target_chat_id, int) or not isinstance(field, str):
+        await ConversationStateService.clear(session, state.chat_id, update.effective_user.id)
+        await session.commit()
+        await update.effective_message.reply_text("❌ 无效的快捷回复配置，请重新进入配置")
+        return
+
+    allowed, reason = await PermissionPolicyService.require_manage(
+        context,
+        chat_id=target_chat_id,
+        user_id=update.effective_user.id,
+        capability="settings",
+    )
+    if not allowed:
+        await ConversationStateService.clear(session, target_chat_id, update.effective_user.id)
+        await session.commit()
+        await update.effective_message.reply_text(f"❌ {reason or '需要管理员权限'}")
+        return
+
+    settings = await get_chat_settings(session, target_chat_id)
+    try:
+        parsed = parse_quick_reply_keyword_input(field, message_text)
+        _ensure_keyword_not_duplicated(settings, parsed.field, parsed.keyword)
+    except ValueError as exc:
+        await update.effective_message.reply_text(f"❌ {exc}")
+        return
+
+    set_rule_config(settings, "quick_reply_actions", {parsed.field: parsed.keyword})
+    await ConversationStateService.clear(session, target_chat_id, update.effective_user.id)
+    await session.commit()
+
+    db: Database = context.application.bot_data["db"]
+    chat_title = await _get_chat_title(db, target_chat_id)
+    await update.effective_message.reply_text(
+        "✅ 快捷回复词已更新\n\n" + format_garbage_rule_text(chat_title, settings, "quick_reply_actions"),
+        reply_markup=garbage_guard_rule_keyboard(settings, target_chat_id, "quick_reply_actions"),
+    )
+
+
+def _ensure_keyword_not_duplicated(settings, field: str, keyword: str) -> None:
+    rule = get_rule_config(settings, "quick_reply_actions")
+    other_field = "kick_keyword" if field == "mute_keyword" else "mute_keyword"
+    if keyword.casefold() == str(rule.get(other_field, "")).strip().casefold():
+        raise ValueError("禁言回复词和踢出回复词不能相同")

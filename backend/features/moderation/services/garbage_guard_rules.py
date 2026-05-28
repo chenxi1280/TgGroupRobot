@@ -29,6 +29,7 @@ RULE_ORDER: tuple[RuleId, ...] = (
     "flood",
     "manual_warning",
     "leave_ban",
+    "quick_reply_actions",
 )
 
 DEFAULT_DELETE_ON_ENABLE_RULES: set[RuleId] = {
@@ -115,6 +116,12 @@ RULE_DEFINITIONS: dict[RuleId, GarbageRuleDefinition] = {
         "☂️ 离群封禁",
         "用户离开群组时自动封禁，避免反复退群再进。",
     ),
+    "quick_reply_actions": GarbageRuleDefinition(
+        "quick_reply_actions",
+        "快捷回复操作",
+        "👮 快捷回复操作",
+        "管理员引用成员消息后回复配置词，快速禁言或踢出目标成员。",
+    ),
 }
 
 DEFAULT_RULE_ACTION: dict[str, Any] = {
@@ -137,6 +144,14 @@ DEFAULT_RULES: dict[RuleId, dict[str, Any]] = {
 }
 DEFAULT_RULES["manual_warning"].update({"delete_message": False, "warn_enabled": True})
 DEFAULT_RULES["leave_ban"].update({"delete_message": True})
+DEFAULT_RULES["quick_reply_actions"].update(
+    {
+        "delete_message": True,
+        "mute_keyword": "j",
+        "kick_keyword": "t",
+        "notice_enabled": False,
+    }
+)
 DEFAULT_RULES["long_message"]["message_max_length"] = 500
 DEFAULT_RULES["long_name"]["name_max_length"] = 32
 DEFAULT_RULES["spam_user"].update({"check_no_username": True, "check_foreign_name": True})
@@ -187,6 +202,13 @@ def _normalize_int(value: Any, default: int, minimum: int = 0) -> int:
         return default
 
 
+def _normalize_keyword(value: Any, default: str) -> str:
+    if not isinstance(value, str):
+        return default
+    keyword = value.strip()
+    return keyword or default
+
+
 def _merge_rule(rule_id: RuleId, raw: Any) -> dict[str, Any]:
     merged = copy.deepcopy(DEFAULT_RULES[rule_id])
     if isinstance(raw, dict):
@@ -223,6 +245,13 @@ def _merge_rule(rule_id: RuleId, raw: Any) -> dict[str, Any]:
 
     if not isinstance(merged.get("notice_text"), str):
         merged["notice_text"] = ""
+
+    for keyword_key in ["mute_keyword", "kick_keyword"]:
+        if keyword_key in merged:
+            merged[keyword_key] = _normalize_keyword(
+                merged.get(keyword_key),
+                str(DEFAULT_RULES[rule_id].get(keyword_key, "")),
+            )
 
     return merged
 

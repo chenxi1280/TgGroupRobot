@@ -97,6 +97,7 @@ class ConversationStateType(str, enum.Enum):
     anti_flood_config = "anti_flood_config"  # 防刷屏配置流程
     anti_spam_config = "anti_spam_config"  # 反垃圾配置流程
     garbage_guard_whitelist = "garbage_guard_whitelist"  # 垃圾防护总白名单
+    garbage_guard_quick_reply_keyword = "gg_quick_reply_keyword"  # 垃圾防护快捷回复词
     renewal_card_input = "renewal_card_input"  # 续费卡密输入流程
     force_subscribe_channel_1_input = "force_subscribe_channel_1_input"  # 强制关注频道/群组1
     force_subscribe_channel_2_input = "force_subscribe_channel_2_input"  # 强制关注频道/群组2

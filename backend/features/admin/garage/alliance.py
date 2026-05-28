@@ -42,7 +42,7 @@ class GarageAllianceAdminMixin:
             f"👥 联盟成员：{len(members)} 个\n"
             f"联合封禁状态：{'✅ 启动' if joint_ban_enabled else '❌ 关闭'}\n\n"
             "🚫 联合封禁\n"
-            "└ 联盟群使用 t 指令封禁用户，该用户加入联合封禁列表\n"
+            "└ 联盟群使用 team 指令封禁用户，该用户加入联合封禁列表\n"
             "└ 联合封禁列表中的用户，在联盟其他群中发言，会被自动封禁\n\n"
             f"邀请码权限：{'创建群可重置' if is_owner else '仅创建群可重置'}"
         )

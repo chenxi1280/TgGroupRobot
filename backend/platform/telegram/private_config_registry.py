@@ -54,7 +54,7 @@ def build_private_config_handlers() -> dict[str, ConfigHandler]:
     )
     _register_states(
         handlers,
-        ["garbage_guard_whitelist"],
+        ["garbage_guard_whitelist", "gg_quick_reply_keyword"],
         full_args_handler("backend.features.moderation.garbage_guard_config_handler", "garbage_guard_whitelist_message_handler"),
     )
     _register_states(
