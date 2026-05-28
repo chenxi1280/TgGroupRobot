@@ -181,6 +181,83 @@ async def test_plain_points_alias_queries_balance() -> None:
 
 
 @pytest.mark.asyncio
+async def test_plain_points_rank_alias_queries_leaderboard() -> None:
+    session = _Session()
+    update, replies = _update("积分榜")
+
+    async def get_leaderboard(*args, **kwargs):
+        return [(77, 42, "alice")]
+
+    await _call(
+        update,
+        session,
+        _settings(points_rank_alias="积分榜"),
+        get_leaderboard_func=get_leaderboard,
+    )
+
+    assert replies == ["排行 1"]
+    assert session.commits == 1
+
+
+@pytest.mark.asyncio
+async def test_custom_point_name_queries_own_balance() -> None:
+    session = _Session()
+    update, replies = _update("斗气")
+
+    class ExtendedService:
+        @staticmethod
+        async def get_or_create_mall_setting(*args, **kwargs):
+            return SimpleNamespace(enabled=False, entry_command="积分商城")
+
+        @staticmethod
+        async def get_or_create_level_setting(*args, **kwargs):
+            return SimpleNamespace(enabled=False)
+
+        @staticmethod
+        async def list_custom_point_types(*args, **kwargs):
+            return [SimpleNamespace(id=7, name="斗气", rank_command="斗气排行", enabled=True)]
+
+        @staticmethod
+        async def get_custom_point_balance(*args, **kwargs):
+            return 23
+
+    handled = await _call(update, session, _settings(), points_extended_service=ExtendedService)
+
+    assert handled is True
+    assert replies == ["💰 你的斗气：23"]
+    assert session.commits == 1
+
+
+@pytest.mark.asyncio
+async def test_custom_point_rank_command_queries_leaderboard() -> None:
+    session = _Session()
+    update, replies = _update("斗气排行")
+
+    class ExtendedService:
+        @staticmethod
+        async def get_or_create_mall_setting(*args, **kwargs):
+            return SimpleNamespace(enabled=False, entry_command="积分商城")
+
+        @staticmethod
+        async def get_or_create_level_setting(*args, **kwargs):
+            return SimpleNamespace(enabled=False)
+
+        @staticmethod
+        async def list_custom_point_types(*args, **kwargs):
+            return [SimpleNamespace(id=7, name="斗气", rank_command="斗气排行", enabled=True)]
+
+        @staticmethod
+        async def get_custom_point_leaderboard(*args, **kwargs):
+            return [(77, 23)]
+
+    handled = await _call(update, session, _settings(), points_extended_service=ExtendedService)
+
+    assert handled is True
+    assert replies == ["🌐 斗气 排行\n\n1. 77｜23"]
+    assert session.commits == 1
+
+
+@pytest.mark.asyncio
 async def test_reply_admin_add_points_adjusts_target() -> None:
     session = _Session()
     target = SimpleNamespace(id=77, username="alice", first_name="Alice", last_name=None, language_code="zh-CN")

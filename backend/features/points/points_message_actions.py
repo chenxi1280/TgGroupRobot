@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import structlog
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -14,6 +16,14 @@ _ADMIN_ADD_COMMANDS = {"加积分", "加分"}
 _ADMIN_DEDUCT_COMMANDS = {"扣积分", "扣分"}
 
 log = structlog.get_logger(__name__)
+
+
+@dataclass(frozen=True)
+class _CustomPointCommandDeps:
+    service: object
+    message: object
+    chat_id: int
+    user_id: int
 
 
 def _user_label(user) -> str:
@@ -104,6 +114,50 @@ async def _handle_admin_adjustment(
     await message.reply_text(
         f"✅ 已为 {_user_label(target_user)} {action} {abs(amount)} 积分，当前积分 {balance}。\n备注：{reason}"
     )
+    return True
+
+
+async def _handle_custom_point_command(session, text: str, deps: _CustomPointCommandDeps) -> bool:
+    if not text:
+        return False
+
+    custom_types = await deps.service.list_custom_point_types(session, deps.chat_id)
+    matched_balance_type = next((item for item in custom_types if text == item.name), None)
+    matched_rank_type = next((item for item in custom_types if item.rank_command and text == item.rank_command), None)
+    matched_type = matched_balance_type or matched_rank_type
+    if matched_type is None:
+        return False
+
+    if not matched_type.enabled:
+        await session.commit()
+        await deps.message.reply_text(f"{matched_type.name} 已关闭。")
+        return True
+
+    if matched_balance_type is not None:
+        balance = await deps.service.get_custom_point_balance(
+            session,
+            chat_id=deps.chat_id,
+            type_id=matched_type.id,
+            user_id=deps.user_id,
+        )
+        await session.commit()
+        await deps.message.reply_text(f"💰 你的{matched_type.name}：{balance}")
+        return True
+
+    rows = await deps.service.get_custom_point_leaderboard(
+        session,
+        chat_id=deps.chat_id,
+        type_id=matched_type.id,
+        limit=10,
+    )
+    await session.commit()
+    if not rows:
+        await deps.message.reply_text(f"{matched_type.name} 暂无排行数据。")
+        return True
+    lines = [f"🌐 {matched_type.name} 排行", ""]
+    for index, (rank_user_id, balance) in enumerate(rows, start=1):
+        lines.append(f"{index}. {rank_user_id}｜{balance}")
+    await deps.message.reply_text("\n".join(lines))
     return True
 
 
@@ -237,29 +291,18 @@ async def handle_message_points_action(
             await show_mall_catalog_func(update, context, chat.id, products=products)
             return True
 
-        if text:
-            custom_types = await points_extended_service.list_custom_point_types(session, chat.id)
-            matched_type = next((item for item in custom_types if item.rank_command and text == item.rank_command), None)
-            if matched_type is not None and not matched_type.enabled:
-                await session.commit()
-                await update.effective_message.reply_text(f"{matched_type.name} 已关闭。")
-                return True
-            if matched_type is not None:
-                rows = await points_extended_service.get_custom_point_leaderboard(
-                    session,
-                    chat_id=chat.id,
-                    type_id=matched_type.id,
-                    limit=10,
-                )
-                await session.commit()
-                if not rows:
-                    await update.effective_message.reply_text(f"{matched_type.name} 暂无排行数据。")
-                    return True
-                lines = [f"🌐 {matched_type.name} 排行", ""]
-                for index, (rank_user_id, balance) in enumerate(rows, start=1):
-                    lines.append(f"{index}. {rank_user_id}｜{balance}")
-                await update.effective_message.reply_text("\n".join(lines))
-                return True
+        handled_custom_point = await _handle_custom_point_command(
+            session,
+            text,
+            _CustomPointCommandDeps(
+                service=points_extended_service,
+                message=update.effective_message,
+                chat_id=chat.id,
+                user_id=user.id,
+            ),
+        )
+        if handled_custom_point:
+            return True
 
         if not allow_level_checks:
             await session.commit()
