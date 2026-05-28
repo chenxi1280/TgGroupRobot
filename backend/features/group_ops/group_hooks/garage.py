@@ -33,6 +33,12 @@ async def _react_to_certified_teacher_message(context: ContextTypes.DEFAULT_TYPE
         )
 
 
+def _should_react_to_certified_teacher_message(message, text: str) -> bool:
+    if getattr(message, "message_id", None) is None:
+        return False
+    return not (text or "").strip().startswith("/")
+
+
 async def _process_garage_features(
     context: ContextTypes.DEFAULT_TYPE,
     db: Database,
@@ -102,8 +108,7 @@ async def _process_garage_features(
         if (
             getattr(settings, "garage_auth_enabled", False)
             and is_teacher
-            and text
-            and not text.startswith("/")
+            and _should_react_to_certified_teacher_message(message, text)
         ):
             await session.commit()
             await _react_to_certified_teacher_message(context, chat, message)

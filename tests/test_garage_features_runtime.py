@@ -2204,6 +2204,64 @@ async def test_process_garage_features_certified_teacher_reacts_on_normal_text(m
 
 
 @pytest.mark.asyncio
+async def test_process_garage_features_certified_teacher_reacts_on_media_without_text(monkeypatch):
+    session = _FakeSession()
+    db = _FakeDb(session)
+    reactions: list[dict[str, object]] = []
+
+    async def fake_get_teacher_setting(*args, **kwargs):
+        return SimpleNamespace(
+            nearby_search_enabled=False,
+            attendance_enabled=False,
+            force_location_enabled=False,
+            footer_button_label=None,
+            delete_mode="none",
+        )
+
+    async def fake_get_car_review_setting(*args, **kwargs):
+        return SimpleNamespace(enabled=False, rank_command="出击排行", submit_command="提交报告")
+
+    async def fake_is_teacher(*args, **kwargs):
+        return True
+
+    async def fake_is_whitelisted(*args, **kwargs):
+        return False
+
+    class _Bot:
+        async def set_message_reaction(self, **kwargs):
+            reactions.append(kwargs)
+
+    monkeypatch.setattr(TeacherSearchService, "get_setting", fake_get_teacher_setting)
+    monkeypatch.setattr(CarReviewService, "get_setting", fake_get_car_review_setting)
+    monkeypatch.setattr(GarageAuthService, "is_certified_teacher", fake_is_teacher)
+    monkeypatch.setattr(GarageAuthService, "is_whitelisted", fake_is_whitelisted)
+
+    handled = await _process_garage_features(
+        SimpleNamespace(application=SimpleNamespace(bot_data={}), bot=_Bot()),
+        db,
+        SimpleNamespace(id=-1001, title="测试群"),
+        SimpleNamespace(id=42, username="teacher42", first_name="老师", last_name=None),
+        SimpleNamespace(message_id=9, photo=[object()], location=None, venue=None, reply_to_message=None),
+        "",
+        SimpleNamespace(
+            garage_limit_enabled=False,
+            garage_auth_enabled=True,
+            garage_auth_badge="🚗",
+        ),
+        False,
+    )
+
+    assert handled is False
+    assert reactions == [
+        {
+            "chat_id": -1001,
+            "message_id": 9,
+            "reaction": "👍",
+        }
+    ]
+
+
+@pytest.mark.asyncio
 async def test_process_garage_features_keyword_checkin_marks_attendance(monkeypatch):
     session = _FakeSession()
     db = _FakeDb(session)
