@@ -118,7 +118,50 @@ async def _process_garage_features(
     return False
 
 
+async def _index_garage_channel_post(
+    context: ContextTypes.DEFAULT_TYPE,
+    db: Database,
+    chat,
+    message,
+    message_text: str,
+) -> None:
+    sender_chat = getattr(message, "sender_chat", None)
+    if sender_chat is None:
+        return
+    if not TeacherSearchService.has_channel_post_contact(message_text):
+        return
+    async with db.session_factory() as session:
+        settings = await GarageAuthService.get_settings(session, chat.id)
+        teacher_setting = await TeacherSearchService.get_setting(session, chat.id)
+        if not (
+            getattr(settings, "garage_auth_enabled", False)
+            or getattr(teacher_setting, "tag_search_enabled", False)
+        ):
+            await session.commit()
+            return
+        result = await TeacherSearchService.index_channel_post_teacher_profile(
+            session,
+            chat_id=chat.id,
+            channel_id=sender_chat.id,
+            message_id=message.message_id,
+            text=message_text,
+        )
+        await session.commit()
+    log.info(
+        "garage_channel_post_indexed",
+        chat_id=chat.id,
+        channel_id=sender_chat.id,
+        message_id=message.message_id,
+        indexed=result.indexed,
+        reason=result.reason,
+        user_id=result.user_id,
+        username=result.username,
+        label_count=result.label_count,
+    )
+
+
 __all__ = [
+    "_index_garage_channel_post",
     "_garage_limit_hits_message",
     "_process_garage_features",
     "_publish_car_review_report",

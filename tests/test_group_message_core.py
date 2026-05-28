@@ -173,6 +173,59 @@ async def test_unified_group_handler_processes_auto_reply_for_normal_user(monkey
 
 
 @pytest.mark.asyncio
+async def test_unified_group_handler_indexes_sender_chat_channel_post(monkeypatch):
+    session = _FakeSession()
+    index_calls: list[dict[str, object]] = []
+
+    async def fake_ensure(session, chat_id: int, **kwargs):
+        return _settings()
+
+    async def fake_index_channel_post(context, db, chat, message, message_text: str):
+        index_calls.append(
+            {
+                "chat_id": chat.id,
+                "sender_chat_id": message.sender_chat.id,
+                "message_text": message_text,
+            }
+        )
+
+    monkeypatch.setattr(core_hooks.ModuleSettingsService, "ensure", fake_ensure)
+    monkeypatch.setattr(core_hooks, "_process_rename_monitor", _false)
+    monkeypatch.setattr(core_hooks, "_process_group_lock_controls", _false)
+    monkeypatch.setattr(core_hooks, "_process_night_mode", _false)
+    monkeypatch.setattr(core_hooks, "_process_alliance_reply_ban", _false)
+    monkeypatch.setattr(core_hooks, "_process_alliance_joint_ban", _false)
+    monkeypatch.setattr(core_hooks, "_check_force_subscribe", _true)
+    monkeypatch.setattr(core_hooks, "_process_new_member_limit", _false)
+    monkeypatch.setattr(core_hooks, "_process_garage_features", _false)
+    monkeypatch.setattr(core_hooks, "_process_banned_word_check", _false)
+    monkeypatch.setattr(core_hooks, "_process_auto_reply", _reply_noop)
+    monkeypatch.setattr(core_hooks, "_index_garage_channel_post", fake_index_channel_post, raising=False)
+
+    update = SimpleNamespace(
+        effective_chat=SimpleNamespace(id=-1001, type="supergroup", title="Test Group"),
+        effective_user=None,
+        effective_message=SimpleNamespace(
+            text="【详细标签】：#变形\n【联系方式】：@tj373",
+            caption=None,
+            message_id=10,
+            sender_chat=SimpleNamespace(id=-2001, title="车库频道", username="garage_channel"),
+        ),
+    )
+
+    handled = await core_hooks.unified_group_message_handler(update, _context(session))
+
+    assert handled is False
+    assert index_calls == [
+        {
+            "chat_id": -1001,
+            "sender_chat_id": -2001,
+            "message_text": "【详细标签】：#变形\n【联系方式】：@tj373",
+        }
+    ]
+
+
+@pytest.mark.asyncio
 async def test_unified_group_handler_skips_auto_reply_for_auction_trigger(monkeypatch):
     session = _FakeSession()
     auto_reply_calls: list[tuple[int, str]] = []

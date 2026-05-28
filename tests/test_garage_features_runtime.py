@@ -473,6 +473,53 @@ async def test_search_teachers_by_keyword_matches_certified_teacher_id_without_p
 
 
 @pytest.mark.asyncio
+async def test_index_channel_post_certifies_contact_and_profiles_tags(monkeypatch):
+    teacher = SimpleNamespace(id=77, username="tj373", first_name="T", last_name=None)
+    session = _FakeSession(
+        execute_results=[
+            _ExecuteResult(scalar=teacher),
+            _ExecuteResult(scalar=None),
+        ],
+        get_map={(TgUser, 77): teacher},
+    )
+    certified: list[dict[str, object]] = []
+
+    async def fake_add_teacher_by_user_id(session, chat_id: int, user_id: int, operator_user_id):
+        certified.append(
+            {
+                "chat_id": chat_id,
+                "user_id": user_id,
+                "operator_user_id": operator_user_id,
+            }
+        )
+        return SimpleNamespace(chat_id=chat_id, user_id=user_id, enabled=True)
+
+    monkeypatch.setattr(GarageAuthService, "add_teacher_by_user_id", fake_add_teacher_by_user_id)
+
+    result = await TeacherSearchService.index_channel_post_teacher_profile(
+        session,
+        chat_id=-1001,
+        channel_id=-2001,
+        message_id=33,
+        text=(
+            "【所在位置】：#天津\n"
+            "【上课费用】：800/50分钟 1500/90分钟\n"
+            "【详细标签】：#变形 #妹妹体 #态度好\n"
+            "【联系方式】：@tj373"
+        ),
+    )
+
+    profiles = [obj for obj in session.added if isinstance(obj, TeacherProfile)]
+    assert result.indexed is True
+    assert result.user_id == 77
+    assert certified == [{"chat_id": -1001, "user_id": 77, "operator_user_id": None}]
+    assert profiles
+    assert profiles[0].region_text == "天津"
+    assert profiles[0].price_text == "800/50分钟 1500/90分钟"
+    assert "变形" in profiles[0].labels
+
+
+@pytest.mark.asyncio
 async def test_list_open_course_teachers_reads_certified_rows_and_filters_status(monkeypatch):
     rows = [
         (

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from backend.features.garage.services.teacher_search_channel_index import TeacherSearchChannelIndexMixin
 from backend.features.garage.services.teacher_search_queries import TeacherSearchQueryMixin
 from backend.features.garage.services.teacher_search_settings import TeacherSearchFooterButtonConfig, TeacherSearchSettingsMixin
 
 
-class TeacherSearchService(TeacherSearchSettingsMixin, TeacherSearchQueryMixin):
+class TeacherSearchService(TeacherSearchChannelIndexMixin, TeacherSearchSettingsMixin, TeacherSearchQueryMixin):
     pass
