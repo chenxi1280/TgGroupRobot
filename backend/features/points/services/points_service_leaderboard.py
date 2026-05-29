@@ -12,24 +12,28 @@ from backend.features.points.services.points_service_accounts import get_balance
 from backend.platform.db.schema.models.core import PointsAccount, TgUser
 from backend.platform.db.schema.models.core import PointsTransaction
 
+LeaderboardRow = tuple[int, int, str | None, str | None, str | None]
+
 
 async def get_leaderboard(
     session: AsyncSession,
     chat_id: int,
     limit: int = 10,
-) -> list[tuple[int, int, str | None]]:
+) -> list[LeaderboardRow]:
     result = await session.execute(
         select(
             PointsAccount.user_id,
             PointsAccount.balance,
             TgUser.username,
+            TgUser.first_name,
+            TgUser.last_name,
         )
         .join(TgUser, PointsAccount.user_id == TgUser.id)
         .where(PointsAccount.chat_id == chat_id)
         .order_by(PointsAccount.balance.desc())
         .limit(limit)
     )
-    return [(row.user_id, row.balance, row.username) for row in result]
+    return [(row.user_id, row.balance, row.username, row.first_name, row.last_name) for row in result]
 
 
 async def get_user_rank(
@@ -59,7 +63,7 @@ async def get_daily_points_leaderboard(
     limit: int = 10,
     *,
     now: dt.datetime | None = None,
-) -> list[tuple[int, int, str | None]]:
+) -> list[LeaderboardRow]:
     local_tz = ZoneInfo("Asia/Shanghai")
     current = now or dt.datetime.now(dt.UTC)
     local_today = current.astimezone(local_tz).date()
@@ -70,6 +74,8 @@ async def get_daily_points_leaderboard(
             PointsTransaction.user_id,
             func.coalesce(func.sum(PointsTransaction.amount), 0).label("earned_points"),
             TgUser.username,
+            TgUser.first_name,
+            TgUser.last_name,
         )
         .join(TgUser, PointsTransaction.user_id == TgUser.id, isouter=True)
         .where(
@@ -78,8 +84,11 @@ async def get_daily_points_leaderboard(
             PointsTransaction.created_at >= start,
             PointsTransaction.created_at < end,
         )
-        .group_by(PointsTransaction.user_id, TgUser.username)
+        .group_by(PointsTransaction.user_id, TgUser.username, TgUser.first_name, TgUser.last_name)
         .order_by(func.sum(PointsTransaction.amount).desc(), PointsTransaction.user_id.asc())
         .limit(limit)
     )
-    return [(int(row.user_id), int(row.earned_points or 0), row.username) for row in result]
+    return [
+        (int(row.user_id), int(row.earned_points or 0), row.username, row.first_name, row.last_name)
+        for row in result
+    ]

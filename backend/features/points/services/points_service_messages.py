@@ -2,6 +2,18 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
+from backend.shared.services.formatters import format_user_display_name
+
+
+LeaderboardRow = tuple[int, int, str | None, str | None, str | None]
+
+
+def _format_rank_user(user_id: int, username: str | None, first_name: str | None, last_name: str | None) -> str:
+    user = SimpleNamespace(id=user_id, username=username, first_name=first_name, last_name=last_name)
+    return format_user_display_name(user, user_id)
+
 
 def format_sign_in_success_message(
     points: int,
@@ -35,26 +47,26 @@ def format_balance_message(balance: int, rank: int | None = None) -> str:
 
 
 def format_leaderboard_message(
-    leaderboard: list[tuple[int, int, str | None]],
+    leaderboard: list[LeaderboardRow],
 ) -> str:
     if not leaderboard:
         return "暂无积分排行数据"
 
     msg = "🏆 积分排行榜（前10名）\n\n"
-    for i, (user_id, balance, username) in enumerate(leaderboard, 1):
-        name = username or f"用户{user_id}"
+    for i, (user_id, balance, username, first_name, last_name) in enumerate(leaderboard, 1):
+        name = _format_rank_user(user_id, username, first_name, last_name)
         msg += f"{i}. {name} - {balance} 积分\n"
     return msg
 
 
 def format_daily_points_leaderboard_message(
-    leaderboard: list[tuple[int, int, str | None]],
+    leaderboard: list[LeaderboardRow],
 ) -> str:
     if not leaderboard:
         return "今日暂无积分获得记录"
 
     msg = "🏆 今日积分排行（前10名）\n\n"
-    for i, (user_id, earned_points, username) in enumerate(leaderboard, 1):
-        name = username or f"用户{user_id}"
+    for i, (user_id, earned_points, username, first_name, last_name) in enumerate(leaderboard, 1):
+        name = _format_rank_user(user_id, username, first_name, last_name)
         msg += f"{i}. {name} - 今日获得 {earned_points} 积分\n"
     return msg
