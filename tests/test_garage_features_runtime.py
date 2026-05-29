@@ -1136,6 +1136,130 @@ async def test_process_garage_features_tag_search_uses_only_open_setting(monkeyp
 
 
 @pytest.mark.asyncio
+async def test_process_garage_features_bare_keyword_runs_tag_search_when_matched(monkeypatch):
+    session = _FakeSession()
+    db = _FakeDb(session)
+    replies: list[str] = []
+    seen: list[str] = []
+
+    async def fake_get_teacher_setting(*args, **kwargs):
+        return SimpleNamespace(
+            tag_search_enabled=True,
+            nearby_search_enabled=False,
+            only_open_course_enabled=False,
+            attendance_enabled=False,
+            force_location_enabled=False,
+            footer_button_label=None,
+            delete_mode="none",
+        )
+
+    async def fake_get_car_review_setting(*args, **kwargs):
+        return SimpleNamespace(enabled=False, rank_command="出击排行", submit_command="提交报告")
+
+    async def fake_search(session, chat_id: int, keyword: str, **kwargs):
+        seen.append(keyword)
+        if keyword != "整形":
+            return []
+        return [
+            (
+                SimpleNamespace(
+                    user_id=77,
+                    labels=["整形", "颜值车"],
+                    region_text="西河区",
+                    price_text="800/50分钟",
+                    latitude=None,
+                    longitude=None,
+                    open_course_today=False,
+                    open_course_status=None,
+                ),
+                SimpleNamespace(id=77, username="jt37373", first_name=None, last_name=None),
+            )
+        ]
+
+    async def fake_reply(context, *, chat_id, text, reply_to_message_id=None, **kwargs):
+        replies.append(text)
+
+    async def fake_is_teacher(*args, **kwargs):
+        return False
+
+    async def fake_is_whitelisted(*args, **kwargs):
+        return False
+
+    monkeypatch.setattr(TeacherSearchService, "get_setting", fake_get_teacher_setting)
+    monkeypatch.setattr(CarReviewService, "get_setting", fake_get_car_review_setting)
+    monkeypatch.setattr(TeacherSearchService, "search_teachers_by_keyword", fake_search)
+    monkeypatch.setattr(GarageAuthService, "is_certified_teacher", fake_is_teacher)
+    monkeypatch.setattr(GarageAuthService, "is_whitelisted", fake_is_whitelisted)
+    monkeypatch.setattr(group_message_handler.PublishService, "reply", fake_reply)
+
+    handled = await _process_garage_features(
+        SimpleNamespace(application=SimpleNamespace(bot_data={})),
+        db,
+        SimpleNamespace(id=-1001, title="测试群"),
+        SimpleNamespace(id=42),
+        SimpleNamespace(message_id=9, location=None, reply_to_message=None),
+        "整形",
+        SimpleNamespace(garage_limit_enabled=False),
+        False,
+    )
+
+    assert handled is True
+    assert seen == ["整形"]
+    assert replies == [
+        "老师搜索：整形\n"
+        "1. 🤝 @jt37373 · 未开课 · 未定位，资料完整 · 整形 颜值车 / 西河区 / 800/50分钟"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_process_garage_features_bare_keyword_ignores_no_match(monkeypatch):
+    session = _FakeSession()
+    db = _FakeDb(session)
+
+    async def fake_get_teacher_setting(*args, **kwargs):
+        return SimpleNamespace(
+            tag_search_enabled=True,
+            nearby_search_enabled=False,
+            only_open_course_enabled=False,
+            attendance_enabled=False,
+            force_location_enabled=False,
+            footer_button_label=None,
+            delete_mode="none",
+        )
+
+    async def fake_get_car_review_setting(*args, **kwargs):
+        return SimpleNamespace(enabled=False, rank_command="出击排行", submit_command="提交报告")
+
+    async def fake_search(*args, **kwargs):
+        return []
+
+    async def fake_is_teacher(*args, **kwargs):
+        return False
+
+    async def fake_is_whitelisted(*args, **kwargs):
+        return False
+
+    monkeypatch.setattr(TeacherSearchService, "get_setting", fake_get_teacher_setting)
+    monkeypatch.setattr(CarReviewService, "get_setting", fake_get_car_review_setting)
+    monkeypatch.setattr(TeacherSearchService, "search_teachers_by_keyword", fake_search)
+    monkeypatch.setattr(GarageAuthService, "is_certified_teacher", fake_is_teacher)
+    monkeypatch.setattr(GarageAuthService, "is_whitelisted", fake_is_whitelisted)
+
+    handled = await _process_garage_features(
+        SimpleNamespace(application=SimpleNamespace(bot_data={})),
+        db,
+        SimpleNamespace(id=-1001, title="测试群"),
+        SimpleNamespace(id=42),
+        SimpleNamespace(message_id=9, location=None, reply_to_message=None),
+        "没命中的普通聊天",
+        SimpleNamespace(garage_limit_enabled=False),
+        False,
+    )
+
+    assert handled is False
+
+
+@pytest.mark.asyncio
 async def test_process_garage_features_tag_search_falls_back_to_all_certified_when_only_open_has_no_match(monkeypatch):
     session = _FakeSession()
     db = _FakeDb(session)

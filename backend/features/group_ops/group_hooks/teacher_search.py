@@ -202,6 +202,18 @@ async def _process_teacher_search_features(
         )
         return True
 
+    if await _try_reply_bare_keyword_search(
+        context,
+        session,
+        chat,
+        message,
+        text,
+        teacher_setting,
+        chat_settings,
+        delete_mode=delete_mode,
+    ):
+        return True
+
     return False
 
 
@@ -215,7 +227,10 @@ def _build_private_location_markup(context: ContextTypes.DEFAULT_TYPE, chat_id: 
     ])
 
 
-def _build_private_teacher_location_markup(context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> InlineKeyboardMarkup | None:
+def _build_private_teacher_location_markup(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+) -> InlineKeyboardMarkup | None:
     bot = getattr(context, "bot", None)
     bot_username = getattr(bot, "username", None)
     if not bot_username:
@@ -522,25 +537,7 @@ async def _reply_teacher_keyword_search(
             delete_mode=delete_mode,
         )
         return
-    only_open_course = getattr(teacher_setting, "only_open_course_enabled", True)
-    rows = await TeacherSearchService.search_teachers_by_keyword(
-        session,
-        chat.id,
-        keyword,
-        only_open_course=only_open_course,
-        limit=10,
-    )
-    fallback_note = ""
-    if not rows and only_open_course:
-        rows = await TeacherSearchService.search_teachers_by_keyword(
-            session,
-            chat.id,
-            keyword,
-            only_open_course=False,
-            limit=10,
-        )
-        if rows:
-            fallback_note = "未找到今日开课匹配老师，已显示全部认证老师。"
+    rows, fallback_note = await _search_teacher_keyword_rows(session, chat.id, keyword, teacher_setting)
     badge = await _get_auth_badge(session, chat.id)
     await session.commit()
     if not rows:
@@ -552,6 +549,72 @@ async def _reply_teacher_keyword_search(
             delete_mode=delete_mode,
         )
         return
+    text = _format_teacher_keyword_search(keyword, rows, badge=badge, fallback_note=fallback_note)
+    await _reply_garage_feedback(
+        context,
+        chat_id=chat.id,
+        message_id=message.message_id,
+        text=text,
+        delete_mode=delete_mode,
+    )
+
+
+async def _try_reply_bare_keyword_search(
+    context: ContextTypes.DEFAULT_TYPE,
+    session,
+    chat,
+    message,
+    keyword: str,
+    teacher_setting,
+    chat_settings,
+    *,
+    delete_mode: str,
+) -> bool:
+    if not keyword or keyword.startswith("/") or not getattr(teacher_setting, "tag_search_enabled", False):
+        return False
+    if chat_settings is not None and not is_command_enabled(chat_settings, "teacher_search"):
+        return False
+    if await is_reserved_group_text_command_for_chat(session, chat.id, keyword):
+        return False
+    rows, fallback_note = await _search_teacher_keyword_rows(session, chat.id, keyword, teacher_setting)
+    if not rows:
+        return False
+    badge = await _get_auth_badge(session, chat.id)
+    await session.commit()
+    await _reply_garage_feedback(
+        context,
+        chat_id=chat.id,
+        message_id=message.message_id,
+        text=_format_teacher_keyword_search(keyword, rows, badge=badge, fallback_note=fallback_note),
+        delete_mode=delete_mode,
+    )
+    return True
+
+
+async def _search_teacher_keyword_rows(session, chat_id: int, keyword: str, teacher_setting):
+    only_open_course = getattr(teacher_setting, "only_open_course_enabled", True)
+    rows = await TeacherSearchService.search_teachers_by_keyword(
+        session,
+        chat_id,
+        keyword,
+        only_open_course=only_open_course,
+        limit=10,
+    )
+    fallback_note = ""
+    if not rows and only_open_course:
+        rows = await TeacherSearchService.search_teachers_by_keyword(
+            session,
+            chat_id,
+            keyword,
+            only_open_course=False,
+            limit=10,
+        )
+        if rows:
+            fallback_note = "未找到今日开课匹配老师，已显示全部认证老师。"
+    return rows, fallback_note
+
+
+def _format_teacher_keyword_search(keyword: str, rows, *, badge: str, fallback_note: str = "") -> str:
     lines = [f"老师搜索：{keyword}"]
     if fallback_note:
         lines.append(fallback_note)
@@ -563,7 +626,8 @@ async def _reply_teacher_keyword_search(
         extra = " / ".join(part for part in [labels, profile.region_text, profile.price_text] if part)
         score_extra = ""
         if getattr(profile, "review_count", 0):
-            score_extra = f" · 均分 {float(getattr(profile, 'avg_score', 0.0) or 0.0):g} · {int(profile.review_count)} 条"
+            avg_score = float(getattr(profile, "avg_score", 0.0) or 0.0)
+            score_extra = f" · 均分 {avg_score:g} · {int(profile.review_count)} 条"
         status = teacher_attendance_status_label(profile)
         completeness = teacher_profile_completeness_label(profile)
         lines.append(
@@ -571,10 +635,4 @@ async def _reply_teacher_keyword_search(
             + score_extra
             + (f" · {extra}" if extra else "")
         )
-    await _reply_garage_feedback(
-        context,
-        chat_id=chat.id,
-        message_id=message.message_id,
-        text="\n".join(lines),
-        delete_mode=delete_mode,
-    )
+    return "\n".join(lines)

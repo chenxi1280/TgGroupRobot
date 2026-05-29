@@ -8,6 +8,7 @@ from backend.features.admin import admin_handler
 from backend.features.admin.admin_handler import handle_garage_forward_input
 from backend.features.garage.garage_forward_handler import garage_forward_channel_post_handler
 from backend.features.garage.services.garage_forward_service import GarageForwardService
+from backend.features.garage.services.garage_features_service import TeacherSearchService
 from backend.platform.state import state_service
 from backend.shared.callback_parser import CallbackParser
 
@@ -96,6 +97,70 @@ async def test_garage_forward_channel_post_copies_message_and_records(monkeypatc
     assert copied_calls == [(-20001, -10001, 321)]
     assert finalized == [(77, 999)]
     assert audits == [(-20001, "copy", "success")]
+
+
+@pytest.mark.asyncio
+async def test_garage_forward_channel_post_indexes_teacher_for_destination(monkeypatch):
+    indexed: list[dict[str, object]] = []
+
+    async def fake_list_destinations_by_source(session, source_channel_id):
+        return [
+            (
+                SimpleNamespace(chat_id=-20001, enabled=True, sync_mode="all", keyword_rules=[]),
+                SimpleNamespace(source_channel_id=-10001, source_name="车库源", enabled=True),
+            )
+        ]
+
+    async def fake_claim_forward_slot(session, *, chat_id, source_channel_id, source_message_id):
+        return SimpleNamespace(id=77)
+
+    async def fake_index(session, **kwargs):
+        indexed.append(kwargs)
+        return SimpleNamespace(indexed=True, reason=None, user_id=77, username="jt37373", label_count=6)
+
+    async def fake_copy_message(*, chat_id, from_chat_id, message_id, reply_markup=None):
+        return SimpleNamespace(message_id=999)
+
+    async def fake_noop(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(GarageForwardService, "list_destinations_by_source", fake_list_destinations_by_source)
+    monkeypatch.setattr(GarageForwardService, "claim_forward_slot", fake_claim_forward_slot)
+    monkeypatch.setattr(GarageForwardService, "finalize_forward", fake_noop)
+    monkeypatch.setattr(GarageForwardService, "append_audit", fake_noop)
+    monkeypatch.setattr(TeacherSearchService, "index_channel_post_teacher_profile", fake_index)
+
+    update = SimpleNamespace(
+        effective_chat=SimpleNamespace(id=-10001, type="channel"),
+        effective_message=SimpleNamespace(
+            message_id=321,
+            text=None,
+            caption="【详细标签】：#嫩妹车 #御姐车 #自聊 #态度车 #颜值车 #深喉\n【联系方式】： @jt37373",
+            photo=["p"],
+            video=None,
+            document=None,
+            animation=None,
+            audio=None,
+            voice=None,
+            video_note=None,
+            sticker=None,
+        ),
+    )
+    context = SimpleNamespace(
+        application=SimpleNamespace(bot_data={"db": SimpleNamespace(session_factory=_SessionFactory())}),
+        bot=SimpleNamespace(copy_message=fake_copy_message),
+    )
+
+    await garage_forward_channel_post_handler(update, context)
+
+    assert indexed == [
+        {
+            "chat_id": -20001,
+            "channel_id": -10001,
+            "message_id": 321,
+            "text": "【详细标签】：#嫩妹车 #御姐车 #自聊 #态度车 #颜值车 #深喉\n【联系方式】： @jt37373",
+        }
+    ]
 
 
 @pytest.mark.asyncio
