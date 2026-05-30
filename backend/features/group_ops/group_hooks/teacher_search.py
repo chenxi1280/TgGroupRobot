@@ -6,7 +6,10 @@ from telegram.ext import ContextTypes
 from backend.features.garage.services.garage_features_service import TeacherSearchService
 from backend.features.garage.services.teacher_search_queries import (
     teacher_attendance_status_label,
-    teacher_profile_completeness_label,
+)
+from backend.features.group_ops.group_hooks.teacher_search_format import (
+    build_teacher_keyword_search_markup,
+    format_teacher_keyword_search,
 )
 from backend.features.group_ops.text_trigger_runtime import is_reserved_group_text_command_for_chat
 from backend.shared.services.command_config_service import is_command_enabled
@@ -555,6 +558,7 @@ async def _reply_teacher_keyword_search(
         chat_id=chat.id,
         message_id=message.message_id,
         text=text,
+        reply_markup=build_teacher_keyword_search_markup(rows),
         delete_mode=delete_mode,
     )
 
@@ -586,6 +590,7 @@ async def _try_reply_bare_keyword_search(
         chat_id=chat.id,
         message_id=message.message_id,
         text=_format_teacher_keyword_search(keyword, rows, badge=badge, fallback_note=fallback_note),
+        reply_markup=build_teacher_keyword_search_markup(rows),
         delete_mode=delete_mode,
     )
     return True
@@ -615,24 +620,4 @@ async def _search_teacher_keyword_rows(session, chat_id: int, keyword: str, teac
 
 
 def _format_teacher_keyword_search(keyword: str, rows, *, badge: str, fallback_note: str = "") -> str:
-    lines = [f"老师搜索：{keyword}"]
-    if fallback_note:
-        lines.append(fallback_note)
-    for idx, (profile, tg_user) in enumerate(rows, start=1):
-        name = f"@{tg_user.username}" if tg_user and tg_user.username else (
-            tg_user.first_name if tg_user and tg_user.first_name else f"用户{profile.user_id}"
-        )
-        labels = " ".join(profile.labels or [])
-        extra = " / ".join(part for part in [labels, profile.region_text, profile.price_text] if part)
-        score_extra = ""
-        if getattr(profile, "review_count", 0):
-            avg_score = float(getattr(profile, "avg_score", 0.0) or 0.0)
-            score_extra = f" · 均分 {avg_score:g} · {int(profile.review_count)} 条"
-        status = teacher_attendance_status_label(profile)
-        completeness = teacher_profile_completeness_label(profile)
-        lines.append(
-            f"{idx}. {badge} {name} · {status} · {completeness}"
-            + score_extra
-            + (f" · {extra}" if extra else "")
-        )
-    return "\n".join(lines)
+    return format_teacher_keyword_search(keyword, rows, badge=badge, fallback_note=fallback_note)

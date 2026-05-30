@@ -101,6 +101,53 @@ async def _index_forwarded_teacher_post(
     )
 
 
+async def _index_linked_channel_teacher_post(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    post: _ForwardPost,
+) -> None:
+    if not TeacherSearchService.has_channel_post_contact(post.text):
+        return
+    get_chat = getattr(context.bot, "get_chat", None)
+    if get_chat is None:
+        return
+    try:
+        channel_chat = await get_chat(post.source_channel_id)
+    except Exception as exc:
+        log.warning(
+            "garage_linked_channel_lookup_failed",
+            source_channel_id=post.source_channel_id,
+            source_message_id=post.source_message_id,
+            error=str(exc),
+        )
+        return
+    linked_chat_id = getattr(channel_chat, "linked_chat_id", None)
+    if linked_chat_id is None:
+        return
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        result = await TeacherSearchService.index_channel_post_teacher_profile(
+            session,
+            chat_id=int(linked_chat_id),
+            channel_id=post.source_channel_id,
+            message_id=post.source_message_id,
+            text=post.text,
+            channel_username=getattr(channel_chat, "username", None),
+            channel_title=getattr(channel_chat, "title", None),
+        )
+        await session.commit()
+    log.info(
+        "garage_linked_channel_teacher_post_indexed",
+        chat_id=int(linked_chat_id),
+        source_channel_id=post.source_channel_id,
+        source_message_id=post.source_message_id,
+        indexed=result.indexed,
+        reason=result.reason,
+        username=result.username,
+        source_url=getattr(result, "source_url", None),
+    )
+
+
 async def _list_destinations(db: Database, source_channel_id: int):
     async with db.session_factory() as session:
         destinations = await GarageForwardService.list_destinations_by_source(session, source_channel_id)
@@ -254,6 +301,8 @@ async def garage_forward_channel_post_handler(
     db: Database = context.application.bot_data["db"]
     destinations = await _list_destinations(db, post.source_channel_id)
     if not destinations:
+        await _index_linked_channel_teacher_post(context, post=post)
         return
+    await _index_linked_channel_teacher_post(context, post=post)
     for setting, _source in destinations:
         await _process_forward_destination(context, setting=setting, post=post)

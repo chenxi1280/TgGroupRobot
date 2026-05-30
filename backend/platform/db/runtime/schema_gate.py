@@ -120,6 +120,12 @@ REQUIRED_INDEXES: tuple[RequiredIndex, ...] = (
         unique=True,
     ),
     RequiredIndex(
+        table_name="teacher_source_posts",
+        index_name="uq_teacher_source_post_message",
+        columns=("chat_id", "source_channel_id", "source_message_id"),
+        unique=True,
+    ),
+    RequiredIndex(
         table_name="teacher_daily_attendance",
         index_name="uq_teacher_attendance_chat_user_date",
         columns=("chat_id", "user_id", "biz_date"),

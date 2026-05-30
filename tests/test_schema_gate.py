@@ -380,6 +380,16 @@ def _full_tables() -> dict[str, dict]:
             },
             "uniques": [{"name": "uq_teacher_profile_chat_user", "column_names": ["chat_id", "user_id"]}],
         },
+        "teacher_source_posts": {
+            "columns": {
+                "id", "chat_id", "source_channel_id", "source_message_id",
+                "source_channel_username", "source_channel_title", "source_url",
+                "username", "teacher_user_id", "bind_status", "labels",
+                "region_text", "price_text", "raw_text", "failure_reason",
+                "created_at", "updated_at",
+            },
+            "uniques": [{"name": "uq_teacher_source_post_message", "column_names": ["chat_id", "source_channel_id", "source_message_id"]}],
+        },
         "teacher_daily_attendance": {
             "columns": {"id", "chat_id", "user_id", "biz_date", "status", "source_message_id", "created_at"},
             "uniques": [{"name": "uq_teacher_attendance_chat_user_date", "column_names": ["chat_id", "user_id", "biz_date"]}],

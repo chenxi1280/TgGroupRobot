@@ -8,6 +8,14 @@ from backend.platform.db.schema.models.core import TgUser
 from backend.shared.services.base import ServiceBase
 
 
+async def _bind_pending_teacher_sources(session: AsyncSession, user: TgUser) -> None:
+    if not (user.username or "").strip():
+        return
+    from backend.features.garage.services.teacher_search_channel_index import bind_pending_source_posts_for_user
+
+    await bind_pending_source_posts_for_user(session, user)
+
+
 async def ensure_user(
     session: AsyncSession,
     user_id: int,
@@ -41,6 +49,7 @@ async def ensure_user(
         )
         session.add(user)
         await session.flush()
+        await _bind_pending_teacher_sources(session, user)
         return user
 
     await ServiceBase._update_entity(
@@ -55,8 +64,8 @@ async def ensure_user(
             "updated_at": dt.datetime.now(dt.UTC),
         },
     )
+    await _bind_pending_teacher_sources(session, user)
     return user
-
 
 
 

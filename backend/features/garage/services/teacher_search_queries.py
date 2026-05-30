@@ -15,6 +15,7 @@ from backend.platform.db.schema.models.garage_features import (
     TeacherDailyAttendance,
     TeacherProfile,
     TeacherSearchSetting,
+    TeacherSourcePost,
 )
 from backend.shared.time_helper import LOCAL_TIMEZONE
 
@@ -33,6 +34,12 @@ class TeacherProfileView:
     review_count: int = 0
     last_location_at: dt.datetime | None = None
     updated_at: dt.datetime | None = None
+    source_profile_id: int | None = None
+    source_status: str | None = None
+    source_username: str | None = None
+    source_channel_title: str | None = None
+    source_url: str | None = None
+    source_raw_text: str | None = None
 
 
 def _teacher_search_biz_date() -> dt.date:
@@ -57,6 +64,31 @@ def _build_profile_view(
         last_location_at=getattr(profile, "last_location_at", None) if profile is not None else None,
         updated_at=getattr(profile, "updated_at", None) if profile is not None else None,
     )
+
+
+def _build_source_post_view(source_post: TeacherSourcePost) -> TeacherProfileView:
+    return TeacherProfileView(
+        user_id=int(source_post.teacher_user_id or 0),
+        labels=list(getattr(source_post, "labels", None) or []),
+        region_text=getattr(source_post, "region_text", None),
+        price_text=getattr(source_post, "price_text", None),
+        updated_at=getattr(source_post, "updated_at", None),
+        source_profile_id=int(source_post.id),
+        source_status=getattr(source_post, "bind_status", None),
+        source_username=getattr(source_post, "username", None),
+        source_channel_title=getattr(source_post, "source_channel_title", None),
+        source_url=getattr(source_post, "source_url", None),
+        source_raw_text=getattr(source_post, "raw_text", None),
+    )
+
+
+def _attach_source_to_profile(profile: TeacherProfileView, source_profile: TeacherProfileView) -> None:
+    profile.source_profile_id = source_profile.source_profile_id
+    profile.source_status = source_profile.source_status
+    profile.source_username = source_profile.source_username
+    profile.source_channel_title = source_profile.source_channel_title
+    profile.source_url = source_profile.source_url
+    profile.source_raw_text = source_profile.source_raw_text
 
 
 def teacher_attendance_status_label(profile: TeacherProfile | TeacherProfileView | None) -> str:
@@ -117,20 +149,10 @@ def _teacher_score_matches(profile: TeacherProfileView, normalized_keyword: str)
     return int(getattr(profile, "review_count", 0) or 0) > 0 and float(getattr(profile, "avg_score", 0.0) or 0.0) >= threshold
 
 
-def _teacher_keyword_matches(
-    profile: TeacherProfileView,
-    user: TgUser | None,
-    keyword: str,
-) -> bool:
-    normalized = _normalize_search_text(keyword)
-    if not normalized:
-        return False
-    if _keyword_score_threshold(normalized) is not None:
-        return _teacher_score_matches(profile, normalized)
-
+def _teacher_keyword_parts(profile: TeacherProfileView, user: TgUser | None) -> list[str]:
     first_name = (user.first_name or "") if user else ""
     last_name = (user.last_name or "") if user else ""
-    parts = [
+    return [
         str(profile.user_id),
         profile.region_text or "",
         profile.price_text or "",
@@ -143,24 +165,42 @@ def _teacher_keyword_matches(
         last_name,
         "".join([first_name, last_name]),
         " ".join(part for part in [first_name, last_name] if part),
+        getattr(profile, "source_username", None) or "",
+        getattr(profile, "source_channel_title", None) or "",
+        getattr(profile, "source_raw_text", None) or "",
     ]
+
+
+def _keyword_numbers_match(parts: list[str], normalized_keyword: str) -> bool:
+    keyword_numbers = re.findall(r"\d+(?:\.\d+)?", normalized_keyword)
+    if not keyword_numbers:
+        return False
+    numeric_haystack = " ".join(parts)
+    haystack_numbers = [float(number) for number in re.findall(r"\d+(?:\.\d+)?", numeric_haystack)]
+    if any(lower <= number <= upper for lower, upper in _keyword_price_ranges(normalized_keyword) for number in haystack_numbers):
+        return True
+    haystack_number_text = {str(int(number)) if number.is_integer() else str(number) for number in haystack_numbers}
+    return any(number in haystack_number_text for number in keyword_numbers)
+
+
+def _teacher_keyword_matches(
+    profile: TeacherProfileView,
+    user: TgUser | None,
+    keyword: str,
+) -> bool:
+    normalized = _normalize_search_text(keyword)
+    if not normalized:
+        return False
+    if _keyword_score_threshold(normalized) is not None:
+        return _teacher_score_matches(profile, normalized)
+
+    parts = _teacher_keyword_parts(profile, user)
     haystacks = [_normalize_search_text(part) for part in parts if part]
     if any(normalized in haystack for haystack in haystacks):
         return True
 
-    keyword_numbers = re.findall(r"\d+(?:\.\d+)?", normalized)
-    if keyword_numbers:
-        numeric_haystack = " ".join(parts)
-        haystack_numbers = [float(number) for number in re.findall(r"\d+(?:\.\d+)?", numeric_haystack)]
-        if any(
-            lower <= number <= upper
-            for lower, upper in _keyword_price_ranges(normalized)
-            for number in haystack_numbers
-        ):
-            return True
-        haystack_number_text = {str(int(number)) if number.is_integer() else str(number) for number in haystack_numbers}
-        if any(number in haystack_number_text for number in keyword_numbers):
-            return True
+    if _keyword_numbers_match(parts, normalized):
+        return True
 
     if _teacher_score_matches(profile, normalized):
         return True
@@ -233,52 +273,89 @@ class TeacherSearchQueryMixin:
         today = _teacher_search_biz_date()
         pool_chat_id = await GarageAuthService.resolve_teacher_pool_chat_id(session, chat_id)
         attendance_chat_id = await TeacherSearchQueryMixin.get_attendance_source_chat_id(session, chat_id)
+        rows = await TeacherSearchQueryMixin._list_certified_teacher_rows(
+            session,
+            chat_id=chat_id,
+            pool_chat_id=pool_chat_id,
+            attendance_chat_id=attendance_chat_id,
+            today=today,
+            only_open_course=only_open_course,
+        )
+        await TeacherSearchQueryMixin._attach_review_stats(session, chat_id, rows)
+        if not only_open_course:
+            rows = await TeacherSearchQueryMixin._merge_source_post_rows(session, chat_id, rows)
+        return rows
+
+    @staticmethod
+    async def _list_certified_teacher_rows(
+        session: AsyncSession,
+        *,
+        chat_id: int,
+        pool_chat_id: int,
+        attendance_chat_id: int,
+        today: dt.date,
+        only_open_course: bool,
+    ) -> list[tuple[TeacherProfileView, TgUser | None]]:
         result = await session.execute(
             select(GarageCertifiedTeacher, TeacherProfile, TgUser, TeacherDailyAttendance)
-            .join(
-                TeacherProfile,
-                (TeacherProfile.chat_id == chat_id)
-                & (TeacherProfile.user_id == GarageCertifiedTeacher.user_id),
-                isouter=True,
-            )
+            .join(TeacherProfile, (TeacherProfile.chat_id == chat_id) & (TeacherProfile.user_id == GarageCertifiedTeacher.user_id), isouter=True)
             .join(TgUser, TgUser.id == GarageCertifiedTeacher.user_id, isouter=True)
-            .join(
-                TeacherDailyAttendance,
-                (TeacherDailyAttendance.chat_id == attendance_chat_id)
-                & (TeacherDailyAttendance.user_id == GarageCertifiedTeacher.user_id)
-                & (TeacherDailyAttendance.biz_date == today),
-                isouter=True,
-            )
-            .where(
-                GarageCertifiedTeacher.chat_id == pool_chat_id,
-                GarageCertifiedTeacher.enabled.is_(True),
-            )
-            .order_by(
-                TeacherDailyAttendance.created_at.desc().nullslast(),
-                TeacherProfile.updated_at.desc().nullslast(),
-                GarageCertifiedTeacher.created_at.asc(),
-                GarageCertifiedTeacher.id.asc(),
-            )
+            .join(TeacherDailyAttendance, (TeacherDailyAttendance.chat_id == attendance_chat_id) & (TeacherDailyAttendance.user_id == GarageCertifiedTeacher.user_id) & (TeacherDailyAttendance.biz_date == today), isouter=True)
+            .where(GarageCertifiedTeacher.chat_id == pool_chat_id, GarageCertifiedTeacher.enabled.is_(True))
+            .order_by(TeacherDailyAttendance.created_at.desc().nullslast(), TeacherProfile.updated_at.desc().nullslast(), GarageCertifiedTeacher.created_at.asc(), GarageCertifiedTeacher.id.asc())
         )
-        rows: list[tuple[TeacherProfileView, TgUser | None]] = []
+        rows = []
         for teacher, profile, user, attendance in result.all():
             profile_view = _build_profile_view(teacher.user_id, profile, attendance)
             if only_open_course and getattr(profile_view, "open_course_status", None) not in {"open", "full"}:
                 continue
             rows.append((profile_view, user))
-        if rows:
-            from backend.features.garage.services.car_review_reports import CarReviewReportMixin
-
-            stats_map = await CarReviewReportMixin.get_teacher_review_stats_map(
-                session,
-                chat_id,
-                [profile.user_id for profile, _user in rows],
-            )
-            for profile, _user in rows:
-                stats = stats_map.get(profile.user_id) or {}
-                profile.review_count = int(stats.get("count", 0) or 0)
-                profile.avg_score = float(stats.get("avg_score", 0.0) or 0.0)
         return rows
+
+    @staticmethod
+    async def _attach_review_stats(
+        session: AsyncSession,
+        chat_id: int,
+        rows: list[tuple[TeacherProfileView, TgUser | None]],
+    ) -> None:
+        if not rows:
+            return
+        from backend.features.garage.services.car_review_reports import CarReviewReportMixin
+
+        stats_map = await CarReviewReportMixin.get_teacher_review_stats_map(
+            session,
+            chat_id,
+            [profile.user_id for profile, _user in rows if profile.user_id],
+        )
+        for profile, _user in rows:
+            stats = stats_map.get(profile.user_id) or {}
+            profile.review_count = int(stats.get("count", 0) or 0)
+            profile.avg_score = float(stats.get("avg_score", 0.0) or 0.0)
+
+    @staticmethod
+    async def _merge_source_post_rows(
+        session: AsyncSession,
+        chat_id: int,
+        rows: list[tuple[TeacherProfileView, TgUser | None]],
+    ) -> list[tuple[TeacherProfileView, TgUser | None]]:
+        result = await session.execute(
+            select(TeacherSourcePost, TgUser)
+            .join(TgUser, TgUser.id == TeacherSourcePost.teacher_user_id, isouter=True)
+            .where(TeacherSourcePost.chat_id == chat_id)
+            .order_by(TeacherSourcePost.updated_at.desc().nullslast(), TeacherSourcePost.id.desc())
+        )
+        source_rows = result.all()
+        if not source_rows:
+            return rows
+        by_user_id = {profile.user_id: profile for profile, _user in rows if profile.user_id}
+        merged = list(rows)
+        for source_post, user in source_rows:
+            source_profile = _build_source_post_view(source_post)
+            if source_profile.user_id and source_profile.user_id in by_user_id:
+                _attach_source_to_profile(by_user_id[source_profile.user_id], source_profile)
+                continue
+            merged.append((source_profile, user))
+        return merged
 
     @staticmethod
     async def search_teachers_by_keyword(
@@ -307,7 +384,8 @@ class TeacherSearchQueryMixin:
             key=lambda row: (
                 -float(getattr(row[0], "avg_score", 0.0) or 0.0),
                 -int(getattr(row[0], "review_count", 0) or 0),
-                row[0].user_id,
+                row[0].user_id or 9_999_999_999,
+                getattr(row[0], "source_profile_id", None) or 0,
             )
         )
         return matches[:limit]

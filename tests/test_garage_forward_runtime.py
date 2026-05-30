@@ -164,6 +164,70 @@ async def test_garage_forward_channel_post_indexes_teacher_for_destination(monke
 
 
 @pytest.mark.asyncio
+async def test_garage_forward_channel_post_indexes_linked_group_without_forward_source(monkeypatch):
+    indexed: list[dict[str, object]] = []
+    copied_calls: list[dict[str, object]] = []
+
+    async def fake_list_destinations_by_source(session, source_channel_id):
+        return []
+
+    async def fake_index(session, **kwargs):
+        indexed.append(kwargs)
+        return SimpleNamespace(indexed=True, reason="pending_bind", user_id=None, username="jt37373", label_count=6)
+
+    async def fake_get_chat(chat_id):
+        assert chat_id == -10001
+        return SimpleNamespace(
+            id=-10001,
+            linked_chat_id=-20001,
+            username="tianjin_garage",
+            title="天津音乐学院车库",
+        )
+
+    async def fake_copy_message(**kwargs):
+        copied_calls.append(kwargs)
+        return SimpleNamespace(message_id=999)
+
+    monkeypatch.setattr(GarageForwardService, "list_destinations_by_source", fake_list_destinations_by_source)
+    monkeypatch.setattr(TeacherSearchService, "index_channel_post_teacher_profile", fake_index)
+
+    update = SimpleNamespace(
+        effective_chat=SimpleNamespace(id=-10001, type="channel"),
+        effective_message=SimpleNamespace(
+            message_id=321,
+            text=None,
+            caption="【详细标签】：#颜值车 #深喉\n【所在位置】：#河西区\n【联系方式】： @jt37373",
+            photo=["p"],
+            video=None,
+            document=None,
+            animation=None,
+            audio=None,
+            voice=None,
+            video_note=None,
+            sticker=None,
+        ),
+    )
+    context = SimpleNamespace(
+        application=SimpleNamespace(bot_data={"db": SimpleNamespace(session_factory=_SessionFactory())}),
+        bot=SimpleNamespace(copy_message=fake_copy_message, get_chat=fake_get_chat),
+    )
+
+    await garage_forward_channel_post_handler(update, context)
+
+    assert copied_calls == []
+    assert indexed == [
+        {
+            "chat_id": -20001,
+            "channel_id": -10001,
+            "message_id": 321,
+            "text": "【详细标签】：#颜值车 #深喉\n【所在位置】：#河西区\n【联系方式】： @jt37373",
+            "channel_username": "tianjin_garage",
+            "channel_title": "天津音乐学院车库",
+        }
+    ]
+
+
+@pytest.mark.asyncio
 async def test_garage_forward_keyword_mode_respects_keyword_rules(monkeypatch):
     copied_calls: list[tuple[int, int, int]] = []
 

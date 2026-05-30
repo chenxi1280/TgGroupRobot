@@ -103,6 +103,41 @@ class TeacherProfile(Base):
     )
 
 
+class TeacherSourcePost(Base):
+    __tablename__ = "teacher_source_posts"
+    __table_args__ = (
+        UniqueConstraint("chat_id", "source_channel_id", "source_message_id", name="uq_teacher_source_post_message"),
+        {"schema": "bot"},
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("bot.tg_chats.id", ondelete="CASCADE"), index=True)
+    source_channel_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    source_message_id: Mapped[int] = mapped_column(BigInteger)
+    source_channel_username: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    source_channel_title: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    source_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    username: Mapped[str] = mapped_column(String(64), index=True)
+    teacher_user_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("bot.tg_users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    bind_status: Mapped[str] = mapped_column(String(24), default="pending_bind", nullable=False, index=True)
+    labels: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    region_text: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    price_text: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    failure_reason: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC))
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: dt.datetime.now(dt.UTC),
+        onupdate=lambda: dt.datetime.now(dt.UTC),
+    )
+
+
 class TeacherDailyAttendance(Base):
     __tablename__ = "teacher_daily_attendance"
     __table_args__ = (

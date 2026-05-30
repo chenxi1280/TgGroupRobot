@@ -7,11 +7,21 @@ import pytest
 
 import backend.features.group_ops.group_message_handler as group_message_handler
 import backend.features.group_ops.group_hooks.car_review as car_review_hook
+from backend.features.group_ops.group_hooks.teacher_search import _format_teacher_keyword_search
+from backend.features.group_ops.group_hooks.teacher_search_format import build_teacher_keyword_search_markup
 from backend.features.admin.garage import review_submit
 from backend.features.group_ops.group_message_handler import _process_garage_features
 from backend.platform.db.schema.models.core import TgUser
-from backend.platform.db.schema.models.garage_features import CarReviewAuditLog, CarReviewReport, TeacherProfile, TeacherSearchSetting
+from backend.platform.db.schema.models.garage_features import (
+    CarReviewAuditLog,
+    CarReviewReport,
+    TeacherProfile,
+    TeacherSearchSetting,
+    TeacherSourcePost,
+)
+from backend.shared.services.user_service import ensure_user
 from backend.features.garage.services.garage_features_service import CarReviewService, GarageAuthService, TeacherSearchService
+from backend.features.garage.services.teacher_search_settings import TeacherSearchSettingsMixin
 from backend.shared.services.base import ValidationError
 
 
@@ -517,6 +527,244 @@ async def test_index_channel_post_certifies_contact_and_profiles_tags(monkeypatc
     assert profiles[0].region_text == "天津"
     assert profiles[0].price_text == "800/50分钟 1500/90分钟"
     assert "变形" in profiles[0].labels
+
+
+@pytest.mark.asyncio
+async def test_index_channel_post_creates_pending_source_profile_when_contact_user_missing():
+    session = _FakeSession(execute_results=[_ExecuteResult(scalar=None)])
+
+    result = await TeacherSearchService.index_channel_post_teacher_profile(
+        session,
+        chat_id=-1001,
+        channel_id=-2001,
+        message_id=33,
+        channel_username="tianjin_garage",
+        channel_title="天津音乐学院车库",
+        text=(
+            "【所在位置】：#河西区\n"
+            "【上课费用】：800/50分钟\n"
+            "【详细标签】：#颜值车 #深喉\n"
+            "【联系方式】：@jt37373"
+        ),
+    )
+
+    source_posts = [obj for obj in session.added if obj.__class__.__name__ == "TeacherSourcePost"]
+    assert result.indexed is True
+    assert result.reason == "pending_bind"
+    assert result.username == "jt37373"
+    assert result.user_id is None
+    assert source_posts
+    assert source_posts[0].chat_id == -1001
+    assert source_posts[0].source_channel_id == -2001
+    assert source_posts[0].source_channel_username == "tianjin_garage"
+    assert source_posts[0].source_channel_title == "天津音乐学院车库"
+    assert source_posts[0].source_message_id == 33
+    assert source_posts[0].source_url == "https://t.me/tianjin_garage/33"
+    assert source_posts[0].username == "jt37373"
+    assert source_posts[0].teacher_user_id is None
+    assert source_posts[0].bind_status == "pending_bind"
+    assert source_posts[0].region_text == "河西区"
+    assert source_posts[0].price_text == "800/50分钟"
+    assert source_posts[0].labels == ["河西区", "颜值车", "深喉"]
+
+
+@pytest.mark.asyncio
+async def test_index_channel_post_uses_private_channel_source_url_without_username():
+    session = _FakeSession(execute_results=[_ExecuteResult(scalar=None)])
+
+    result = await TeacherSearchService.index_channel_post_teacher_profile(
+        session,
+        chat_id=-1001,
+        channel_id=-1002001,
+        message_id=33,
+        text="【详细标签】：#颜值车\n【联系方式】：@jt37373",
+    )
+
+    source_posts = [obj for obj in session.added if obj.__class__.__name__ == "TeacherSourcePost"]
+    assert result.source_url == "https://t.me/c/2001/33"
+    assert source_posts[0].source_url == "https://t.me/c/2001/33"
+
+
+@pytest.mark.asyncio
+async def test_search_teachers_by_keyword_matches_pending_source_profile(monkeypatch):
+    source_post = SimpleNamespace(
+        id=9,
+        chat_id=-1001,
+        source_channel_title="天津音乐学院车库",
+        source_url="https://t.me/tianjin_garage/33",
+        username="jt37373",
+        teacher_user_id=None,
+        bind_status="pending_bind",
+        labels=["颜值车", "深喉"],
+        region_text="河西区",
+        price_text="800/50分钟",
+        raw_text="【详细标签】：#颜值车 #深喉\n【联系方式】：@jt37373",
+        updated_at=dt.datetime.now(dt.UTC),
+    )
+    session = _FakeSession(
+        execute_results=[
+            _ExecuteResult(rows=[]),
+            _ExecuteResult(rows=[(source_post, None)]),
+        ]
+    )
+
+    async def fake_resolve_pool(session, chat_id: int):
+        return chat_id
+
+    monkeypatch.setattr(GarageAuthService, "resolve_teacher_pool_chat_id", fake_resolve_pool)
+
+    matches = await TeacherSearchService.search_teachers_by_keyword(
+        session,
+        -1001,
+        "颜值车",
+        only_open_course=False,
+    )
+
+    assert len(matches) == 1
+    profile, user = matches[0]
+    assert user is None
+    assert profile.source_profile_id == 9
+    assert profile.source_status == "pending_bind"
+    assert profile.source_username == "jt37373"
+    assert profile.source_channel_title == "天津音乐学院车库"
+    assert profile.source_url == "https://t.me/tianjin_garage/33"
+
+
+@pytest.mark.asyncio
+async def test_ensure_user_binds_pending_source_profiles_for_matching_username(monkeypatch):
+    source_post = TeacherSourcePost(
+        chat_id=-1001,
+        source_channel_id=-2001,
+        source_message_id=33,
+        source_channel_title="天津音乐学院车库",
+        source_url="https://t.me/tianjin_garage/33",
+        username="jt37373",
+        bind_status="pending_bind",
+        labels=["颜值车"],
+        region_text="河西区",
+        price_text="800/50分钟",
+        raw_text="【详细标签】：#颜值车\n【所在位置】：#河西区\n【上课费用】：800/50分钟\n【联系方式】：@jt37373",
+    )
+    session = _FakeSession(
+        execute_results=[
+            _ExecuteResult(scalar=None),
+            _ExecuteResult(rows=[source_post]),
+        ]
+    )
+    certified: list[tuple[int, int]] = []
+    profiles: list[TeacherProfile] = []
+
+    async def fake_add_teacher_by_user_id(session, chat_id: int, user_id: int, operator_user_id):
+        certified.append((chat_id, user_id))
+        return SimpleNamespace(chat_id=chat_id, user_id=user_id, enabled=True)
+
+    async def fake_ensure_teacher_profile(session, chat_id: int, user_id: int):
+        profile = TeacherProfile(chat_id=chat_id, user_id=user_id)
+        profiles.append(profile)
+        return profile
+
+    monkeypatch.setattr(GarageAuthService, "add_teacher_by_user_id", fake_add_teacher_by_user_id)
+    monkeypatch.setattr(TeacherSearchSettingsMixin, "ensure_teacher_profile", fake_ensure_teacher_profile)
+
+    user = await ensure_user(
+        session,
+        user_id=77,
+        username="JT37373",
+        first_name="T",
+        last_name=None,
+        language_code="zh",
+    )
+
+    assert user.id == 77
+    assert source_post.teacher_user_id == 77
+    assert source_post.bind_status == "bound"
+    assert source_post.failure_reason is None
+    assert certified == [(-1001, 77)]
+    assert profiles[0].region_text == "河西区"
+    assert profiles[0].price_text == "800/50分钟"
+    assert "颜值车" in profiles[0].labels
+
+
+def test_format_teacher_keyword_search_shows_pending_channel_source_profile():
+    text = _format_teacher_keyword_search(
+        "颜值车",
+        [
+            (
+                SimpleNamespace(
+                    user_id=0,
+                    source_profile_id=9,
+                    source_status="pending_bind",
+                    source_username="jt37373",
+                    source_channel_title="天津音乐学院车库",
+                    source_url="https://t.me/tianjin_garage/33",
+                    labels=["颜值车", "深喉"],
+                    region_text="河西区",
+                    price_text="800/50分钟",
+                    latitude=None,
+                    longitude=None,
+                    open_course_today=False,
+                    open_course_status=None,
+                    review_count=0,
+                    avg_score=0,
+                ),
+                None,
+            )
+        ],
+        badge="🤝",
+    )
+
+    assert "待绑定 @jt37373 · 频道资料 · 河西区" in text
+    assert "标签：颜值车 / 深喉" in text
+    assert "价格：800/50分钟" in text
+    assert "来源：天津音乐学院车库" in text
+    assert "原帖：https://t.me/tianjin_garage/33" in text
+
+
+def test_build_teacher_keyword_search_markup_adds_source_post_url_button():
+    markup = build_teacher_keyword_search_markup(
+        [
+            (
+                SimpleNamespace(source_url="https://t.me/tianjin_garage/33"),
+                None,
+            )
+        ]
+    )
+
+    assert markup is not None
+    button = markup.inline_keyboard[0][0]
+    assert button.text == "1. 查看原帖"
+    assert button.url == "https://t.me/tianjin_garage/33"
+
+
+def test_format_teacher_keyword_search_keeps_bound_channel_source_link():
+    text = _format_teacher_keyword_search(
+        "颜值车",
+        [
+            (
+                SimpleNamespace(
+                    user_id=77,
+                    labels=["颜值车"],
+                    region_text="河西区",
+                    price_text="800/50分钟",
+                    latitude=None,
+                    longitude=None,
+                    open_course_today=False,
+                    open_course_status=None,
+                    review_count=0,
+                    avg_score=0,
+                    source_status="bound",
+                    source_channel_title="天津音乐学院车库",
+                    source_url="https://t.me/tianjin_garage/33",
+                ),
+                SimpleNamespace(id=77, username="jt37373", first_name=None, last_name=None),
+            )
+        ],
+        badge="🤝",
+    )
+
+    assert "1. 🤝 @jt37373" in text
+    assert "来源：天津音乐学院车库" in text
+    assert "原帖：https://t.me/tianjin_garage/33" in text
 
 
 @pytest.mark.asyncio
