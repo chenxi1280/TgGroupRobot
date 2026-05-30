@@ -43,6 +43,12 @@ def _setting_keywords(settings, attr_name: str, default: str) -> set[str]:
     return {default, configured}
 
 
+def _message_text_for_points(message, text_override: str | None) -> str:
+    if text_override is not None:
+        return text_override.strip()
+    return (message.text or message.caption or "").strip()
+
+
 def _parse_admin_adjustment(text: str) -> tuple[int, str, str] | None:
     parts = text.strip().split(maxsplit=2)
     if not parts:
@@ -212,7 +218,7 @@ async def handle_message_points_action(
     chat = update.effective_chat
     user = update.effective_user
     message = update.effective_message
-    text = (text_override if text_override is not None else message.text or "").strip()
+    text = _message_text_for_points(message, text_override)
 
     async with db.session_factory() as session:
         await ensure_chat_func(session, chat_id=chat.id, chat_type=chat.type, title=chat.title)

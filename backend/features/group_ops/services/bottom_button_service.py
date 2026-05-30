@@ -215,11 +215,15 @@ async def resolve_layout_trigger_text(
     chat_id: int,
     layout: BottomButtonLayout,
 ) -> str | None:
-    if layout.action_mode != "event":
-        return (layout.payload_text or layout.button_text or "").strip() or None
-
     event_key = (layout.payload_text or "").strip()
-    return await resolve_event_trigger_text(session, chat_id, event_key)
+    if layout.action_mode == "event":
+        return await resolve_event_trigger_text(session, chat_id, event_key)
+
+    payload = (layout.payload_text or layout.button_text or "").strip()
+    if not payload:
+        return None
+    resolved_event = await resolve_event_trigger_text(session, chat_id, payload)
+    return resolved_event or payload
 
 
 def build_management_layout_preview(layouts: list[BottomButtonLayout]) -> str:

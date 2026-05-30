@@ -56,7 +56,7 @@ def _settings(**overrides):
     return SimpleNamespace(**data)
 
 
-def _update(text: str, *, reply_target=None):
+def _update(text: str | None, *, caption: str | None = None, reply_target=None):
     replies: list[str] = []
     message = _Message(
         text=text,
@@ -68,7 +68,7 @@ def _update(text: str, *, reply_target=None):
         video=None,
         photo=None,
         document=None,
-        caption=None,
+        caption=caption,
         entities=[],
         caption_entities=[],
     )
@@ -482,4 +482,35 @@ async def test_points_mall_entry_reports_disabled() -> None:
 
     assert handled is True
     assert replies == ["积分商城未开启。"]
+    assert session.commits == 1
+
+
+@pytest.mark.asyncio
+async def test_media_caption_adds_message_points_with_caption_length() -> None:
+    session = _Session()
+    update, replies = _update(None, caption="刷点短视频能真放松吗")
+    added: list[dict[str, int]] = []
+
+    async def add_message_points(*args, **kwargs):
+        added.append(kwargs)
+
+    handled = await _call(
+        update,
+        session,
+        _settings(message_min_length=5),
+        add_message_points_func=add_message_points,
+    )
+
+    assert handled is True
+    assert replies == []
+    assert added == [
+        {
+            "chat_id": -1001,
+            "user_id": 42,
+            "points": 2,
+            "daily_limit": None,
+            "min_length": 5,
+            "message_length": len("刷点短视频能真放松吗"),
+        }
+    ]
     assert session.commits == 1

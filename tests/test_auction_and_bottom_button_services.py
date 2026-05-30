@@ -811,6 +811,64 @@ async def test_bottom_button_event_dispatches_resolved_text_to_legacy_handlers(m
 
 
 @pytest.mark.asyncio
+async def test_bottom_button_custom_payload_event_key_resolves_to_points_mall(monkeypatch):
+    calls: list[tuple[str, object]] = []
+    layout = BottomButtonLayout(
+        id=9,
+        chat_id=-1001,
+        row_no=1,
+        col_no=1,
+        button_text="积分商城",
+        payload_text="points.mall",
+        action_mode="send",
+        sort_key=11,
+    )
+
+    class _Session:
+        async def commit(self):
+            calls.append(("commit", None))
+
+    class _SessionFactory:
+        def __call__(self):
+            return self
+
+        async def __aenter__(self):
+            return _Session()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    async def fake_get_layout(session, chat_id: int, button_text: str):
+        return layout
+
+    async def fake_mall_setting(session, chat_id: int):
+        return SimpleNamespace(entry_command="积分商城")
+
+    async def fake_points_trigger(update, context, payload: str):
+        calls.append(("points", payload))
+        return payload == "积分商城"
+
+    monkeypatch.setattr(bottom_button_service, "get_enabled_layout_by_button_text", fake_get_layout)
+    monkeypatch.setattr(
+        "backend.features.points.services.points_extended_service.PointsExtendedService.get_or_create_mall_setting",
+        fake_mall_setting,
+    )
+    monkeypatch.setattr(text_trigger_runtime, "_try_points_text_trigger", fake_points_trigger)
+
+    update = SimpleNamespace(
+        effective_chat=SimpleNamespace(id=-1001, type="supergroup"),
+        effective_user=SimpleNamespace(id=42),
+        effective_message=SimpleNamespace(text="积分商城", reply_text=lambda *args, **kwargs: None),
+    )
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": SimpleNamespace(session_factory=_SessionFactory())}))
+
+    handled = await text_trigger_runtime.try_bottom_button_text_trigger(update, context, -1001, "积分商城")
+
+    assert handled is True
+    assert calls == [("commit", None), ("points", "积分商城")]
+
+
+@pytest.mark.asyncio
 async def test_engagement_trigger_does_not_create_reward_for_unmatched_payload():
     calls: list[tuple[str, object]] = []
 
