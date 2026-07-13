@@ -49,37 +49,62 @@ async def build_ranked_finalists(session: AsyncSession, lottery: Lottery) -> lis
     if finalist_limit <= 0:
         return []
 
-    now = dt.datetime.now(dt.timezone.utc)
-    user_ids: list[int] = []
-    if lottery.lottery_type == "invite":
-        stmt = (
-            select(InviteTracking.inviter_user_id, func.count(InviteTracking.id).label("cnt"))
-            .where(InviteTracking.chat_id == lottery.chat_id, InviteTracking.inviter_user_id.is_not(None))
-            .group_by(InviteTracking.inviter_user_id)
-            .order_by(func.count(InviteTracking.id).desc(), InviteTracking.inviter_user_id.asc())
-            .limit(finalist_limit)
-        )
-        if window_days > 0:
-            stmt = stmt.where(InviteTracking.joined_at >= now - dt.timedelta(days=window_days))
-        result = await session.execute(stmt)
-        user_ids = [int(row[0]) for row in result.all() if row[0] is not None and int(row[1] or 0) >= required_invites]
-    elif lottery.lottery_type == "activity":
-        stmt = (
-            select(EngagementChatStat.user_id, func.coalesce(func.sum(EngagementChatStat.message_count), 0).label("cnt"))
-            .where(EngagementChatStat.chat_id == lottery.chat_id)
-            .group_by(EngagementChatStat.user_id)
-            .order_by(func.sum(EngagementChatStat.message_count).desc(), EngagementChatStat.user_id.asc())
-            .limit(finalist_limit)
-        )
-        if window_days > 0:
-            stmt = stmt.where(EngagementChatStat.biz_date >= (now - dt.timedelta(days=window_days)).date())
-        result = await session.execute(stmt)
-        user_ids = [int(row[0]) for row in result.all() if int(row[1] or 0) >= required_activity]
+    user_ids = await _ranked_finalist_user_ids(
+        session,
+        lottery,
+        finalist_limit=finalist_limit,
+        window_days=window_days,
+        required_invites=required_invites,
+        required_activity=required_activity,
+    )
+    return [LotteryParticipant(lottery_id=lottery.id, user_id=user_id, points_balance=0) for user_id in user_ids]
 
-    finalists: list[LotteryParticipant] = []
-    for user_id in user_ids:
-        finalists.append(LotteryParticipant(lottery_id=lottery.id, user_id=user_id, points_balance=0))
-    return finalists
+
+async def _ranked_finalist_user_ids(
+    session,
+    lottery,
+    *,
+    finalist_limit: int,
+    window_days: int,
+    required_invites: int,
+    required_activity: int,
+) -> list[int]:
+    now = dt.datetime.now(dt.timezone.utc)
+    if lottery.lottery_type == "invite":
+        return await _ranked_invite_user_ids(
+            session, lottery, now=now, finalist_limit=finalist_limit,
+            window_days=window_days, required_invites=required_invites,
+        )
+    if lottery.lottery_type != "activity":
+        return []
+    return await _ranked_activity_user_ids(
+        session, lottery, now=now, finalist_limit=finalist_limit,
+        window_days=window_days, required_activity=required_activity,
+    )
+
+
+async def _ranked_invite_user_ids(session, lottery, *, now, finalist_limit: int, window_days: int, required_invites: int) -> list[int]:
+    stmt = select(InviteTracking.inviter_user_id, func.count(InviteTracking.id).label("cnt")).where(
+        InviteTracking.chat_id == lottery.chat_id, InviteTracking.inviter_user_id.is_not(None)
+    ).group_by(InviteTracking.inviter_user_id).order_by(
+        func.count(InviteTracking.id).desc(), InviteTracking.inviter_user_id.asc()
+    ).limit(finalist_limit)
+    if window_days > 0:
+        stmt = stmt.where(InviteTracking.joined_at >= now - dt.timedelta(days=window_days))
+    rows = (await session.execute(stmt)).all()
+    return [int(row[0]) for row in rows if row[0] is not None and int(row[1] or 0) >= required_invites]
+
+
+async def _ranked_activity_user_ids(session, lottery, *, now, finalist_limit: int, window_days: int, required_activity: int) -> list[int]:
+    stmt = select(
+        EngagementChatStat.user_id, func.coalesce(func.sum(EngagementChatStat.message_count), 0).label("cnt")
+    ).where(EngagementChatStat.chat_id == lottery.chat_id).group_by(EngagementChatStat.user_id).order_by(
+        func.sum(EngagementChatStat.message_count).desc(), EngagementChatStat.user_id.asc()
+    ).limit(finalist_limit)
+    if window_days > 0:
+        stmt = stmt.where(EngagementChatStat.biz_date >= (now - dt.timedelta(days=window_days)).date())
+    rows = (await session.execute(stmt)).all()
+    return [int(row[0]) for row in rows if int(row[1] or 0) >= required_activity]
 
 
 async def create_lottery_winner(
@@ -102,104 +127,137 @@ async def create_lottery_winner(
     return winner
 
 
+def _valid_preset_winner_ids(rules: dict, eligible_user_ids: set[int] | None) -> list[int]:
+    winner_ids: list[int] = []
+    for raw_user_id in rules.get("preset_winner_ids") or rules.get("fixed_winner_ids") or []:
+        try:
+            user_id = int(raw_user_id)
+        except (TypeError, ValueError):
+            continue
+        if user_id <= 0 or user_id in winner_ids:
+            continue
+        if eligible_user_ids is None or user_id in eligible_user_ids:
+            winner_ids.append(user_id)
+    return winner_ids
+
+
+async def _new_lottery_winner(session, lottery: Lottery, user_id: int, *, prize: dict) -> LotteryWinner:
+    from backend.shared.services.user_service import ensure_user
+
+    await ensure_user(session, user_id, None, first_name=None, last_name=None, language_code=None)
+    winner = LotteryWinner(
+        lottery_id=lottery.id,
+        user_id=user_id,
+        prize_name=prize["name"],
+        prize_index=prize["prize_index"],
+        points_reward=prize["points_reward"],
+    )
+    session.add(winner)
+    return winner
+
+
+async def _assign_named_preset_winners(
+    session,
+    lottery,
+    assignments,
+    *,
+    prizes: list[dict],
+    eligible_user_ids: set[int] | None,
+) -> tuple[list[LotteryWinner], list[dict], set[int]]:
+    remaining = list(prizes)
+    winners: list[LotteryWinner] = []
+    used: set[int] = set()
+    for item in assignments:
+        try:
+            user_id = int(item.get("user_id"))
+        except (TypeError, ValueError):
+            continue
+        if user_id <= 0 or user_id in used or (eligible_user_ids is not None and user_id not in eligible_user_ids):
+            continue
+        prize = _pop_prize_slot_by_name(remaining, str(item.get("prize_name") or "").strip())
+        if prize is None:
+            continue
+        winners.append(await _new_lottery_winner(session, lottery, user_id, prize=prize))
+        used.add(user_id)
+    return winners, remaining, used
+
+
+async def _assign_ordered_preset_winners(
+    session,
+    lottery,
+    preset_ids,
+    *,
+    prizes: list[dict],
+    used_user_ids: set[int],
+) -> tuple[list[LotteryWinner], list[dict], set[int]]:
+    remaining = list(prizes)
+    used = set(used_user_ids)
+    winners: list[LotteryWinner] = []
+    for user_id in preset_ids:
+        if not remaining:
+            break
+        if user_id in used:
+            continue
+        winners.append(await _new_lottery_winner(session, lottery, user_id, prize=remaining.pop(0)))
+        used.add(user_id)
+    return winners, remaining, used
+
+
+def _assign_random_lottery_winners(session, lottery, participants, *, prizes: list[dict], used_user_ids: set[int]) -> list[LotteryWinner]:
+    available = [participant for participant in participants if participant.user_id not in used_user_ids]
+    random.shuffle(available)
+    winners: list[LotteryWinner] = []
+    for prize in prizes:
+        if not available:
+            break
+        participant = available.pop()
+        winner = LotteryWinner(
+            lottery_id=lottery.id, user_id=participant.user_id, prize_name=prize["name"],
+            prize_index=prize["prize_index"], points_reward=prize["points_reward"],
+        )
+        session.add(winner)
+        winners.append(winner)
+    return winners
+
+
+async def _draw_eligible_participants(session, lottery, *, rules: dict, eligible_user_ids: set[int] | None):
+    participants = await get_lottery_participants(session, lottery.id)
+    if rules.get("selection_mode") == "ranking_random" and lottery.lottery_type in {"invite", "activity"}:
+        participants = await build_ranked_finalists(session, lottery)
+    if eligible_user_ids is None:
+        return participants
+    return [participant for participant in participants if int(participant.user_id) in eligible_user_ids]
+
+
 async def perform_random_draw(
     session: AsyncSession,
     lottery: Lottery,
     *,
     eligible_user_ids: set[int] | None = None,
 ) -> list[LotteryWinner]:
-    participants = await get_lottery_participants(session, lottery.id)
     qualification_rules = lottery.qualification_rules or {}
-    if qualification_rules.get("selection_mode") == "ranking_random" and lottery.lottery_type in {"invite", "activity"}:
-        participants = await build_ranked_finalists(session, lottery)
-    if eligible_user_ids is not None:
-        participants = [participant for participant in participants if int(participant.user_id) in eligible_user_ids]
+    participants = await _draw_eligible_participants(
+        session, lottery, rules=qualification_rules, eligible_user_ids=eligible_user_ids
+    )
 
     prize_list = _build_prize_slots(lottery.prizes or [])
-    preset_winner_ids = []
-    for user_id in qualification_rules.get("preset_winner_ids") or qualification_rules.get("fixed_winner_ids") or []:
-        try:
-            user_id_int = int(user_id)
-        except (TypeError, ValueError):
-            continue
-        if eligible_user_ids is not None and user_id_int not in eligible_user_ids:
-            continue
-        if user_id_int > 0 and user_id_int not in preset_winner_ids:
-            preset_winner_ids.append(user_id_int)
+    preset_winner_ids = _valid_preset_winner_ids(qualification_rules, eligible_user_ids)
     if not prize_list:
         return []
     if not participants and not preset_winner_ids:
         return []
 
-    winners = []
-    used_user_ids: set[int] = set()
-    remaining_prizes = prize_list.copy()
     preset_winner_assignments = qualification_rules.get("preset_winner_assignments") or []
-    if preset_winner_assignments:
-        from backend.shared.services.user_service import ensure_user
-
-        for item in preset_winner_assignments:
-            try:
-                user_id = int(item.get("user_id"))
-            except (TypeError, ValueError):
-                continue
-            prize_name = str(item.get("prize_name") or "").strip()
-            if user_id <= 0 or user_id in used_user_ids:
-                continue
-            if eligible_user_ids is not None and user_id not in eligible_user_ids:
-                continue
-            prize = _pop_prize_slot_by_name(remaining_prizes, prize_name)
-            if prize is None:
-                continue
-            await ensure_user(session, user_id, None, first_name=None, last_name=None, language_code=None)
-            winner = LotteryWinner(
-                lottery_id=lottery.id,
-                user_id=user_id,
-                prize_name=prize["name"],
-                prize_index=prize["prize_index"],
-                points_reward=prize["points_reward"],
-            )
-            session.add(winner)
-            winners.append(winner)
-            used_user_ids.add(user_id)
-
-    if preset_winner_ids:
-        from backend.shared.services.user_service import ensure_user
-
-        for user_id in preset_winner_ids:
-            if not remaining_prizes:
-                break
-            if user_id in used_user_ids:
-                continue
-            prize = remaining_prizes.pop(0)
-            await ensure_user(session, user_id, None, first_name=None, last_name=None, language_code=None)
-            winner = LotteryWinner(
-                lottery_id=lottery.id,
-                user_id=user_id,
-                prize_name=prize["name"],
-                prize_index=prize["prize_index"],
-                points_reward=prize["points_reward"],
-            )
-            session.add(winner)
-            winners.append(winner)
-            used_user_ids.add(user_id)
-
-    available_participants = participants.copy()
-    available_participants = [p for p in available_participants if p.user_id not in used_user_ids]
-    random.shuffle(available_participants)
-    for prize in remaining_prizes:
-        if not available_participants:
-            break
-        participant = available_participants.pop()
-        winner = LotteryWinner(
-            lottery_id=lottery.id,
-            user_id=participant.user_id,
-            prize_name=prize["name"],
-            prize_index=prize["prize_index"],
-            points_reward=prize["points_reward"],
-        )
-        session.add(winner)
-        winners.append(winner)
+    winners, remaining_prizes, used_user_ids = await _assign_named_preset_winners(
+        session, lottery, preset_winner_assignments, prizes=prize_list, eligible_user_ids=eligible_user_ids
+    )
+    ordered, remaining_prizes, used_user_ids = await _assign_ordered_preset_winners(
+        session, lottery, preset_winner_ids, prizes=remaining_prizes, used_user_ids=used_user_ids
+    )
+    winners.extend(ordered)
+    winners.extend(_assign_random_lottery_winners(
+        session, lottery, participants, prizes=remaining_prizes, used_user_ids=used_user_ids
+    ))
     await session.flush()
     return winners
 
