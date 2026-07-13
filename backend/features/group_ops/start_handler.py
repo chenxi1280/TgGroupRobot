@@ -1,18 +1,15 @@
 from __future__ import annotations
 
 import asyncio
-import datetime as dt
+from dataclasses import dataclass
 import structlog
-from sqlalchemy import select
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from backend.platform.config.core.settings import get_settings
 from backend.platform.db.runtime.session import Database
-from backend.platform.db.schema.models.core import InviteLink
-from backend.platform.db.schema.models.enums import ConversationStateType, InviteLinkStatus
+from backend.platform.db.schema.models.enums import ConversationStateType
 from backend.shared.handlers.base.state_helper import StateHelper
-from backend.shared.i18n.strings import t
 from backend.shared.ui.common.chat_group import chat_group_list_keyboard
 from backend.shared.ui.common.start import create_start_guide_keyboard
 from backend.features.group_ops.services.chat_group_service import (
@@ -31,184 +28,16 @@ from backend.platform.state.conversation_state_service import SELECTED_CHAT_STAT
 from backend.platform.state.state_service import clear_private_input_state, clear_user_state, get_user_state, set_user_state
 from backend.shared.async_tasks import spawn_background_task
 from backend.shared.services.user_service import ensure_user
+from backend.features.group_ops.start_payloads import (
+    extract_start_payload as _extract_start_payload,
+    handle_car_review_submit_start as _handle_car_review_submit_start,
+    handle_invite_relay_start as _handle_invite_relay_start,
+    handle_teacher_location_start as _handle_teacher_location_start,
+    handle_teacher_self_location_start as _handle_teacher_self_location_start,
+)
 
 
 log = structlog.get_logger(__name__)
-
-
-def _extract_start_payload(text: str | None) -> str:
-    parts = (text or "").strip().split(maxsplit=1)
-    return parts[1].strip() if len(parts) == 2 else ""
-
-
-async def _handle_invite_relay_start(update: Update, context: ContextTypes.DEFAULT_TYPE, payload: str) -> bool:
-    if update.effective_message is None or update.effective_user is None:
-        return False
-    if not payload.startswith("inv_"):
-        return False
-    try:
-        link_id = int(payload.removeprefix("inv_"))
-    except ValueError:
-        await update.effective_message.reply_text("邀请链接无效，请重新获取。")
-        return True
-
-    db: Database = context.application.bot_data["db"]
-    async with db.session_factory() as session:
-        result = await session.execute(select(InviteLink).where(InviteLink.id == link_id))
-        link = result.scalar_one_or_none()
-        await session.commit()
-
-    now = dt.datetime.now(dt.UTC)
-    if (
-        link is None
-        or link.status != InviteLinkStatus.active.value
-        or (link.expire_date is not None and link.expire_date < now)
-    ):
-        await update.effective_message.reply_text("邀请链接已失效，请重新获取。")
-        return True
-
-    user_id = update.effective_user.id
-    user_data = getattr(context, "user_data", None)
-    if isinstance(user_data, dict):
-        user_data["pending_invite_link_id"] = link.id
-
-    from backend.features.verification.verification_join_guards import cache_invite_join_hint
-
-    cache_invite_join_hint(context, chat_id=link.chat_id, user_id=user_id, invite_link=link.invite_link)
-    await update.effective_message.reply_text(
-        "🔗 邀请链接已准备好\n\n点击下方按钮进入群组，审核通过后会自动计入邀请统计。",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("进入群组", url=link.invite_link)],
-        ]),
-    )
-    return True
-
-
-async def _handle_teacher_location_start(update: Update, context: ContextTypes.DEFAULT_TYPE, payload: str) -> bool:
-    if update.effective_message is None or update.effective_user is None:
-        return False
-    if not payload.startswith("tloc_"):
-        return False
-    try:
-        target_chat_id = int(payload.removeprefix("tloc_"))
-    except ValueError:
-        await update.effective_message.reply_text("定位入口无效，请回群重新点击“私聊更新定位”。")
-        return True
-
-    from backend.platform.db.schema.models.core import TgChat
-    from backend.platform.db.schema.models.garage_features import TeacherSearchSetting
-
-    db: Database = context.application.bot_data["db"]
-    async with db.session_factory() as session:
-        target_chat = await session.get(TgChat, target_chat_id)
-        setting = await session.get(TeacherSearchSetting, target_chat_id) if target_chat is not None else None
-        if target_chat is None:
-            await session.commit()
-            await update.effective_message.reply_text("定位入口已失效，请回群重新点击“私聊更新定位”。")
-            return True
-        if setting is None or not setting.nearby_search_enabled:
-            await session.commit()
-            await update.effective_message.reply_text("该群暂未启用附近搜索。")
-            return True
-        existing_private_state = await get_user_state(
-            session,
-            chat_id=update.effective_user.id,
-            user_id=update.effective_user.id,
-        )
-        state_data = {"target_chat_id": target_chat_id}
-        if (
-            existing_private_state is not None
-            and existing_private_state.state_type == SELECTED_CHAT_STATE
-            and isinstance(existing_private_state.state_data, dict)
-            and isinstance(existing_private_state.state_data.get("managed_chat_id"), int)
-        ):
-            state_data["previous_selected_chat_id"] = existing_private_state.state_data["managed_chat_id"]
-        await set_user_state(
-            session,
-            chat_id=update.effective_user.id,
-            user_id=update.effective_user.id,
-            state_type=ConversationStateType.teacher_search_member_location_input.value,
-            state_data=state_data,
-        )
-        await session.commit()
-
-    title = target_chat.title or str(target_chat_id)
-    await update.effective_message.reply_text(
-        (
-            "📍 更新附近搜索定位\n\n"
-            f"目标群：{title}\n\n"
-            "请发送 Telegram 位置或共享地点，也可以粘贴 Google 地图定位链接。\n"
-            "定位只用于附近老师搜索，不会在群里公开。"
-        ),
-        reply_markup=ReplyKeyboardRemove(),
-    )
-    return True
-
-
-async def _handle_teacher_self_location_start(update: Update, context: ContextTypes.DEFAULT_TYPE, payload: str) -> bool:
-    if update.effective_message is None or update.effective_user is None:
-        return False
-    if not payload.startswith("tselfloc_"):
-        return False
-    try:
-        target_chat_id = int(payload.removeprefix("tselfloc_"))
-    except ValueError:
-        await update.effective_message.reply_text("老师定位入口无效，请回群重新点击。")
-        return True
-
-    from backend.features.garage.services.garage_features_service import GarageAuthService
-    from backend.platform.db.schema.models.core import TgChat
-
-    db: Database = context.application.bot_data["db"]
-    async with db.session_factory() as session:
-        target_chat = await session.get(TgChat, target_chat_id)
-        if target_chat is None:
-            await session.commit()
-            await update.effective_message.reply_text("老师定位入口已失效，请回群重新点击。")
-            return True
-        if not await GarageAuthService.is_effective_certified_teacher(
-            session,
-            target_chat_id,
-            update.effective_user.id,
-        ):
-            await session.commit()
-            await update.effective_message.reply_text("你不是该群的认证老师，无法更新老师服务定位。")
-            return True
-        await set_user_state(
-            session,
-            chat_id=update.effective_user.id,
-            user_id=update.effective_user.id,
-            state_type=ConversationStateType.teacher_self_location_input.value,
-            state_data={"target_chat_id": target_chat_id},
-        )
-        await session.commit()
-
-    title = target_chat.title or str(target_chat_id)
-    await update.effective_message.reply_text(
-        (
-            "📍 更新老师服务定位\n\n"
-            f"目标群：{title}\n\n"
-            "请发送 Telegram 位置或共享地点，也可以粘贴 Google 地图定位链接。\n"
-            "该定位用于老师附近搜索，不会覆盖你的群友附近查询定位。"
-        ),
-        reply_markup=ReplyKeyboardRemove(),
-    )
-    return True
-
-
-async def _handle_car_review_submit_start(update: Update, context: ContextTypes.DEFAULT_TYPE, payload: str) -> bool:
-    if not payload.startswith("crvsub_"):
-        return False
-    try:
-        target_chat_id = int(payload.removeprefix("crvsub_"))
-    except ValueError:
-        if update.effective_message is not None:
-            await update.effective_message.reply_text("车评提交入口无效，请回群重新点击“提交车评”。")
-        return True
-
-    from backend.features.admin.garage.review_submit import start_car_review_submit_flow
-
-    return await start_car_review_submit_flow(update, context, target_chat_id)
 
 
 async def _list_teacher_self_chats(context: ContextTypes.DEFAULT_TYPE, user_id: int):
@@ -302,71 +131,73 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     """上下文感知的 /start：根据用户状态返回不同内容"""
     if update.effective_chat is None or update.effective_user is None or update.effective_message is None:
         return
-
-    db: Database = context.application.bot_data["db"]
     chat = update.effective_chat
-    user = update.effective_user
-
     if chat.type != "private":
         allowed = await ensure_command_enabled(context, update, command_key="start")
         if not allowed:
             return
-
     if chat.type == "private":
-        payload = _extract_start_payload(update.effective_message.text)
-        if payload and await _handle_invite_relay_start(update, context, payload):
-            return
-        if payload and await _handle_teacher_location_start(update, context, payload):
-            return
-        if payload and await _handle_teacher_self_location_start(update, context, payload):
-            return
-        if payload and await _handle_car_review_submit_start(update, context, payload):
-            return
-
-        # 私聊中显示群组列表
-        chats = await get_user_managed_chats(db, user.id, context.bot)
-        current_chat_id = await get_user_current_chat(db, user.id)
-        reply_markup = await _build_private_home_markup(
-            context,
-            user_id=user.id,
-            chats=chats,
-            current_chat_id=current_chat_id,
-        )
-        teacher_self_rows = await _list_teacher_self_chats(context, user.id)
-
-        if not chats:
-            # 使用 service 层格式化消息
-            text = format_private_chat_welcome(context.bot.username, has_chats=False)
-            if teacher_self_rows:
-                text += "\n\n如果你是认证老师，也可以点下面按钮维护老师资料。"
-            await update.effective_message.reply_text(
-                text,
-                reply_markup=reply_markup,
-            )
-        else:
-            # 有当前选中的群组，显示该群组信息
-            if current_chat_id:
-                for cid, title, _ in chats:
-                    if cid == current_chat_id:
-                        # 使用 service 层格式化消息
-                        text = format_private_chat_current_title(title)
-                        if teacher_self_rows:
-                            text += "\n\n认证老师也可以用下面按钮维护自己的资料。"
-                        await update.effective_message.reply_text(
-                            text,
-                            reply_markup=reply_markup,
-                        )
-                        return
-
-            # 没有选中群组，显示列表
-            text = format_private_chat_list(len(chats))
-            if teacher_self_rows:
-                text += "\n\n认证老师也可以用下面按钮维护自己的资料。"
-            await update.effective_message.reply_text(
-                text,
-                reply_markup=reply_markup,
-            )
+        await _handle_private_start(update, context)
         return
+    await _handle_group_start(update, context)
+
+
+async def _handle_private_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    payload = _extract_start_payload(update.effective_message.text)
+    payload_handlers = (
+        _handle_invite_relay_start,
+        _handle_teacher_location_start,
+        _handle_teacher_self_location_start,
+        _handle_car_review_submit_start,
+    )
+    for handler in payload_handlers:
+        if payload and await handler(update, context, payload):
+            return
+    db: Database = context.application.bot_data["db"]
+    user_id = update.effective_user.id
+    chats = await get_user_managed_chats(db, user_id, context.bot)
+    current_chat_id = await get_user_current_chat(db, user_id)
+    reply_markup = await _build_private_home_markup(
+        context,
+        user_id=user_id,
+        chats=chats,
+        current_chat_id=current_chat_id,
+    )
+    teacher_rows = await _list_teacher_self_chats(context, user_id)
+    text = _private_start_text(
+        chats,
+        current_chat_id=current_chat_id,
+        bot_username=context.bot.username,
+        has_teacher_rows=bool(teacher_rows),
+    )
+    await update.effective_message.reply_text(text, reply_markup=reply_markup)
+
+
+def _private_start_text(
+    chats: list[tuple[int, str, bool]],
+    *,
+    current_chat_id: int | None,
+    bot_username: str,
+    has_teacher_rows: bool,
+) -> str:
+    if not chats:
+        text = format_private_chat_welcome(bot_username, has_chats=False)
+        suffix = "\n\n如果你是认证老师，也可以点下面按钮维护老师资料。"
+        return text + (suffix if has_teacher_rows else "")
+    current_title = next((title for chat_id, title, _ in chats if chat_id == current_chat_id), None)
+    text = (
+        format_private_chat_current_title(current_title)
+        if current_title
+        else format_private_chat_list(len(chats))
+    )
+    suffix = "\n\n认证老师也可以用下面按钮维护自己的资料。"
+    return text + (suffix if has_teacher_rows else "")
+
+
+async def _handle_group_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    db: Database = context.application.bot_data["db"]
+    chat = update.effective_chat
+    user = update.effective_user
 
     async with db.session_factory() as session:
         await ensure_chat(session, chat_id=chat.id, chat_type=chat.type, title=chat.title)
@@ -378,7 +209,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             last_name=user.last_name,
             language_code=user.language_code,
         )
-        settings = await get_chat_settings(session, chat.id)
+        await get_chat_settings(session, chat.id)
 
         # 检查用户是否有对话状态
         state = await StateHelper.get_state_by_chat(session, chat, user.id)
@@ -388,7 +219,6 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             await clear_user_state(session, chat_id=chat.id, user_id=user.id)
         await session.commit()
 
-    # 发送引导消息
     await _send_guide_message(update, context, chat, user=user)
 
 
@@ -405,80 +235,105 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     chat = update.effective_chat
     user = update.effective_user
     db: Database = context.application.bot_data["db"]
-
-    # 获取当前选中的群组
     target_chat_id = await get_user_current_chat(db, user.id)
-
     async with db.session_factory() as session:
-        if chat.type == "private":
-            private_state = await get_user_state(session, chat_id=user.id, user_id=user.id)
-            restored_chat_id = None
-            teacher_self_target_chat_id = None
-            if (
-                private_state is not None
-                and private_state.state_type == ConversationStateType.teacher_search_member_location_input.value
-                and isinstance(private_state.state_data, dict)
-                and isinstance(private_state.state_data.get("previous_selected_chat_id"), int)
-            ):
-                restored_chat_id = private_state.state_data["previous_selected_chat_id"]
-            if (
-                private_state is not None
-                and private_state.state_type in {
-                    ConversationStateType.teacher_self_location_input.value,
-                    ConversationStateType.teacher_self_region_input.value,
-                    ConversationStateType.teacher_self_price_input.value,
-                    ConversationStateType.teacher_self_labels_input.value,
-                }
-                and isinstance(private_state.state_data, dict)
-                and isinstance(private_state.state_data.get("target_chat_id"), int)
-            ):
-                teacher_self_target_chat_id = private_state.state_data["target_chat_id"]
-            await clear_private_input_state(session, user.id)
-            if restored_chat_id is not None:
-                await set_user_state(
-                    session,
-                    chat_id=user.id,
-                    user_id=user.id,
-                    state_type=SELECTED_CHAT_STATE,
-                    state_data={"managed_chat_id": restored_chat_id},
-                )
-                target_chat_id = restored_chat_id
-            # 私聊：清除目标群组的状态
-            if target_chat_id:
-                await clear_user_state(session, chat_id=target_chat_id, user_id=user.id)
-        else:
-            # 群聊：清除当前群组的状态
-            await ensure_chat(session, chat_id=chat.id, chat_type=chat.type, title=chat.title)
-            await clear_user_state(session, chat_id=chat.id, user_id=user.id)
+        targets = await _clear_cancel_state(
+            session,
+            chat=chat,
+            user_id=user.id,
+            target_chat_id=target_chat_id,
+        )
         await session.commit()
+    await _show_cancel_result(update, context, targets=targets)
 
-    # 返回相应界面
-    if chat.type == "private":
-        if teacher_self_target_chat_id is not None:
-            from backend.features.admin.garage.teacher_self import show_teacher_self_home
 
-            await show_teacher_self_home(update, context, teacher_self_target_chat_id)
-            return
-        if target_chat_id:
-            # 返回该群组的管理菜单
-            from backend.features.admin.admin_handler import _show_private_admin_menu
-            await _show_private_admin_menu(update, context, target_chat_id)
-        else:
-            # 没有选中群组，返回群组列表
-            chats = await get_user_managed_chats(db, user.id, context.bot)
-            reply_markup = await _build_private_home_markup(
-                context,
-                user_id=user.id,
-                chats=chats,
-                current_chat_id=target_chat_id,
-            )
-            await update.effective_message.reply_text(
-                "已取消当前配置",
-                reply_markup=reply_markup,
-            )
-    else:
-        # 群聊发送引导消息
-        await _send_guide_message(update, context, chat, user=user)
+@dataclass(frozen=True, slots=True)
+class _CancelTargets:
+    target_chat_id: int | None
+    teacher_self_chat_id: int | None
+    private: bool
+
+
+def _targets_from_private_state(state, current_chat_id: int | None) -> _CancelTargets:
+    if state is None or not isinstance(state.state_data, dict):
+        return _CancelTargets(current_chat_id, None, True)
+    data = state.state_data
+    restored = data.get("previous_selected_chat_id")
+    should_restore = (
+        state.state_type == ConversationStateType.teacher_search_member_location_input.value
+        and isinstance(restored, int)
+    )
+    target_chat_id = restored if should_restore else current_chat_id
+    teacher_states = {
+        ConversationStateType.teacher_self_location_input.value,
+        ConversationStateType.teacher_self_region_input.value,
+        ConversationStateType.teacher_self_price_input.value,
+        ConversationStateType.teacher_self_labels_input.value,
+    }
+    teacher_target = data.get("target_chat_id")
+    teacher_chat_id = (
+        teacher_target
+        if state.state_type in teacher_states and isinstance(teacher_target, int)
+        else None
+    )
+    return _CancelTargets(target_chat_id, teacher_chat_id, True)
+
+
+async def _clear_cancel_state(
+    session,
+    *,
+    chat,
+    user_id: int,
+    target_chat_id: int | None,
+) -> _CancelTargets:
+    if chat.type != "private":
+        await ensure_chat(session, chat_id=chat.id, chat_type=chat.type, title=chat.title)
+        await clear_user_state(session, chat_id=chat.id, user_id=user_id)
+        return _CancelTargets(chat.id, None, False)
+    private_state = await get_user_state(session, chat_id=user_id, user_id=user_id)
+    targets = _targets_from_private_state(private_state, target_chat_id)
+    await clear_private_input_state(session, user_id)
+    if targets.target_chat_id != target_chat_id:
+        await set_user_state(
+            session,
+            chat_id=user_id,
+            user_id=user_id,
+            state_type=SELECTED_CHAT_STATE,
+            state_data={"managed_chat_id": targets.target_chat_id},
+        )
+    if targets.target_chat_id:
+        await clear_user_state(session, chat_id=targets.target_chat_id, user_id=user_id)
+    return targets
+
+
+async def _show_cancel_result(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    targets: _CancelTargets,
+) -> None:
+    if not targets.private:
+        await _send_guide_message(update, context, update.effective_chat, user=update.effective_user)
+        return
+    if targets.teacher_self_chat_id is not None:
+        from backend.features.admin.garage.teacher_self import show_teacher_self_home
+
+        await show_teacher_self_home(update, context, targets.teacher_self_chat_id)
+        return
+    if targets.target_chat_id:
+        from backend.features.admin.admin_handler import _show_private_admin_menu
+
+        await _show_private_admin_menu(update, context, targets.target_chat_id)
+        return
+    db: Database = context.application.bot_data["db"]
+    chats = await get_user_managed_chats(db, update.effective_user.id, context.bot)
+    reply_markup = await _build_private_home_markup(
+        context,
+        user_id=update.effective_user.id,
+        chats=chats,
+        current_chat_id=None,
+    )
+    await update.effective_message.reply_text("已取消当前配置", reply_markup=reply_markup)
 
 
 async def private_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

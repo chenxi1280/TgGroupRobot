@@ -698,6 +698,7 @@ async def test_teacher_search_footer_link_input_clears_legacy_state(monkeypatch)
 @pytest.mark.asyncio
 async def test_teacher_location_start_sets_private_location_state(monkeypatch):
     from backend.features.group_ops import start_handler
+    from backend.features.group_ops import start_payloads
     from backend.platform.db.schema.models.core import TgChat
     from backend.platform.db.schema.models.garage_features import TeacherSearchSetting
 
@@ -726,8 +727,8 @@ async def test_teacher_location_start_sets_private_location_state(monkeypatch):
             state_data={"managed_chat_id": -2002},
         )
 
-    monkeypatch.setattr(start_handler, "set_user_state", fake_set_user_state)
-    monkeypatch.setattr(start_handler, "get_user_state", fake_get_user_state)
+    monkeypatch.setattr(start_payloads, "set_user_state", fake_set_user_state)
+    monkeypatch.setattr(start_payloads, "get_user_state", fake_get_user_state)
 
     handled = await start_handler._handle_teacher_location_start(update, context, "tloc_-1001")
 
@@ -746,6 +747,7 @@ async def test_teacher_location_start_sets_private_location_state(monkeypatch):
 @pytest.mark.asyncio
 async def test_teacher_self_location_start_sets_teacher_service_state(monkeypatch):
     from backend.features.group_ops import start_handler
+    from backend.features.group_ops import start_payloads
     from backend.platform.db.schema.models.core import TgChat
 
     captured: dict[str, object] = {"replies": []}
@@ -769,7 +771,7 @@ async def test_teacher_self_location_start_sets_teacher_service_state(monkeypatc
     async def fake_is_teacher(session, chat_id: int, user_id: int):
         return True
 
-    monkeypatch.setattr(start_handler, "set_user_state", fake_set_user_state)
+    monkeypatch.setattr(start_payloads, "set_user_state", fake_set_user_state)
     monkeypatch.setattr(GarageAuthService, "is_effective_certified_teacher", fake_is_teacher)
 
     handled = await start_handler._handle_teacher_self_location_start(update, context, "tselfloc_-1001")
