@@ -38,12 +38,25 @@ class GameTask(ScheduledTask):
     async def execute(self, app) -> None:
         db = app.bot_data["db"]
         now_local = dt.datetime.now(dt.UTC).astimezone(LOCAL_TIMEZONE)
+        changed_chat_ids, due_k3_round_ids, due_blackjack_round_ids = await self._load_due_work(
+            db, now_local
+        )
+        await self._refresh_scheduled_panels(app, db, changed_chat_ids)
+        for round_id in due_k3_round_ids:
+            await self._process_k3_round(app, db, round_id)
+        for round_id in due_blackjack_round_ids:
+            await self._process_blackjack_round(app, db, round_id)
+
+    async def _load_due_work(self, db, now_local) -> tuple[list[int], list[int], list[int]]:
         async with db.session_factory() as session:
             changed_chat_ids = await apply_auto_schedule(session, now_local)
             due_k3_round_ids = await list_due_k3_round_ids(session)
             due_blackjack_round_ids = await list_due_blackjack_round_ids(session)
             await session.commit()
-        for chat_id in changed_chat_ids:
+        return changed_chat_ids, due_k3_round_ids, due_blackjack_round_ids
+
+    async def _refresh_scheduled_panels(self, app, db, chat_ids: list[int]) -> None:
+        for chat_id in chat_ids:
             async with db.session_factory() as session:
                 setting = await get_or_create_setting(session, chat_id)
                 create_k3 = bool(setting.k3_enabled)
@@ -54,42 +67,49 @@ class GameTask(ScheduledTask):
                 await show_blackjack_panel(app, db, chat_id, create_if_missing=create_blackjack)
             except Exception as exc:
                 log.warning("game_schedule_panel_refresh_failed", chat_id=chat_id, error=str(exc))
-        for round_id in due_k3_round_ids:
-            async with db.session_factory() as session:
-                summary = await settle_k3_round(session, round_id)
-                if summary is None:
-                    await session.commit()
-                    continue
-                try:
-                    await self._send_k3_summary(app, summary)
-                except Exception as exc:
-                    await session.rollback()
-                    log.error("k3_result_announcement_failed", round_id=round_id, error=str(exc))
-                    continue
-                chat_id = int(summary["round"].chat_id)
+
+    async def _process_k3_round(self, app, db, round_id: int) -> None:
+        async with db.session_factory() as session:
+            summary = await settle_k3_round(session, round_id)
+            if summary is None:
                 await session.commit()
+                return
             try:
-                await show_k3_panel(app, db, chat_id)
+                await self._send_k3_summary(app, summary)
             except Exception as exc:
-                log.warning("game_k3_panel_refresh_failed", chat_id=chat_id, round_id=round_id, error=str(exc))
-        for round_id in due_blackjack_round_ids:
-            async with db.session_factory() as session:
-                summary = await settle_blackjack_round(session, round_id)
-                if summary is None:
-                    await session.commit()
-                    continue
-                try:
-                    await self._send_blackjack_summary(app, summary)
-                except Exception as exc:
-                    await session.rollback()
-                    log.error("blackjack_result_announcement_failed", round_id=round_id, error=str(exc))
-                    continue
-                chat_id = int(summary["round"].chat_id)
+                await session.rollback()
+                log.error("k3_result_announcement_failed", round_id=round_id, error=str(exc))
+                return
+            chat_id = int(summary["round"].chat_id)
+            await session.commit()
+        try:
+            await show_k3_panel(app, db, chat_id)
+        except Exception as exc:
+            log.warning("game_k3_panel_refresh_failed", chat_id=chat_id, round_id=round_id, error=str(exc))
+
+    async def _process_blackjack_round(self, app, db, round_id: int) -> None:
+        async with db.session_factory() as session:
+            summary = await settle_blackjack_round(session, round_id)
+            if summary is None:
                 await session.commit()
+                return
             try:
-                await show_blackjack_panel(app, db, chat_id)
+                await self._send_blackjack_summary(app, summary)
             except Exception as exc:
-                log.warning("game_blackjack_panel_refresh_failed", chat_id=chat_id, round_id=round_id, error=str(exc))
+                await session.rollback()
+                log.error("blackjack_result_announcement_failed", round_id=round_id, error=str(exc))
+                return
+            chat_id = int(summary["round"].chat_id)
+            await session.commit()
+        try:
+            await show_blackjack_panel(app, db, chat_id)
+        except Exception as exc:
+            log.warning(
+                "game_blackjack_panel_refresh_failed",
+                chat_id=chat_id,
+                round_id=round_id,
+                error=str(exc),
+            )
 
     async def _send_k3_summary(self, app, summary: dict) -> None:
         round_obj = summary["round"]
