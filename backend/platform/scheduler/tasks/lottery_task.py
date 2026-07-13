@@ -171,6 +171,118 @@ async def _lock_pending_lottery(session, lottery_model, lottery_id: int):
     return result.scalar_one_or_none()
 
 
+def _parse_positive_user_ids(values) -> list[int]:
+    user_ids: list[int] = []
+    for raw_user_id in values or []:
+        try:
+            user_id = int(raw_user_id)
+        except (TypeError, ValueError):
+            continue
+        if user_id > 0:
+            user_ids.append(user_id)
+    return user_ids
+
+
+async def _get_subscribed_eligible_user_ids(app, session, lottery) -> tuple[set[int] | None, bool]:
+    from backend.features.activity.services.lottery_service_queries import get_lottery_participants
+    from backend.features.activity.services.lottery_subscription import (
+        filter_lottery_subscribed_user_ids,
+        get_lottery_subscribe_targets,
+        requires_lottery_subscribe,
+    )
+
+    if not requires_lottery_subscribe(lottery):
+        return None, False
+    rules = lottery.qualification_rules or {}
+    participants = await get_lottery_participants(session, lottery.id)
+    preset_values = rules.get("preset_winner_ids") or rules.get("fixed_winner_ids") or []
+    preset_ids = _parse_positive_user_ids(preset_values)
+    candidate_ids = {int(participant.user_id) for participant in participants} | set(preset_ids)
+    eligible_ids = await filter_lottery_subscribed_user_ids(
+        SimpleNamespace(bot=app.bot),
+        get_lottery_subscribe_targets(rules),
+        candidate_ids,
+        check_mode=rules.get("subscribe_check_mode") or "all",
+    )
+    return eligible_ids, True
+
+
+async def _get_due_locked_lottery(session, lottery_model, lottery, *, now: dt.datetime):
+    locked = await _lock_pending_lottery(session, lottery_model, lottery.id)
+    if locked is None or not _is_time_deadline_lottery(locked):
+        return None
+    return locked if locked.draw_time <= now else None
+
+
+async def _perform_eligible_draw(
+    session,
+    lottery,
+    eligible_user_ids,
+    *,
+    perform_random_draw,
+):
+    if eligible_user_ids is None:
+        return await perform_random_draw(session, lottery)
+    return await perform_random_draw(
+        session, lottery, eligible_user_ids=eligible_user_ids
+    )
+
+
+async def _build_draw_announcement(
+    session,
+    lottery,
+    winners,
+    *,
+    participant_total: int,
+    eligible_filter_applied: bool,
+    generate_lottery_announcement,
+    distribute_lottery_rewards,
+    user_model,
+) -> str:
+    if not winners:
+        if eligible_filter_applied:
+            return _format_no_eligible_announcement(
+                lottery, participant_count=participant_total
+            )
+        return _format_no_participants_announcement(
+            lottery, participant_count=participant_total
+        )
+    user_ids = [winner.user_id for winner in winners]
+    user_result = await session.execute(select(user_model).where(user_model.id.in_(user_ids)))
+    users = {user.id: user for user in user_result.scalars().all()}
+    await distribute_lottery_rewards(session, lottery, winners)
+    return _format_draw_result_with_close_notice(
+        generate_lottery_announcement(lottery, winners, users),
+        participant_count=participant_total,
+    )
+
+
+async def _publish_and_complete_draw(
+    app,
+    session,
+    lottery,
+    *,
+    announcement: str,
+    now: dt.datetime,
+    winners,
+) -> None:
+    try:
+        await _send_lottery_result_message(app, lottery, announcement)
+    except Exception as exc:
+        log.error("auto_draw_announcement_failed", lottery_id=lottery.id, error=str(exc))
+        await session.rollback()
+        return
+    lottery.status = "completed"
+    lottery.drawn_at = now
+    await session.commit()
+    log.info(
+        "auto_draw_lottery_success",
+        lottery_id=lottery.id,
+        chat_id=lottery.chat_id,
+        winners_count=len(winners),
+    )
+
+
 class LotteryTask(ScheduledTask):
     """抽奖自动开奖任务"""
 
@@ -209,25 +321,49 @@ class LotteryTask(ScheduledTask):
             lotteries = result.scalars().all()
 
             for lottery in lotteries:
-                try:
-                    if lottery.draw_time > now:
-                        await self._send_due_reminder(app, session, lottery, now=now)
-                        continue
-                    await self._draw_due_lottery(
-                        app,
-                        session,
-                        lottery,
-                        now=now,
-                        perform_random_draw=perform_random_draw,
-                        generate_lottery_announcement=generate_lottery_announcement,
-                        distribute_lottery_rewards=distribute_lottery_rewards,
-                        lottery_model=Lottery,
-                        user_model=TgUser,
-                    )
-                except Exception as exc:
-                    log.error("auto_draw_lottery_failed", lottery_id=lottery.id, error=str(exc))
-                    await session.rollback()
-                    continue
+                await self._process_candidate_lottery(
+                    app,
+                    session,
+                    lottery,
+                    now=now,
+                    perform_random_draw=perform_random_draw,
+                    generate_lottery_announcement=generate_lottery_announcement,
+                    distribute_lottery_rewards=distribute_lottery_rewards,
+                    lottery_model=Lottery,
+                    user_model=TgUser,
+                )
+
+    async def _process_candidate_lottery(
+        self,
+        app,
+        session,
+        lottery,
+        *,
+        now,
+        perform_random_draw,
+        generate_lottery_announcement,
+        distribute_lottery_rewards,
+        lottery_model,
+        user_model,
+    ) -> None:
+        try:
+            if lottery.draw_time > now:
+                await self._send_due_reminder(app, session, lottery, now=now)
+                return
+            await self._draw_due_lottery(
+                app,
+                session,
+                lottery,
+                now=now,
+                perform_random_draw=perform_random_draw,
+                generate_lottery_announcement=generate_lottery_announcement,
+                distribute_lottery_rewards=distribute_lottery_rewards,
+                lottery_model=lottery_model,
+                user_model=user_model,
+            )
+        except Exception as exc:
+            log.error("auto_draw_lottery_failed", lottery_id=lottery.id, error=str(exc))
+            await session.rollback()
 
     async def _send_due_reminder(self, app, session, lottery, *, now: dt.datetime) -> None:
         locked_lottery = await _lock_pending_lottery(session, lottery.__class__, lottery.id)
@@ -269,75 +405,38 @@ class LotteryTask(ScheduledTask):
         lottery_model,
         user_model,
     ) -> None:
-        locked_lottery = await _lock_pending_lottery(session, lottery_model, lottery.id)
-        if locked_lottery is None or not _is_time_deadline_lottery(locked_lottery):
-            return
-        if locked_lottery.draw_time > now:
+        locked_lottery = await _get_due_locked_lottery(
+            session, lottery_model, lottery, now=now
+        )
+        if locked_lottery is None:
             return
         lottery = locked_lottery
         participant_total = await _participant_count(session, lottery.id)
-        eligible_user_ids = None
-        eligible_filter_applied = False
-        from backend.features.activity.services.lottery_service_queries import get_lottery_participants
-        from backend.features.activity.services.lottery_subscription import (
-            filter_lottery_subscribed_user_ids,
-            get_lottery_subscribe_targets,
-            requires_lottery_subscribe,
+        eligible_user_ids, filter_applied = await _get_subscribed_eligible_user_ids(
+            app, session, lottery
+        )
+        winners = await _perform_eligible_draw(
+            session,
+            lottery,
+            eligible_user_ids,
+            perform_random_draw=perform_random_draw,
+        )
+        announcement = await _build_draw_announcement(
+            session,
+            lottery,
+            winners,
+            participant_total=participant_total,
+            eligible_filter_applied=filter_applied,
+            generate_lottery_announcement=generate_lottery_announcement,
+            distribute_lottery_rewards=distribute_lottery_rewards,
+            user_model=user_model,
         )
 
-        if requires_lottery_subscribe(lottery):
-            rules = lottery.qualification_rules or {}
-            participants = await get_lottery_participants(session, lottery.id)
-            preset_ids: list[int] = []
-            for raw_user_id in rules.get("preset_winner_ids") or rules.get("fixed_winner_ids") or []:
-                try:
-                    user_id = int(raw_user_id)
-                except (TypeError, ValueError):
-                    continue
-                if user_id > 0:
-                    preset_ids.append(user_id)
-            candidate_ids = {int(participant.user_id) for participant in participants} | set(preset_ids)
-            eligible_user_ids = await filter_lottery_subscribed_user_ids(
-                SimpleNamespace(bot=app.bot),
-                get_lottery_subscribe_targets(rules),
-                candidate_ids,
-                check_mode=rules.get("subscribe_check_mode") or "all",
-            )
-            eligible_filter_applied = True
-        if eligible_user_ids is None:
-            winners = await perform_random_draw(session, lottery)
-        else:
-            winners = await perform_random_draw(session, lottery, eligible_user_ids=eligible_user_ids)
-
-        if winners:
-            user_ids = [winner.user_id for winner in winners]
-            user_stmt = select(user_model).where(user_model.id.in_(user_ids))
-            user_result = await session.execute(user_stmt)
-            users = {user.id: user for user in user_result.scalars().all()}
-
-            await distribute_lottery_rewards(session, lottery, winners)
-            announcement = _format_draw_result_with_close_notice(
-                generate_lottery_announcement(lottery, winners, users),
-                participant_count=participant_total,
-            )
-        elif eligible_filter_applied:
-            announcement = _format_no_eligible_announcement(lottery, participant_count=participant_total)
-        else:
-            announcement = _format_no_participants_announcement(lottery, participant_count=participant_total)
-
-        try:
-            await _send_lottery_result_message(app, lottery, announcement)
-        except Exception as exc:
-            log.error("auto_draw_announcement_failed", lottery_id=lottery.id, error=str(exc))
-            await session.rollback()
-            return
-
-        lottery.status = "completed"
-        lottery.drawn_at = now
-        await session.commit()
-        log.info(
-            "auto_draw_lottery_success",
-            lottery_id=lottery.id,
-            chat_id=lottery.chat_id,
-            winners_count=len(winners),
+        await _publish_and_complete_draw(
+            app,
+            session,
+            lottery,
+            announcement=announcement,
+            now=now,
+            winners=winners,
         )
