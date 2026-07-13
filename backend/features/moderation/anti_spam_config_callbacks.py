@@ -26,6 +26,70 @@ from backend.shared.services.permission_service import PermissionPolicyService
 _ANTI_SPAM_CONFIG_CALLBACK_THRESHOLD_4 = 4
 
 
+def _toggle_anti_spam_setting(settings, key: str) -> bool:
+    fields = {
+        "enabled": "anti_spam_enabled",
+        "admin_exempt": "anti_spam_exempt_admin",
+        "notify": "anti_spam_delete_notify",
+    }
+    field = fields.get(key)
+    if field is None:
+        return False
+    setattr(settings, field, not bool(getattr(settings, field)))
+    return True
+
+
+def _cycle_anti_spam_setting(settings, key: str) -> bool:
+    fields = {
+        "action": ("anti_spam_action", SPAM_ACTIONS, str),
+        "mute": ("anti_spam_mute_duration", SPAM_MUTE_VALUES, int),
+        "notify_sec": ("anti_spam_delete_notify_seconds", SPAM_NOTIFY_SEC_VALUES, int),
+        "repeat_msgs": ("anti_spam_repeat_messages", SPAM_REPEAT_MESSAGES_VALUES, int),
+        "repeat_sec": ("anti_spam_repeat_seconds", SPAM_REPEAT_SECONDS_VALUES, int),
+    }
+    config = fields.get(key)
+    if config is None:
+        return False
+    field, values, convert = config
+    setattr(settings, field, convert(_cycle(getattr(settings, field), values)))
+    return True
+
+
+def _toggle_anti_spam_rule(settings, rules: dict, key: str) -> bool:
+    rule_key = RULE_CODE_MAP.get(key)
+    if rule_key is None:
+        return False
+    updated_rules = {**rules, rule_key: not bool(rules.get(rule_key))}
+    settings.anti_spam_rules = updated_rules
+    return True
+
+
+def _apply_anti_spam_operation(settings, rules: dict, *, op: str, key: str) -> bool:
+    if op == "toggle":
+        return _toggle_anti_spam_setting(settings, key)
+    if op == "cycle":
+        return _cycle_anti_spam_setting(settings, key)
+    if op == "rule":
+        return _toggle_anti_spam_rule(settings, rules, key)
+    return False
+
+
+async def _resolve_anti_spam_request(update, context, *, cb):
+    chat_id = cb.get_int_optional(3)
+    if chat_id is None or chat_id == 0:
+        await answer_callback_query_safely(update, "无效的群组 ID", show_alert=True)
+        return None
+    allowed, reason = await PermissionPolicyService.require_manage(
+        context, chat_id=chat_id, user_id=update.effective_user.id,
+        capability="settings",
+    )
+    if allowed:
+        return chat_id
+    await answer_callback_query_safely(
+        update, reason or "你没有该群组的管理权限", show_alert=True
+    )
+    return None
+
 
 async def anti_spam_config_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.callback_query is None or update.effective_user is None:
@@ -41,21 +105,8 @@ async def anti_spam_config_callback(update: Update, context: ContextTypes.DEFAUL
     if cb.length() < _ANTI_SPAM_CONFIG_CALLBACK_THRESHOLD_4:
         return
 
-    op = cb.get(1)
-    key = cb.get(2)
-    chat_id = cb.get_int_optional(3)
-    if chat_id is None or chat_id == 0:
-        await answer_callback_query_safely(update, "无效的群组 ID", show_alert=True)
-        return
-
-    allowed, reason = await PermissionPolicyService.require_manage(
-        context,
-        chat_id=chat_id,
-        user_id=update.effective_user.id,
-        capability="settings",
-    )
-    if not allowed:
-        await answer_callback_query_safely(update, reason or "你没有该群组的管理权限", show_alert=True)
+    chat_id = await _resolve_anti_spam_request(update, context, cb=cb)
+    if chat_id is None:
         return
 
     await q.answer()
@@ -72,38 +123,14 @@ async def anti_spam_config_callback(update: Update, context: ContextTypes.DEFAUL
         settings = await get_chat_settings(session, chat_id)
         rules = get_antispam_rules(settings)
 
-        if op == "toggle":
-            if key == "enabled":
-                settings.anti_spam_enabled = not bool(settings.anti_spam_enabled)
-            elif key == "admin_exempt":
-                settings.anti_spam_exempt_admin = not bool(settings.anti_spam_exempt_admin)
-            elif key == "notify":
-                settings.anti_spam_delete_notify = not bool(settings.anti_spam_delete_notify)
-
-        elif op == "cycle":
-            if key == "action":
-                settings.anti_spam_action = str(_cycle(settings.anti_spam_action, SPAM_ACTIONS))
-            elif key == "mute":
-                settings.anti_spam_mute_duration = int(_cycle(settings.anti_spam_mute_duration, SPAM_MUTE_VALUES))
-            elif key == "notify_sec":
-                settings.anti_spam_delete_notify_seconds = int(
-                    _cycle(settings.anti_spam_delete_notify_seconds, SPAM_NOTIFY_SEC_VALUES)
-                )
-            elif key == "repeat_msgs":
-                settings.anti_spam_repeat_messages = int(
-                    _cycle(settings.anti_spam_repeat_messages, SPAM_REPEAT_MESSAGES_VALUES)
-                )
-            elif key == "repeat_sec":
-                settings.anti_spam_repeat_seconds = int(
-                    _cycle(settings.anti_spam_repeat_seconds, SPAM_REPEAT_SECONDS_VALUES)
-                )
-
-        elif op == "rule":
-            rule_key = RULE_CODE_MAP.get(key)
-            if rule_key:
-                rules[rule_key] = not bool(rules.get(rule_key))
-                settings.anti_spam_rules = rules
-
+        applied = _apply_anti_spam_operation(
+            settings, rules, op=cb.get(1), key=cb.get(2)
+        )
+        if not applied:
+            await answer_callback_query_safely(
+                update, "无效的反垃圾配置操作", show_alert=True
+            )
+            return
         await session.commit()
         settings = await get_chat_settings(session, chat_id)
 
