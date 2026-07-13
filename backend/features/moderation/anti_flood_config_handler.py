@@ -15,7 +15,10 @@ from backend.shared.services.chat_service import get_chat_settings
 from backend.platform.state.conversation_state_service import ConversationStateService
 from backend.shared.callback_parser import CallbackParser
 from backend.platform.telegram.errors import answer_callback_query_safely, mark_callback_query_answered
-_ANTI_FLOOD_CONFIG_CALLBACK_THRESHOLD_4 = 4
+
+_ANTI_FLOOD_CALLBACK_PARTS = 4
+_MIN_MESSAGE_COUNT = 2
+_MIN_POSITIVE_VALUE = 1
 
 
 
@@ -31,6 +34,19 @@ FLOOD_NOTIFY_SECONDS_VALUES = [60, 300, 600, 1800]
 
 _BOOL_TRUE = {"开启", "开", "on", "true", "1", "yes", "是"}
 _BOOL_TRUE_NORMALIZED = {x.lower() for x in _BOOL_TRUE}
+_TOGGLE_FIELDS = {
+    "enabled": "anti_flood_enabled",
+    "admin_exempt": "anti_flood_exempt_admin",
+    "cleanup": "anti_flood_cleanup_messages",
+    "notify": "anti_flood_delete_notify",
+}
+_CYCLE_FIELDS = {
+    "messages": ("anti_flood_messages", FLOOD_MESSAGES_VALUES, int),
+    "seconds": ("anti_flood_seconds", FLOOD_SECONDS_VALUES, int),
+    "action": ("anti_flood_action", FLOOD_ACTIONS, str),
+    "mute": ("anti_flood_mute_duration", FLOOD_MUTE_VALUES, int),
+    "notify_sec": ("anti_flood_delete_notify_seconds", FLOOD_NOTIFY_SECONDS_VALUES, int),
+}
 
 
 def _parse_bool(value: str) -> bool:
@@ -79,87 +95,99 @@ def _resolve_target_chat_id(state: ConversationState) -> int | None:
     return None
 
 
-async def anti_flood_config_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if update.callback_query is None or update.effective_user is None:
-        return
+def _valid_callback_operation(op: str, key: str) -> bool:
+    if op == "toggle":
+        return key in _TOGGLE_FIELDS
+    if op == "cycle":
+        return key in _CYCLE_FIELDS
+    return False
 
-    q = update.callback_query
 
+async def _callback_command(update: Update) -> tuple[str, str, int] | None:
     if update.effective_chat is None or update.effective_chat.type != "private":
         await answer_callback_query_safely(update, "请在私聊配置防刷屏", show_alert=True)
-        return
-
-    cb = CallbackParser.parse(q.data or "")
-    if cb.length() < _ANTI_FLOOD_CONFIG_CALLBACK_THRESHOLD_4:
-        return
-
-    op = cb.get(1)
-    key = cb.get(2)
-    chat_id = cb.get_int_optional(3)
+        return None
+    callback = CallbackParser.parse(update.callback_query.data or "")
+    if callback.length() < _ANTI_FLOOD_CALLBACK_PARTS:
+        await answer_callback_query_safely(update, "防刷屏配置指令不完整", show_alert=True)
+        return None
+    op, key = callback.get(1), callback.get(2)
+    chat_id = callback.get_int_optional(3)
     if chat_id is None or chat_id == 0:
         await answer_callback_query_safely(update, "无效的群组 ID", show_alert=True)
-        return
+        return None
+    if not _valid_callback_operation(op, key):
+        await answer_callback_query_safely(update, "不支持的防刷屏配置操作", show_alert=True)
+        return None
+    return op, key, chat_id
 
+
+async def _can_manage_flood_settings(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> bool:
     allowed, reason = await PermissionPolicyService.require_manage(
         context,
         chat_id=chat_id,
         user_id=update.effective_user.id,
         capability="settings",
     )
-    if not allowed:
-        await answer_callback_query_safely(update, reason or "你没有该群组的管理权限", show_alert=True)
+    if allowed:
+        return True
+    await answer_callback_query_safely(update, reason or "你没有该群组的管理权限", show_alert=True)
+    return False
+
+
+def _apply_callback_operation(settings: ChatSettings, op: str, key: str) -> None:
+    if op == "toggle":
+        field = _TOGGLE_FIELDS[key]
+        setattr(settings, field, not bool(getattr(settings, field)))
         return
+    field, options, converter = _CYCLE_FIELDS[key]
+    setattr(settings, field, converter(_cycle(getattr(settings, field), options)))
 
-    await q.answer()
-    mark_callback_query_answered(update)
 
+async def _update_flood_setting(context: ContextTypes.DEFAULT_TYPE, *, chat_id: int, user_id: int, op: str, key: str):
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
         await ModuleSettingsService.ensure(
             session,
             chat_id=chat_id,
             chat_type="supergroup" if chat_id < 0 else "private",
-            user_id=update.effective_user.id,
+            user_id=user_id,
         )
         settings = await get_chat_settings(session, chat_id)
-
-        if op == "toggle":
-            mapping = {
-                "enabled": "anti_flood_enabled",
-                "admin_exempt": "anti_flood_exempt_admin",
-                "cleanup": "anti_flood_cleanup_messages",
-                "notify": "anti_flood_delete_notify",
-            }
-            field = mapping.get(key)
-            if field:
-                setattr(settings, field, not bool(getattr(settings, field)))
-
-        elif op == "cycle":
-            if key == "messages":
-                settings.anti_flood_messages = int(_cycle(settings.anti_flood_messages, FLOOD_MESSAGES_VALUES))
-            elif key == "seconds":
-                settings.anti_flood_seconds = int(_cycle(settings.anti_flood_seconds, FLOOD_SECONDS_VALUES))
-            elif key == "action":
-                settings.anti_flood_action = str(_cycle(settings.anti_flood_action, FLOOD_ACTIONS))
-            elif key == "mute":
-                settings.anti_flood_mute_duration = int(_cycle(settings.anti_flood_mute_duration, FLOOD_MUTE_VALUES))
-            elif key == "notify_sec":
-                settings.anti_flood_delete_notify_seconds = int(
-                    _cycle(settings.anti_flood_delete_notify_seconds, FLOOD_NOTIFY_SECONDS_VALUES)
-                )
-
+        _apply_callback_operation(settings, op, key)
         await session.commit()
+        return await get_chat_settings(session, chat_id)
 
-        # 重新获取，确保显示最新值
-        settings = await get_chat_settings(session, chat_id)
 
+async def _render_flood_menu(query, context: ContextTypes.DEFAULT_TYPE, *, chat_id: int, settings) -> None:
     from backend.features.admin.admin_handler import AdminHandler
 
-    handler = AdminHandler()
-    chat_title = await handler._get_chat_title(db, chat_id)
+    db: Database = context.application.bot_data["db"]
+    chat_title = await AdminHandler()._get_chat_title(db, chat_id)
     text = format_anti_flood_menu_text(chat_title, settings)
-    keyboard = anti_flood_config_keyboard(settings, chat_id)
-    await q.edit_message_text(text, reply_markup=keyboard)
+    await query.edit_message_text(text, reply_markup=anti_flood_config_keyboard(settings, chat_id))
+
+
+async def anti_flood_config_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.callback_query is None or update.effective_user is None:
+        return
+    command = await _callback_command(update)
+    if command is None:
+        return
+    op, key, chat_id = command
+    if not await _can_manage_flood_settings(update, context, chat_id):
+        return
+    query = update.callback_query
+    await query.answer()
+    mark_callback_query_answered(update)
+    settings = await _update_flood_setting(
+        context,
+        chat_id=chat_id,
+        user_id=update.effective_user.id,
+        op=op,
+        key=key,
+    )
+    await _render_flood_menu(query, context, chat_id=chat_id, settings=settings)
 
 
 async def start_anti_flood_config(
@@ -210,6 +238,113 @@ async def start_anti_flood_config(
     await q.edit_message_text(text)
 
 
+def _parse_action(value: str) -> str | None:
+    return value if value in FLOOD_ACTIONS else None
+
+
+def _parse_notify(value: str) -> tuple[bool, int | None]:
+    stripped = value.strip()
+    if stripped.isdigit():
+        return True, max(_MIN_POSITIVE_VALUE, int(stripped))
+    return _parse_bool(value), None
+
+
+_TEXT_CONFIG_FIELDS = {
+    "状态": ("anti_flood_enabled", _parse_bool),
+    "总开关": ("anti_flood_enabled", _parse_bool),
+    "功能总开关": ("anti_flood_enabled", _parse_bool),
+    "触发条数": ("anti_flood_messages", lambda value: _parse_int(value, _MIN_MESSAGE_COUNT)),
+    "触发消息数": ("anti_flood_messages", lambda value: _parse_int(value, _MIN_MESSAGE_COUNT)),
+    "触发条件-消息数": ("anti_flood_messages", lambda value: _parse_int(value, _MIN_MESSAGE_COUNT)),
+    "检测间隔": ("anti_flood_seconds", lambda value: _parse_int(value, _MIN_POSITIVE_VALUE)),
+    "时间窗口": ("anti_flood_seconds", lambda value: _parse_int(value, _MIN_POSITIVE_VALUE)),
+    "触发条件-秒数": ("anti_flood_seconds", lambda value: _parse_int(value, _MIN_POSITIVE_VALUE)),
+    "惩罚动作": ("anti_flood_action", _parse_action),
+    "处罚": ("anti_flood_action", _parse_action),
+    "禁言时长": ("anti_flood_mute_duration", lambda value: _parse_int(value, _MIN_POSITIVE_VALUE)),
+    "惩罚禁言": ("anti_flood_mute_duration", lambda value: _parse_int(value, _MIN_POSITIVE_VALUE)),
+    "管理员豁免": ("anti_flood_exempt_admin", _parse_bool),
+    "触发后清理消息": ("anti_flood_cleanup_messages", _parse_bool),
+    "删除提醒时长": ("anti_flood_delete_notify_seconds", lambda value: _parse_int(value, _MIN_POSITIVE_VALUE)),
+    "提醒时长": ("anti_flood_delete_notify_seconds", lambda value: _parse_int(value, _MIN_POSITIVE_VALUE)),
+}
+_NOTIFY_KEYS = frozenset({"删除提醒", "惩罚删除提醒"})
+
+
+def _apply_text_config_field(settings: ChatSettings, key: str, value: str) -> bool:
+    if key in _NOTIFY_KEYS:
+        enabled, seconds = _parse_notify(value)
+        settings.anti_flood_delete_notify = enabled
+        if seconds is not None:
+            settings.anti_flood_delete_notify_seconds = seconds
+        return True
+    rule = _TEXT_CONFIG_FIELDS.get(key)
+    if rule is None:
+        return False
+    field, parser = rule
+    parsed = parser(value)
+    if parsed is None:
+        return False
+    setattr(settings, field, parsed)
+    return True
+
+
+def _apply_text_config(settings: ChatSettings, message_text: str) -> list[str]:
+    invalid_keys: list[str] = []
+    for raw_line in (line.strip() for line in message_text.splitlines() if line.strip()):
+        if ":" not in raw_line:
+            invalid_keys.append(raw_line)
+            continue
+        key, value = (part.strip() for part in raw_line.split(":", 1))
+        if not _apply_text_config_field(settings, key, value):
+            invalid_keys.append(key)
+    return invalid_keys
+
+
+async def _resolve_message_target(update: Update, session, state: ConversationState) -> int | None:
+    target_chat_id = _resolve_target_chat_id(state)
+    if target_chat_id is not None:
+        return target_chat_id
+    await ConversationStateService.clear(session, state.chat_id, update.effective_user.id)
+    await session.commit()
+    await update.effective_message.reply_text("❌ 无效的群组 ID，请重新进入配置")
+    return None
+
+
+async def _require_message_permission(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    session: AsyncSession,
+    *,
+    target_chat_id: int,
+) -> bool:
+    allowed, reason = await PermissionPolicyService.require_manage(
+        context,
+        chat_id=target_chat_id,
+        user_id=update.effective_user.id,
+        capability="settings",
+    )
+    if allowed:
+        return True
+    await ConversationStateService.clear(session, target_chat_id, update.effective_user.id)
+    await session.commit()
+    await update.effective_message.reply_text(f"❌ {reason or '需要管理员权限'}")
+    return False
+
+
+async def _reply_config_result(update: Update, context: ContextTypes.DEFAULT_TYPE, *, chat_id: int, settings, invalid_keys) -> None:
+    from backend.features.admin.admin_handler import AdminHandler
+
+    db: Database = context.application.bot_data["db"]
+    chat_title = await AdminHandler()._get_chat_title(db, chat_id)
+    text = "✅ 防刷屏配置已更新\n\n" + format_anti_flood_menu_text(chat_title, settings)
+    if invalid_keys:
+        keys = "、".join(sorted(set(invalid_keys)))
+        text = f"⚠️ 以下字段值无效，已忽略: {keys}\n\n{text}"
+    keyboard = anti_flood_config_keyboard(settings, chat_id)
+    await update.effective_message.reply_text(text, reply_markup=keyboard)
+
+
 async def anti_flood_config_message_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -219,26 +354,11 @@ async def anti_flood_config_message_handler(
 ) -> None:
     if update.effective_user is None or update.effective_message is None:
         return
-
-    target_chat_id = _resolve_target_chat_id(state)
+    target_chat_id = await _resolve_message_target(update, session, state)
     if target_chat_id is None:
-        await ConversationStateService.clear(session, state.chat_id, update.effective_user.id)
-        await session.commit()
-        await update.effective_message.reply_text("❌ 无效的群组 ID，请重新进入配置")
         return
-
-    allowed, reason = await PermissionPolicyService.require_manage(
-        context,
-        chat_id=target_chat_id,
-        user_id=update.effective_user.id,
-        capability="settings",
-    )
-    if not allowed:
-        await ConversationStateService.clear(session, target_chat_id, update.effective_user.id)
-        await session.commit()
-        await update.effective_message.reply_text(f"❌ {reason or '需要管理员权限'}")
+    if not await _require_message_permission(update, context, session, target_chat_id=target_chat_id):
         return
-
     await ModuleSettingsService.ensure(
         session,
         chat_id=target_chat_id,
@@ -246,65 +366,13 @@ async def anti_flood_config_message_handler(
         user_id=update.effective_user.id,
     )
     settings = await get_chat_settings(session, target_chat_id)
-
-    lines = [line.strip() for line in message_text.split("\n") if line.strip()]
-    invalid_keys: list[str] = []
-    for line in lines:
-        if ":" not in line:
-            continue
-        key, value = [x.strip() for x in line.split(":", 1)]
-
-        if key in {"状态", "总开关", "功能总开关"}:
-            settings.anti_flood_enabled = _parse_bool(value)
-        elif key in {"触发条数", "触发消息数", "触发条件-消息数"}:
-            parsed = _parse_int(value, 2)
-            if parsed is None:
-                invalid_keys.append(key)
-                continue
-            settings.anti_flood_messages = parsed
-        elif key in {"检测间隔", "时间窗口", "触发条件-秒数"}:
-            parsed = _parse_int(value, 1)
-            if parsed is None:
-                invalid_keys.append(key)
-                continue
-            settings.anti_flood_seconds = parsed
-        elif key in {"惩罚动作", "处罚"} and value in {"delete", "mute", "ban"}:
-            settings.anti_flood_action = value
-        elif key in {"禁言时长", "惩罚禁言"}:
-            parsed = _parse_int(value, 1)
-            if parsed is None:
-                invalid_keys.append(key)
-                continue
-            settings.anti_flood_mute_duration = parsed
-        elif key in {"管理员豁免"}:
-            settings.anti_flood_exempt_admin = _parse_bool(value)
-        elif key in {"触发后清理消息"}:
-            settings.anti_flood_cleanup_messages = _parse_bool(value)
-        elif key in {"删除提醒", "惩罚删除提醒"}:
-            if value.strip().isdigit():
-                settings.anti_flood_delete_notify = True
-                settings.anti_flood_delete_notify_seconds = max(1, int(value.strip()))
-            else:
-                settings.anti_flood_delete_notify = _parse_bool(value)
-        elif key in {"删除提醒时长", "提醒时长"}:
-            parsed = _parse_int(value, 1)
-            if parsed is None:
-                invalid_keys.append(key)
-                continue
-            settings.anti_flood_delete_notify_seconds = parsed
-
+    invalid_keys = _apply_text_config(settings, message_text)
     await ConversationStateService.clear(session, target_chat_id, update.effective_user.id)
     await session.commit()
-
-    db: Database = context.application.bot_data["db"]
-    from backend.features.admin.admin_handler import AdminHandler
-
-    handler = AdminHandler()
-    chat_title = await handler._get_chat_title(db, target_chat_id)
-
-    text = "✅ 防刷屏配置已更新\n\n" + format_anti_flood_menu_text(chat_title, settings)
-    if invalid_keys:
-        keys = "、".join(sorted(set(invalid_keys)))
-        text = f"⚠️ 以下字段值无效，已忽略: {keys}\n\n{text}"
-    keyboard = anti_flood_config_keyboard(settings, target_chat_id)
-    await update.effective_message.reply_text(text, reply_markup=keyboard)
+    await _reply_config_result(
+        update,
+        context,
+        chat_id=target_chat_id,
+        settings=settings,
+        invalid_keys=invalid_keys,
+    )
