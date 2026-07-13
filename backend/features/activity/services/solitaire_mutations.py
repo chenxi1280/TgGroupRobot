@@ -28,22 +28,7 @@ async def create_solitaire(
     points_required: int | None = None,
     deadline: dt.datetime | None = None,
 ) -> CreateResult:
-    """
-    创建接龙
-
-    Args:
-        session: 数据库会话
-        chat_id: 群组 ID
-        created_by_user_id: 创建者用户 ID
-        title: 接龙标题
-        description: 接龙描述
-        max_participants: 最大参与人数
-        points_required: 参与所需积分
-        deadline: 截止时间
-
-    Returns:
-        CreateResult: 创建结果
-    """
+    """创建接龙并重新加载关系数据。"""
     try:
         solitaire = Solitaire(
             chat_id=chat_id,
@@ -80,40 +65,23 @@ async def create_solitaire(
         return CreateResult(success=False, reason="error", error="接龙创建失败，请稍后重试")
 
 
-async def join_solitaire(
-    session: AsyncSession,
-    solitaire_id: int,
-    user_id: int,
-    *, username: str | None,
-    content: str,
-) -> JoinResult:
-    """
-    参与接龙
+async def _has_solitaire_points(session, solitaire, user_id: int) -> bool:
+    required = int(solitaire.points_required or 0)
+    if required <= 0:
+        return True
+    account = await ServiceBase._get_by_filters(
+        session,
+        PointsAccount,
+        {"chat_id": solitaire.chat_id, "user_id": user_id},
+    )
+    return int(account.balance if account else 0) >= required
 
-    Args:
-        session: 数据库会话
-        solitaire_id: 接龙 ID
-        user_id: 用户 ID
-        username: 用户名
-        content: 参与内容
 
-    Returns:
-        JoinResult: 参与结果
-    """
-    solitaire = await get_solitaire(session, solitaire_id)
-    if not solitaire:
-        return JoinResult(success=False, reason="not_found")
-
+async def _solitaire_join_rejection(session, solitaire, *, solitaire_id: int, user_id: int) -> JoinResult | None:
     if solitaire.status != SolitaireStatus.active.value:
         return JoinResult(success=False, reason="already_closed", entity=solitaire)
-
-    # 检查截止时间
-    if solitaire.deadline:
-        now = dt.datetime.now(dt.UTC)
-        if now > solitaire.deadline:
-            return JoinResult(success=False, reason="expired", entity=solitaire)
-
-    # 检查是否已参与
+    if solitaire.deadline and dt.datetime.now(dt.UTC) > solitaire.deadline:
+        return JoinResult(success=False, reason="expired", entity=solitaire)
     existing = await ServiceBase._get_by_filters(
         session,
         SolitaireEntry,
@@ -121,28 +89,29 @@ async def join_solitaire(
     )
     if existing:
         return JoinResult(success=False, reason="already_joined", entity=solitaire)
-
-    # 检查人数限制
-    current_count = len(solitaire.entries_rel)
-    if solitaire.max_participants and current_count >= solitaire.max_participants:
+    if solitaire.max_participants and len(solitaire.entries_rel) >= solitaire.max_participants:
         return JoinResult(success=False, reason="full", entity=solitaire)
+    if not await _has_solitaire_points(session, solitaire, user_id):
+        return JoinResult(success=False, reason="insufficient_points", entity=solitaire)
+    return None
 
-    # 检查积分限制
-    if solitaire.points_required and solitaire.points_required > 0:
-        # 如果用户没有积分账户，user_points 默认为 0
-        user_points = 0
-        points_account = await ServiceBase._get_by_filters(
-            session,
-            PointsAccount,
-            {"chat_id": solitaire.chat_id, "user_id": user_id},
-        )
-        if points_account:
-            user_points = points_account.balance
 
-        if user_points < solitaire.points_required:
-            return JoinResult(success=False, reason="insufficient_points", entity=solitaire)
-
-    # 创建参与记录
+async def join_solitaire(
+    session: AsyncSession,
+    solitaire_id: int,
+    user_id: int,
+    *, username: str | None,
+    content: str,
+) -> JoinResult:
+    """校验资格并参与接龙。"""
+    solitaire = await get_solitaire(session, solitaire_id)
+    if not solitaire:
+        return JoinResult(success=False, reason="not_found")
+    rejection = await _solitaire_join_rejection(
+        session, solitaire, solitaire_id=solitaire_id, user_id=user_id
+    )
+    if rejection is not None:
+        return rejection
     entry = SolitaireEntry(
         solitaire_id=solitaire_id,
         user_id=user_id,
