@@ -19,7 +19,7 @@ from backend.shared.services.base import ServiceBase
 from backend.features.subscription.services.subscription_service import get_or_create_chat_subscription, get_plan
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class RenewalSnapshot:
     chat_id: int
     group_title: str
@@ -30,11 +30,19 @@ class RenewalSnapshot:
     plan: SubscriptionPlan | None
 
 
-@dataclass(slots=True)
+@dataclass(frozen=True, slots=True)
 class RenewalRedeemResult:
     success: bool
     message: str
     new_end_at: dt.datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RenewalRedeemContext:
+    chat_id: int
+    operator_user_id: int
+    current_now: dt.datetime
+    masked_code: str
 
 
 def _format_price(plan: SubscriptionPlan | None) -> str:
@@ -129,6 +137,121 @@ async def _create_renewal_audit_log(
     await session.flush()
 
 
+def _normalize_utc(value: dt.datetime | None = None) -> dt.datetime:
+    normalized = value or dt.datetime.now(dt.UTC)
+    return normalized.replace(tzinfo=dt.UTC) if normalized.tzinfo is None else normalized
+
+
+def _card_rejection(card: RenewalCardKey, current_now: dt.datetime) -> tuple[str, str] | None:
+    if card.expires_at is not None and _normalize_utc(card.expires_at) <= current_now:
+        return "card_expired", "卡密已失效"
+    if card.used:
+        return "card_used", "卡密已使用"
+    if str(getattr(card, "copy_status", "") or "") == "voided":
+        return "card_voided", "卡密已作废"
+    return None
+
+
+async def _record_redeem_failure(
+    session: AsyncSession,
+    context: RenewalRedeemContext,
+    *,
+    reason: str,
+    card: RenewalCardKey | None,
+) -> None:
+    payload = {"masked_card": context.masked_code}
+    if card is not None:
+        payload["card_id"] = card.id
+    await _create_renewal_audit_log(
+        session,
+        chat_id=context.chat_id,
+        operator_user_id=context.operator_user_id,
+        action="failed",
+        reason=reason,
+        payload=payload,
+    )
+
+
+async def _load_renewal_card(
+    session: AsyncSession,
+    card_hash: str,
+) -> RenewalCardKey | None:
+    result = await session.execute(
+        select(RenewalCardKey)
+        .where(RenewalCardKey.card_key_hash == card_hash)
+        .with_for_update()
+    )
+    return result.scalar_one_or_none()
+
+
+async def _upgrade_free_subscription_plan(
+    session: AsyncSession,
+    subscription: ChatSubscription,
+) -> None:
+    current_plan = await get_plan(session, subscription.plan_id)
+    if current_plan is not None and current_plan.code != "free":
+        return
+    paid_plan = await ServiceBase._get_by_filters(
+        session, SubscriptionPlan, {"code": "pro_monthly"}
+    )
+    if paid_plan is not None:
+        subscription.plan_id = paid_plan.id
+
+
+async def _apply_card_redemption(
+    session: AsyncSession,
+    context: RenewalRedeemContext,
+    card: RenewalCardKey,
+) -> dt.datetime:
+    subscription = await get_or_create_chat_subscription(session, context.chat_id)
+    await _upgrade_free_subscription_plan(session, subscription)
+    previous_end_at = subscription.end_at
+    new_end_at = calculate_new_expire_at(
+        previous_end_at,
+        duration_seconds=card.duration_seconds,
+        now=context.current_now,
+    )
+    subscription.status = SubscriptionStatus.active.value
+    subscription.end_at = new_end_at
+    card.used = True
+    card.used_by_chat_id = context.chat_id
+    card.used_by_user_id = context.operator_user_id
+    card.used_at = context.current_now
+    await session.flush()
+    await _record_redeem_success(
+        session,
+        context,
+        card=card,
+        previous_end_at=previous_end_at,
+        new_end_at=new_end_at,
+    )
+    return new_end_at
+
+
+async def _record_redeem_success(
+    session: AsyncSession,
+    context: RenewalRedeemContext,
+    *,
+    card: RenewalCardKey,
+    previous_end_at: dt.datetime | None,
+    new_end_at: dt.datetime,
+) -> None:
+    await _create_renewal_audit_log(
+        session,
+        chat_id=context.chat_id,
+        operator_user_id=context.operator_user_id,
+        action="success",
+        reason="redeem",
+        payload={
+            "card_id": card.id,
+            "masked_card": context.masked_code,
+            "duration_seconds": int(card.duration_seconds),
+            "previous_end_at": previous_end_at.isoformat() if previous_end_at else None,
+            "new_end_at": new_end_at.isoformat(),
+        },
+    )
+
+
 async def redeem_renewal_card(
     session: AsyncSession,
     *,
@@ -137,104 +260,26 @@ async def redeem_renewal_card(
     card_code: str,
     now: dt.datetime | None = None,
 ) -> RenewalRedeemResult:
-    current_now = now or dt.datetime.now(dt.UTC)
-    if current_now.tzinfo is None:
-        current_now = current_now.replace(tzinfo=dt.UTC)
-
+    current_now = _normalize_utc(now)
     normalized_code = normalize_card_code(card_code)
-    masked_code = mask_card_code(card_code)
-    card_hash = hash_card_code(normalized_code)
-
-    card_result = await session.execute(
-        select(RenewalCardKey)
-        .where(RenewalCardKey.card_key_hash == card_hash)
-        .with_for_update()
-    )
-    card = card_result.scalar_one_or_none()
-    if card is None:
-        await _create_renewal_audit_log(
-            session,
-            chat_id=chat_id,
-            operator_user_id=operator_user_id,
-            action="failed",
-            reason="card_not_found",
-            payload={"masked_card": masked_code},
-        )
-        return RenewalRedeemResult(success=False, message="卡密不存在")
-
-    if card.expires_at is not None:
-        expires_at = card.expires_at
-        if expires_at.tzinfo is None:
-            expires_at = expires_at.replace(tzinfo=dt.UTC)
-        if expires_at <= current_now:
-            await _create_renewal_audit_log(
-                session,
-                chat_id=chat_id,
-                operator_user_id=operator_user_id,
-                action="failed",
-                reason="card_expired",
-                payload={"card_id": card.id, "masked_card": masked_code},
-            )
-            return RenewalRedeemResult(success=False, message="卡密已失效")
-
-    if card.used:
-        await _create_renewal_audit_log(
-            session,
-            chat_id=chat_id,
-            operator_user_id=operator_user_id,
-            action="failed",
-            reason="card_used",
-            payload={"card_id": card.id, "masked_card": masked_code},
-        )
-        return RenewalRedeemResult(success=False, message="卡密已使用")
-
-    if str(getattr(card, "copy_status", "") or "") == "voided":
-        await _create_renewal_audit_log(
-            session,
-            chat_id=chat_id,
-            operator_user_id=operator_user_id,
-            action="failed",
-            reason="card_voided",
-            payload={"card_id": card.id, "masked_card": masked_code},
-        )
-        return RenewalRedeemResult(success=False, message="卡密已作废")
-
-    subscription = await get_or_create_chat_subscription(session, chat_id)
-    current_plan = await get_plan(session, subscription.plan_id)
-    if current_plan is None or current_plan.code == "free":
-        paid_plan = await ServiceBase._get_by_filters(session, SubscriptionPlan, {"code": "pro_monthly"})
-        if paid_plan is not None:
-            subscription.plan_id = paid_plan.id
-
-    previous_end_at = subscription.end_at
-    new_end_at = calculate_new_expire_at(
-        previous_end_at,
-        duration_seconds=card.duration_seconds,
-        now=current_now,
-    )
-
-    subscription.status = SubscriptionStatus.active.value
-    subscription.end_at = new_end_at
-    card.used = True
-    card.used_by_chat_id = chat_id
-    card.used_by_user_id = operator_user_id
-    card.used_at = current_now
-    await session.flush()
-
-    await _create_renewal_audit_log(
-        session,
+    context = RenewalRedeemContext(
         chat_id=chat_id,
         operator_user_id=operator_user_id,
-        action="success",
-        reason="redeem",
-        payload={
-            "card_id": card.id,
-            "masked_card": masked_code,
-            "duration_seconds": int(card.duration_seconds),
-            "previous_end_at": previous_end_at.isoformat() if previous_end_at else None,
-            "new_end_at": new_end_at.isoformat(),
-        },
+        current_now=current_now,
+        masked_code=mask_card_code(card_code),
     )
+    card = await _load_renewal_card(session, hash_card_code(normalized_code))
+    if card is None:
+        await _record_redeem_failure(
+            session, context, reason="card_not_found", card=None
+        )
+        return RenewalRedeemResult(success=False, message="卡密不存在")
+    rejection = _card_rejection(card, current_now)
+    if rejection is not None:
+        reason, message = rejection
+        await _record_redeem_failure(session, context, reason=reason, card=card)
+        return RenewalRedeemResult(success=False, message=message)
+    new_end_at = await _apply_card_redemption(session, context, card)
     return RenewalRedeemResult(
         success=True,
         message=f"续费成功，到期时间已更新为：{_format_end_at(new_end_at)}",
