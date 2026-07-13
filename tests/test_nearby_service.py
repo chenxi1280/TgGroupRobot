@@ -12,6 +12,7 @@ from backend.features.nearby.services.nearby_profile_service import (
     haversine_distance_km,
     list_nearby_entries,
 )
+from backend.features.nearby.ui.nearby import nearby_detail_keyboard
 
 
 def test_haversine_distance_zero() -> None:
@@ -43,6 +44,14 @@ def test_build_user_display_name_priority() -> None:
 
     user = SimpleNamespace(id=42, username=None, first_name=None, last_name=None)
     assert build_user_display_name(user, 42) == "用户42"
+
+
+def test_nearby_detail_only_exposes_implemented_actions() -> None:
+    keyboard = nearby_detail_keyboard(-1001, 42, 3)
+    buttons = [button for row in keyboard.inline_keyboard for button in row]
+
+    assert [button.text for button in buttons] == ["💬 发起私聊", "🔙 返回列表"]
+    assert all(not (button.callback_data or "").startswith(("lbs:fav", "lbs:report")) for button in buttons)
 
 
 @pytest.mark.asyncio

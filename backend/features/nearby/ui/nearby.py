@@ -71,11 +71,6 @@ def nearby_detail_keyboard(chat_id: int, user_id: int, back_page: int) -> Inline
     return InlineKeyboardMarkup(
         [
             [InlineKeyboardButton("💬 发起私聊", url=f"tg://user?id={user_id}")],
-            [
-                InlineKeyboardButton("⭐ 收藏", callback_data=f"lbs:fav:{chat_id}:{user_id}"),
-                InlineKeyboardButton("🚩 举报", callback_data=f"lbs:report:{chat_id}:{user_id}"),
-            ],
             [InlineKeyboardButton("🔙 返回列表", callback_data=f"lbs:list:{chat_id}:{back_page}")],
         ]
     )
-
