@@ -918,7 +918,8 @@ async def test_anti_flood_handler_records_final_action(monkeypatch):
         await anti_flood_handler.anti_flood_message_handler(update, context)
 
     assert recorded[0]["action"] == "delete"
-    assert executed[0]["args"][3] == "delete"
+    assert executed[0]["kwargs"]["action"] == "delete"
+    assert len(executed[0]["args"]) == 3
     assert session.commits == 2
 
 
