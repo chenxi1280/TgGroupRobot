@@ -153,24 +153,24 @@ def _parse_title(line: str) -> tuple[str, str | None]:
 def _collect_subscribe_values(text: str) -> list[str]:
     values: list[str] = []
     target_block = False
-    field_names = CONFIG_FIELD_NAMES | set(WINNER_FIELD_PREFIXES)
     for raw_line in text.strip().split("\n")[1:]:
-        line = raw_line.strip()
-        if not line or line == "奖品:" or is_winner_field(line):
-            target_block = False
-            continue
-        split_line = split_config_line(line)
-        if split_line and split_line[0] == "关注目标":
-            if split_line[1]:
-                values.append(split_line[1])
-            else:
-                target_block = True
-            continue
-        if target_block and (split_line is None or split_line[0] not in field_names):
-            values.append(line)
-        elif target_block:
-            target_block = False
+        target_block, value = _parse_subscribe_line(raw_line, target_block)
+        if value:
+            values.append(value)
     return values
+
+
+def _parse_subscribe_line(raw_line: str, target_block: bool) -> tuple[bool, str | None]:
+    line = raw_line.strip()
+    if not line or line == "奖品:" or is_winner_field(line):
+        return False, None
+    split_line = split_config_line(line)
+    if split_line and split_line[0] == "关注目标":
+        return not split_line[1], split_line[1] or None
+    field_names = CONFIG_FIELD_NAMES | set(WINNER_FIELD_PREFIXES)
+    if target_block and (split_line is None or split_line[0] not in field_names):
+        return True, line
+    return False, None
 
 
 def _apply_field(values: _ConfigValues, field_name: str, field_value: str) -> None:
@@ -242,20 +242,63 @@ def _validate_values(
     selection_mode: str,
     draw_trigger: str,
 ) -> None:
+    _validate_draw_values(values, draw_trigger)
+    _validate_lottery_type_values(values, lottery_type)
+    _validate_selection_values(values, selection_mode)
+
+
+def _validate_draw_values(values: _ConfigValues, draw_trigger: str) -> None:
     if draw_trigger == "time_deadline" and values.draw_time is None:
         raise ValueError("定时开奖必须配置开奖时间，格式如：开奖时间: 2025-12-30 12:00")
     if draw_trigger == "full_participants" and values.max_participants <= 0:
         raise ValueError("满人开奖必须配置最大人数或满员人数，且必须大于 0")
+
+
+def _validate_lottery_type_values(values: _ConfigValues, lottery_type: str) -> None:
     if lottery_type == "invite" and values.required_invites <= 0:
         raise ValueError("邀请抽奖必须配置邀请人数，格式如：邀请人数: 3")
     if lottery_type == "activity" and values.required_activity_count <= 0:
         raise ValueError("群活跃抽奖必须配置活跃消息数，格式如：活跃消息数: 200")
     if lottery_type in {"invite", "activity"} and values.qualification_window_days <= 0:
         values.qualification_window_days = DEFAULT_QUALIFICATION_DAYS
-    if selection_mode == "ranking_random" and values.finalist_limit <= 0:
-        raise ValueError("排名入围随机玩法必须配置入围人数，格式如：入围人数: 10")
     if lottery_type == "subscribe" and not values.subscribe_values:
         raise ValueError("强制订阅抽奖必须配置关注目标，格式如：关注目标: @channel")
+
+
+def _validate_selection_values(values: _ConfigValues, selection_mode: str) -> None:
+    if selection_mode == "ranking_random" and values.finalist_limit <= 0:
+        raise ValueError("排名入围随机玩法必须配置入围人数，格式如：入围人数: 10")
+
+
+def _parse_winner_config(
+    text: str,
+    prizes: list[dict],
+    *,
+    allow_unresolved_refs: bool,
+) -> tuple[list[int], list[dict]]:
+    winner_values = collect_winner_reference_values(text)
+    winner_ids, assignments = parse_preset_winner_values(
+        winner_values,
+        prizes,
+        allow_unresolved_refs=allow_unresolved_refs,
+    )
+    prize_slots = sum(int(prize.get("quantity", 1)) for prize in prizes)
+    if len(winner_ids) > prize_slots:
+        raise ValueError("内定中奖人数不能超过奖品总数量")
+    return winner_ids, assignments
+
+
+def _validate_draw_trigger(draw_trigger: str) -> str:
+    decoded = decode_draw_trigger(draw_trigger)
+    if decoded not in VALID_DRAW_TRIGGERS:
+        raise ValueError(f"不支持的开奖条件: {draw_trigger}")
+    return decoded
+
+
+def _parse_subscribe_targets(values: _ConfigValues, lottery_type: str) -> list[dict] | None:
+    if lottery_type != "subscribe":
+        return None
+    return parse_lottery_subscribe_targets("\n".join(values.subscribe_values))
 
 
 def parse_lottery_config_text(
@@ -271,21 +314,15 @@ def parse_lottery_config_text(
         raise ValueError("配置格式不完整")
     lottery_type = decode_lottery_type(lottery_type)
     selection_mode = decode_selection_mode(selection_mode)
-    draw_trigger = decode_draw_trigger(draw_trigger)
-    draw_trigger = (
-        draw_trigger if draw_trigger in VALID_DRAW_TRIGGERS else "time_deadline"
-    )
+    draw_trigger = _validate_draw_trigger(draw_trigger)
     title, description = _parse_title(lines[0])
     values = _parse_fields(text, lines)
     prizes = _parse_prizes(lines)
-    winner_values = collect_winner_reference_values(text)
-    winner_ids, assignments = parse_preset_winner_values(
-        winner_values,
+    winner_ids, assignments = _parse_winner_config(
+        text,
         prizes,
         allow_unresolved_refs=allow_unresolved_winner_refs,
     )
-    if len(winner_ids) > sum(int(prize.get("quantity", 1)) for prize in prizes):
-        raise ValueError("内定中奖人数不能超过奖品总数量")
     _validate_values(
         values,
         lottery_type=lottery_type,
@@ -295,11 +332,7 @@ def parse_lottery_config_text(
     draw_time = values.draw_time or dt.datetime.now(dt.UTC) + dt.timedelta(
         days=FAR_FUTURE_DAYS
     )
-    subscribe_targets = (
-        parse_lottery_subscribe_targets("\n".join(values.subscribe_values))
-        if lottery_type == "subscribe"
-        else None
-    )
+    subscribe_targets = _parse_subscribe_targets(values, lottery_type)
     return _build_parsed_config(
         values,
         lottery_type=lottery_type,
