@@ -35,6 +35,25 @@ def _build_force_subscribe_channel_button_preview(value: str | None) -> InlineKe
     return _build_force_subscribe_channel_button(value)
 
 
+def _custom_preview_rows(settings) -> list[list[InlineKeyboardButton]]:
+    if not bool(getattr(settings, "force_subscribe_custom_buttons_enabled", False)):
+        return []
+    custom_buttons = getattr(settings, "force_subscribe_buttons", None) or []
+    if not custom_buttons:
+        return []
+    try:
+        normalized = ScheduledMessageService.normalize_buttons_config(custom_buttons)
+    except Exception as exc:
+        log.warning("force_subscribe_preview_buttons_normalize_failed", error=str(exc))
+        return []
+    return [[InlineKeyboardButton(item["text"], url=item["url"]) for item in row] for row in normalized]
+
+
+def _back_preview_row(chat_id: int, back_callback: str | None) -> list[InlineKeyboardButton]:
+    callback = back_callback or f"adm:menu:forcesub:{chat_id}"
+    return [InlineKeyboardButton("🔙 返回", callback_data=callback)]
+
+
 async def describe_force_subscribe_target(context: ContextTypes.DEFAULT_TYPE, value: str | None) -> str:
     if not value:
         return "未绑定"
@@ -51,24 +70,14 @@ def build_force_subscribe_preview_markup(
     *,
     back_callback: str | None = None,
 ) -> InlineKeyboardMarkup:
-    rows: list[list[InlineKeyboardButton]] = []
-    custom_enabled = bool(getattr(settings, "force_subscribe_custom_buttons_enabled", False))
-    custom_buttons = getattr(settings, "force_subscribe_buttons", None) or []
-    if custom_enabled and custom_buttons:
-        try:
-            normalized = ScheduledMessageService.normalize_buttons_config(custom_buttons)
-            for row in normalized:
-                rows.append([InlineKeyboardButton(item["text"], url=item["url"]) for item in row])
-        except Exception as exc:
-            log.warning("force_subscribe_preview_buttons_normalize_failed", error=str(exc))
-            rows = []
+    rows = _custom_preview_rows(settings)
     if not rows:
         fallback_buttons = [
             _build_force_subscribe_channel_button_preview(getattr(settings, "force_subscribe_bound_channel_1", None)),
             _build_force_subscribe_channel_button_preview(getattr(settings, "force_subscribe_bound_channel_2", None)),
         ]
         rows.extend([[button] for button in fallback_buttons if button is not None])
-    rows.append([InlineKeyboardButton("🔙 返回", callback_data=back_callback or f"adm:menu:forcesub:{chat_id}")])
+    rows.append(_back_preview_row(chat_id, back_callback))
     return InlineKeyboardMarkup(rows)
 
 
@@ -79,17 +88,7 @@ async def build_force_subscribe_preview_markup_async(
     *,
     back_callback: str | None = None,
 ) -> InlineKeyboardMarkup:
-    rows: list[list[InlineKeyboardButton]] = []
-    custom_enabled = bool(getattr(settings, "force_subscribe_custom_buttons_enabled", False))
-    custom_buttons = getattr(settings, "force_subscribe_buttons", None) or []
-    if custom_enabled and custom_buttons:
-        try:
-            normalized = ScheduledMessageService.normalize_buttons_config(custom_buttons)
-            for row in normalized:
-                rows.append([InlineKeyboardButton(item["text"], url=item["url"]) for item in row])
-        except Exception as exc:
-            log.warning("force_subscribe_preview_buttons_normalize_failed", error=str(exc))
-            rows = []
+    rows = _custom_preview_rows(settings)
     if not rows:
         for value in (
             getattr(settings, "force_subscribe_bound_channel_1", None),
@@ -98,8 +97,55 @@ async def build_force_subscribe_preview_markup_async(
             button = await _build_resolved_force_subscribe_channel_button(context, value)
             if button is not None:
                 rows.append([button])
-    rows.append([InlineKeyboardButton("🔙 返回", callback_data=back_callback or f"adm:menu:forcesub:{chat_id}")])
+    rows.append(_back_preview_row(chat_id, back_callback))
     return InlineKeyboardMarkup(rows)
+
+
+async def _apply_channel_input(update, context, settings, *, state_type: str, message_text: str) -> bool:
+    attribute = {
+        "force_subscribe_channel_1_input": "force_subscribe_bound_channel_1",
+        "force_subscribe_channel_2_input": "force_subscribe_bound_channel_2",
+    }.get(state_type)
+    if attribute is None:
+        return False
+    return await _apply_force_subscribe_target(
+        update,
+        context,
+        settings,
+        attr_name=attribute,
+        message_text=message_text,
+    )
+
+
+async def _apply_force_subscribe_input(update, context, settings, *, state_type: str, message_text: str) -> bool:
+    if state_type.startswith("force_subscribe_channel_"):
+        return await _apply_channel_input(
+            update,
+            context,
+            settings,
+            state_type=state_type,
+            message_text=message_text,
+        )
+    if state_type == "force_subscribe_text_input":
+        value = message_text.strip()
+        if value:
+            settings.force_subscribe_guide_text = value
+            return True
+        await update.effective_message.reply_text("文案不能为空。")
+        return False
+    if state_type == "force_subscribe_buttons_input":
+        return await _apply_force_subscribe_buttons(update, settings, message_text)
+    if state_type == "force_subscribe_cover_input":
+        return await _apply_force_subscribe_cover(update, settings, message_text)
+    await update.effective_message.reply_text(f"未知输入状态：{state_type}")
+    return False
+
+
+async def _show_force_subscribe_return(update, context, target_chat_id: int, *, state_data) -> None:
+    if isinstance(state_data, dict) and state_data.get("return_to") == "verification_self_review":
+        await admin_handler_instance()._show_join_self_review_menu(update, context, target_chat_id)
+        return
+    await admin_handler_instance()._show_force_subscribe_menu(update, context, target_chat_id)
 
 
 async def handle_force_subscribe_channel_input(
@@ -116,31 +162,18 @@ async def handle_force_subscribe_channel_input(
         return
     settings = await admin_module().get_chat_settings(session, target_chat_id)
 
-    if state.state_type == "force_subscribe_channel_1_input":
-        if not await _apply_force_subscribe_target(update, context, settings, attr_name="force_subscribe_bound_channel_1", message_text=message_text):
-            return
-    elif state.state_type == "force_subscribe_channel_2_input":
-        if not await _apply_force_subscribe_target(update, context, settings, attr_name="force_subscribe_bound_channel_2", message_text=message_text):
-            return
-    elif state.state_type == "force_subscribe_text_input":
-        value = message_text.strip()
-        if not value:
-            await update.effective_message.reply_text("文案不能为空。")
-            return
-        settings.force_subscribe_guide_text = value
-    elif state.state_type == "force_subscribe_buttons_input":
-        if not await _apply_force_subscribe_buttons(update, settings, message_text):
-            return
-    elif state.state_type == "force_subscribe_cover_input":
-        if not await _apply_force_subscribe_cover(update, settings, message_text):
-            return
+    if not await _apply_force_subscribe_input(
+        update,
+        context,
+        settings,
+        state_type=state.state_type,
+        message_text=message_text,
+    ):
+        return
 
     await clear_admin_input_state(session, target_chat_id=target_chat_id, user_id=update.effective_user.id)
     await session.commit()
-    if isinstance(state.state_data, dict) and state.state_data.get("return_to") == "verification_self_review":
-        await admin_handler_instance()._show_join_self_review_menu(update, context, target_chat_id)
-        return
-    await admin_handler_instance()._show_force_subscribe_menu(update, context, target_chat_id)
+    await _show_force_subscribe_return(update, context, target_chat_id, state_data=state.state_data)
 
 
 def _optional_text(message_text: str) -> str | None:
@@ -182,9 +215,7 @@ async def _validate_force_subscribe_target(update: Update, context: ContextTypes
         return False
 
     target = _normalize_force_subscribe_target(value)
-    raw = value.strip()
-    is_public_input = raw.startswith("@") or raw.startswith("https://t.me/") or raw.startswith("http://t.me/")
-    if target is None or not is_public_input or isinstance(target, int):
+    if not _is_public_force_subscribe_target(value, target):
         await message.reply_text("目标格式错误，请填写公开频道或群组的 @用户名 / t.me 链接，不支持裸用户名、数字 ID 或私密邀请链接。")
         return False
 
@@ -195,25 +226,41 @@ async def _validate_force_subscribe_target(update: Update, context: ContextTypes
         await message.reply_text("无法访问该频道/群组，请确认机器人已加入目标并具备管理员权限。")
         return False
 
+    if not await _validate_target_chat(message, target_chat):
+        return False
+    return await _validate_bot_membership(context, message, target)
+
+
+def _is_public_force_subscribe_target(value: str, target) -> bool:
+    raw = value.strip()
+    is_public_input = raw.startswith(("@", "https://t.me/", "http://t.me/"))
+    return target is not None and is_public_input and not isinstance(target, int)
+
+
+async def _validate_target_chat(message, target_chat) -> bool:
     if target_chat.type not in {"channel", "group", "supergroup"}:
         await message.reply_text("本期不支持机器人目标，请绑定频道或群组。")
         return False
-    if not str(getattr(target_chat, "username", "") or "").strip():
-        await message.reply_text("该频道/群组没有公开用户名，无法生成关注按钮。请绑定公开频道/群组的 @用户名。")
-        return False
+    if str(getattr(target_chat, "username", "") or "").strip():
+        return True
+    await message.reply_text("该频道/群组没有公开用户名，无法生成关注按钮。请绑定公开频道/群组的 @用户名。")
+    return False
 
+
+async def _validate_bot_membership(context, message, target) -> bool:
     bot_id = getattr(context.bot, "id", None)
-    if bot_id is not None:
-        try:
-            bot_member = await context.bot.get_chat_member(chat_id=target, user_id=bot_id)
-        except Exception as exc:
-            log.warning("force_subscribe_target_bot_member_lookup_failed", target=target, bot_id=bot_id, error=str(exc))
-            await message.reply_text("无法确认机器人在目标频道/群组中的权限，请先将机器人加入并设为管理员。")
-            return False
-        if getattr(bot_member, "status", None) not in {"administrator", "creator"}:
-            await message.reply_text("请先将机器人设为目标频道/群组管理员，否则无法稳定校验成员关注状态。")
-            return False
-    return True
+    if bot_id is None:
+        return True
+    try:
+        bot_member = await context.bot.get_chat_member(chat_id=target, user_id=bot_id)
+    except Exception as exc:
+        log.warning("force_subscribe_target_bot_member_lookup_failed", target=target, bot_id=bot_id, error=str(exc))
+        await message.reply_text("无法确认机器人在目标频道/群组中的权限，请先将机器人加入并设为管理员。")
+        return False
+    if getattr(bot_member, "status", None) in {"administrator", "creator"}:
+        return True
+    await message.reply_text("请先将机器人设为目标频道/群组管理员，否则无法稳定校验成员关注状态。")
+    return False
 
 
 async def _apply_force_subscribe_buttons(update: Update, settings, message_text: str) -> bool:
