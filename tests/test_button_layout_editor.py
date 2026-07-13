@@ -117,6 +117,15 @@ def test_button_layout_editor_auto_reply_detail_exposes_trigger_editor() -> None
     assert keyboard.inline_keyboard[1][0].callback_data == "btned:payload:auto_reply:-1001:10:0:0"
 
 
+def test_button_layout_editor_detail_move_callbacks_work_for_non_auto_reply() -> None:
+    keyboard = build_detail_keyboard(ButtonEditorContext("ads", -1001, 9, 0, 0))
+
+    assert keyboard.inline_keyboard[1][0].callback_data.endswith(":up")
+    assert keyboard.inline_keyboard[2][0].callback_data.endswith(":left")
+    assert keyboard.inline_keyboard[2][1].callback_data.endswith(":right")
+    assert keyboard.inline_keyboard[3][0].callback_data.endswith(":down")
+
+
 def test_button_layout_editor_move_supports_horizontal_and_vertical() -> None:
     grid = ButtonLayoutEditorService.to_grid([
         [{"text": "A", "url": "https://a.com"}, {"text": "B", "url": "https://b.com"}],
@@ -217,6 +226,37 @@ async def test_button_layout_editor_clear_callback_persists_empty_buttons(monkey
     assert saved == []
     assert context.user_data["button_editor_drafts"]["auto_reply:-1001:10"] == [[]]
     assert shown and shown[0].module_type == "auto_reply"
+
+
+@pytest.mark.asyncio
+async def test_button_layout_editor_add_callback_opens_new_button_detail(monkeypatch) -> None:
+    shown: list[ButtonEditorContext] = []
+
+    async def fake_save_buttons(session, editor_ctx, buttons):
+        return None
+
+    async def fake_show_button_detail(update, context, editor_ctx, *, session=None):
+        shown.append(editor_ctx)
+
+    async def fake_require_manage(_context, chat_id: int, user_id: int, capability: str = "manage"):
+        return True, None
+
+    monkeypatch.setattr(button_layout_editor, "_save_buttons_for_module", fake_save_buttons)
+    monkeypatch.setattr(button_layout_editor, "show_button_detail", fake_show_button_detail)
+    monkeypatch.setattr(button_layout_editor.PermissionPolicyService, "require_manage", fake_require_manage)
+
+    context = SimpleNamespace(
+        application=SimpleNamespace(bot_data={"db": _Db()}),
+        user_data={"button_editor_drafts": {"ads:-1001:9": [[]]}},
+    )
+    update = SimpleNamespace(
+        callback_query=_CallbackQuery("btned:add:ads:-1001:9:0:0"),
+        effective_user=SimpleNamespace(id=42),
+    )
+
+    await button_layout_editor_callback(update, context)
+
+    assert shown == [ButtonEditorContext("ads", -1001, 9, 0, 0)]
 
 
 @pytest.mark.asyncio
