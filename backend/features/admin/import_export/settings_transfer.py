@@ -68,7 +68,7 @@ class SettingsTransferAdminMixin:
             selected = "✅" if item["key"] in modules else "❌"
             callback = f"adm:{mode}:{chat_id}:module:{item['key']}"
             rows.append([InlineKeyboardButton(f"{selected} {item['label']}", callback_data=callback)])
-        rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:{mode}:{chat_id}")])
+        rows.append([InlineKeyboardButton("🔙 返回", callback_data="adm:menu:" + mode + f":{chat_id}")])
         action_name = "导入" if mode == "import" else "克隆"
         await self.message_helper.safe_edit(update, f"选择要{action_name}的模块：", reply_markup=InlineKeyboardMarkup(rows))
 
@@ -107,7 +107,8 @@ class SettingsTransferAdminMixin:
             await session.commit()
         state["modules"] = []
         result_label = "导入" if mode == "import" else "克隆"
-        markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:{mode}:{chat_id}")]])
+        callback = "adm:menu:" + mode + f":{chat_id}"
+        markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=callback)]])
         await self.message_helper.safe_edit(update, f"✅ {result_label}完成", reply_markup=markup)
 
     async def _handle_transfer_mutation(self, update, context, chat_id: int, *, op: str, state, modules: set, mode: str) -> bool:
