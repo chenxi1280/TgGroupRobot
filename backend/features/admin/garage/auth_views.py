@@ -3,6 +3,72 @@ from __future__ import annotations
 from backend.features.admin.support import *
 
 
+def _garage_auth_text(settings, *, teacher_count: int, whitelist_count: int) -> str:
+    mode = {"none": "关闭", "image": "图", "image_text": "文+图"}.get(
+        settings.garage_limit_mode, settings.garage_limit_mode
+    )
+    return (
+        "🚗 车库认证\n\n自动对车库频道进行识别，需要提前找锅巴洋芋进行车库对接。\n\n"
+        f"状态：{'✅ 启用' if settings.garage_auth_enabled else '❌ 关闭'}\n"
+        f"认证图标：{settings.garage_auth_badge}\n手动认证老师：{teacher_count} 人\n"
+        f"限制发言：{'✅ 启用' if settings.garage_limit_enabled else '❌ 关闭'}\n"
+        f"限制模式：{mode}\n时间间隔：{settings.garage_limit_interval_sec // 3600} 小时\n"
+        f"限制条数：{settings.garage_limit_max_count} 条\n白名单：{whitelist_count} 人"
+    )
+
+
+def _garage_auth_status_rows(settings, chat_id: int) -> list:
+    return [
+        [
+            InlineKeyboardButton("⚙️ 状态：", callback_data=f"grg:home:{chat_id}"),
+            InlineKeyboardButton(
+                "✅ 启动" if settings.garage_auth_enabled else "启动",
+                callback_data=f"grg:toggle:{chat_id}:1",
+            ),
+            InlineKeyboardButton(
+                "关闭" if settings.garage_auth_enabled else "❌ 关闭",
+                callback_data=f"grg:toggle:{chat_id}:0",
+            ),
+        ],
+        [
+            InlineKeyboardButton("⚙️ 认证图标", callback_data=f"grg:badge:{chat_id}"),
+            InlineKeyboardButton(
+                settings.garage_auth_badge or "🤝", callback_data=f"grg:badge:{chat_id}"
+            ),
+        ],
+        [InlineKeyboardButton("💌 手动认证老师", callback_data=f"grg:teacher:list:{chat_id}:0")],
+        [InlineKeyboardButton("📇 生成老师汇总信息", callback_data=f"grg:summary:menu:{chat_id}")],
+    ]
+
+
+def _garage_limit_rows(settings, chat_id: int) -> list:
+    mode = settings.garage_limit_mode
+    return [
+        [
+            InlineKeyboardButton("⚙️ 限制发言：", callback_data=f"grg:home:{chat_id}"),
+            InlineKeyboardButton(
+                "✅ 开启" if settings.garage_limit_enabled else "开启",
+                callback_data=f"grg:limit:toggle:{chat_id}:1",
+            ),
+            InlineKeyboardButton(
+                "关闭" if settings.garage_limit_enabled else "❌ 关闭",
+                callback_data=f"grg:limit:toggle:{chat_id}:0",
+            ),
+        ],
+        [
+            InlineKeyboardButton("✅ 图" if mode == "image" else "图", callback_data=f"grg:limit:mode:{chat_id}:image"),
+            InlineKeyboardButton("✅ 文+图" if mode == "image_text" else "文+图", callback_data=f"grg:limit:mode:{chat_id}:image_text"),
+            InlineKeyboardButton("✅ 关闭" if mode == "none" else "关闭", callback_data=f"grg:limit:mode:{chat_id}:none"),
+        ],
+        [
+            InlineKeyboardButton(f"时间间隔（{settings.garage_limit_interval_sec // 3600}小时）", callback_data=f"grg:limit:interval:{chat_id}"),
+            InlineKeyboardButton(f"限制条数（{settings.garage_limit_max_count}条）", callback_data=f"grg:limit:max:{chat_id}"),
+        ],
+        [InlineKeyboardButton("📄 限制发言白名单", callback_data=f"grg:wl:list:{chat_id}:0")],
+        [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
+    ]
+
+
 class GarageAuthViewsMixin:
     async def _show_garage_auth_menu(
         self,
@@ -20,79 +86,12 @@ class GarageAuthViewsMixin:
             whitelist = await GarageAuthService.list_whitelist(session, chat_id)
             await session.commit()
 
-        limit_mode_label = {
-            "none": "关闭",
-            "image": "图",
-            "image_text": "文+图",
-        }.get(settings.garage_limit_mode, settings.garage_limit_mode)
-        text = (
-            "🚗 车库认证\n\n"
-            "自动对车库频道进行识别，需要提前找锅巴洋芋进行车库对接。\n\n"
-            f"状态：{'✅ 启用' if settings.garage_auth_enabled else '❌ 关闭'}\n"
-            f"认证图标：{settings.garage_auth_badge}\n"
-            f"手动认证老师：{len(teachers)} 人\n"
-            f"限制发言：{'✅ 启用' if settings.garage_limit_enabled else '❌ 关闭'}\n"
-            f"限制模式：{limit_mode_label}\n"
-            f"时间间隔：{settings.garage_limit_interval_sec // 3600} 小时\n"
-            f"限制条数：{settings.garage_limit_max_count} 条\n"
-            f"白名单：{len(whitelist)} 人"
+        text = _garage_auth_text(
+            settings, teacher_count=len(teachers), whitelist_count=len(whitelist)
         )
-        keyboard = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("⚙️ 状态：", callback_data=f"grg:home:{chat_id}"),
-                InlineKeyboardButton(
-                    "✅ 启动" if settings.garage_auth_enabled else "启动",
-                    callback_data=f"grg:toggle:{chat_id}:1",
-                ),
-                InlineKeyboardButton(
-                    "关闭" if settings.garage_auth_enabled else "❌ 关闭",
-                    callback_data=f"grg:toggle:{chat_id}:0",
-                ),
-            ],
-            [
-                InlineKeyboardButton("⚙️ 认证图标", callback_data=f"grg:badge:{chat_id}"),
-                InlineKeyboardButton(settings.garage_auth_badge or "🤝", callback_data=f"grg:badge:{chat_id}"),
-            ],
-            [InlineKeyboardButton("💌 手动认证老师", callback_data=f"grg:teacher:list:{chat_id}:0")],
-            [InlineKeyboardButton("📇 生成老师汇总信息", callback_data=f"grg:summary:menu:{chat_id}")],
-            [
-                InlineKeyboardButton("⚙️ 限制发言：", callback_data=f"grg:home:{chat_id}"),
-                InlineKeyboardButton(
-                    "✅ 开启" if settings.garage_limit_enabled else "开启",
-                    callback_data=f"grg:limit:toggle:{chat_id}:1",
-                ),
-                InlineKeyboardButton(
-                    "关闭" if settings.garage_limit_enabled else "❌ 关闭",
-                    callback_data=f"grg:limit:toggle:{chat_id}:0",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    "✅ 图" if settings.garage_limit_mode == "image" else "图",
-                    callback_data=f"grg:limit:mode:{chat_id}:image",
-                ),
-                InlineKeyboardButton(
-                    "✅ 文+图" if settings.garage_limit_mode == "image_text" else "文+图",
-                    callback_data=f"grg:limit:mode:{chat_id}:image_text",
-                ),
-                InlineKeyboardButton(
-                    "✅ 关闭" if settings.garage_limit_mode == "none" else "关闭",
-                    callback_data=f"grg:limit:mode:{chat_id}:none",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    f"时间间隔（{settings.garage_limit_interval_sec // 3600}小时）",
-                    callback_data=f"grg:limit:interval:{chat_id}",
-                ),
-                InlineKeyboardButton(
-                    f"限制条数（{settings.garage_limit_max_count}条）",
-                    callback_data=f"grg:limit:max:{chat_id}",
-                ),
-            ],
-            [InlineKeyboardButton("📄 限制发言白名单", callback_data=f"grg:wl:list:{chat_id}:0")],
-            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
-        ])
+        keyboard = InlineKeyboardMarkup(
+            [*_garage_auth_status_rows(settings, chat_id), *_garage_limit_rows(settings, chat_id)]
+        )
         await self.message_helper.safe_edit(update, text, reply_markup=keyboard)
 
     async def _show_garage_summary_menu(
