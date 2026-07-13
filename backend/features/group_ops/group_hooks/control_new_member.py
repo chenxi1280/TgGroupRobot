@@ -15,6 +15,19 @@ from backend.shared.services.formatters import format_user_display_name
 
 log = structlog.get_logger(__name__)
 
+DEFAULT_LIMIT_WINDOW_SECONDS = 3600
+DEFAULT_WARN_DELETE_SECONDS = 60
+MEDIA_ATTRIBUTES = (
+    "photo",
+    "video",
+    "document",
+    "animation",
+    "sticker",
+    "audio",
+    "voice",
+    "video_note",
+)
+
 
 def _message_contains_link(message) -> bool:
     entities = list(getattr(message, "entities", None) or [])
@@ -51,6 +64,77 @@ async def _get_member_joined_at(db: Database, chat_id: int, user_id: int) -> dt.
     return result.scalar_one_or_none()
 
 
+def _is_blocked_message(message, settings) -> bool:
+    message_text = getattr(message, "text", None) or getattr(message, "caption", None) or ""
+    has_media = any(getattr(message, attribute, None) for attribute in MEDIA_ATTRIBUTES)
+    has_link = _message_contains_link(message)
+    blocks_media = bool(getattr(settings, "new_member_limit_block_media", True)) and has_media
+    blocks_link = bool(getattr(settings, "new_member_limit_block_links", True)) and has_link
+    violates_text_only = bool(getattr(settings, "new_member_limit_text_only", False)) and (
+        has_media or not message_text.strip()
+    )
+    return blocks_media or blocks_link or violates_text_only
+
+
+def _build_warning_text(settings, user, remaining_seconds: int) -> str:
+    template = (
+        getattr(settings, "new_member_limit_warn_text", None)
+        or "新成员需等待 {duration} 才可发送媒体/链接。"
+    )
+    duration_label = _format_duration_label(remaining_seconds)
+    user_label = html.escape(format_user_display_name(user, user.id))
+    return (
+        template.replace("{duration}", duration_label)
+        .replace("{member}", user_label)
+        .replace("{userid}", str(user.id))
+        .replace("{nickname}", user_label)
+    )
+
+
+async def _delete_blocked_message(context, chat, *, user, message, settings) -> None:
+    if not bool(getattr(settings, "new_member_limit_delete_message", True)):
+        return
+    await execute_user_action(
+        context,
+        feature="新人限制",
+        chat_id=chat.id,
+        user_id=user.id,
+        action="none",
+        detail="新成员限制命中，删除违规发言",
+        message=message,
+        delete_message=True,
+    )
+
+
+async def _send_limit_warning(
+    context,
+    chat,
+    *,
+    user,
+    message,
+    settings,
+    remaining_seconds: int,
+) -> None:
+    if not bool(getattr(settings, "new_member_limit_warn_enabled", True)):
+        return
+    text = _build_warning_text(settings, user, remaining_seconds)
+    try:
+        sent = await context.bot.send_message(
+            chat.id,
+            text,
+            reply_to_message_id=getattr(message, "message_id", None),
+            parse_mode="HTML",
+        )
+        delete_after = int(
+            getattr(settings, "new_member_limit_warn_delete_after_seconds", DEFAULT_WARN_DELETE_SECONDS)
+            or DEFAULT_WARN_DELETE_SECONDS
+        )
+        if delete_after > 0:
+            _schedule_message_delete(context, sent, delete_after, name="group_hooks.new_member_warn_delete")
+    except Exception as exc:
+        log.warning("new_member_limit_warn_failed", chat_id=chat.id, user_id=user.id, error=str(exc))
+
+
 async def _process_new_member_limit(
     context: ContextTypes.DEFAULT_TYPE,
     db: Database,
@@ -67,7 +151,10 @@ async def _process_new_member_limit(
     if joined_at is None:
         return False
 
-    window_seconds = int(getattr(settings, "new_member_limit_window_seconds", 3600) or 3600)
+    window_seconds = int(
+        getattr(settings, "new_member_limit_window_seconds", DEFAULT_LIMIT_WINDOW_SECONDS)
+        or DEFAULT_LIMIT_WINDOW_SECONDS
+    )
     if window_seconds <= 0:
         return False
 
@@ -75,62 +162,18 @@ async def _process_new_member_limit(
     if elapsed >= window_seconds:
         return False
 
-    message_text = (getattr(message, "text", None) or getattr(message, "caption", None) or "")
-    has_media = any(
-        getattr(message, attr, None)
-        for attr in ("photo", "video", "document", "animation", "sticker", "audio", "voice", "video_note")
-    )
-    has_link = _message_contains_link(message)
-    block_media = bool(getattr(settings, "new_member_limit_block_media", True))
-    block_links = bool(getattr(settings, "new_member_limit_block_links", True))
-    text_only = bool(getattr(settings, "new_member_limit_text_only", False))
-
-    should_block = False
-    if block_media and has_media:
-        should_block = True
-    if block_links and has_link:
-        should_block = True
-    if text_only and (has_media or not message_text.strip()):
-        should_block = True
-
-    if not should_block:
+    if not _is_blocked_message(message, settings):
         return False
 
-    if bool(getattr(settings, "new_member_limit_delete_message", True)):
-        await execute_user_action(
-            context,
-            feature="新人限制",
-            chat_id=chat.id,
-            user_id=user.id,
-            action="none",
-            detail="新成员限制命中，删除违规发言",
-            message=message,
-            delete_message=True,
-        )
-
-    if bool(getattr(settings, "new_member_limit_warn_enabled", True)):
-        warn_text = getattr(settings, "new_member_limit_warn_text", None) or "新成员需等待 {duration} 才可发送媒体/链接。"
-        remaining_seconds = max(0, int(window_seconds - elapsed))
-        duration_label = _format_duration_label(remaining_seconds)
-        user_label = html.escape(format_user_display_name(user, user.id))
-        text = (
-            warn_text
-            .replace("{duration}", duration_label)
-            .replace("{member}", user_label)
-            .replace("{userid}", str(user.id))
-            .replace("{nickname}", user_label)
-        )
-        try:
-            sent = await context.bot.send_message(
-                chat.id,
-                text,
-                reply_to_message_id=getattr(message, "message_id", None),
-                parse_mode="HTML",
-            )
-            delete_after = int(getattr(settings, "new_member_limit_warn_delete_after_seconds", 60) or 60)
-            if delete_after > 0:
-                _schedule_message_delete(context, sent, delete_after, name="group_hooks.new_member_warn_delete")
-        except Exception as exc:
-            log.warning("new_member_limit_warn_failed", chat_id=chat.id, user_id=user.id, error=str(exc))
+    remaining_seconds = max(0, int(window_seconds - elapsed))
+    await _delete_blocked_message(context, chat, user=user, message=message, settings=settings)
+    await _send_limit_warning(
+        context,
+        chat,
+        user=user,
+        message=message,
+        settings=settings,
+        remaining_seconds=remaining_seconds,
+    )
 
     return True
