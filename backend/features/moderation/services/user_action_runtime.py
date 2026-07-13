@@ -9,7 +9,7 @@ from telegram.ext import ContextTypes
 
 from backend.shared.services.action_executor import ActionExecutor
 from backend.shared.services.permission_service import get_bot_admin_ids
-_RESOLVE_ADMIN_TARGETS_THRESHOLD_5 = 5
+_MAX_ADMIN_TARGETS = 5
 
 
 log = structlog.get_logger(__name__)
@@ -74,49 +74,33 @@ async def _resolve_admin_targets(context: ContextTypes.DEFAULT_TYPE, chat_id: in
         user_id = getattr(user, "id", None)
         if isinstance(user_id, int) and user_id not in resolved:
             resolved.append(user_id)
-        if len(resolved) >= _RESOLVE_ADMIN_TARGETS_THRESHOLD_5:
+        if len(resolved) >= _MAX_ADMIN_TARGETS:
             break
     return resolved
 
 
-async def notify_user_action_failure(
-    context: ContextTypes.DEFAULT_TYPE,
-    *,
-    chat_id: int,
-    feature: str,
-    detail: str,
-    failures: Iterable[str],
-) -> None:
-    failure_text = "；".join(str(item) for item in failures if str(item).strip())
-    if not failure_text:
-        return
+def _failure_text(failures: Iterable[str]) -> str:
+    return "；".join(str(item) for item in failures if str(item).strip())
 
-    cache = _diagnostic_cache(context)
-    cache_key = (chat_id, feature, failure_text)
-    now = dt.datetime.now(dt.UTC)
+
+def _notification_is_recent(cache: dict, cache_key: tuple, now: dt.datetime) -> bool:
     last_notified = cache.get(cache_key)
-    if isinstance(last_notified, dt.datetime):
-        if (now - last_notified).total_seconds() < USER_ACTION_DIAGNOSTIC_SECONDS:
-            return
+    if not isinstance(last_notified, dt.datetime):
+        return False
+    return (now - last_notified).total_seconds() < USER_ACTION_DIAGNOSTIC_SECONDS
 
-    text = (
+
+def _failure_notification_text(*, chat_id: int, feature: str, detail: str, failure_text: str) -> str:
+    return (
         f"⚠️ {feature}已命中，但用户处置动作没有成功执行。\n"
         f"群组：{chat_id}\n"
         f"原因：{failure_text}\n"
         f"说明：{detail}\n"
         "请检查机器人是否仍是管理员，并拥有删除消息/禁言/封禁权限。"
     )
-    targets = await _resolve_admin_targets(context, chat_id)
-    if not targets:
-        log.warning(
-            "user_action_failure_no_admin_target",
-            chat_id=chat_id,
-            feature=feature,
-            detail=detail,
-            failures=failure_text,
-        )
-        return
 
+
+async def _send_failure_notifications(context: ContextTypes.DEFAULT_TYPE, targets: list[int], *, text: str, chat_id: int, feature: str) -> int:
     delivered = 0
     for admin_id in targets:
         try:
@@ -128,8 +112,45 @@ async def notify_user_action_failure(
                 chat_id=chat_id,
                 admin_id=admin_id,
                 feature=feature,
-            error=str(exc),
+                error=str(exc),
+            )
+    return delivered
+
+
+async def notify_user_action_failure(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    chat_id: int,
+    feature: str,
+    detail: str,
+    failures: Iterable[str],
+) -> None:
+    failure_text = _failure_text(failures)
+    if not failure_text:
+        return
+    cache = _diagnostic_cache(context)
+    cache_key = (chat_id, feature, failure_text)
+    now = dt.datetime.now(dt.UTC)
+    if _notification_is_recent(cache, cache_key, now):
+        return
+    targets = await _resolve_admin_targets(context, chat_id)
+    if not targets:
+        log.warning(
+            "user_action_failure_no_admin_target",
+            chat_id=chat_id,
+            feature=feature,
+            detail=detail,
+            failures=failure_text,
         )
+        return
+    text = _failure_notification_text(chat_id=chat_id, feature=feature, detail=detail, failure_text=failure_text)
+    delivered = await _send_failure_notifications(
+        context,
+        targets,
+        text=text,
+        chat_id=chat_id,
+        feature=feature,
+    )
     if delivered:
         cache[cache_key] = now
         log.warning(
@@ -142,6 +163,69 @@ async def notify_user_action_failure(
         )
 
 
+async def _delete_with_executor(context: ContextTypes.DEFAULT_TYPE, *, chat_id: int, message_id, feature: str) -> tuple[bool, list[str]]:
+    if message_id is None:
+        return False, ["missing_message_id"]
+    failures: list[str] = []
+    try:
+        result = await ActionExecutor.delete_many(context, chat_id=chat_id, message_ids=[int(message_id)])
+        applied = bool(result.applied)
+        if not applied:
+            failures.append(result.detail or "delete_many_not_applied")
+        return applied, failures
+    except Exception as exc:
+        log.warning(
+            "user_action_delete_many_failed",
+            chat_id=chat_id,
+            message_id=message_id,
+            feature=feature,
+            error=str(exc),
+        )
+        return False, [str(exc)]
+
+
+async def _delete_with_message(message, *, chat_id: int, message_id, feature: str) -> tuple[bool, list[str]]:
+    if not hasattr(message, "delete"):
+        return False, []
+    try:
+        await message.delete()
+        log.warning(
+            "user_action_delete_fallback_succeeded",
+            chat_id=chat_id,
+            message_id=message_id,
+            feature=feature,
+        )
+        return True, []
+    except Exception as exc:
+        log.warning(
+            "user_action_delete_fallback_failed",
+            chat_id=chat_id,
+            message_id=message_id,
+            feature=feature,
+            error=str(exc),
+        )
+        return False, [str(exc)]
+
+
+async def _report_action_failures(
+    context: ContextTypes.DEFAULT_TYPE,
+    failures: list[str],
+    *,
+    chat_id: int,
+    feature: str,
+    detail: str,
+) -> None:
+    if not failures:
+        return
+    await notify_user_action_failure(
+        context,
+        chat_id=chat_id,
+        feature=feature,
+        detail=detail,
+        failures=failures,
+    )
+
+
 async def delete_message_safely(
     context: ContextTypes.DEFAULT_TYPE,
     *,
@@ -151,56 +235,24 @@ async def delete_message_safely(
     detail: str,
 ) -> UserActionResult:
     message_id = getattr(message, "message_id", None)
-    failures: list[str] = []
-    delete_applied = False
-
-    if message_id is not None:
-        try:
-            result = await ActionExecutor.delete_many(context, chat_id=chat_id, message_ids=[int(message_id)])
-            delete_applied = bool(result.applied)
-            if not delete_applied:
-                failures.append(result.detail or "delete_many_not_applied")
-        except Exception as exc:
-            failures.append(str(exc))
-            log.warning(
-                "user_action_delete_many_failed",
-                chat_id=chat_id,
-                message_id=message_id,
-                feature=feature,
-                error=str(exc),
-            )
-    else:
-        failures.append("missing_message_id")
-
-    if not delete_applied and hasattr(message, "delete"):
-        try:
-            await message.delete()
-            delete_applied = True
-            failures.clear()
-            log.warning(
-                "user_action_delete_fallback_succeeded",
-                chat_id=chat_id,
-                message_id=message_id,
-                feature=feature,
-            )
-        except Exception as exc:
-            failures.append(str(exc))
-            log.warning(
-                "user_action_delete_fallback_failed",
-                chat_id=chat_id,
-                message_id=message_id,
-                feature=feature,
-                error=str(exc),
-            )
-
-    if failures:
-        await notify_user_action_failure(
-            context,
+    delete_applied, failures = await _delete_with_executor(
+        context,
+        chat_id=chat_id,
+        message_id=message_id,
+        feature=feature,
+    )
+    if not delete_applied:
+        fallback_applied, fallback_failures = await _delete_with_message(
+            message,
             chat_id=chat_id,
+            message_id=message_id,
             feature=feature,
-            detail=detail,
-            failures=failures,
         )
+        if fallback_applied:
+            delete_applied, failures = True, []
+        else:
+            failures = [*failures, *fallback_failures]
+    await _report_action_failures(context, failures, chat_id=chat_id, feature=feature, detail=detail)
 
     return UserActionResult(
         feature=feature,
@@ -211,97 +263,118 @@ async def delete_message_safely(
     )
 
 
-async def execute_user_action(
+async def _execute_delete_request(
     context: ContextTypes.DEFAULT_TYPE,
     *,
-    feature: str,
+    requested: bool,
     chat_id: int,
-    user_id: int,
-    action: str = "none",
+    message,
+    message_id: int | None,
+    feature: str,
     detail: str,
-    message=None,
-    message_id: int | None = None,
-    delete_message: bool = False,
-    mute_seconds: int | None = None,
-    actor_user_id: int | None = None,
-    sender_chat_id: int | None = None,
-    raise_on_failure: bool = False,
-) -> UserActionResult:
-    failures: list[str] = []
-    delete_requested = bool(delete_message)
-    delete_applied = False
-    punishment_requested = action not in {"", "none", "noop", "delete"}
-    punishment_applied = False
-
-    if delete_message and message is not None:
-        delete_result = await delete_message_safely(
+) -> tuple[bool, list[str]]:
+    if not requested:
+        return False, []
+    if message is not None:
+        result = await delete_message_safely(
             context,
             chat_id=chat_id,
             message=message,
             feature=feature,
             detail=detail,
         )
-        delete_applied = delete_result.delete_applied
-        failures.extend(delete_result.failures)
-    elif delete_message:
-        target_message_id = message_id
-        try:
-            result = await ActionExecutor.delete_many(
-                context,
-                chat_id=chat_id,
-                message_ids=[target_message_id] if target_message_id is not None else [],
-            )
-            delete_applied = bool(result.applied)
-            if not delete_applied:
-                failures.append(result.detail or "delete_not_applied")
-        except Exception as exc:
-            failures.append(str(exc))
-
-    normalized_action = (action or "none").strip().lower()
-    if normalized_action == "delete":
-        punishment_requested = False
-    elif normalized_action not in {"", "none", "noop"}:
-        try:
-            target_message_id = message_id if message_id is not None else getattr(message, "message_id", None)
-            result = await ActionExecutor.execute(
-                context,
-                action=normalized_action,
-                chat_id=chat_id,
-                user_id=user_id,
-                actor_user_id=actor_user_id,
-                message_id=target_message_id,
-                mute_seconds=mute_seconds,
-                sender_chat_id=sender_chat_id,
-                reason=detail,
-            )
-            punishment_applied = bool(result.applied)
-            if not punishment_applied:
-                failures.append(result.detail or f"{normalized_action}_not_applied")
-        except Exception as exc:
-            failures.append(str(exc))
-            log.warning(
-                "user_action_punishment_failed",
-                chat_id=chat_id,
-                user_id=user_id,
-                action=normalized_action,
-                feature=feature,
-                error=str(exc),
-            )
-
-    if failures:
-        await notify_user_action_failure(
+        return result.delete_applied, list(result.failures)
+    try:
+        result = await ActionExecutor.delete_many(
             context,
             chat_id=chat_id,
-            feature=feature,
-            detail=detail,
-            failures=failures,
+            message_ids=[message_id] if message_id is not None else [],
         )
+        failures = [] if result.applied else [result.detail or "delete_not_applied"]
+        return bool(result.applied), failures
+    except Exception as exc:
+        return False, [str(exc)]
 
+
+async def _execute_punishment(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    action: str,
+    chat_id: int,
+    user_id: int,
+    actor_user_id: int | None,
+    message_id: int | None,
+    mute_seconds: int | None,
+    sender_chat_id: int | None,
+    detail: str,
+    feature: str,
+) -> tuple[bool, list[str]]:
+    if action in {"", "none", "noop", "delete"}:
+        return False, []
+    try:
+        result = await ActionExecutor.execute(
+            context,
+            action=action,
+            chat_id=chat_id,
+            user_id=user_id,
+            actor_user_id=actor_user_id,
+            message_id=message_id,
+            mute_seconds=mute_seconds,
+            sender_chat_id=sender_chat_id,
+            reason=detail,
+        )
+        failures = [] if result.applied else [result.detail or f"{action}_not_applied"]
+        return bool(result.applied), failures
+    except Exception as exc:
+        log.warning(
+            "user_action_punishment_failed",
+            chat_id=chat_id,
+            user_id=user_id,
+            action=action,
+            feature=feature,
+            error=str(exc),
+        )
+        return False, [str(exc)]
+
+
+async def execute_user_action(
+    context: ContextTypes.DEFAULT_TYPE,
+    *, feature: str, chat_id: int, user_id: int, action: str = "none", detail: str,
+    message=None, message_id: int | None = None, delete_message: bool = False,
+    mute_seconds: int | None = None, actor_user_id: int | None = None,
+    sender_chat_id: int | None = None, raise_on_failure: bool = False,
+) -> UserActionResult:
+    normalized_action = (action or "none").strip().lower()
+    target_message_id = message_id if message_id is not None else getattr(message, "message_id", None)
+    delete_applied, delete_failures = await _execute_delete_request(
+        context,
+        requested=delete_message,
+        chat_id=chat_id,
+        message=message,
+        message_id=message_id,
+        feature=feature,
+        detail=detail,
+    )
+    punishment_applied, punishment_failures = await _execute_punishment(
+        context,
+        action=normalized_action,
+        chat_id=chat_id,
+        user_id=user_id,
+        actor_user_id=actor_user_id,
+        message_id=target_message_id,
+        mute_seconds=mute_seconds,
+        sender_chat_id=sender_chat_id,
+        detail=detail,
+        feature=feature,
+    )
+    failures = [*delete_failures, *punishment_failures]
+
+    await _report_action_failures(context, failures, chat_id=chat_id, feature=feature, detail=detail)
     result = UserActionResult(
         feature=feature,
-        delete_requested=delete_requested,
+        delete_requested=bool(delete_message),
         delete_applied=delete_applied,
-        punishment_requested=punishment_requested,
+        punishment_requested=normalized_action not in {"", "none", "noop", "delete"},
         punishment_applied=punishment_applied,
         action=normalized_action or "none",
         failures=tuple(failures),
