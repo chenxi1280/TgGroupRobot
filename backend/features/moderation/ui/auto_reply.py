@@ -35,6 +35,82 @@ def auto_reply_menu_keyboard(chat_id: int | None = None) -> InlineKeyboardMarkup
     ])
 
 
+def _auto_reply_rule_row(rule, chat_id: int | None) -> list[InlineKeyboardButton]:
+    detail_callback = (
+        f"auto_reply:detail:{chat_id}:{rule.id}"
+        if chat_id is not None
+        else f"auto_reply:detail::{rule.id}"
+    )
+    next_active = "0" if rule.is_active else "1"
+    status_callback = (
+        f"auto_reply:set:{chat_id}:{rule.id}:active:{next_active}"
+        if chat_id is not None
+        else f"auto_reply:toggle::{rule.id}"
+    )
+    delete_callback = (
+        f"auto_reply:delete:{chat_id}:{rule.id}:confirm"
+        if chat_id is not None
+        else f"auto_reply:delete::{rule.id}:confirm"
+    )
+    return [
+        InlineKeyboardButton(f"顺序 {rule.sort_order}", callback_data=detail_callback),
+        InlineKeyboardButton(
+            "✅ 启用" if rule.is_active else "❌ 关闭",
+            callback_data=status_callback,
+        ),
+        InlineKeyboardButton("修改 🔧", callback_data=detail_callback),
+        InlineKeyboardButton("删除 🗑️", callback_data=delete_callback),
+    ]
+
+
+def _auto_reply_list_callback(chat_id: int | None, page: int) -> str:
+    return (
+        f"auto_reply:list:{chat_id}:{page}"
+        if chat_id is not None
+        else f"auto_reply:list::{page}"
+    )
+
+
+def _auto_reply_navigation_row(
+    chat_id: int | None,
+    current_page: int,
+    total_pages: int,
+) -> list[InlineKeyboardButton]:
+    buttons: list[InlineKeyboardButton] = []
+    if current_page > 0:
+        buttons.append(
+            InlineKeyboardButton(
+                "⬅️ 上一页",
+                callback_data=_auto_reply_list_callback(chat_id, current_page - 1),
+            )
+        )
+    buttons.append(
+        InlineKeyboardButton(f"📄 {current_page + 1}/{total_pages}", callback_data="_noop")
+    )
+    if current_page < total_pages - 1:
+        buttons.append(
+            InlineKeyboardButton(
+                "下一页 ➡️",
+                callback_data=_auto_reply_list_callback(chat_id, current_page + 1),
+            )
+        )
+    return buttons
+
+
+def _paginate_auto_reply_rules(
+    rules: list,
+    page: int,
+    *,
+    page_size: int,
+    total_count: int | None,
+) -> tuple[list, int, int]:
+    total_items = total_count if total_count is not None else len(rules)
+    total_pages = max(1, (total_items + page_size - 1) // page_size)
+    current_page = min(max(page, 0), total_pages - 1)
+    start_idx = current_page * page_size
+    return rules[start_idx : start_idx + page_size], current_page, total_pages
+
+
 def auto_reply_list_keyboard(
     rules: list,
     chat_id: int | None = None,
@@ -48,68 +124,19 @@ def auto_reply_list_keyboard(
         rules: 自动回复规则列表
         chat_id: 群组 ID，用于在私聊中操作群组时指定目标群组
     """
-    buttons = []
-    total_items = total_count if total_count is not None else len(rules)
-    total_pages = max(1, (total_items + page_size - 1) // page_size)
-    current_page = min(max(page, 0), total_pages - 1)
-    start_idx = current_page * page_size
-    end_idx = start_idx + page_size
-    page_rules = rules[start_idx:end_idx]
-
-    for rule in page_rules:
-        detail_callback = (
-            f"auto_reply:detail:{chat_id}:{rule.id}"
-            if chat_id is not None
-            else f"auto_reply:detail::{rule.id}"
-        )
-        next_active = "0" if rule.is_active else "1"
-        status_callback = (
-            f"auto_reply:set:{chat_id}:{rule.id}:active:{next_active}"
-            if chat_id is not None
-            else f"auto_reply:toggle::{rule.id}"
-        )
-        delete_callback = (
-            f"auto_reply:delete:{chat_id}:{rule.id}:confirm"
-            if chat_id is not None
-            else f"auto_reply:delete::{rule.id}:confirm"
-        )
-
-        buttons.append([
-            InlineKeyboardButton(f"顺序 {rule.sort_order}", callback_data=detail_callback),
-            InlineKeyboardButton("✅ 启用" if rule.is_active else "❌ 关闭", callback_data=status_callback),
-            InlineKeyboardButton("修改 🔧", callback_data=detail_callback),
-            InlineKeyboardButton("删除 🗑️", callback_data=delete_callback),
-        ])
-
+    page_rules, current_page, total_pages = _paginate_auto_reply_rules(
+        rules,
+        page,
+        page_size=page_size,
+        total_count=total_count,
+    )
+    buttons = [_auto_reply_rule_row(rule, chat_id) for rule in page_rules]
     if total_pages > 1:
-        nav_row: list[InlineKeyboardButton] = []
-        if current_page > 0:
-            nav_row.append(
-                InlineKeyboardButton(
-                    "⬅️ 上一页",
-                    callback_data=f"auto_reply:list:{chat_id}:{current_page - 1}" if chat_id is not None else f"auto_reply:list::{current_page - 1}",
-                )
-            )
-        nav_row.append(InlineKeyboardButton(f"📄 {current_page + 1}/{total_pages}", callback_data="_noop"))
-        if current_page < total_pages - 1:
-            nav_row.append(
-                InlineKeyboardButton(
-                    "下一页 ➡️",
-                    callback_data=f"auto_reply:list:{chat_id}:{current_page + 1}" if chat_id is not None else f"auto_reply:list::{current_page + 1}",
-                )
-            )
-        buttons.append(nav_row)
-
+        buttons.append(_auto_reply_navigation_row(chat_id, current_page, total_pages))
     create_callback = f"auto_reply:create:{chat_id}" if chat_id is not None else "auto_reply:create"
     buttons.append([InlineKeyboardButton("➕ 添加一条", callback_data=create_callback)])
-
-    back_callback = (
-        f"adm:menu:main:{chat_id}"
-        if chat_id
-        else "auto_reply:menu"
-    )
+    back_callback = f"adm:menu:main:{chat_id}" if chat_id else "auto_reply:menu"
     buttons.append([InlineKeyboardButton("🔙 返回", callback_data=back_callback)])
-
     return InlineKeyboardMarkup(buttons)
 
 
