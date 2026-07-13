@@ -19,21 +19,38 @@ from backend.platform.db.schema.models.enums import BannedWordMatchType, Convers
 from backend.platform.state.state_service import clear_user_state, get_user_state
 from backend.shared.handlers.base.chat_resolver import ChatResolver
 from backend.shared.services.permission_service import is_user_admin
-_PARSE_BANNED_WORD_CONFIG_TEXT_THRESHOLD_2 = 2
+_MIN_BANNED_WORD_CONFIG_LINES = 2
+_DEFAULT_MUTE_SECONDS = 60
 
 
 log = structlog.get_logger(__name__)
 
 
-async def banned_word_config_handler_impl(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+def _log_banned_word_config_entry(update: Update) -> None:
+    chat = update.effective_chat
+    user = update.effective_user
+    message = update.effective_message
     log.warning(
         "=== BANNED_WORD_CONFIG_HANDLER CALLED ===",
-        user_id=update.effective_user.id if update.effective_user else None,
-        chat_id=update.effective_chat.id if update.effective_chat else None,
-        chat_type=update.effective_chat.type if update.effective_chat else None,
-        text_preview=(update.effective_message.text or "")[:50] if update.effective_message else "",
+        user_id=user.id if user else None,
+        chat_id=chat.id if chat else None,
+        chat_type=chat.type if chat else None,
+        text_preview=(message.text or "")[:50] if message else "",
     )
 
+
+async def _process_banned_word_config_state(update: Update, session, state, *, text: str) -> None:
+    if state is None or state.state_type != ConversationStateType.banned_word_add.value:
+        await session.commit()
+        return
+    if state.state_data.get("step") != "config":
+        await session.commit()
+        return
+    await _parse_banned_word_config(update, session, state, text=text)
+
+
+async def banned_word_config_handler_impl(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    _log_banned_word_config_entry(update)
     if update.effective_chat is None or update.effective_user is None or update.effective_message is None:
         return
     text = update.effective_message.text or ""
@@ -44,91 +61,126 @@ async def banned_word_config_handler_impl(update: Update, context: ContextTypes.
     user = update.effective_user
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
-        state, target_chat_id = await _load_banned_word_state(session, db, chat.type, chat_id=chat.id, user_id=user.id)
-        if state is None or state.state_type != ConversationStateType.banned_word_add.value:
-            await session.commit()
-            return
+        state, _target_chat_id = await _load_banned_word_state(
+            session,
+            db,
+            chat.type,
+            chat_id=chat.id,
+            user_id=user.id,
+        )
+        await _process_banned_word_config_state(update, session, state, text=text)
 
-        if state.state_data.get("step") == "config":
-            await _parse_banned_word_config(update, session, state, text=text)
-        else:
-            await session.commit()
 
-
-async def banned_word_check_handler_impl(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    log.warning(
-        "=== BANNED_WORD_CHECK_HANDLER ENTRY ===",
-        chat_id=update.effective_chat.id if update.effective_chat else None,
-        user_id=update.effective_user.id if update.effective_user else None,
-    )
-    if update.effective_chat is None or update.effective_user is None or update.effective_message is None:
-        return
-
-    chat = update.effective_chat
-    user = update.effective_user
-    message = update.effective_message
-    if chat.type == "private":
-        return
-
+async def _skip_banned_word_check(context: ContextTypes.DEFAULT_TYPE, chat, user) -> bool:
     try:
         if await is_user_admin(context, chat.id, user.id):
             log.info("banned_word_check_skipped_admin", chat_id=chat.id, user_id=user.id)
-            return
+            return True
     except Exception as exc:
         log.warning("admin_check_failed", chat_id=chat.id, user_id=user.id, error=str(exc))
-        return
+        return True
+    return False
 
-    message_text = message.text or message.caption or ""
-    if not message_text:
-        return
 
+async def _load_banned_word_matches(context: ContextTypes.DEFAULT_TYPE, *, chat_id: int, user_id: int, message_text: str):
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
-        matched_words = await match_banned_words(session, chat.id, message_text)
-        words = await get_chat_banned_words(session, chat.id)
+        matched_words = await match_banned_words(session, chat_id, message_text)
+        words = await get_chat_banned_words(session, chat_id)
         log.info(
             "banned_word_check_result",
-            chat_id=chat.id,
-            user_id=user.id,
+            chat_id=chat_id,
+            user_id=user_id,
             message_text_preview=message_text[:50],
             total_words_count=len(words),
             active_words_count=sum(1 for word in words if word.is_active),
             matched_count=len(matched_words),
         )
         await session.commit()
+        return matched_words
 
-    if not matched_words:
-        return
 
-    word = matched_words[0]
+async def _delete_banned_message(message, *, chat_id: int, user_id: int) -> None:
     try:
         await message.delete()
     except Exception as exc:
-        log.warning("delete_message_failed", chat_id=chat.id, user_id=user.id, error=str(exc))
+        log.warning("delete_message_failed", chat_id=chat_id, user_id=user_id, error=str(exc))
 
-    if word.notify:
-        notify_msg = word.notify_message or f"🚫 您的消息因包含违禁词「{word.word}」已被删除"
-        try:
-            await context.bot.send_message(chat_id=chat.id, text=notify_msg)
-        except Exception as exc:
-            log.warning("send_notify_failed", chat_id=chat.id, error=str(exc))
 
+async def _send_banned_word_notice(context: ContextTypes.DEFAULT_TYPE, *, chat_id: int, word) -> None:
+    if not word.notify:
+        return
+    notify_msg = word.notify_message or f"🚫 您的消息因包含违禁词「{word.word}」已被删除"
+    try:
+        await context.bot.send_message(chat_id=chat_id, text=notify_msg)
+    except Exception as exc:
+        log.warning("send_notify_failed", chat_id=chat_id, error=str(exc))
+
+
+async def _apply_banned_word_action(context: ContextTypes.DEFAULT_TYPE, *, chat_id: int, user_id: int, word) -> None:
     if word.action == "mute":
         try:
             until_date = dt.datetime.now(dt.UTC) + dt.timedelta(seconds=word.mute_duration) if word.mute_duration else None
             await context.bot.restrict_chat_member(
-                chat_id=chat.id,
-                user_id=user.id,
+                chat_id=chat_id,
+                user_id=user_id,
                 permissions={"can_send_messages": False, "can_send_media_messages": False},
                 until_date=until_date,
             )
         except Exception as exc:
-            log.warning("mute_user_failed", chat_id=chat.id, user_id=user.id, error=str(exc))
-    elif word.action == "ban":
+            log.warning("mute_user_failed", chat_id=chat_id, user_id=user_id, error=str(exc))
+        return
+    if word.action == "ban":
         try:
-            await context.bot.ban_chat_member(chat_id=chat.id, user_id=user.id)
+            await context.bot.ban_chat_member(chat_id=chat_id, user_id=user_id)
         except Exception as exc:
-            log.warning("ban_user_failed", chat_id=chat.id, user_id=user.id, error=str(exc))
+            log.warning("ban_user_failed", chat_id=chat_id, user_id=user_id, error=str(exc))
+
+
+def _log_banned_word_check_entry(update: Update) -> None:
+    chat = update.effective_chat
+    user = update.effective_user
+    log.warning(
+        "=== BANNED_WORD_CHECK_HANDLER ENTRY ===",
+        chat_id=chat.id if chat else None,
+        user_id=user.id if user else None,
+    )
+
+
+def _banned_word_check_scope(update: Update):
+    chat = update.effective_chat
+    user = update.effective_user
+    message = update.effective_message
+    if chat is None or user is None or message is None:
+        return None
+    if chat.type == "private":
+        return None
+    return chat, user, message
+
+
+async def banned_word_check_handler_impl(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    _log_banned_word_check_entry(update)
+    scope = _banned_word_check_scope(update)
+    if scope is None:
+        return
+    chat, user, message = scope
+    if await _skip_banned_word_check(context, chat, user):
+        return
+    message_text = message.text or message.caption or ""
+    if not message_text:
+        return
+    matched_words = await _load_banned_word_matches(
+        context,
+        chat_id=chat.id,
+        user_id=user.id,
+        message_text=message_text,
+    )
+    if not matched_words:
+        return
+    word = matched_words[0]
+    await _delete_banned_message(message, chat_id=chat.id, user_id=user.id)
+    await _send_banned_word_notice(context, chat_id=chat.id, word=word)
+    await _apply_banned_word_action(context, chat_id=chat.id, user_id=user.id, word=word)
 
 
 async def _load_banned_word_state(session, db: Database, chat_type: str, *, chat_id: int, user_id: int):
@@ -181,39 +233,53 @@ async def _parse_banned_word_config(update: Update, session, state: object, *, t
         await session.commit()
 
 
-def _parse_banned_word_config_text(text: str) -> dict:
-    lines = text.strip().split("\n")
-    if len(lines) < _PARSE_BANNED_WORD_CONFIG_TEXT_THRESHOLD_2:
-        raise ValueError("配置格式不完整")
-
-    word = lines[0].strip()
-    if not word:
-        raise ValueError("违禁词不能为空")
-
-    config = {
+def _banned_word_defaults(word: str) -> dict:
+    return {
         "word": word,
         "match_type": BannedWordMatchType.contains.value,
         "action": "delete",
-        "mute_duration": 60,
+        "mute_duration": _DEFAULT_MUTE_SECONDS,
         "notify": True,
         "notify_message": None,
     }
-    for line in [item.strip() for item in lines[1:]]:
-        if line.startswith("匹配类型:"):
-            config["match_type"] = normalize_match_type_input(line.split(":", 1)[1])
-        elif line.startswith("惩罚动作:"):
-            config["action"] = normalize_action_input(line.split(":", 1)[1])
-        elif line.startswith("禁言时长:"):
-            duration_str = line.split(":", 1)[1].strip()
-            if duration_str:
-                try:
-                    config["mute_duration"] = int(duration_str)
-                except ValueError as exc:
-                    raise ValueError("禁言时长必须是数字") from exc
-        elif line.startswith("删除提醒:"):
-            config["notify"] = normalize_bool_input(line.split(":", 1)[1])
-        elif line.startswith("提醒消息:"):
-            config["notify_message"] = line.split(":", 1)[1].strip() if ":" in line else None
+
+
+def _mute_duration(value: str) -> int:
+    if not value:
+        return _DEFAULT_MUTE_SECONDS
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise ValueError("禁言时长必须是数字") from exc
+
+
+_BANNED_WORD_CONFIG_RULES = (
+    ("匹配类型:", "match_type", normalize_match_type_input),
+    ("惩罚动作:", "action", normalize_action_input),
+    ("禁言时长:", "mute_duration", _mute_duration),
+    ("删除提醒:", "notify", normalize_bool_input),
+    ("提醒消息:", "notify_message", str),
+)
+
+
+def _apply_banned_word_config_line(config: dict, line: str) -> dict:
+    for prefix, key, converter in _BANNED_WORD_CONFIG_RULES:
+        if line.startswith(prefix):
+            value = line.split(":", 1)[1].strip()
+            return {**config, key: converter(value)}
+    return dict(config)
+
+
+def _parse_banned_word_config_text(text: str) -> dict:
+    lines = text.strip().splitlines()
+    if len(lines) < _MIN_BANNED_WORD_CONFIG_LINES:
+        raise ValueError("配置格式不完整")
+    word = lines[0].strip()
+    if not word:
+        raise ValueError("违禁词不能为空")
+    config = _banned_word_defaults(word)
+    for line in (item.strip() for item in lines[1:]):
+        config = _apply_banned_word_config_line(config, line)
     return config
 
 
