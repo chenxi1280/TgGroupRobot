@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from types import SimpleNamespace
 
 import pytest
@@ -21,6 +22,7 @@ from backend.features.moderation.ui.auto_reply import (
     auto_reply_menu_keyboard,
 )
 from backend.features.moderation.services import auto_reply_service
+from backend.features.moderation.services.auto_reply_matching import match_rule
 
 
 class _FakeSession:
@@ -827,6 +829,30 @@ def test_extract_auto_reply_list_page_only_reads_real_list_callback() -> None:
     assert _extract_auto_reply_list_page("auto_reply:move:-100456:9:up") == 0
     assert _extract_auto_reply_list_page("auto_reply:delete:-100456:9:do") == 0
     assert _extract_auto_reply_list_page(None) == 0
+
+
+def test_auto_reply_regex_honors_case_insensitive_setting() -> None:
+    rule = SimpleNamespace(
+        match_type="regex",
+        keywords=[r"HELLO\s+WORLD"],
+        case_sensitive=False,
+    )
+
+    assert match_rule(rule, "hello world") is True
+
+
+def test_auto_reply_invalid_regex_is_exposed() -> None:
+    rule = SimpleNamespace(match_type="regex", keywords=["["], case_sensitive=False)
+
+    with pytest.raises(re.error, match="unterminated character set"):
+        match_rule(rule, "hello")
+
+
+def test_auto_reply_unknown_match_type_is_exposed() -> None:
+    rule = SimpleNamespace(match_type="unknown", keywords=["hello"], case_sensitive=False)
+
+    with pytest.raises(ValueError, match="unsupported auto reply match type"):
+        match_rule(rule, "hello")
 
 
 @pytest.mark.asyncio

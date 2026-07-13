@@ -13,34 +13,39 @@ from backend.shared.services.result import MatchResult
 RuleListLoader = Callable[[AsyncSession, int, bool], Awaitable[list[AutoReplyRule]]]
 
 
+def _keyword_matches(
+    match_type: str,
+    text: str,
+    keyword: str,
+    *,
+    case_sensitive: bool,
+) -> bool:
+    if match_type == AutoReplyMatchType.regex.value:
+        flags = 0 if case_sensitive else re.IGNORECASE
+        return re.search(keyword, text, flags=flags) is not None
+    normalized_text = text if case_sensitive else text.casefold()
+    normalized_keyword = keyword if case_sensitive else keyword.casefold()
+    if match_type == AutoReplyMatchType.exact.value:
+        return normalized_text == normalized_keyword
+    if match_type == AutoReplyMatchType.contains.value:
+        return normalized_keyword in normalized_text
+    if match_type == AutoReplyMatchType.starts_with.value:
+        return normalized_text.startswith(normalized_keyword)
+    if match_type == AutoReplyMatchType.ends_with.value:
+        return normalized_text.endswith(normalized_keyword)
+    raise ValueError(f"unsupported auto reply match type: {match_type}")
+
+
 def match_rule(rule: AutoReplyRule, text: str) -> bool:
-    if not rule.case_sensitive:
-        text = text.lower()
-
-    for keyword in rule.keywords:
-        kw = keyword if rule.case_sensitive else keyword.lower()
-
-        match rule.match_type:
-            case AutoReplyMatchType.exact.value:
-                if text == kw:
-                    return True
-            case AutoReplyMatchType.contains.value:
-                if kw in text:
-                    return True
-            case AutoReplyMatchType.starts_with.value:
-                if text.startswith(kw):
-                    return True
-            case AutoReplyMatchType.ends_with.value:
-                if text.endswith(kw):
-                    return True
-            case AutoReplyMatchType.regex.value:
-                try:
-                    if re.search(keyword, text):
-                        return True
-                except re.error:
-                    pass
-
-    return False
+    return any(
+        _keyword_matches(
+            rule.match_type,
+            text,
+            keyword,
+            case_sensitive=rule.case_sensitive,
+        )
+        for keyword in rule.keywords
+    )
 
 
 async def match_auto_reply_impl(
