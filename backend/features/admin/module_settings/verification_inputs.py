@@ -16,6 +16,48 @@ DEFAULT_AGREEMENT_TEXT = "请阅读并同意本群规则后再发言。"
 DEFAULT_MATH_PROMPT_TEXT = "请回答下面的简单算术题完成验证。"
 
 
+async def _apply_verification_input(update, settings, *, state_type: str, message_text: str) -> bool:
+    if state_type == "verification_cover_input":
+        return await _apply_verification_cover(update, settings, message_text)
+    if state_type == "vfy_agreement_text_input":
+        value = message_text.strip()
+        next_value = DEFAULT_AGREEMENT_TEXT if value == "清空" else value
+        if not next_value:
+            await update.effective_message.reply_text("条约文案不能为空。")
+            return False
+        settings.verification_agreement_text = next_value
+        return True
+    if state_type == "vfy_math_prompt_text_input":
+        value = message_text.strip()
+        next_value = DEFAULT_MATH_PROMPT_TEXT if value == "清空" else value
+        if not next_value:
+            await update.effective_message.reply_text("数学题文案不能为空。")
+            return False
+        settings.verification_math_prompt_text = next_value
+        return True
+    await update.effective_message.reply_text("进群验证配置状态已失效，请重新进入。")
+    return False
+
+
+async def _finish_verification_input(
+    update, context, session, *, state, target_chat_id: int
+) -> None:
+    await clear_admin_input_state(
+        session, target_chat_id=target_chat_id, user_id=update.effective_user.id
+    )
+    await session.commit()
+    data = state.state_data if isinstance(state.state_data, dict) else {}
+    return_rule = data.get("return_rule")
+    if return_rule in {"button", "math", "mute"}:
+        await admin_handler_instance()._show_verification_rule_detail(
+            update, context, target_chat_id, mode=return_rule
+        )
+        return
+    await admin_handler_instance()._show_verification_rules_menu(
+        update, context, target_chat_id
+    )
+
+
 async def handle_verification_input(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -30,32 +72,13 @@ async def handle_verification_input(
         return
 
     settings = await admin_module().get_chat_settings(session, target_chat_id)
-    if state.state_type == "verification_cover_input":
-        if not await _apply_verification_cover(update, settings, message_text):
-            return
-    elif state.state_type == "vfy_agreement_text_input":
-        value = message_text.strip()
-        settings.verification_agreement_text = DEFAULT_AGREEMENT_TEXT if value == "清空" else value
-        if not settings.verification_agreement_text.strip():
-            await update.effective_message.reply_text("条约文案不能为空。")
-            return
-    elif state.state_type == "vfy_math_prompt_text_input":
-        value = message_text.strip()
-        settings.verification_math_prompt_text = DEFAULT_MATH_PROMPT_TEXT if value == "清空" else value
-        if not settings.verification_math_prompt_text.strip():
-            await update.effective_message.reply_text("数学题文案不能为空。")
-            return
-    else:
-        await update.effective_message.reply_text("进群验证配置状态已失效，请重新进入。")
+    if not await _apply_verification_input(
+        update, settings, state_type=state.state_type, message_text=message_text
+    ):
         return
-
-    await clear_admin_input_state(session, target_chat_id=target_chat_id, user_id=update.effective_user.id)
-    await session.commit()
-    return_rule = state.state_data.get("return_rule") if isinstance(state.state_data, dict) else None
-    if return_rule in {"button", "math", "mute"}:
-        await admin_handler_instance()._show_verification_rule_detail(update, context, target_chat_id, mode=return_rule)
-        return
-    await admin_handler_instance()._show_verification_rules_menu(update, context, target_chat_id)
+    await _finish_verification_input(
+        update, context, session, state=state, target_chat_id=target_chat_id
+    )
 
 
 async def _apply_verification_cover(update: Update, settings, message_text: str) -> bool:
