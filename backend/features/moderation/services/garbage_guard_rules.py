@@ -171,6 +171,28 @@ RULE_CYCLE_VALUES: dict[str, list[int]] = {
     "messages": [3, 5, 7, 10],
     "seconds": [3, 5, 10, 15, 30],
 }
+RULE_BOOLEAN_FIELDS = (
+    "enabled",
+    "delete_message",
+    "delete_configured",
+    "warn_enabled",
+    "mute_enabled",
+    "kick_enabled",
+    "notice_enabled",
+    "notice_configured",
+    "check_no_username",
+    "check_foreign_name",
+)
+RULE_INTEGER_FIELDS = (
+    ("warn_threshold", 1),
+    ("mute_seconds", 1),
+    ("notice_delete_seconds", 1),
+    ("message_max_length", 20),
+    ("name_max_length", 2),
+    ("messages", 2),
+    ("seconds", 1),
+)
+RULE_KEYWORD_FIELDS = ("mute_keyword", "kick_keyword")
 
 
 def _normalize_int_list(values: Any) -> list[int]:
@@ -209,61 +231,57 @@ def _normalize_keyword(value: Any, default: str) -> str:
     return keyword or default
 
 
-def _merge_rule(rule_id: RuleId, raw: Any) -> dict[str, Any]:
-    merged = copy.deepcopy(DEFAULT_RULES[rule_id])
+def _merge_known_rule_values(defaults: dict[str, Any], raw: Any) -> dict[str, Any]:
+    merged = copy.deepcopy(defaults)
     if isinstance(raw, dict):
         for key, value in raw.items():
             if key in merged:
                 merged[key] = value
-
-    for bool_key in [
-        "enabled",
-        "delete_message",
-        "delete_configured",
-        "warn_enabled",
-        "mute_enabled",
-        "kick_enabled",
-        "notice_enabled",
-        "notice_configured",
-        "check_no_username",
-        "check_foreign_name",
-    ]:
-        if bool_key in merged:
-            merged[bool_key] = _normalize_bool(merged.get(bool_key), bool(DEFAULT_RULES[rule_id].get(bool_key, False)))
-
-    for int_key, minimum in [
-        ("warn_threshold", 1),
-        ("mute_seconds", 1),
-        ("notice_delete_seconds", 1),
-        ("message_max_length", 20),
-        ("name_max_length", 2),
-        ("messages", 2),
-        ("seconds", 1),
-    ]:
-        if int_key in merged:
-            merged[int_key] = _normalize_int(merged.get(int_key), int(DEFAULT_RULES[rule_id].get(int_key, 1)), minimum)
-
-    if not isinstance(merged.get("notice_text"), str):
-        merged["notice_text"] = ""
-
-    for keyword_key in ["mute_keyword", "kick_keyword"]:
-        if keyword_key in merged:
-            merged[keyword_key] = _normalize_keyword(
-                merged.get(keyword_key),
-                str(DEFAULT_RULES[rule_id].get(keyword_key, "")),
-            )
-
     return merged
 
 
-def get_garbage_config(settings: ChatSettings) -> dict[str, Any]:
-    raw_rules = getattr(settings, "anti_spam_rules", None) or {}
-    if not isinstance(raw_rules, dict):
-        raw_rules = {}
+def _normalize_rule_boole(merged: dict[str, Any], defaults: dict[str, Any]) -> None:
+    for bool_key in RULE_BOOLEAN_FIELDS:
+        if bool_key in merged:
+            default = bool(defaults.get(bool_key, False))
+            merged[bool_key] = _normalize_bool(merged.get(bool_key), default)
 
+
+def _normalize_rule_integers(merged: dict[str, Any], defaults: dict[str, Any]) -> None:
+    for int_key, minimum in RULE_INTEGER_FIELDS:
+        if int_key in merged:
+            default = int(defaults.get(int_key, 1))
+            merged[int_key] = _normalize_int(merged.get(int_key), default, minimum)
+
+
+def _normalize_rule_strings(merged: dict[str, Any], defaults: dict[str, Any]) -> None:
+    if not isinstance(merged.get("notice_text"), str):
+        merged["notice_text"] = ""
+    for keyword_key in RULE_KEYWORD_FIELDS:
+        if keyword_key in merged:
+            merged[keyword_key] = _normalize_keyword(
+                merged.get(keyword_key),
+                str(defaults.get(keyword_key, "")),
+            )
+
+
+def _merge_rule(rule_id: RuleId, raw: Any) -> dict[str, Any]:
+    defaults = DEFAULT_RULES[rule_id]
+    merged = _merge_known_rule_values(defaults, raw)
+    _normalize_rule_boole(merged, defaults)
+    _normalize_rule_integers(merged, defaults)
+    _normalize_rule_strings(merged, defaults)
+    return merged
+
+
+def _normalize_raw_rules(settings: ChatSettings) -> dict[str, Any]:
+    raw_rules = getattr(settings, "anti_spam_rules", None)
+    return raw_rules if isinstance(raw_rules, dict) else {}
+
+
+def _build_rule_config(raw_rules: dict[str, Any]) -> dict[str, Any]:
     raw_config = raw_rules.get("garbage_guard")
     config = copy.deepcopy(DEFAULT_GARBAGE_CONFIG)
-
     if isinstance(raw_config, dict):
         config["global_whitelist_user_ids"] = _normalize_int_list(
             raw_config.get("global_whitelist_user_ids", raw_rules.get("exception_user_ids", []))
@@ -271,20 +289,25 @@ def get_garbage_config(settings: ChatSettings) -> dict[str, Any]:
         raw_rule_config = raw_config.get("rules") if isinstance(raw_config.get("rules"), dict) else {}
         for rule_id in RULE_ORDER:
             config["rules"][rule_id] = _merge_rule(rule_id, raw_rule_config.get(rule_id))
-    else:
-        config["global_whitelist_user_ids"] = _normalize_int_list(raw_rules.get("exception_user_ids", []))
-        for rule_id in RULE_ORDER:
-            config["rules"][rule_id] = _merge_rule(rule_id, None)
+        return config
+    config["global_whitelist_user_ids"] = _normalize_int_list(raw_rules.get("exception_user_ids", []))
+    for rule_id in RULE_ORDER:
+        config["rules"][rule_id] = _merge_rule(rule_id, None)
+    _apply_legacy_rule_flags(config, raw_rules)
+    return config
 
-        # Legacy anti-spam options are mapped into the new rule surface for a smooth upgrade.
-        if _normalize_bool(raw_rules.get("block_long_content")):
-            config["rules"]["long_message"]["enabled"] = True
-            config["rules"]["long_name"]["enabled"] = True
-        if _normalize_bool(raw_rules.get("block_links")):
-            config["rules"]["block_links"]["enabled"] = True
-        if _normalize_bool(raw_rules.get("block_forwards")):
-            config["rules"]["block_forwards"]["enabled"] = True
 
+def _apply_legacy_rule_flags(config: dict[str, Any], raw_rules: dict[str, Any]) -> None:
+    if _normalize_bool(raw_rules.get("block_long_content")):
+        config["rules"]["long_message"]["enabled"] = True
+        config["rules"]["long_name"]["enabled"] = True
+    if _normalize_bool(raw_rules.get("block_links")):
+        config["rules"]["block_links"]["enabled"] = True
+    if _normalize_bool(raw_rules.get("block_forwards")):
+        config["rules"]["block_forwards"]["enabled"] = True
+
+
+def _normalize_content_limits(config: dict[str, Any], raw_rules: dict[str, Any]) -> None:
     config["rules"]["long_message"]["message_max_length"] = _normalize_int(
         config["rules"]["long_message"].get("message_max_length", raw_rules.get("message_max_length")),
         500,
@@ -295,6 +318,9 @@ def get_garbage_config(settings: ChatSettings) -> dict[str, Any]:
         32,
         2,
     )
+
+
+def _merge_flood_settings(config: dict[str, Any], settings: ChatSettings) -> None:
     config["rules"]["flood"]["enabled"] = bool(config["rules"]["flood"].get("enabled")) or bool(
         getattr(settings, "anti_flood_enabled", False)
     )
@@ -313,6 +339,9 @@ def get_garbage_config(settings: ChatSettings) -> dict[str, Any]:
         int(getattr(settings, "anti_flood_mute_duration", 3600) or 3600),
         1,
     )
+
+
+def _enable_default_actions(config: dict[str, Any]) -> None:
     for rule_id in DEFAULT_DELETE_ON_ENABLE_RULES:
         rule = config["rules"][rule_id]
         if bool(rule.get("enabled")) and not bool(rule.get("delete_configured")):
@@ -321,6 +350,14 @@ def get_garbage_config(settings: ChatSettings) -> dict[str, Any]:
         rule = config["rules"][rule_id]
         if bool(rule.get("enabled")) and not bool(rule.get("notice_configured")):
             rule["notice_enabled"] = True
+
+
+def get_garbage_config(settings: ChatSettings) -> dict[str, Any]:
+    raw_rules = _normalize_raw_rules(settings)
+    config = _build_rule_config(raw_rules)
+    _normalize_content_limits(config, raw_rules)
+    _merge_flood_settings(config, settings)
+    _enable_default_actions(config)
     return config
 
 
