@@ -7,6 +7,7 @@ import pytest
 
 from backend.features.admin import admin_handler
 from backend.features.automation import ads_handler
+from backend.features.automation import ads_item_callbacks
 from backend.features.group_ops import group_message_handler
 from backend.features.group_ops.group_hooks import controls as group_controls
 from backend.features.admin import points_config_handler
@@ -214,9 +215,9 @@ async def test_ads_create_start_opens_new_item_detail(monkeypatch):
     async def fake_create_rotation_item(session, **kwargs):
         return SimpleNamespace(id=321)
 
-    monkeypatch.setattr(ads_handler, "_resolve_ads_target_chat_id", fake_resolve_target_chat_id)
-    monkeypatch.setattr(ads_handler.ModuleSettingsService, "ensure", fake_ensure)
-    monkeypatch.setattr(ads_handler, "create_rotation_item", fake_create_rotation_item)
+    monkeypatch.setattr(ads_item_callbacks, "_resolve_ads_target_chat_id", fake_resolve_target_chat_id)
+    monkeypatch.setattr(ads_item_callbacks.ModuleSettingsService, "ensure", fake_ensure)
+    monkeypatch.setattr(ads_item_callbacks, "create_rotation_item", fake_create_rotation_item)
 
     async def fake_show_detail(update, context, target_chat_id: int, item_id: int):
         shown["chat_id"] = target_chat_id
@@ -448,12 +449,6 @@ async def test_scheduled_edit_field_keeps_target_chat_id_in_private_state(monkey
         rendered.append((text, reply_markup))
 
     monkeypatch.setattr(handler, "_check_permission", fake_check_permission)
-    monkeypatch.setattr(
-        ads_handler.ConversationStateService,
-        "start",
-        fake_start,
-        raising=False,
-    )
     monkeypatch.setattr(
         verification_handler,
         "ConversationStateService",

@@ -12,6 +12,7 @@ from backend.features.automation.ads_handler import (
     _render_ads_home_text,
     ads_rules_callback,
 )
+from backend.features.automation.ads_command import _parse_ad_command_payload
 from backend.features.automation.services.ad_rotation_service import (
     _validate_future_end_time,
     compute_next_run_at,
@@ -44,6 +45,14 @@ def test_parse_ads_config_with_schedule_and_image_id() -> None:
     assert config["image_file_id"] == "AgACAgUAAxkBAAIB..."
     assert config["start_time"] == dt.datetime(2026, 2, 16, 12, 0, tzinfo=dt.UTC)
     assert config["content"] == "这是广告正文\n第二行"
+
+
+def test_parse_ad_command_accepts_group_addressed_command() -> None:
+    assert _parse_ad_command_payload("/ad@MyBot 活动|今晚直播") == ("活动", "今晚直播")
+
+
+def test_parse_ad_command_requires_payload() -> None:
+    assert _parse_ad_command_payload("/ad@MyBot") is None
 
 
 def test_parse_ad_id_from_callback_supports_new_and_legacy_formats() -> None:
@@ -303,8 +312,8 @@ async def test_ads_show_menu_uses_home_summary(monkeypatch) -> None:
         return []
 
     monkeypatch.setattr(handler.message_helper, "safe_edit", fake_safe_edit)
-    monkeypatch.setattr("backend.features.automation.ads_handler.get_or_create_rotation_rule", fake_get_or_create_rotation_rule)
-    monkeypatch.setattr("backend.features.automation.ads_handler.list_rotation_items", fake_list_rotation_items)
+    monkeypatch.setattr("backend.features.automation.ads_context.get_or_create_rotation_rule", fake_get_or_create_rotation_rule)
+    monkeypatch.setattr("backend.features.automation.ads_context.list_rotation_items", fake_list_rotation_items)
 
     context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}))
     await handler.show_menu(SimpleNamespace(), context, -100123)
