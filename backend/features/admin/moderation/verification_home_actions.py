@@ -1,6 +1,178 @@
 from __future__ import annotations
 
-from backend.features.admin.support import *
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import ContextTypes
+
+from backend.features.admin.module_settings import (
+    build_force_subscribe_preview_markup_async as _build_force_subscribe_preview_markup_async,
+)
+from backend.features.admin.support_constants import (
+    JOIN_BURST_THRESHOLD_VALUES,
+    JOIN_BURST_TIP_MODE_LABELS,
+    JOIN_BURST_WINDOW_VALUES,
+    JOIN_SELF_REVIEW_ACTION_LABELS,
+    JOIN_SELF_REVIEW_TIMEOUT_VALUES,
+    JOIN_SPAM_RULE_VALUES,
+    JOIN_SPAM_TIP_DELETE_VALUES,
+    VERIFICATION_ACTION_LABELS,
+    VERIFICATION_DIRECT_MUTE_DURATION_VALUES,
+    VERIFICATION_TIMEOUT_VALUES,
+)
+from backend.features.admin.support_helpers import _cycle_config_value
+from backend.platform.db.runtime.session import Database
+from backend.platform.telegram.errors import answer_callback_query_safely
+from backend.shared.callback_parser import CallbackParser
+from backend.shared.services.chat_service import get_chat_settings
+
+
+def _apply_verification_rule(settings, *, mode: str, action: str, key: str) -> None:
+    if action == "toggle":
+        settings.verification_enabled = True
+        settings.verification_mode = mode
+        return
+    if action == "disable":
+        if settings.verification_mode == mode:
+            settings.verification_enabled = False
+        return
+    if action == "clear_cover":
+        settings.verification_cover_media_type = None
+        settings.verification_cover_file_id = None
+        return
+    if action != "cycle":
+        raise ValueError(f"未识别的验证规则操作: {action}")
+    _cycle_verification_rule(settings, key)
+
+
+def _cycle_verification_rule(settings, key: str) -> None:
+    definitions = {
+        "timeout": ("verification_timeout_seconds", VERIFICATION_TIMEOUT_VALUES, None),
+        "timeout_action": (
+            "verification_timeout_action",
+            list(VERIFICATION_ACTION_LABELS.keys()),
+            None,
+        ),
+        "wrong_action": (
+            "verification_wrong_action",
+            list(VERIFICATION_ACTION_LABELS.keys()),
+            "none",
+        ),
+        "duration": (
+            "verification_direct_mute_duration",
+            VERIFICATION_DIRECT_MUTE_DURATION_VALUES,
+            0,
+        ),
+    }
+    definition = definitions.get(key)
+    if definition is None:
+        raise ValueError(f"未识别的验证规则配置: {key}")
+    field, values, default = definition
+    current = getattr(settings, field, default)
+    setattr(settings, field, _cycle_config_value(current, values))
+
+
+def _toggle_mapped_setting(settings, key: str, field_map: dict[str, str]) -> None:
+    field = field_map.get(key)
+    if field is None:
+        raise ValueError(f"未识别的开关配置: {key}")
+    setattr(settings, field, not bool(getattr(settings, field)))
+
+
+def _apply_join_spam_setting(settings, action: str, key: str) -> None:
+    if action == "toggle":
+        _toggle_mapped_setting(settings, key, {
+            "enabled": "join_spam_guard_enabled",
+            "notify": "join_spam_send_invalid_msg_enabled",
+            "mute": "join_spam_mute_member_enabled",
+            "kick": "join_spam_kick_member_enabled",
+        })
+        return
+    definitions = {
+        "rules": ("join_spam_detect_rules_count", JOIN_SPAM_RULE_VALUES),
+        "tip_sec": ("join_spam_tip_delete_after_seconds", JOIN_SPAM_TIP_DELETE_VALUES),
+    }
+    if action != "cycle" or key not in definitions:
+        raise ValueError(f"未识别的入群广告检测配置: {action}/{key}")
+    field, values = definitions[key]
+    setattr(settings, field, _cycle_config_value(getattr(settings, field), values))
+
+
+def _apply_join_burst_setting(settings, action: str, key: str) -> None:
+    if action == "toggle":
+        _toggle_mapped_setting(settings, key, {
+            "enabled": "join_burst_enabled",
+            "mute": "join_burst_mute_enabled",
+            "kick": "join_burst_kick_enabled",
+        })
+        return
+    definitions = {
+        "window": ("join_burst_window_seconds", JOIN_BURST_WINDOW_VALUES),
+        "threshold": ("join_burst_threshold_count", JOIN_BURST_THRESHOLD_VALUES),
+        "tip_mode": ("join_burst_tip_mode", list(JOIN_BURST_TIP_MODE_LABELS.keys())),
+    }
+    if action != "cycle" or key not in definitions:
+        raise ValueError(f"未识别的突发入群配置: {action}/{key}")
+    field, values = definitions[key]
+    setattr(settings, field, _cycle_config_value(getattr(settings, field), values))
+
+
+def _apply_self_review_setting(settings, action: str, key: str) -> None:
+    if action == "toggle" and key == "enabled":
+        settings.join_self_review_enabled = not bool(settings.join_self_review_enabled)
+        return
+    if action == "fs_toggle" and key == "enabled":
+        settings.force_subscribe_enabled = not bool(getattr(settings, "force_subscribe_enabled", False))
+        return
+    if action == "fs_cycle":
+        _cycle_force_subscribe_setting(settings, key)
+        return
+    if action == "cycle":
+        _cycle_self_review_setting(settings, key)
+        return
+    raise ValueError(f"未识别的自助审核配置: {action}/{key}")
+
+
+def _cycle_force_subscribe_setting(settings, key: str) -> None:
+    if key == "check_mode":
+        settings.force_subscribe_check_mode = _cycle_config_value(
+            getattr(settings, "force_subscribe_check_mode", "all"),
+            ["all", "any"],
+        )
+        return
+    if key != "action":
+        raise ValueError(f"未识别的强制关注配置: {key}")
+    from backend.platform.db.schema.models.enums import ForceSubscribeAction
+
+    actions = [
+        ForceSubscribeAction.delete_and_warn.value,
+        ForceSubscribeAction.delete_only.value,
+        ForceSubscribeAction.warn_only.value,
+        ForceSubscribeAction.mute.value,
+    ]
+    current = getattr(
+        settings,
+        "force_subscribe_not_subscribed_action",
+        ForceSubscribeAction.delete_and_warn.value,
+    )
+    settings.force_subscribe_not_subscribed_action = _cycle_config_value(current, actions)
+
+
+def _cycle_self_review_setting(settings, key: str) -> None:
+    definitions = {
+        "timeout": ("join_self_review_timeout_seconds", JOIN_SELF_REVIEW_TIMEOUT_VALUES),
+        "timeout_action": (
+            "join_self_review_timeout_action",
+            list(JOIN_SELF_REVIEW_ACTION_LABELS.keys()),
+        ),
+        "wrong_action": (
+            "join_self_review_wrong_action",
+            list(JOIN_SELF_REVIEW_ACTION_LABELS.keys()),
+        ),
+    }
+    definition = definitions.get(key)
+    if definition is None:
+        raise ValueError(f"未识别的自助审核配置: {key}")
+    field, values = definition
+    setattr(settings, field, _cycle_config_value(getattr(settings, field), values))
 
 
 class VerificationHomeActionsMixin:
@@ -72,36 +244,12 @@ class VerificationHomeActionsMixin:
 
         async with db.session_factory() as session:
             settings = await get_chat_settings(session, chat_id)
-            if action == "toggle":
-                settings.verification_enabled = True
-                settings.verification_mode = mode
-            elif action == "disable":
-                if settings.verification_mode == mode:
-                    settings.verification_enabled = False
-            elif action == "clear_cover":
-                settings.verification_cover_media_type = None
-                settings.verification_cover_file_id = None
-            elif action == "cycle":
-                if key == "timeout":
-                    settings.verification_timeout_seconds = _cycle_config_value(
-                        settings.verification_timeout_seconds,
-                        VERIFICATION_TIMEOUT_VALUES,
-                    )
-                elif key == "timeout_action":
-                    settings.verification_timeout_action = _cycle_config_value(
-                        settings.verification_timeout_action,
-                        list(VERIFICATION_ACTION_LABELS.keys()),
-                    )
-                elif key == "wrong_action":
-                    settings.verification_wrong_action = _cycle_config_value(
-                        getattr(settings, "verification_wrong_action", "none"),
-                        list(VERIFICATION_ACTION_LABELS.keys()),
-                    )
-                elif key == "duration":
-                    settings.verification_direct_mute_duration = _cycle_config_value(
-                        getattr(settings, "verification_direct_mute_duration", 0),
-                        VERIFICATION_DIRECT_MUTE_DURATION_VALUES,
-                    )
+            try:
+                _apply_verification_rule(settings, mode=mode, action=action, key=key)
+            except ValueError as exc:
+                await session.rollback()
+                await answer_callback_query_safely(update, str(exc), show_alert=True)
+                return
             await session.commit()
 
         await self._show_verification_rule_detail(update, context, chat_id, mode=mode)
@@ -208,27 +356,12 @@ class VerificationHomeActionsMixin:
             return
         async with db.session_factory() as session:
             settings = await get_chat_settings(session, chat_id)
-            if action == "toggle":
-                field_map = {
-                    "enabled": "join_spam_guard_enabled",
-                    "notify": "join_spam_send_invalid_msg_enabled",
-                    "mute": "join_spam_mute_member_enabled",
-                    "kick": "join_spam_kick_member_enabled",
-                }
-                field = field_map.get(key)
-                if field:
-                    setattr(settings, field, not bool(getattr(settings, field)))
-            elif action == "cycle":
-                if key == "rules":
-                    settings.join_spam_detect_rules_count = _cycle_config_value(
-                        settings.join_spam_detect_rules_count,
-                        JOIN_SPAM_RULE_VALUES,
-                    )
-                elif key == "tip_sec":
-                    settings.join_spam_tip_delete_after_seconds = _cycle_config_value(
-                        settings.join_spam_tip_delete_after_seconds,
-                        JOIN_SPAM_TIP_DELETE_VALUES,
-                    )
+            try:
+                _apply_join_spam_setting(settings, action, key)
+            except ValueError as exc:
+                await session.rollback()
+                await answer_callback_query_safely(update, str(exc), show_alert=True)
+                return
             await session.commit()
         await self._show_join_spam_guard_menu(update, context, chat_id)
 
@@ -245,92 +378,79 @@ class VerificationHomeActionsMixin:
             await self._show_join_self_review_menu(update, context, chat_id)
             return
         if action == "fs_preview":
-            async with db.session_factory() as session:
-                settings = await get_chat_settings(session, chat_id)
-                await session.commit()
-            await self.message_helper.safe_edit(
-                update,
-                "👀 强制关注 | 预览效果\n\n这是用户未关注频道/群组时会收到的提示样式预览。",
-                reply_markup=await _build_force_subscribe_preview_markup_async(
-                    settings,
-                    chat_id,
-                    context,
-                    back_callback=f"adm:vfy_home:{chat_id}:self_review",
-                ),
-            )
+            await self._show_force_subscribe_preview(update, context, chat_id, db=db)
             return
         if action == "fs_input":
-            from backend.platform.db.schema.models.enums import ConversationStateType
-
-            state_map = {
-                "channel1": ConversationStateType.force_subscribe_channel_1_input.value,
-                "channel2": ConversationStateType.force_subscribe_channel_2_input.value,
-                "text": ConversationStateType.force_subscribe_text_input.value,
-            }
-            state_type = state_map.get(key)
-            if state_type is None:
-                await answer_callback_query_safely(update, "未识别的强制关注配置项", show_alert=True)
-                return
-            await self._start_text_input_state(
-                context,
-                update.effective_user.id,
-                chat_id,
-                state_type=state_type,
-                payload={"target_chat_id": chat_id, "return_to": "verification_self_review"},
-            )
-            prompt = {
-                "channel1": "👉 请回复需要绑定的频道/群组1（ID、用户名或链接）：",
-                "channel2": "👉 请回复需要绑定的频道/群组2（ID、用户名或链接）：",
-                "text": "👉 请输入未关注时的提示文案：",
-            }[key]
-            await self.message_helper.safe_edit(
-                update,
-                prompt,
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"adm:vfy_home:{chat_id}:self_review")]]),
-            )
+            await self._start_force_subscribe_input(update, context, chat_id, key=key)
             return
         async with db.session_factory() as session:
             settings = await get_chat_settings(session, chat_id)
-            if action == "toggle" and key == "enabled":
-                settings.join_self_review_enabled = not bool(settings.join_self_review_enabled)
-            elif action == "fs_toggle" and key == "enabled":
-                settings.force_subscribe_enabled = not bool(getattr(settings, "force_subscribe_enabled", False))
-            elif action == "fs_cycle":
-                if key == "check_mode":
-                    settings.force_subscribe_check_mode = _cycle_config_value(
-                        getattr(settings, "force_subscribe_check_mode", "all"),
-                        ["all", "any"],
-                    )
-                elif key == "action":
-                    from backend.platform.db.schema.models.enums import ForceSubscribeAction
-
-                    settings.force_subscribe_not_subscribed_action = _cycle_config_value(
-                        getattr(settings, "force_subscribe_not_subscribed_action", ForceSubscribeAction.delete_and_warn.value),
-                        [
-                            ForceSubscribeAction.delete_and_warn.value,
-                            ForceSubscribeAction.delete_only.value,
-                            ForceSubscribeAction.warn_only.value,
-                            ForceSubscribeAction.mute.value,
-                        ],
-                    )
-            elif action == "cycle":
-                if key == "timeout":
-                    settings.join_self_review_timeout_seconds = _cycle_config_value(
-                        settings.join_self_review_timeout_seconds,
-                        JOIN_SELF_REVIEW_TIMEOUT_VALUES,
-                    )
-                elif key == "timeout_action":
-                    settings.join_self_review_timeout_action = _cycle_config_value(
-                        settings.join_self_review_timeout_action,
-                        list(JOIN_SELF_REVIEW_ACTION_LABELS.keys()),
-                    )
-                elif key == "wrong_action":
-                    settings.join_self_review_wrong_action = _cycle_config_value(
-                        settings.join_self_review_wrong_action,
-                        list(JOIN_SELF_REVIEW_ACTION_LABELS.keys()),
-                    )
+            try:
+                _apply_self_review_setting(settings, action, key)
+            except ValueError as exc:
+                await session.rollback()
+                await answer_callback_query_safely(update, str(exc), show_alert=True)
+                return
             await session.commit()
         await self._show_join_self_review_menu(update, context, chat_id)
+
+    async def _show_force_subscribe_preview(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+        *,
+        db: Database,
+    ) -> None:
+        async with db.session_factory() as session:
+            settings = await get_chat_settings(session, chat_id)
+            await session.commit()
+        markup = await _build_force_subscribe_preview_markup_async(
+            settings,
+            chat_id,
+            context,
+            back_callback=f"adm:vfy_home:{chat_id}:self_review",
+        )
+        await self.message_helper.safe_edit(
+            update,
+            "👀 强制关注 | 预览效果\n\n这是用户未关注频道/群组时会收到的提示样式预览。",
+            reply_markup=markup,
+        )
+
+    async def _start_force_subscribe_input(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+        *,
+        key: str,
+    ) -> None:
+        from backend.platform.db.schema.models.enums import ConversationStateType
+
+        state_map = {
+            "channel1": ConversationStateType.force_subscribe_channel_1_input.value,
+            "channel2": ConversationStateType.force_subscribe_channel_2_input.value,
+            "text": ConversationStateType.force_subscribe_text_input.value,
+        }
+        prompts = {
+            "channel1": "👉 请回复需要绑定的频道/群组1（ID、用户名或链接）：",
+            "channel2": "👉 请回复需要绑定的频道/群组2（ID、用户名或链接）：",
+            "text": "👉 请输入未关注时的提示文案：",
+        }
+        if key not in state_map:
+            await answer_callback_query_safely(update, "未识别的强制关注配置项", show_alert=True)
+            return
+        await self._start_text_input_state(
+            context,
+            update.effective_user.id,
+            chat_id,
+            state_type=state_map[key],
+            payload={"target_chat_id": chat_id, "return_to": "verification_self_review"},
+        )
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton("🔙 返回", callback_data=f"adm:vfy_home:{chat_id}:self_review")
+        ]])
+        await self.message_helper.safe_edit(update, prompts[key], reply_markup=keyboard)
 
     async def _handle_join_burst_guard_action(
         self,
@@ -346,30 +466,11 @@ class VerificationHomeActionsMixin:
             return
         async with db.session_factory() as session:
             settings = await get_chat_settings(session, chat_id)
-            if action == "toggle":
-                field_map = {
-                    "enabled": "join_burst_enabled",
-                    "mute": "join_burst_mute_enabled",
-                    "kick": "join_burst_kick_enabled",
-                }
-                field = field_map.get(key)
-                if field:
-                    setattr(settings, field, not bool(getattr(settings, field)))
-            elif action == "cycle":
-                if key == "window":
-                    settings.join_burst_window_seconds = _cycle_config_value(
-                        settings.join_burst_window_seconds,
-                        JOIN_BURST_WINDOW_VALUES,
-                    )
-                elif key == "threshold":
-                    settings.join_burst_threshold_count = _cycle_config_value(
-                        settings.join_burst_threshold_count,
-                        JOIN_BURST_THRESHOLD_VALUES,
-                    )
-                elif key == "tip_mode":
-                    settings.join_burst_tip_mode = _cycle_config_value(
-                        settings.join_burst_tip_mode,
-                        list(JOIN_BURST_TIP_MODE_LABELS.keys()),
-                    )
+            try:
+                _apply_join_burst_setting(settings, action, key)
+            except ValueError as exc:
+                await session.rollback()
+                await answer_callback_query_safely(update, str(exc), show_alert=True)
+                return
             await session.commit()
         await self._show_join_burst_guard_menu(update, context, chat_id)
