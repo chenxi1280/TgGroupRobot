@@ -7,7 +7,6 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Literal
 
-from telegram import Bot, ChatPermissions
 _CHECK_FLOOD_THRESHOLD_2 = 2
 
 
@@ -195,84 +194,6 @@ _tracker = AntiFloodTracker()
 def get_tracker() -> AntiFloodTracker:
     """获取全局追踪器"""
     return _tracker
-
-
-async def execute_flood_punishment(
-    bot: Bot,
-    chat_id: int,
-    user_id: int,
-    *, action: str,
-    mute_duration: int = 3600,
-    cleanup_messages: bool = True,
-) -> bool:
-    """执行刷屏惩罚"""
-    try:
-        message_ids: list[int] = []
-        if cleanup_messages or action == "delete":
-            message_ids = await _tracker.get_and_clear_messages(chat_id, user_id)
-            for msg_id in message_ids:
-                try:
-                    await bot.delete_message(chat_id=chat_id, message_id=msg_id)
-                except Exception as e:
-                    log.warning("delete_message_failed", chat_id=chat_id, message_id=msg_id, error=str(e))
-
-        if action == "delete":
-            return True
-
-        elif action == "mute":
-            # 禁言（可选删除消息）
-            if not cleanup_messages:
-                await _tracker.get_and_clear_messages(chat_id, user_id)
-
-            # 检查是否已经禁言，避免重复
-            if await _tracker.is_muted(chat_id, user_id):
-                return True
-
-            try:
-                await bot.restrict_chat_member(
-                    chat_id=chat_id,
-                    user_id=user_id,
-                    permissions=ChatPermissions(
-                        can_send_messages=False,
-                        can_send_audios=False,
-                        can_send_documents=False,
-                        can_send_photos=False,
-                        can_send_videos=False,
-                        can_send_video_notes=False,
-                        can_send_voice_notes=False,
-                        can_send_polls=False,
-                        can_send_other_messages=False,
-                        can_add_web_page_previews=False,
-                        can_change_info=False,
-                        can_invite_users=False,
-                        can_pin_messages=False,
-                        can_manage_topics=False,
-                    ),
-                    until_date=dt.datetime.now(dt.UTC) + dt.timedelta(seconds=mute_duration),
-                )
-                await _tracker.mark_muted(chat_id, user_id, mute_duration)
-                return True
-            except Exception as e:
-                log.warning("restrict_chat_member_failed", chat_id=chat_id, user_id=user_id, error=str(e))
-                return False
-
-        elif action == "ban":
-            # 封禁（可选删除消息）
-            if not cleanup_messages:
-                await _tracker.get_and_clear_messages(chat_id, user_id)
-
-            try:
-                await bot.ban_chat_member(chat_id=chat_id, user_id=user_id)
-                return True
-            except Exception as e:
-                log.warning("ban_chat_member_failed", chat_id=chat_id, user_id=user_id, error=str(e))
-                return False
-
-    except Exception as exc:
-        log.warning("anti_flood_apply_failed", chat_id=chat_id, user_id=user_id, action=action, error=str(exc))
-        return False
-
-    return False
 
 
 async def anti_flood_cleanup_job(app) -> None:
