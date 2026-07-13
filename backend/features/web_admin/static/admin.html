@@ -45,6 +45,7 @@
         <button class="tab" data-tab="platform">公共配置</button>
         <button class="tab" data-tab="accounts">后台账号</button>
         <button class="tab" data-tab="verificationTimeouts">验证超时任务</button>
+        <button class="tab" data-tab="adDeliveries">广告派发任务</button>
         <button class="tab" data-tab="audit">操作日志</button>
       </nav>
 
@@ -267,6 +268,38 @@
         </section>
       </section>
 
+      <section id="tabAdDeliveries" class="tab-panel hidden">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>广告派发历史</h2>
+            <button id="refreshAdDeliveriesBtn" type="button" class="ghost">刷新</button>
+          </div>
+          <div class="form-grid">
+            <label><span>群组 ID</span><input id="adDeliveryChatId" type="number" placeholder="例如 -1001234567890"></label>
+            <label>
+              <span>状态</span>
+              <select id="adDeliveryStatus">
+                <option value="">全部</option>
+                <option value="pending">待执行</option>
+                <option value="retryable_failed">等待重试</option>
+                <option value="permanent_failed">永久失败</option>
+                <option value="uncertain">结果不确定</option>
+                <option value="succeeded">成功</option>
+                <option value="cancelled">已取消</option>
+              </select>
+            </label>
+            <button id="loadAdDeliveriesBtn" type="button">查询</button>
+          </div>
+          <p class="muted">不确定记录不会自动重发；人工重放必须填写原因并确认重复风险。</p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>ID</th><th>广告</th><th>状态</th><th>次数</th><th>错误</th><th>计划时间</th><th>下次重试</th><th>操作</th></tr></thead>
+              <tbody id="adDeliveriesBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
       <section id="tabAudit" class="tab-panel hidden">
         <section class="panel">
           <div class="panel-head">
@@ -287,5 +320,6 @@
   </main>
   <script src="/admin/static/admin.js"></script>
   <script src="/admin/static/verification_timeouts.js"></script>
+  <script src="/admin/static/ad_deliveries.js"></script>
 </body>
 </html>

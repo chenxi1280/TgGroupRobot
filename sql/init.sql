@@ -1384,6 +1384,8 @@ CREATE TABLE IF NOT EXISTS bot.ad_rotation_rules (
     last_sent_item_id INTEGER,
     last_sent_message_id INTEGER,
     last_pinned_message_id INTEGER,
+    top_campaign_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+    exclude_campaign_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL,
     CONSTRAINT fk_ad_rotation_rules_chat_id FOREIGN KEY (chat_id)
@@ -1410,6 +1412,39 @@ COMMENT ON COLUMN bot.ad_rotation_rules.last_pinned_message_id IS '上次置顶�
 
 CREATE INDEX IF NOT EXISTS ix_ad_rotation_rules_enabled ON bot.ad_rotation_rules(enabled);
 CREATE INDEX IF NOT EXISTS ix_ad_rotation_rules_next_run_at ON bot.ad_rotation_rules(next_run_at);
+
+CREATE TABLE IF NOT EXISTS bot.ad_rotation_history (
+    id SERIAL PRIMARY KEY,
+    chat_id BIGINT NOT NULL REFERENCES bot.tg_chats(id) ON DELETE CASCADE,
+    campaign_id INTEGER REFERENCES bot.ad_campaigns(id) ON DELETE SET NULL,
+    dispatch_key VARCHAR(128) NOT NULL,
+    scheduled_for TIMESTAMPTZ NOT NULL,
+    content_snapshot JSONB NOT NULL,
+    rule_snapshot JSONB NOT NULL,
+    status VARCHAR(32) NOT NULL DEFAULT 'pending',
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    next_retry_at TIMESTAMPTZ,
+    lease_until TIMESTAMPTZ,
+    send_started_at TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ,
+    error_code VARCHAR(64),
+    error_message TEXT,
+    replay_of_history_id INTEGER,
+    replay_admin_id BIGINT,
+    replay_reason TEXT,
+    sent_at TIMESTAMPTZ,
+    message_id INTEGER,
+    pinned_message_id INTEGER,
+    cycle_no INTEGER NOT NULL DEFAULT 0,
+    sort_order_snapshot INTEGER NOT NULL DEFAULT 1,
+    title_snapshot VARCHAR(128) NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_ad_rotation_history_dispatch_key ON bot.ad_rotation_history(dispatch_key);
+CREATE INDEX IF NOT EXISTS ix_ad_rotation_history_due ON bot.ad_rotation_history(status, next_retry_at, lease_until);
+CREATE INDEX IF NOT EXISTS ix_ad_rotation_history_chat_sent ON bot.ad_rotation_history(chat_id, sent_at DESC);
+CREATE INDEX IF NOT EXISTS ix_ad_rotation_history_campaign_sent ON bot.ad_rotation_history(campaign_id, sent_at DESC);
 
 -- ============================================
 -- 15. 对话状态表 (conversation_states)

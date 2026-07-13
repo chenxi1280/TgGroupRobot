@@ -1,19 +1,15 @@
 from __future__ import annotations
 
-import asyncio
 import datetime as dt
-from dataclasses import dataclass
-from types import SimpleNamespace
 
 import structlog
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.features.automation.services.scheduled_message_service import ScheduledMessageService
 from backend.platform.db.schema.models.automation import AdCampaign, AdRotationRule
-from backend.shared.async_tasks import spawn_background_task
 from backend.shared.services.base import ValidationError
 from backend.shared.services.publish_service import PublishService
 from backend.shared.time_helper import LOCAL_TIMEZONE, parse_date_time_string
@@ -26,38 +22,6 @@ RULE_MODES = {"send", "send_pin"}
 DELETE_POLICIES = {"none", "delete_prev", "delete_prev_cycle", "delete_delay"}
 UNSET = object()
 log = structlog.get_logger(__name__)
-
-
-@dataclass(frozen=True)
-class RotationItemDispatchSnapshot:
-    id: int
-    chat_id: int
-    title: str
-    content: str
-    image_file_id: str | None
-    buttons: list
-    last_sent_message_id: int | None
-
-
-@dataclass(frozen=True)
-class RotationRuleDispatchPlan:
-    chat_id: int
-    mode: str
-    delete_policy: str
-    delete_delay_seconds: int
-    unpin_previous: bool
-    last_sent_message_id: int | None
-    last_pinned_message_id: int | None
-    next_cursor: int
-    item: RotationItemDispatchSnapshot
-    claimed_at: dt.datetime
-
-
-@dataclass(frozen=True)
-class RotationDispatchResult:
-    ok: bool
-    message_id: int | None = None
-    pinned_message_id: int | None = None
 
 
 def format_local_datetime(value: dt.datetime | None, *, empty: str = "未设置") -> str:
@@ -157,18 +121,6 @@ def build_item_markup(item: AdCampaign) -> InlineKeyboardMarkup | None:
         if button_row:
             keyboard_rows.append(button_row)
     return InlineKeyboardMarkup(keyboard_rows) if keyboard_rows else None
-
-
-def _snapshot_rotation_item(item: AdCampaign) -> RotationItemDispatchSnapshot:
-    return RotationItemDispatchSnapshot(
-        id=int(item.id),
-        chat_id=int(item.chat_id),
-        title=str(item.title or ""),
-        content=str(item.content or ""),
-        image_file_id=item.image_file_id,
-        buttons=list(item.buttons or []),
-        last_sent_message_id=item.last_sent_message_id,
-    )
 
 
 def get_effective_item_count(items: list[AdCampaign], now: dt.datetime | None = None) -> int:
@@ -458,7 +410,17 @@ def select_next_rotation_item(
     now: dt.datetime | None = None,
 ) -> tuple[AdCampaign | None, int]:
     current = now or dt.datetime.now(dt.UTC)
-    available = [item for item in items if is_rotation_item_effective(item, current)]
+    excluded = {int(value) for value in getattr(rule, "exclude_campaign_ids", []) or []}
+    available = [
+        item
+        for item in items
+        if item.id not in excluded and is_rotation_item_effective(item, current)
+    ]
+    top_ids = {int(value) for value in getattr(rule, "top_campaign_ids", []) or []}
+    if top_ids:
+        available = [item for item in available if item.id in top_ids]
+        if not available:
+            raise ValidationError("置顶轮播池没有可发送的有效条目")
     if not available:
         return None, int(rule.current_order_cursor or 1)
 
@@ -479,55 +441,11 @@ def select_next_rotation_item(
     return selected, next_cursor
 
 
-async def _delete_message_safely(
-    context: ContextTypes.DEFAULT_TYPE,
-    *,
-    chat_id: int,
-    message_id: int | None,
-) -> None:
-    if not message_id:
-        return
-    try:
-        await PublishService.delete(context, chat_id=chat_id, message_id=message_id)
-    except Exception as exc:
-        log.warning("ad_rotation_message_delete_failed", chat_id=chat_id, message_id=message_id, error=str(exc))
-        return
-
-
-async def _unpin_message_safely(
-    context: ContextTypes.DEFAULT_TYPE,
-    *,
-    chat_id: int,
-    message_id: int | None,
-) -> None:
-    if not message_id:
-        return
-    try:
-        await PublishService.unpin(context, chat_id=chat_id, message_id=message_id)
-    except Exception as exc:
-        log.warning("ad_rotation_message_unpin_failed", chat_id=chat_id, message_id=message_id, error=str(exc))
-        return
-
-
-async def _delete_later(
-    context: ContextTypes.DEFAULT_TYPE,
-    *,
-    chat_id: int,
-    message_id: int,
-    delay_seconds: int,
-) -> None:
-    try:
-        await asyncio.sleep(max(delay_seconds, 1))
-    except asyncio.CancelledError:
-        raise
-    await _delete_message_safely(context, chat_id=chat_id, message_id=message_id)
-
-
 async def send_rotation_item(
     context: ContextTypes.DEFAULT_TYPE,
     *,
     chat_id: int,
-    item: AdCampaign | RotationItemDispatchSnapshot,
+    item: AdCampaign,
 ):
     text = (item.content or "").strip() or item.title
     reply_markup = build_item_markup(item)
@@ -557,157 +475,23 @@ async def preview_rotation_item(
 
 
 async def dispatch_due_rotation_rules(app) -> int:
-    db = app.bot_data["db"]
-    dispatched = 0
-    now = dt.datetime.now(dt.UTC)
-    started_at = now
-    telegram_failures = 0
-    db_commit_failures = 0
+    from backend.features.automation.ad_delivery_executor import TelegramAdDeliveryExecutor
+    from backend.features.automation.ad_delivery_repository import SqlAlchemyAdDeliveryStore
+    from backend.features.automation.ad_delivery_worker import AdDeliveryWorker, AdWorkerDependencies
 
-    async with db.session_factory() as session:
-        try:
-            plans = await _claim_due_rotation_rules(session, now=now)
-            await session.commit()
-        except Exception as exc:
-            await session.rollback()
-            log.exception("ad_rotation_claim_failed", error=str(exc))
-            return 0
-
-    context = SimpleNamespace(bot=app.bot, application=app)
-    for plan in plans:
-        result = await _dispatch_claimed_rule(context, app, plan)
-        if not result.ok:
-            telegram_failures += 1
-            continue
-
-        async with db.session_factory() as session:
-            try:
-                await _record_rotation_dispatch(session, plan, result)
-                await session.commit()
-                dispatched += 1
-            except Exception as exc:
-                db_commit_failures += 1
-                await session.rollback()
-                log.exception("ad_rotation_record_failed", chat_id=plan.chat_id, item_id=plan.item.id, error=str(exc))
-
-    if plans or telegram_failures or db_commit_failures:
-        duration = (dt.datetime.now(dt.UTC) - started_at).total_seconds()
-        log.info(
-            "ad_rotation_tick_finished",
-            claimed=len(plans),
-            dispatched=dispatched,
-            telegram_failures=telegram_failures,
-            db_commit_failures=db_commit_failures,
-            duration=round(duration, 3),
-        )
-    return dispatched
-
-
-async def _claim_due_rotation_rules(session: AsyncSession, *, now: dt.datetime) -> list[RotationRuleDispatchPlan]:
-    stmt = (
-        select(AdRotationRule)
-        .where(
-            AdRotationRule.enabled == True,
-            or_(AdRotationRule.next_run_at.is_(None), AdRotationRule.next_run_at <= now),
-        )
-        .order_by(AdRotationRule.next_run_at.asc().nullsfirst())
-        .with_for_update(skip_locked=True)
+    dependencies = AdWorkerDependencies(
+        store=SqlAlchemyAdDeliveryStore(app.bot_data["db"]),
+        executor=TelegramAdDeliveryExecutor(app),
+        clock=lambda: dt.datetime.now(dt.UTC),
     )
-    result = await session.execute(stmt)
-    rules = list(result.scalars().all())
-    plans: list[RotationRuleDispatchPlan] = []
-
-    for rule in rules:
-        try:
-            items = await list_rotation_items(session, rule.chat_id)
-            item, next_cursor = select_next_rotation_item(rule, items, now=now)
-            rule.next_run_at = compute_next_run_at(rule, now=now, sent_at=now)
-            if item is None:
-                log.info("ad_rotation_no_effective_item", chat_id=rule.chat_id)
-                continue
-            plans.append(
-                RotationRuleDispatchPlan(
-                    chat_id=int(rule.chat_id),
-                    mode=rule.mode,
-                    delete_policy=rule.delete_policy,
-                    delete_delay_seconds=int(rule.delete_delay_seconds or DEFAULT_DELETE_DELAY_SECONDS),
-                    unpin_previous=bool(rule.unpin_previous),
-                    last_sent_message_id=rule.last_sent_message_id,
-                    last_pinned_message_id=rule.last_pinned_message_id,
-                    next_cursor=next_cursor,
-                    item=_snapshot_rotation_item(item),
-                    claimed_at=now,
-                )
-            )
-        except Exception as exc:
-            log.exception("ad_rotation_rule_claim_failed", chat_id=rule.chat_id, error=str(exc))
-            rule.next_run_at = compute_next_run_at(rule, now=now, sent_at=now)
-    return plans
-
-
-async def _dispatch_claimed_rule(
-    context: ContextTypes.DEFAULT_TYPE,
-    app,
-    plan: RotationRuleDispatchPlan,
-) -> RotationDispatchResult:
-    if plan.delete_policy == "delete_prev":
-        await _delete_message_safely(context, chat_id=plan.chat_id, message_id=plan.last_sent_message_id)
-    elif plan.delete_policy == "delete_prev_cycle":
-        await _delete_message_safely(context, chat_id=plan.chat_id, message_id=plan.item.last_sent_message_id)
-
-    if plan.mode == "send_pin" and plan.unpin_previous:
-        await _unpin_message_safely(context, chat_id=plan.chat_id, message_id=plan.last_pinned_message_id)
-
-    try:
-        result = await send_rotation_item(context, chat_id=plan.chat_id, item=plan.item)
-    except Exception as exc:
-        log.exception("ad_rotation_send_failed", chat_id=plan.chat_id, item_id=plan.item.id, error=str(exc))
-        return RotationDispatchResult(ok=False)
-    message_id = result.message_id
-
-    if plan.mode == "send_pin" and message_id is not None:
-        try:
-            await PublishService.pin(context, chat_id=plan.chat_id, message_id=message_id)
-            pinned_message_id = message_id
-        except Exception as exc:
-            pinned_message_id = None
-            log.warning("ad_rotation_pin_failed", chat_id=plan.chat_id, message_id=message_id, error=str(exc))
-    else:
-        pinned_message_id = None
-
-    if plan.delete_policy == "delete_delay" and message_id is not None:
-        spawn_background_task(
-            app,
-            _delete_later(
-                context,
-                chat_id=plan.chat_id,
-                message_id=message_id,
-                delay_seconds=plan.delete_delay_seconds,
-            ),
-            name="ad_rotation.delete_later",
-        )
-
-    return RotationDispatchResult(ok=True, message_id=message_id, pinned_message_id=pinned_message_id)
-
-
-async def _record_rotation_dispatch(
-    session: AsyncSession,
-    plan: RotationRuleDispatchPlan,
-    result: RotationDispatchResult,
-) -> None:
-    rule = await session.get(AdRotationRule, plan.chat_id)
-    item = await session.get(AdCampaign, plan.item.id)
-    if rule is None or item is None:
-        raise ValidationError("轮播规则或消息不存在")
-
-    item.last_sent_at = plan.claimed_at
-    item.last_sent_message_id = result.message_id
-    item.last_sent_cycle_no = int(item.last_sent_cycle_no or 0) + 1
-    item.send_count = int(item.send_count or 0) + 1
-
-    rule.last_sent_at = plan.claimed_at
-    rule.last_sent_item_id = item.id
-    rule.last_sent_message_id = result.message_id
-    rule.last_pinned_message_id = result.pinned_message_id
-    rule.current_order_cursor = plan.next_cursor
-    await session.flush()
+    summary = await AdDeliveryWorker(dependencies).run()
+    log.info(
+        "ad_rotation_tick_finished",
+        created=summary.created,
+        planning_failed=summary.planning_failed,
+        claimed=summary.claimed,
+        succeeded=summary.succeeded,
+        failed=summary.failed,
+        recovered=summary.recovered,
+    )
+    return summary.succeeded

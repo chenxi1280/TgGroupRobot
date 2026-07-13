@@ -13,7 +13,6 @@ from backend.features.automation.ads_handler import (
     ads_rules_callback,
 )
 from backend.features.automation.services.ad_rotation_service import (
-    _claim_due_rotation_rules,
     _validate_future_end_time,
     compute_next_run_at,
     describe_delete_policy,
@@ -74,7 +73,7 @@ def test_rotation_item_end_time_must_be_future() -> None:
 
 
 def test_select_next_rotation_item_respects_cursor_and_wrap() -> None:
-    rule = SimpleNamespace(current_order_cursor=2)
+    rule = SimpleNamespace(current_order_cursor=2, top_campaign_ids=[], exclude_campaign_ids=[])
     now = dt.datetime.now(dt.UTC)
     items = [
         SimpleNamespace(id=11, sort_order=1, enabled=True, start_time=None, end_time=None),
@@ -92,63 +91,34 @@ def test_select_next_rotation_item_respects_cursor_and_wrap() -> None:
     assert next_cursor == 2
 
 
-@pytest.mark.asyncio
-async def test_claim_due_rotation_rule_advances_next_run_before_dispatch(monkeypatch) -> None:
-    now = dt.datetime(2026, 4, 14, 2, 0, tzinfo=dt.UTC)
+def test_select_next_rotation_item_applies_exclusion_before_top_pool() -> None:
     rule = SimpleNamespace(
-        chat_id=-100123,
-        enabled=True,
-        interval_seconds=60,
-        start_at=None,
-        last_sent_at=None,
-        next_run_at=now,
-        mode="send",
-        delete_policy="delete_prev_cycle",
-        delete_delay_seconds=60,
-        unpin_previous=True,
-        last_sent_message_id=88,
-        last_pinned_message_id=89,
         current_order_cursor=1,
+        top_campaign_ids=[22, 33],
+        exclude_campaign_ids=[22],
     )
-    item = SimpleNamespace(
-        id=11,
-        chat_id=-100123,
-        title="轮播",
-        content="正文",
-        image_file_id=None,
-        buttons=[],
-        last_sent_message_id=77,
-        sort_order=1,
-        enabled=True,
-        start_time=None,
-        end_time=None,
+    items = [
+        SimpleNamespace(id=11, sort_order=1, enabled=True, start_time=None, end_time=None),
+        SimpleNamespace(id=22, sort_order=2, enabled=True, start_time=None, end_time=None),
+        SimpleNamespace(id=33, sort_order=3, enabled=True, start_time=None, end_time=None),
+    ]
+
+    item, next_cursor = select_next_rotation_item(rule, items)
+
+    assert item.id == 33
+    assert next_cursor == 3
+
+
+def test_select_next_rotation_item_rejects_empty_effective_top_pool() -> None:
+    rule = SimpleNamespace(
+        current_order_cursor=1,
+        top_campaign_ids=[99],
+        exclude_campaign_ids=[],
     )
+    items = [SimpleNamespace(id=11, sort_order=1, enabled=True, start_time=None, end_time=None)]
 
-    class _Result:
-        def scalars(self):
-            return self
-
-        def all(self):
-            return [rule]
-
-    class _Session:
-        async def execute(self, stmt):
-            return _Result()
-
-    async def fake_list_rotation_items(session, chat_id):
-        return [item]
-
-    monkeypatch.setattr(
-        "backend.features.automation.services.ad_rotation_service.list_rotation_items",
-        fake_list_rotation_items,
-    )
-
-    plans = await _claim_due_rotation_rules(_Session(), now=now)
-
-    assert len(plans) == 1
-    assert plans[0].item.id == 11
-    assert plans[0].next_cursor == 1
-    assert rule.next_run_at == dt.datetime(2026, 4, 14, 2, 1, tzinfo=dt.UTC)
+    with pytest.raises(ValidationError, match="置顶轮播池"):
+        select_next_rotation_item(rule, items)
 
 
 def test_describe_rule_mode_and_delete_policy() -> None:
@@ -211,6 +181,7 @@ def test_ads_menu_keyboard_matches_screenshot_flow() -> None:
 
     assert keyboard.inline_keyboard[0][0].text == "轮播规则设置"
     assert keyboard.inline_keyboard[0][1].text == "轮播广告管理"
+    assert keyboard.inline_keyboard[1][0].callback_data == "ads:history:-100123:all"
 
 
 def test_ads_rules_keyboard_shows_selected_options() -> None:
@@ -228,6 +199,8 @@ def test_ads_rules_keyboard_shows_selected_options() -> None:
     assert keyboard.inline_keyboard[1][1].text == "✅ 发送"
     assert keyboard.inline_keyboard[3][0].callback_data == "ads:rules:hint:-100123:unpin_previous"
     assert keyboard.inline_keyboard[6][2].text == "✅ 删上轮"
+    assert keyboard.inline_keyboard[7][0].callback_data == "ads:pool:top:-100123"
+    assert keyboard.inline_keyboard[7][1].callback_data == "ads:pool:exclude:-100123"
 
 
 @pytest.mark.asyncio
@@ -338,3 +311,35 @@ async def test_ads_show_menu_uses_home_summary(monkeypatch) -> None:
 
     assert rendered
     assert "轮播状态:" in rendered[0][0]
+
+
+def test_ad_rotation_rule_model_declares_top_and_exclude_campaign_ids() -> None:
+    """AdRotationRule 模型应声明 top_campaign_ids / exclude_campaign_ids 字段，默认空 list。"""
+    from backend.platform.db.schema.models.automation import AdRotationRule
+
+    columns = {c.name: c for c in AdRotationRule.__table__.columns}
+    assert "top_campaign_ids" in columns
+    assert "exclude_campaign_ids" in columns
+
+    top_col = columns["top_campaign_ids"]
+    excl_col = columns["exclude_campaign_ids"]
+    # 默认值应为空 list（通过 default=lambda: list 或 server_default）
+    assert top_col.default is not None or top_col.server_default is not None
+    assert excl_col.default is not None or excl_col.server_default is not None
+
+
+def test_ad_rotation_history_model_table_shape() -> None:
+    """AdRotationHistory 应包含审计/回放所需的全部快照字段。"""
+    from backend.platform.db.schema.models.automation import AdRotationHistory
+
+    columns = {c.name for c in AdRotationHistory.__table__.columns}
+    expected = {
+        "id", "chat_id", "campaign_id", "sent_at", "message_id", "pinned_message_id",
+        "cycle_no", "sort_order_snapshot", "title_snapshot", "created_at",
+        "dispatch_key", "scheduled_for", "content_snapshot", "rule_snapshot", "status",
+        "attempt_count", "next_retry_at", "lease_until", "send_started_at", "completed_at",
+        "error_code", "error_message", "replay_of_history_id", "replay_admin_id", "replay_reason",
+    }
+    assert expected <= columns
+    assert AdRotationHistory.__tablename__ == "ad_rotation_history"
+    assert AdRotationHistory.__table__.schema == "bot"

@@ -264,6 +264,7 @@ document.querySelectorAll('.tab').forEach((button) => {
     show($('tabPlatform'), button.dataset.tab === 'platform')
     show($('tabAccounts'), button.dataset.tab === 'accounts')
     show($('tabVerificationTimeouts'), button.dataset.tab === 'verificationTimeouts')
+    show($('tabAdDeliveries'), button.dataset.tab === 'adDeliveries')
     show($('tabAudit'), button.dataset.tab === 'audit')
   })
 })

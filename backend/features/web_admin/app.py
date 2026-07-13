@@ -35,6 +35,7 @@ from backend.features.web_admin.card_service import (
 from backend.features.web_admin.dependencies import admin_session as _session
 from backend.features.web_admin.dependencies import current_admin as _current_admin
 from backend.features.web_admin.verification_timeout_router import router as verification_timeout_router
+from backend.features.web_admin.ad_delivery_router import router as ad_delivery_router
 from backend.platform.config.core.settings import Settings
 from backend.platform.db.runtime.session import Database
 from backend.platform.db.schema.models.core import AdminAccount, AdminAuditLog, AppSetting
@@ -134,6 +135,7 @@ def create_admin_web_app(db: Database, settings: Settings) -> FastAPI:
     app.state.db = db
     app.state.settings = settings
     app.include_router(verification_timeout_router)
+    app.include_router(ad_delivery_router)
 
     @app.get("/admin", response_class=HTMLResponse)
     @app.get("/admin/", response_class=HTMLResponse)

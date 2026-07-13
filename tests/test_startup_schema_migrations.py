@@ -57,6 +57,8 @@ async def test_run_startup_schema_migrations_executes_known_compat_patches(monke
         "scheduled_message_tasks",
         "scheduled_message_logs",
         "ad_campaigns",
+        "ad_rotation_rules",
+        "ad_rotation_history",
         "game_settings",
         "verification_challenges",
         "verification_timeout_attempts",
@@ -90,6 +92,13 @@ async def test_run_startup_schema_migrations_executes_known_compat_patches(monke
     assert any("CREATE UNIQUE INDEX IF NOT EXISTS uq_sml_run_key ON bot.scheduled_message_logs(run_key)" in sql for sql in executed_sql)
     assert any("ALTER TABLE bot.scheduled_message_logs ALTER COLUMN sent_at DROP NOT NULL" in sql for sql in executed_sql)
     assert any("ALTER TABLE bot.ad_campaigns ADD COLUMN IF NOT EXISTS sort_order" in sql for sql in executed_sql)
+    assert any("ALTER TABLE bot.ad_rotation_rules ADD COLUMN IF NOT EXISTS top_campaign_ids" in sql for sql in executed_sql)
+    assert any("ALTER TABLE bot.ad_rotation_rules ADD COLUMN IF NOT EXISTS exclude_campaign_ids" in sql for sql in executed_sql)
+    assert any("CREATE INDEX IF NOT EXISTS ix_ad_rotation_history_chat_sent ON bot.ad_rotation_history(chat_id, sent_at DESC)" in sql for sql in executed_sql)
+    assert any("CREATE INDEX IF NOT EXISTS ix_ad_rotation_history_campaign_sent ON bot.ad_rotation_history(campaign_id, sent_at DESC)" in sql for sql in executed_sql)
+    assert any("ADD COLUMN IF NOT EXISTS dispatch_key VARCHAR(128)" in sql for sql in executed_sql)
+    assert any("CREATE UNIQUE INDEX IF NOT EXISTS uq_ad_rotation_history_dispatch_key" in sql for sql in executed_sql)
+    assert any("CREATE INDEX IF NOT EXISTS ix_ad_rotation_history_due" in sql for sql in executed_sql)
     assert any("ALTER TABLE bot.game_settings ADD COLUMN IF NOT EXISTS points_source_chat_id" in sql for sql in executed_sql)
     assert any("ALTER TABLE bot.verification_challenges ADD COLUMN IF NOT EXISTS timeout_status" in sql for sql in executed_sql)
     assert any("ADD COLUMN IF NOT EXISTS timeout_replay_of_attempt_id" in sql for sql in executed_sql)
@@ -175,3 +184,13 @@ def test_init_sql_contains_scheduled_occurrence_state() -> None:
     assert "content_snapshot JSONB NOT NULL" in init_sql
     assert "CREATE UNIQUE INDEX IF NOT EXISTS uq_sml_run_key" in init_sql
     assert "CREATE INDEX IF NOT EXISTS ix_sml_due" in init_sql
+
+
+def test_init_sql_contains_ad_rotation_delivery_state() -> None:
+    init_sql = (PROJECT_ROOT / "sql" / "init.sql").read_text(encoding="utf-8")
+
+    assert "CREATE TABLE IF NOT EXISTS bot.ad_rotation_history" in init_sql
+    assert "dispatch_key VARCHAR(128) NOT NULL" in init_sql
+    assert "content_snapshot JSONB NOT NULL" in init_sql
+    assert "CREATE UNIQUE INDEX IF NOT EXISTS uq_ad_rotation_history_dispatch_key" in init_sql
+    assert "CREATE INDEX IF NOT EXISTS ix_ad_rotation_history_due" in init_sql

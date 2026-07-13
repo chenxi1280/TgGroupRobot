@@ -39,6 +39,17 @@ REQUIRED_INDEXES: tuple[RequiredIndex, ...] = (
         columns=("status", "next_retry_at", "lease_until"),
     ),
     RequiredIndex(
+        table_name="ad_rotation_history",
+        index_name="uq_ad_rotation_history_dispatch_key",
+        columns=("dispatch_key",),
+        unique=True,
+    ),
+    RequiredIndex(
+        table_name="ad_rotation_history",
+        index_name="ix_ad_rotation_history_due",
+        columns=("status", "next_retry_at", "lease_until"),
+    ),
+    RequiredIndex(
         table_name="custom_point_types",
         index_name="uq_custom_point_type_chat_no",
         columns=("chat_id", "type_no"),

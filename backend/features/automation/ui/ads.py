@@ -18,6 +18,9 @@ def ads_menu_keyboard(chat_id: int | None = None) -> InlineKeyboardMarkup:
             InlineKeyboardButton("轮播规则设置", callback_data=f"ads:rules:{chat_id}" if chat_id else "ads:rules"),
             InlineKeyboardButton("轮播广告管理", callback_data=f"ads:list:{chat_id}:0" if chat_id else "ads:list:0"),
         ],
+        [
+            InlineKeyboardButton("📜 派发历史", callback_data=f"ads:history:{chat_id}:all"),
+        ],
         [create_back_button(chat_id, "main")],
     ])
 
@@ -63,6 +66,10 @@ def ads_rules_keyboard(chat_id: int, rule) -> InlineKeyboardMarkup:
             InlineKeyboardButton(delete_prev, callback_data=f"ads:rules:set:{chat_id}:delete_policy:delete_prev"),
             InlineKeyboardButton(delete_prev_cycle, callback_data=f"ads:rules:set:{chat_id}:delete_policy:delete_prev_cycle"),
             InlineKeyboardButton(delete_delay, callback_data=f"ads:rules:set:{chat_id}:delete_policy:delete_delay"),
+        ],
+        [
+            InlineKeyboardButton("🎯 置顶池", callback_data=f"ads:pool:top:{chat_id}"),
+            InlineKeyboardButton("🚫 排除池", callback_data=f"ads:pool:exclude:{chat_id}"),
         ],
         [InlineKeyboardButton("🔙 返回", callback_data=f"ads:menu:{chat_id}")],
     ])

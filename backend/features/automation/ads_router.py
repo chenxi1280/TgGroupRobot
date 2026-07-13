@@ -22,6 +22,11 @@ from backend.features.automation.ads_handler import (
     ads_toggle_callback,
 )
 from backend.app.router_base import BaseRouter
+from backend.features.automation.ads_operations import (
+    ads_delivery_operation_callback,
+    ads_history_callback,
+    ads_pool_callback,
+)
 
 log = structlog.get_logger(__name__)
 
@@ -55,6 +60,9 @@ class AdsRouter(BaseRouter):
         app.add_handler(CallbackQueryHandler(ads_list_callback, pattern=r"^ads:list"))
         app.add_handler(CallbackQueryHandler(ads_stats_callback, pattern=r"^ads:stats"))
         app.add_handler(CallbackQueryHandler(ads_detail_callback, pattern=r"^ads:detail:(?:-?\d+:)?\d+$"))
+        app.add_handler(CallbackQueryHandler(ads_history_callback, pattern=r"^ads:history:"))
+        app.add_handler(CallbackQueryHandler(ads_delivery_operation_callback, pattern=r"^ads:delivery:"))
+        app.add_handler(CallbackQueryHandler(ads_pool_callback, pattern=r"^ads:(pool|pool_toggle):"))
         
         # 注意：配置消息已被 MessageDispatcher 的 PrivateConfigHandler 统一处理
         # 此 MessageHandler 已移除，避免重复处理

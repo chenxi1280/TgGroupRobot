@@ -292,8 +292,22 @@ def _full_tables() -> dict[str, dict]:
                 "chat_id", "enabled", "start_at", "interval_seconds", "mode", "delete_policy",
                 "delete_delay_seconds", "unpin_previous", "last_sent_at", "next_run_at",
                 "current_order_cursor", "last_sent_item_id", "last_sent_message_id",
-                "last_pinned_message_id", "created_at", "updated_at",
+                "last_pinned_message_id", "top_campaign_ids", "exclude_campaign_ids",
+                "created_at", "updated_at",
             },
+        },
+        "ad_rotation_history": {
+            "columns": {
+                "id", "chat_id", "campaign_id", "sent_at", "message_id", "pinned_message_id",
+                "cycle_no", "sort_order_snapshot", "title_snapshot", "created_at", "dispatch_key",
+                "scheduled_for", "content_snapshot", "rule_snapshot", "status", "attempt_count",
+                "next_retry_at", "lease_until", "send_started_at", "completed_at", "error_code",
+                "error_message", "replay_of_history_id", "replay_admin_id", "replay_reason",
+            },
+            "indexes": [
+                {"name": "uq_ad_rotation_history_dispatch_key", "column_names": ["dispatch_key"], "unique": True},
+                {"name": "ix_ad_rotation_history_due", "column_names": ["status", "next_retry_at", "lease_until"], "unique": False},
+            ],
         },
         "conversation_states": {"columns": {"id", "chat_id", "user_id", "state_type", "state_data", "created_at", "updated_at"}},
         "lotteries": {
