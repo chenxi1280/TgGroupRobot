@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 
 from telegram import Message
 
@@ -15,8 +16,18 @@ from backend.features.moderation.services.anti_spam_rules import (
 from backend.features.moderation.services.anti_spam_tracker import AntiSpamTracker
 from backend.features.moderation.services.anti_spam_types import SpamViolation
 from backend.platform.db.schema.models.core import ChatSettings
-_LOOKS_LIKE_TEXT_SPAM_THRESHOLD_3 = 3
 
+TEXT_SPAM_SCORE_THRESHOLD = 3
+
+
+@dataclass(frozen=True)
+class SpamDetectionContext:
+    rules: dict[str, object]
+    message: Message
+    chat_id: int
+    user_id: int
+    text: str
+    text_norm: str
 
 
 def _normalize_text(text: str) -> str:
@@ -42,7 +53,7 @@ def _looks_like_text_spam(text_norm: str) -> bool:
         score += 1
     if any(x in text_norm for x in ["稳赚", "秒到", "返佣", "高收益", "免费领取"]):
         score += 1
-    return score >= _LOOKS_LIKE_TEXT_SPAM_THRESHOLD_3
+    return score >= TEXT_SPAM_SCORE_THRESHOLD
 
 
 def _message_has_media(message: Message) -> bool:
@@ -96,6 +107,124 @@ def _display_name_len(message: Message) -> int:
     return len(full_name)
 
 
+def _detect_account_or_command(ctx: SpamDetectionContext) -> SpamViolation | None:
+    if ctx.rules["banned_accounts"]:
+        banned_user_ids = set(_to_int_list(ctx.rules.get("banned_user_ids", [])))
+        if ctx.user_id in banned_user_ids:
+            return SpamViolation(blocked=True, rule="banned_account", detail="user in banned list")
+    if ctx.rules["clear_commands"] and ctx.text_norm.startswith("/"):
+        return SpamViolation(blocked=True, rule="command", detail="command message")
+    if ctx.rules["block_channel_alias"] and ctx.message.sender_chat is not None:
+        detail = f"sender_chat={ctx.message.sender_chat.id}"
+        return SpamViolation(blocked=True, rule="channel_alias", detail=detail)
+    return None
+
+
+def _detect_forward_or_mention(ctx: SpamDetectionContext) -> SpamViolation | None:
+    if ctx.rules["block_forwards"]:
+        blocked_chat_ids = set(_to_int_list(ctx.rules.get("blocked_forward_chat_ids", [])))
+        blocked_user_ids = set(_to_int_list(ctx.rules.get("blocked_forward_user_ids", [])))
+        forward_chat_id, forward_user_id = _forward_source_ids(ctx.message)
+        blocked_source = forward_chat_id in blocked_chat_ids or forward_user_id in blocked_user_ids
+        if blocked_source:
+            detail = f"forward_chat_id={forward_chat_id},forward_user_id={forward_user_id}"
+            return SpamViolation(blocked=True, rule="forward_source", detail=detail)
+    if ctx.rules["block_mentions"]:
+        blocked_ids = set(_to_int_list(ctx.rules.get("blocked_mention_ids", [])))
+        matched = _extract_mentioned_ids(ctx.message) & blocked_ids
+        if matched:
+            return SpamViolation(
+                blocked=True,
+                rule="mention_target",
+                detail=f"matched={sorted(matched)}",
+            )
+    return None
+
+
+def _detect_link_content(ctx: SpamDetectionContext) -> SpamViolation | None:
+    if not ctx.text_norm:
+        return None
+    if ctx.rules["block_links"] and URL_RE.search(ctx.text_norm):
+        return SpamViolation(blocked=True, rule="link", detail="url detected")
+    if ctx.rules["block_links"]:
+        blacklist = [
+            str(value).lower()
+            for value in ctx.rules.get("link_blacklist", [])
+            if str(value).strip()
+        ]
+        if any(domain in ctx.text_norm for domain in blacklist):
+            return SpamViolation(blocked=True, rule="link_blacklist", detail="blacklist domain matched")
+    return None
+
+
+def _detect_text_signals(ctx: SpamDetectionContext) -> SpamViolation | None:
+    if not ctx.text_norm:
+        return None
+    if ctx.rules["block_eth_address"] and ETH_RE.search(ctx.text_norm):
+        return SpamViolation(blocked=True, rule="eth_address", detail="eth address detected")
+    if ctx.rules["global_ads"] and _contains_ad_keyword(ctx.text_norm):
+        return SpamViolation(blocked=True, rule="ads", detail="ad keyword matched")
+    if ctx.rules["ai_text"] and _looks_like_text_spam(ctx.text_norm):
+        return SpamViolation(blocked=True, rule="ai_text_spam", detail="heuristic spam score matched")
+    return None
+
+
+def _detect_media_ad(ctx: SpamDetectionContext) -> SpamViolation | None:
+    if not ctx.rules["ai_image_ads"] or not _message_has_media(ctx.message):
+        return None
+    file_name = ctx.message.document.file_name or "" if ctx.message.document is not None else ""
+    signal_text = f"{ctx.text_norm} {file_name.lower()}".strip()
+    if _contains_ad_keyword(signal_text) or URL_RE.search(signal_text):
+        return SpamViolation(blocked=True, rule="image_ads", detail="media ad signal matched")
+    return None
+
+
+def _detect_long_content(ctx: SpamDetectionContext) -> SpamViolation | None:
+    if not ctx.rules["block_long_content"]:
+        return None
+    max_len = int(ctx.rules["message_max_length"])
+    if len(ctx.text) > max_len:
+        return SpamViolation(
+            blocked=True,
+            rule="long_message",
+            detail=f"len={len(ctx.text)},max={max_len}",
+        )
+    name_len = _display_name_len(ctx.message)
+    name_max_len = int(ctx.rules["name_max_length"])
+    if name_len > name_max_len:
+        return SpamViolation(
+            blocked=True,
+            rule="long_name",
+            detail=f"name_len={name_len},max={name_max_len}",
+        )
+    return None
+
+
+async def _detect_repeat_flood(
+    ctx: SpamDetectionContext,
+    settings: ChatSettings,
+    tracker: AntiSpamTracker,
+) -> SpamViolation | None:
+    if not ctx.rules["flood_attack"] or not ctx.text_norm:
+        return None
+    repeated, message_ids, detail = await tracker.check_repeat(
+        chat_id=ctx.chat_id,
+        user_id=ctx.user_id,
+        message_id=ctx.message.message_id,
+        text_norm=ctx.text_norm,
+        max_messages=settings.anti_spam_repeat_messages,
+        time_window_seconds=settings.anti_spam_repeat_seconds,
+    )
+    if not repeated:
+        return None
+    return SpamViolation(
+        blocked=True,
+        rule="repeat_flood",
+        detail=detail,
+        message_ids_to_delete=message_ids,
+    )
+
+
 async def detect_spam_violation(
     settings: ChatSettings,
     message: Message,
@@ -104,100 +233,31 @@ async def detect_spam_violation(
     tracker: AntiSpamTracker,
 ) -> SpamViolation:
     rules = get_antispam_rules(settings)
-
     if user_id in set(_to_int_list(rules.get("exception_user_ids", []))):
         return SpamViolation(blocked=False)
-
     if chat_id in set(_to_int_list(rules.get("exception_chat_ids", []))):
         return SpamViolation(blocked=False)
-
     text = message.text or message.caption or ""
-    text_norm = _normalize_text(text)
-
-    if rules["banned_accounts"]:
-        banned_user_ids = set(_to_int_list(rules.get("banned_user_ids", [])))
-        if user_id in banned_user_ids:
-            return SpamViolation(blocked=True, rule="banned_account", detail="user in banned list")
-
-    if rules["clear_commands"] and text_norm.startswith("/"):
-        return SpamViolation(blocked=True, rule="command", detail="command message")
-
-    if rules["block_channel_alias"] and message.sender_chat is not None:
-        return SpamViolation(blocked=True, rule="channel_alias", detail=f"sender_chat={message.sender_chat.id}")
-
-    if rules["block_forwards"]:
-        blocked_chat_ids = set(_to_int_list(rules.get("blocked_forward_chat_ids", [])))
-        blocked_user_ids = set(_to_int_list(rules.get("blocked_forward_user_ids", [])))
-        f_chat_id, f_user_id = _forward_source_ids(message)
-        if (f_chat_id is not None and f_chat_id in blocked_chat_ids) or (
-            f_user_id is not None and f_user_id in blocked_user_ids
-        ):
-            return SpamViolation(
-                blocked=True,
-                rule="forward_source",
-                detail=f"forward_chat_id={f_chat_id},forward_user_id={f_user_id}",
-            )
-
-    if rules["block_mentions"]:
-        blocked_mention_ids = set(_to_int_list(rules.get("blocked_mention_ids", [])))
-        mentioned = _extract_mentioned_ids(message)
-        matched = mentioned & blocked_mention_ids
-        if matched:
-            return SpamViolation(blocked=True, rule="mention_target", detail=f"matched={sorted(matched)}")
-
-    if text_norm:
-        if rules["block_links"] and URL_RE.search(text_norm):
-            return SpamViolation(blocked=True, rule="link", detail="url detected")
-
-        if rules["block_links"]:
-            blacklist = [str(x).lower() for x in rules.get("link_blacklist", []) if str(x).strip()]
-            if any(domain in text_norm for domain in blacklist):
-                return SpamViolation(blocked=True, rule="link_blacklist", detail="blacklist domain matched")
-
-        if rules["block_eth_address"] and ETH_RE.search(text_norm):
-            return SpamViolation(blocked=True, rule="eth_address", detail="eth address detected")
-
-        if rules["global_ads"] and _contains_ad_keyword(text_norm):
-            return SpamViolation(blocked=True, rule="ads", detail="ad keyword matched")
-
-        if rules["ai_text"] and _looks_like_text_spam(text_norm):
-            return SpamViolation(blocked=True, rule="ai_text_spam", detail="heuristic spam score matched")
-
-    if rules["ai_image_ads"] and _message_has_media(message):
-        file_name = ""
-        if message.document is not None:
-            file_name = message.document.file_name or ""
-        signal_text = f"{text_norm} {file_name.lower()}".strip()
-        if _contains_ad_keyword(signal_text) or URL_RE.search(signal_text):
-            return SpamViolation(blocked=True, rule="image_ads", detail="media ad signal matched")
-
-    if rules["block_long_content"]:
-        max_len = int(rules["message_max_length"])
-        name_max_len = int(rules["name_max_length"])
-        if len(text) > max_len:
-            return SpamViolation(blocked=True, rule="long_message", detail=f"len={len(text)},max={max_len}")
-        if _display_name_len(message) > name_max_len:
-            return SpamViolation(
-                blocked=True,
-                rule="long_name",
-                detail=f"name_len={_display_name_len(message)},max={name_max_len}",
-            )
-
-    if rules["flood_attack"] and text_norm:
-        repeated, ids, detail = await tracker.check_repeat(
-            chat_id=chat_id,
-            user_id=user_id,
-            message_id=message.message_id,
-            text_norm=text_norm,
-            max_messages=settings.anti_spam_repeat_messages,
-            time_window_seconds=settings.anti_spam_repeat_seconds,
-        )
-        if repeated:
-            return SpamViolation(
-                blocked=True,
-                rule="repeat_flood",
-                detail=detail,
-                message_ids_to_delete=ids,
-            )
-
+    ctx = SpamDetectionContext(
+        rules=rules,
+        message=message,
+        chat_id=chat_id,
+        user_id=user_id,
+        text=text,
+        text_norm=_normalize_text(text),
+    )
+    for detector in (
+        _detect_account_or_command,
+        _detect_forward_or_mention,
+        _detect_link_content,
+        _detect_text_signals,
+        _detect_media_ad,
+        _detect_long_content,
+    ):
+        violation = detector(ctx)
+        if violation is not None:
+            return violation
+    repeat_violation = await _detect_repeat_flood(ctx, settings, tracker)
+    if repeat_violation is not None:
+        return repeat_violation
     return SpamViolation(blocked=False)
