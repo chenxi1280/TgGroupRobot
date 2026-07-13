@@ -14,8 +14,9 @@ from backend.platform.db.schema.models.enums import AutoReplyMatchType, Conversa
 from backend.platform.state.state_service import clear_user_state, get_user_state
 from backend.shared.async_tasks import spawn_background_task
 from backend.shared.ui.button_input import is_clear_button_input
-_BUILD_CREATE_SUCCESS_TEXT_THRESHOLD_50 = 50
-_PARSE_AUTO_REPLY_CONFIG_TEXT_THRESHOLD_4 = 4
+_REPLY_PREVIEW_LENGTH = 50
+_MIN_CONFIG_LINES = 4
+_TRUE_VALUES = frozenset({"true", "1", "yes"})
 
 
 log = structlog.get_logger(__name__)
@@ -27,6 +28,20 @@ SUPPORTED_AUTO_REPLY_STATES = {
     ConversationStateType.auto_reply_edit_cover.value,
     ConversationStateType.auto_reply_edit_buttons.value,
 }
+
+
+async def _process_auto_reply_state(update: Update, session, state, *, text: str) -> None:
+    if state is None or state.state_type not in SUPPORTED_AUTO_REPLY_STATES:
+        log.info("auto_reply_state_not_match", state_type=state.state_type if state else None)
+        await session.commit()
+        return
+    if state.state_type != ConversationStateType.auto_reply_create.value:
+        await _handle_auto_reply_edit_input(update, session, state, text=text)
+        return
+    if state.state_data.get("step") != "config" or not text:
+        await session.commit()
+        return
+    await _parse_auto_reply_config(update, session, state, text=text)
 
 
 async def auto_reply_config_handler_impl(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -57,21 +72,7 @@ async def auto_reply_config_handler_impl(update: Update, context: ContextTypes.D
                 state_type=state.state_type if state else None,
                 expected_state=ConversationStateType.auto_reply_create.value,
             )
-
-            if state is None or state.state_type not in SUPPORTED_AUTO_REPLY_STATES:
-                log.info("auto_reply_state_not_match", state_type=state.state_type if state else None)
-                await session.commit()
-            elif state.state_type == ConversationStateType.auto_reply_create.value:
-                if state.state_data.get("step") == "config":
-                    if not text:
-                        await session.commit()
-                        return
-                    await _parse_auto_reply_config(update, session, state, text=text)
-                else:
-                    await session.commit()
-            else:
-                await _handle_auto_reply_edit_input(update, session, state, text=text)
-
+            await _process_auto_reply_state(update, session, state, text=text)
             log.info("auto_reply_handler_done")
     except Exception as exc:
         log.exception(
@@ -82,50 +83,64 @@ async def auto_reply_config_handler_impl(update: Update, context: ContextTypes.D
         )
 
 
+async def _send_matched_rules(update: Update, context: ContextTypes.DEFAULT_TYPE, rules: list) -> list:
+    message = update.effective_message
+    return [
+        await send_auto_reply_payload(
+            context,
+            chat_id=update.effective_chat.id,
+            text=rule.reply_content,
+            rule=rule,
+            reply_to_message_id=message.message_id,
+            message_thread_id=getattr(message, "message_thread_id", None),
+        )
+        for rule in rules
+    ]
+
+
+async def _delete_source_message(update: Update, rules: list) -> None:
+    if not any(getattr(rule, "delete_source", False) for rule in rules):
+        return
+    try:
+        await update.effective_message.delete()
+    except Exception as exc:
+        log.debug("auto_reply_delete_source_failed", error=str(exc))
+
+
+def _schedule_reply_deletions(context: ContextTypes.DEFAULT_TYPE, rules: list, sent_messages: list) -> None:
+    for rule, sent_message in zip(rules, sent_messages, strict=False):
+        delete_after = getattr(rule, "delete_reply_delay_seconds", 0) or 0
+        if delete_after <= 0:
+            continue
+        spawn_background_task(
+            context,
+            _delete_later(sent_message, delete_after),
+            name="auto_reply_runtime.delete_later",
+        )
+
+
+async def _deliver_auto_replies(update: Update, context: ContextTypes.DEFAULT_TYPE, result) -> None:
+    rules = result.matched_rules or [result.rule]
+    sent_messages = await _send_matched_rules(update, context, rules)
+    await _delete_source_message(update, rules)
+    _schedule_reply_deletions(context, rules, sent_messages)
+
+
 async def auto_reply_message_handler_impl(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not ensure_message_update(update, require_user=False):
         return
-
     chat = update.effective_chat
     message_text = update.effective_message.text or ""
     if chat.type == "private" or not message_text:
         return
-
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
         result = await match_auto_reply(session, chat.id, message_text)
         await session.commit()
-
     if not (result.success and result.reply_content and result.rule is not None):
         return
-
     try:
-        matched_rules = result.matched_rules or [result.rule]
-        sent_messages = [
-            await send_auto_reply_payload(
-                context,
-                chat_id=chat.id,
-                text=matched_rule.reply_content,
-                rule=matched_rule,
-                reply_to_message_id=update.effective_message.message_id,
-                message_thread_id=getattr(update.effective_message, "message_thread_id", None),
-            )
-            for matched_rule in matched_rules
-        ]
-        if any(getattr(rule, "delete_source", False) for rule in matched_rules):
-            try:
-                await update.effective_message.delete()
-            except Exception as exc:
-                log.debug("auto_reply_delete_source_failed", error=str(exc))
-
-        for matched_rule, sent_message in zip(matched_rules, sent_messages, strict=False):
-            delete_after = getattr(matched_rule, "delete_reply_delay_seconds", 0) or 0
-            if delete_after > 0:
-                spawn_background_task(
-                    context,
-                    _delete_later(sent_message, delete_after),
-                    name="auto_reply_runtime.delete_later",
-                )
+        await _deliver_auto_replies(update, context, result)
     except Exception as exc:
         log.warning("auto_reply_send_failed", error=str(exc))
 
@@ -171,16 +186,8 @@ async def _parse_auto_reply_config(update: Update, session, state: object, *, te
         await session.commit()
 
 
-def _parse_auto_reply_config_text(text: str) -> dict:
-    lines = text.strip().split("\n")
-    if len(lines) < _PARSE_AUTO_REPLY_CONFIG_TEXT_THRESHOLD_4:
-        raise ValueError("配置格式不完整")
-
-    keywords = [item.strip() for item in lines[0].strip().split(",") if item.strip()]
-    if not keywords:
-        raise ValueError("关键词不能为空")
-
-    config = {
+def _auto_reply_defaults(keywords: list[str]) -> dict:
+    return {
         "keywords": keywords,
         "match_type": AutoReplyMatchType.contains.value,
         "case_sensitive": False,
@@ -189,40 +196,74 @@ def _parse_auto_reply_config_text(text: str) -> dict:
         "delete_reply_delay_seconds": 0,
     }
 
-    for line in [item.strip() for item in lines[1:]]:
+
+def _truth_value(value: str) -> bool:
+    return value.lower() in _TRUE_VALUES
+
+
+def _continue_matching_value(value: str) -> bool:
+    return not _truth_value(value)
+
+
+def _delay_value(value: str) -> int:
+    return int(value.rstrip("秒sS") or "0")
+
+
+_AUTO_REPLY_CONFIG_RULES = (
+    ("匹配类型:", "match_type", str),
+    ("区分大小写:", "case_sensitive", _truth_value),
+    ("停止继续匹配:", "stop_after_match", _truth_value),
+    ("继续匹配:", "stop_after_match", _continue_matching_value),
+    ("删除来源:", "delete_source", _truth_value),
+    ("延迟删除:", "delete_reply_delay_seconds", _delay_value),
+)
+
+
+def _line_value(line: str) -> str:
+    return line.split(":", 1)[1].strip()
+
+
+def _apply_config_option(config: dict, line: str) -> dict:
+    for prefix, key, converter in _AUTO_REPLY_CONFIG_RULES:
+        if line.startswith(prefix):
+            return {**config, key: converter(_line_value(line))}
+    return dict(config)
+
+
+def _parse_config_options(lines: list[str], keywords: list[str]) -> dict:
+    config = _auto_reply_defaults(keywords)
+    for raw_line in lines:
+        line = raw_line.strip()
         if line.startswith("回复内容:"):
-            break
-        if line.startswith("匹配类型:"):
-            config["match_type"] = line.split(":", 1)[1].strip()
-        elif line.startswith("区分大小写:"):
-            config["case_sensitive"] = line.split(":", 1)[1].strip().lower() in {"true", "1", "yes"}
-        elif line.startswith("停止继续匹配:"):
-            config["stop_after_match"] = line.split(":", 1)[1].strip().lower() in {"true", "1", "yes"}
-        elif line.startswith("继续匹配:"):
-            config["stop_after_match"] = line.split(":", 1)[1].strip().lower() not in {"true", "1", "yes"}
-        elif line.startswith("删除来源:"):
-            config["delete_source"] = line.split(":", 1)[1].strip().lower() in {"true", "1", "yes"}
-        elif line.startswith("延迟删除:"):
-            delay_text = line.split(":", 1)[1].strip().rstrip("秒sS")
-            config["delete_reply_delay_seconds"] = int(delay_text or "0")
+            return config
+        config = _apply_config_option(config, line)
+    return config
 
+
+def _parse_reply_content(lines: list[str]) -> str:
     reply_lines: list[str] = []
-    reply_started = False
-    for line in lines[1:]:
-        if line.strip().startswith("回复内容:"):
-            reply_started = True
-            content_after = line.split(":", 1)[1] if ":" in line else ""
-            if content_after.strip():
-                reply_lines.append(content_after.strip())
-            continue
-        if reply_started:
-            reply_lines.append(line)
-
+    start_index = next((index for index, line in enumerate(lines) if line.strip().startswith("回复内容:")), None)
+    if start_index is None:
+        raise ValueError("回复内容不能为空")
+    first_line = lines[start_index]
+    first_content = first_line.split(":", 1)[1].strip() if ":" in first_line else ""
+    if first_content:
+        reply_lines.append(first_content)
+    reply_lines.extend(lines[start_index + 1 :])
     reply_content = "\n".join(reply_lines).strip()
     if not reply_content:
         raise ValueError("回复内容不能为空")
-    config["reply_content"] = reply_content
-    return config
+    return reply_content
+
+
+def _parse_auto_reply_config_text(text: str) -> dict:
+    lines = text.strip().splitlines()
+    if len(lines) < _MIN_CONFIG_LINES:
+        raise ValueError("配置格式不完整")
+    keywords = [item.strip() for item in lines[0].strip().split(",") if item.strip()]
+    if not keywords:
+        raise ValueError("关键词不能为空")
+    return {**_parse_config_options(lines[1:], keywords), "reply_content": _parse_reply_content(lines[1:])}
 
 
 def _build_create_success_text(config: dict, result) -> str:
@@ -241,7 +282,7 @@ def _build_create_success_text(config: dict, result) -> str:
             if delete_reply_delay_seconds
             else "⏱️ 延迟删除: 不删除\n"
         )
-        + f"💬 回复: {reply_content[:50]}{'...' if len(reply_content) > _BUILD_CREATE_SUCCESS_TEXT_THRESHOLD_50 else ''}\n"
+        + f"💬 回复: {reply_content[:_REPLY_PREVIEW_LENGTH]}{'...' if len(reply_content) > _REPLY_PREVIEW_LENGTH else ''}\n"
         + f"\n规则ID: {result.entity.id}\n\n可继续进入详情页补充封面和按钮。"
     )
 
@@ -272,6 +313,29 @@ async def _handle_auto_reply_edit_input(update: Update, session, state: object, 
     )
 
 
+async def _apply_cover_edit(update: Update, session, *, target_chat_id: int, rule_id: int, text: str):
+    message = update.effective_message
+    if text.strip() == "清空":
+        return await update_auto_reply_rule(
+            session, rule_id, chat_id=target_chat_id, cover_media_type=None, cover_media_file_id=None
+        )
+    if message.photo:
+        media_type, file_id = "photo", message.photo[-1].file_id
+    elif message.video:
+        media_type, file_id = "video", message.video.file_id
+    else:
+        await message.reply_text("❌ 请发送图片、视频，或发送“清空”。")
+        await session.commit()
+        return None
+    return await update_auto_reply_rule(
+        session,
+        rule_id,
+        chat_id=target_chat_id,
+        cover_media_type=media_type,
+        cover_media_file_id=file_id,
+    )
+
+
 async def _apply_auto_reply_edit(update: Update, session, state_type: str, *, target_chat_id: int, rule_id: int, text: str):
     if state_type == ConversationStateType.auto_reply_edit_keywords.value:
         keywords = [item.strip() for item in text.split(",") if item.strip()]
@@ -279,28 +343,7 @@ async def _apply_auto_reply_edit(update: Update, session, state_type: str, *, ta
     if state_type == ConversationStateType.auto_reply_edit_content.value:
         return await update_auto_reply_rule(session, rule_id, chat_id=target_chat_id, reply_content=text.strip())
     if state_type == ConversationStateType.auto_reply_edit_cover.value:
-        message = update.effective_message
-        if text.strip() == "清空":
-            return await update_auto_reply_rule(session, rule_id, chat_id=target_chat_id, cover_media_type=None, cover_media_file_id=None)
-        if message.photo:
-            return await update_auto_reply_rule(
-                session,
-                rule_id,
-                chat_id=target_chat_id,
-                cover_media_type="photo",
-                cover_media_file_id=message.photo[-1].file_id,
-            )
-        if message.video:
-            return await update_auto_reply_rule(
-                session,
-                rule_id,
-                chat_id=target_chat_id,
-                cover_media_type="video",
-                cover_media_file_id=message.video.file_id,
-            )
-        await update.effective_message.reply_text("❌ 请发送图片、视频，或发送“清空”。")
-        await session.commit()
-        return None
+        return await _apply_cover_edit(update, session, target_chat_id=target_chat_id, rule_id=rule_id, text=text)
     if state_type == ConversationStateType.auto_reply_edit_buttons.value:
         buttons = [] if is_clear_button_input(text) else parse_auto_reply_buttons_input(text)
         return await update_auto_reply_rule(session, rule_id, chat_id=target_chat_id, buttons=buttons)
