@@ -8,6 +8,13 @@ from backend.features.verification import verification_callbacks, verification_h
 from backend.platform.scheduler.tasks import verification_timeout_task
 
 
+def test_verify_callback_parser_rejects_unknown_action() -> None:
+    assert verification_callbacks._parse_verify_callback_data("vfy:token-1:unknown") == (
+        "token-1",
+        "",
+    )
+
+
 class _Session:
     async def __aenter__(self):
         return self
