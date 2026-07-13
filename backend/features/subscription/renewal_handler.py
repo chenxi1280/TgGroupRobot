@@ -127,6 +127,33 @@ async def renew_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             await update.effective_message.reply_text("续费入口暂时不可用，请稍后再试。")
 
 
+async def _return_to_admin(update, context, chat_id: int) -> None:
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        await ConversationStateService.clear(session, chat_id, update.effective_user.id)
+        await session.commit()
+    await update.callback_query.answer()
+    mark_callback_query_answered(update)
+    from backend.features.admin.admin_handler import _admin_handler
+
+    await _admin_handler._show_main_menu(update, context, chat_id)
+
+
+async def _handle_renew_action(update, context, chat_id: int, *, action: str) -> bool:
+    if action == "contact":
+        await answer_callback_query_safely(update, "请联系服务商获取续费卡密", show_alert=True)
+        return True
+    if action == "input":
+        await update.callback_query.answer()
+        mark_callback_query_answered(update)
+        await start_renewal_card_input(update, context, chat_id)
+        return True
+    if action == "back":
+        await _return_to_admin(update, context, chat_id)
+        return True
+    return False
+
+
 async def renew_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.callback_query is None or update.effective_user is None:
         return
@@ -138,26 +165,7 @@ async def renew_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await answer_callback_query_safely(update, "无效群组", show_alert=True)
         return
 
-    if action == "contact":
-        await answer_callback_query_safely(update, "请联系服务商获取续费卡密", show_alert=True)
-        return
-
-    if action == "input":
-        await update.callback_query.answer()
-        mark_callback_query_answered(update)
-        await start_renewal_card_input(update, context, chat_id)
-        return
-
-    if action == "back":
-        db: Database = context.application.bot_data["db"]
-        async with db.session_factory() as session:
-            await ConversationStateService.clear(session, chat_id, update.effective_user.id)
-            await session.commit()
-        await update.callback_query.answer()
-        mark_callback_query_answered(update)
-        from backend.features.admin.admin_handler import _admin_handler
-
-        await _admin_handler._show_main_menu(update, context, chat_id)
+    if await _handle_renew_action(update, context, chat_id, action=action):
         return
 
     await update.callback_query.answer()

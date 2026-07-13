@@ -15,6 +15,21 @@ from backend.platform.db.runtime.session import Database
 from backend.platform.state.state_service import clear_user_state, set_user_state
 
 
+async def _apply_nearby_text_update(session, chat_id: int, user, *, state_type: str, value: str | None) -> bool:
+    fields = {
+        "nearby_edit_price": ("price_text", 128),
+        "nearby_edit_method": ("method_text", 128),
+        "nearby_edit_address": ("address_text", 500),
+    }
+    field_config = fields.get(state_type)
+    if field_config is None:
+        return False
+    field, limit = field_config
+    normalized = value[:limit] if value else None
+    await update_profile(session, chat_id, user, **{field: normalized})
+    return True
+
+
 async def handle_fsm_text_input_action(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -38,13 +53,13 @@ async def handle_fsm_text_input_action(
         return
 
     text_value = None if text.startswith("/clear") else text
-    if state_type == "nearby_edit_price":
-        await update_profile(session, target_chat_id, user, price_text=(text_value[:128] if text_value else None))
-    elif state_type == "nearby_edit_method":
-        await update_profile(session, target_chat_id, user, method_text=(text_value[:128] if text_value else None))
-    elif state_type == "nearby_edit_address":
-        await update_profile(session, target_chat_id, user, address_text=(text_value[:500] if text_value else None))
-    else:
+    if not await _apply_nearby_text_update(
+        session,
+        target_chat_id,
+        user,
+        state_type=state_type,
+        value=text_value,
+    ):
         await update.effective_message.reply_text("当前状态不支持文本输入。")
         return
 

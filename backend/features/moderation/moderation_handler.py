@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import structlog
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -11,7 +10,31 @@ from backend.features.moderation.services.moderation_service import check_text_a
 from backend.shared.services.user_service import ensure_user
 
 
-log = structlog.get_logger(__name__)
+async def _record_message(context, update, text: str):
+    chat = update.effective_chat
+    user = update.effective_user
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        await ensure_chat(session, chat_id=chat.id, chat_type=chat.type, title=chat.title)
+        settings = await get_chat_settings(session, chat.id)
+        await ensure_user(
+            session, user_id=user.id, username=user.username, first_name=user.first_name,
+            last_name=user.last_name, language_code=user.language_code,
+        )
+        should_delete, _ = await check_text_and_record(
+            session, settings=settings, chat_id=chat.id, user_id=user.id,
+            message_id=update.effective_message.message_id, text=text,
+        )
+        await session.commit()
+    return should_delete, settings
+
+
+async def _delete_and_notify(context, update, settings) -> None:
+    await update.effective_message.delete()
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=t(settings.language, "moderation.deleted"),
+    )
 
 
 async def moderation_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -25,46 +48,8 @@ async def moderation_message_handler(update: Update, context: ContextTypes.DEFAU
     if not text:
         return
 
-    db: Database = context.application.bot_data["db"]
-    async with db.session_factory() as session:
-        await ensure_chat(session, chat_id=chat.id, chat_type=chat.type, title=chat.title)
-        settings = await get_chat_settings(session, chat.id)
-        await ensure_user(
-            session,
-            user_id=update.effective_user.id,
-            username=update.effective_user.username,
-            first_name=update.effective_user.first_name,
-            last_name=update.effective_user.last_name,
-            language_code=update.effective_user.language_code,
-        )
-
-        should_delete, _reason = await check_text_and_record(
-            session,
-            settings=settings,
-            chat_id=chat.id,
-            user_id=update.effective_user.id,
-            message_id=update.effective_message.message_id,
-            text=text,
-        )
-        await session.commit()
-
+    should_delete, settings = await _record_message(context, update, text)
     if should_delete:
-        try:
-            await update.effective_message.delete()
-        except Exception as exc:
-            log.warning(
-                "moderation_delete_failed",
-                chat_id=chat.id,
-                message_id=update.effective_message.message_id,
-                error=str(exc),
-            )
-            return
-        # 轻提示，避免刷屏：这里只在删除后短提示一次（可扩展为按策略/频率）
-        try:
-            await context.bot.send_message(chat_id=chat.id, text=t(settings.language, "moderation.deleted"))
-        except Exception as e:
-            log.warning("send_moderation_notification_failed", chat_id=chat.id, error=str(e))
-
-
+        await _delete_and_notify(context, update, settings)
 
 

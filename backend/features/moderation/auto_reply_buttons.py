@@ -51,6 +51,15 @@ def _normalize_button(item: dict[str, Any], *, row_index: int, col_index: int) -
     raise ValidationError(f"第 {row_index} 行第 {col_index} 个按钮缺少链接或触发文字")
 
 
+def _normalize_row(row: list[Any], *, row_index: int) -> list[dict[str, str]]:
+    normalized: list[dict[str, str]] = []
+    for col_index, item in enumerate(row, start=1):
+        if not isinstance(item, dict):
+            raise ValidationError(f"第 {row_index} 行第 {col_index} 个按钮必须是对象")
+        normalized.append(_normalize_button(item, row_index=row_index, col_index=col_index))
+    return normalized
+
+
 def normalize_auto_reply_button_rows(
     buttons: list[Any],
     *,
@@ -72,11 +81,7 @@ def normalize_auto_reply_button_rows(
     for row_index, row in enumerate(rows, start=1):
         if not isinstance(row, list):
             raise ValidationError(f"第 {row_index} 行按钮格式错误")
-        normalized_row: list[dict[str, str]] = []
-        for col_index, item in enumerate(row, start=1):
-            if not isinstance(item, dict):
-                raise ValidationError(f"第 {row_index} 行第 {col_index} 个按钮必须是对象")
-            normalized_row.append(_normalize_button(item, row_index=row_index, col_index=col_index))
+        normalized_row = _normalize_row(row, row_index=row_index)
         if normalized_row:
             normalized_rows.extend(split_button_rows([normalized_row], max_cols=max_cols))
     return normalized_rows

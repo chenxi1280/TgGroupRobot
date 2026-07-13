@@ -5,7 +5,30 @@ from telegram.ext import ContextTypes
 
 from backend.platform.db.runtime.session import Database
 _AUTO_REPLY_DETAIL_ACTION_THRESHOLD_4 = 4
-_AUTO_REPLY_PREVIEW_ACTION_THRESHOLD_4 = 4
+
+
+def _callback_rule_id(data: str) -> int | None:
+    parts = data.split(":")
+    if len(parts) < _AUTO_REPLY_DETAIL_ACTION_THRESHOLD_4:
+        return None
+    try:
+        return int(parts[3])
+    except ValueError:
+        return None
+
+
+async def _show_missing_preview_text(query, rule, target_chat_id: int) -> None:
+    from backend.features.moderation.auto_reply_views import format_auto_reply_rule_detail
+    from backend.features.moderation.ui.auto_reply import auto_reply_detail_keyboard
+
+    await query.answer("请先配置文本内容", show_alert=True)
+    await query.edit_message_text(
+        format_auto_reply_rule_detail(
+            rule,
+            toast="❌ 预览失败：请先配置回复文本。下面可直接修改文本后再预览。",
+        ),
+        reply_markup=auto_reply_detail_keyboard(rule, target_chat_id),
+    )
 
 
 
@@ -25,14 +48,8 @@ async def auto_reply_detail_action(
     if target_chat_id is None:
         return
 
-    parts = (q.data or "").split(":")
-    if len(parts) < _AUTO_REPLY_DETAIL_ACTION_THRESHOLD_4:
-        await q.edit_message_text("规则不存在")
-        await q.answer()
-        return
-    try:
-        rule_id = int(parts[3])
-    except ValueError:
+    rule_id = _callback_rule_id(q.data or "")
+    if rule_id is None:
         await q.edit_message_text("规则不存在")
         await q.answer()
         return
@@ -58,14 +75,8 @@ async def auto_reply_preview_action(
     if target_chat_id is None:
         return
 
-    parts = (q.data or "").split(":")
-    if len(parts) < _AUTO_REPLY_PREVIEW_ACTION_THRESHOLD_4:
-        await q.edit_message_text("规则不存在")
-        await q.answer()
-        return
-    try:
-        rule_id = int(parts[3])
-    except ValueError:
+    rule_id = _callback_rule_id(q.data or "")
+    if rule_id is None:
         await q.edit_message_text("规则不存在")
         await q.answer()
         return
@@ -83,17 +94,7 @@ async def auto_reply_preview_action(
         return
 
     if not str(getattr(rule, "reply_content", "") or "").strip():
-        await q.answer("请先配置文本内容", show_alert=True)
-        from backend.features.moderation.auto_reply_views import format_auto_reply_rule_detail
-        from backend.features.moderation.ui.auto_reply import auto_reply_detail_keyboard
-
-        await q.edit_message_text(
-            format_auto_reply_rule_detail(
-                rule,
-                toast="❌ 预览失败：请先配置回复文本。下面可直接修改文本后再预览。",
-            ),
-            reply_markup=auto_reply_detail_keyboard(rule, target_chat_id),
-        )
+        await _show_missing_preview_text(q, rule, target_chat_id)
         return
 
     await q.answer()

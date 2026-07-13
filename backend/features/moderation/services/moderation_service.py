@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import datetime as dt
 from dataclasses import dataclass
 from typing import Literal
 
@@ -113,26 +112,17 @@ async def resolve_effective_action(
     """把配置里的处罚动作收敛成机器人能实际执行的动作。"""
     action = (requested_action or "delete").strip()
     if action not in {"delete", "mute", "ban", "kick"}:
-        action = "delete"
+        raise ValueError(f"unsupported moderation action: {action}")
 
     if sender_chat_id is not None and action in {"mute", "ban", "kick"}:
         return ModerationActionResolution(action="delete", fallback_reason="频道身份发言仅支持删除")
 
     if action in {"mute", "ban", "kick"} and user_id > 0:
-        try:
-            member: ChatMember = await context.bot.get_chat_member(chat_id=chat_id, user_id=user_id)
-            if member.status in {"creator", "administrator"}:
-                return ModerationActionResolution(
-                    action="delete",
-                    fallback_reason="目标为群主/管理员，无法禁言，已改为删除",
-                )
-        except Exception as exc:
-            log.warning(
-                "moderation_member_status_check_failed",
-                chat_id=chat_id,
-                user_id=user_id,
-                action=action,
-                error=str(exc),
+        member: ChatMember = await context.bot.get_chat_member(chat_id=chat_id, user_id=user_id)
+        if member.status in {"creator", "administrator"}:
+            return ModerationActionResolution(
+                action="delete",
+                fallback_reason="目标为群主/管理员，无法禁言，已改为删除",
             )
 
     if user_id <= 0 and action in {"mute", "ban", "kick"}:
@@ -172,7 +162,7 @@ async def send_temporary_notice(
     delete_after_seconds: int | None = None,
 ) -> None:
     try:
-        result = await PublishService.send_temporary(
+        await PublishService.send_temporary(
             type("ModerationContext", (), {"bot": bot})(),
             chat_id=chat_id,
             text=text,
