@@ -56,6 +56,207 @@ def _format_egg_template_prompt(template_text: str, *, editing: bool = False) ->
 
 
 class EngagementAdminEggActionsMixin:
+    async def _start_egg_template_input(
+        self, update, context, *, session, chat_id: int, event_id: int | None
+    ) -> None:
+        template = _build_egg_quick_template(
+            chat_id, getattr(context.bot, "username", None)
+        )
+        payload = {"target_chat_id": chat_id}
+        if event_id is not None:
+            payload["event_id"] = event_id
+        await self._start_text_input_state(
+            context, update.effective_user.id, update.effective_user.id,
+            state_type="engagement_wait_egg_template", payload=payload,
+        )
+        await session.commit()
+        back = (
+            f"act:egg:{chat_id}:detail:{event_id}"
+            if event_id else f"act:egg:{chat_id}:list:all"
+        )
+        keyboard = InlineKeyboardMarkup([
+            [_copy_text_button(template)],
+            [InlineKeyboardButton("🔙 返回", callback_data=back)],
+        ])
+        await self.message_helper.safe_edit(
+            update, _format_egg_template_prompt(template, editing=event_id is not None),
+            reply_markup=keyboard,
+        )
+
+    async def _toggle_egg_event(
+        self, update, context, *, session, chat_id: int, callback_data
+    ) -> None:
+        event = await get_egg_event(session, chat_id, callback_data.get_int(4))
+        if event is None:
+            await session.commit()
+            await self._show_engagement_egg_list(update, context, chat_id)
+            return
+        enabled = callback_data.get(5) == "1"
+        event.enabled = enabled
+        ready = (
+            enabled and event.answer and event.clues and event.clue_times
+            and event.winner_user_id is None
+        )
+        if ready:
+            event.status = "running"
+        elif not enabled and event.status != "finished":
+            event.status = "idle"
+        await session.commit()
+        await self._show_engagement_egg(
+            update, context, chat_id, event_id=event.id
+        )
+
+    async def _set_egg_event_status(
+        self, update, context, *, session, chat_id: int, callback_data
+    ) -> None:
+        event = await get_egg_event(session, chat_id, callback_data.get_int(4))
+        if event is None:
+            await session.commit()
+            await self._show_engagement_egg_list(update, context, chat_id)
+            return
+        target = callback_data.get(5)
+        can_run = (
+            target == "running" and event.enabled and event.answer
+            and event.clues and event.clue_times and event.winner_user_id is None
+        )
+        if can_run:
+            event.status = "running"
+        elif target == "idle":
+            event.status = "idle"
+        await session.commit()
+        await self._show_engagement_egg(
+            update, context, chat_id, event_id=event.id
+        )
+
+    async def _preview_egg_event(
+        self, update, context, *, session, chat_id: int, event_id: int
+    ) -> None:
+        event = await get_egg_event(session, chat_id, event_id)
+        await session.commit()
+        if event is None:
+            await self._show_engagement_egg_list(update, context, chat_id)
+            return
+        rewards = [
+            f"{get_clue_reward_points(event, index)}积分"
+            for index in range(len(event.clues or []))
+        ]
+        text = "\n".join([
+            f"🥚 有奖彩蛋 | 预览配置 #{event.id}", "",
+            f"🏷 活动标题：{event.title}", f"🔐 答案：{event.answer or '未配置'}",
+            f"🧩 线索：{event.clues or []}", f"🎁 奖励：{rewards}",
+            f"⏰ 时间：{event.clue_times or []}",
+        ])
+        keyboard = InlineKeyboardMarkup(
+            [[InlineKeyboardButton("🔙 返回", callback_data=f"act:egg:{chat_id}:detail:{event.id}")]]
+        )
+        await self.message_helper.safe_edit(update, text, reply_markup=keyboard)
+
+    async def _publish_egg_clue(
+        self, update, context, *, session, chat_id: int, event_id: int
+    ) -> None:
+        published = await publish_next_clue(session, chat_id, event_id=event_id)
+        await session.commit()
+        if published is None:
+            back = (
+                f"act:egg:{chat_id}:detail:{event_id}"
+                if event_id else f"act:egg:{chat_id}:list:all"
+            )
+            keyboard = InlineKeyboardMarkup(
+                [[InlineKeyboardButton("🔙 返回", callback_data=back)]]
+            )
+            await self.message_helper.safe_edit(
+                update, "🥚 当前没有可立即发布的线索，请先启用活动或检查是否已经全部发布。",
+                reply_markup=keyboard,
+            )
+            return
+        event, clue_index, clue_text, reward_summary = published
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"🥚 有奖彩蛋【{event.title}】| 第 {clue_index + 1} 条线索\n"
+            f"🧩 线索：{clue_text}\n🎁 当前命中奖励：{reward_summary}",
+        )
+        await self._show_engagement_egg(
+            update, context, chat_id, event_id=event.id
+        )
+
+    async def _reset_egg_event(
+        self, update, context, *, session, chat_id: int, event_id: int
+    ) -> None:
+        event = await get_egg_event(session, chat_id, event_id)
+        if event is None:
+            await session.commit()
+            await self._show_engagement_egg_list(update, context, chat_id)
+            return
+        await archive_egg_snapshot(session, event, reward_points=0)
+        event.enabled = False
+        event.answer = None
+        event.clues = []
+        event.clue_rewards = []
+        event.clue_times = []
+        event.winner_user_id = None
+        event.status = "idle"
+        event.published_clue_count = 0
+        await session.commit()
+        await self._show_engagement_egg(
+            update, context, chat_id, event_id=event.id
+        )
+
+    async def _handle_egg_navigation(
+        self, update, context, *, session, chat_id: int, sub: str, callback_data
+    ) -> bool:
+        if sub in {"home", "list"}:
+            await session.commit()
+            await self._show_engagement_egg_list(
+                update, context, chat_id,
+                status=callback_data.get(4, "all") or "all",
+            )
+            return True
+        if sub == "detail":
+            event_id = callback_data.get_int(4)
+            await session.commit()
+            if event_id is None:
+                await self._show_engagement_egg_list(update, context, chat_id)
+            else:
+                await self._show_engagement_egg(
+                    update, context, chat_id, event_id=event_id
+                )
+            return True
+        if sub != "history":
+            return False
+        await session.commit()
+        await self._show_engagement_egg_history(update, context, chat_id)
+        return True
+
+    async def _handle_egg_operation(
+        self, update, context, *, session, chat_id: int, sub: str, callback_data
+    ) -> bool:
+        if sub == "toggle":
+            await self._toggle_egg_event(
+                update, context, session=session, chat_id=chat_id,
+                callback_data=callback_data,
+            )
+            return True
+        if sub == "status":
+            await self._set_egg_event_status(
+                update, context, session=session, chat_id=chat_id,
+                callback_data=callback_data,
+            )
+            return True
+        handlers = {
+            "template": self._start_egg_template_input,
+            "preview": self._preview_egg_event,
+            "publish": self._publish_egg_clue,
+            "reset": self._reset_egg_event,
+        }
+        handler = handlers.get(sub)
+        if handler is None:
+            return False
+        await handler(
+            update, context, session=session, chat_id=chat_id,
+            **({"event_id": callback_data.get_int(4)}),
+        )
+        return True
+
     async def _handle_engagement_egg(
         self,
         update: Update,
@@ -65,150 +266,20 @@ class EngagementAdminEggActionsMixin:
         session,
     ) -> None:
         sub = callback_data.get(3)
-        if sub in {"home", "list"}:
-            await session.commit()
-            await self._show_engagement_egg_list(update, context, chat_id, status=callback_data.get(4, "all") or "all")
+        if await self._handle_egg_navigation(
+            update, context, session=session, chat_id=chat_id,
+            sub=sub, callback_data=callback_data,
+        ):
             return
         if sub == "new":
-            template_text = _build_egg_quick_template(chat_id, getattr(context.bot, "username", None))
-            await self._start_text_input_state(
-                context,
-                update.effective_user.id,
-                update.effective_user.id,
-                state_type="engagement_wait_egg_template",
-                payload={"target_chat_id": chat_id},
-            )
-            await session.commit()
-            await self.message_helper.safe_edit(
-                update,
-                _format_egg_template_prompt(template_text),
-                reply_markup=InlineKeyboardMarkup([
-                    [_copy_text_button(template_text)],
-                    [InlineKeyboardButton("🔙 返回", callback_data=f"act:egg:{chat_id}:list:all")],
-                ]),
+            await self._start_egg_template_input(
+                update, context, session=session, chat_id=chat_id, event_id=None
             )
             return
-        if sub == "detail":
-            event_id = callback_data.get_int(4)
-            await session.commit()
-            if event_id is None:
-                await self._show_engagement_egg_list(update, context, chat_id)
-                return
-            await self._show_engagement_egg(update, context, chat_id, event_id=event_id)
-            return
-        if sub == "history":
-            await session.commit()
-            await self._show_engagement_egg_history(update, context, chat_id)
-            return
-        if sub == "toggle":
-            event = await get_egg_event(session, chat_id, callback_data.get_int(4))
-            enabled = callback_data.get(5) == "1"
-            if event is None:
-                await session.commit()
-                await self._show_engagement_egg_list(update, context, chat_id)
-                return
-            event.enabled = enabled
-            if enabled and event.answer and event.clues and event.clue_times and event.winner_user_id is None:
-                event.status = "running"
-            elif not enabled and event.status != "finished":
-                event.status = "idle"
-            await session.commit()
-            await self._show_engagement_egg(update, context, chat_id, event_id=event.id)
-            return
-        if sub == "status":
-            event = await get_egg_event(session, chat_id, callback_data.get_int(4))
-            target_status = callback_data.get(5)
-            if event is None:
-                await session.commit()
-                await self._show_engagement_egg_list(update, context, chat_id)
-                return
-            if target_status == "running" and event.enabled and event.answer and event.clues and event.clue_times and event.winner_user_id is None:
-                event.status = "running"
-            elif target_status == "idle":
-                event.status = "idle"
-            await session.commit()
-            await self._show_engagement_egg(update, context, chat_id, event_id=event.id)
-            return
-        if sub == "template":
-            event_id = callback_data.get_int(4)
-            template_text = _build_egg_quick_template(chat_id, getattr(context.bot, "username", None))
-            await self._start_text_input_state(
-                context,
-                update.effective_user.id,
-                update.effective_user.id,
-                state_type="engagement_wait_egg_template",
-                payload={"target_chat_id": chat_id, "event_id": event_id},
-            )
-            await session.commit()
-            await self.message_helper.safe_edit(
-                update,
-                _format_egg_template_prompt(template_text, editing=True),
-                reply_markup=InlineKeyboardMarkup([
-                    [_copy_text_button(template_text)],
-                    [InlineKeyboardButton("🔙 返回", callback_data=f"act:egg:{chat_id}:detail:{event_id}" if event_id else f"act:egg:{chat_id}:list:all")],
-                ]),
-            )
-            return
-        if sub == "preview":
-            event = await get_egg_event(session, chat_id, callback_data.get_int(4))
-            await session.commit()
-            if event is None:
-                await self._show_engagement_egg_list(update, context, chat_id)
-                return
-            preview_lines = [
-                f"🥚 有奖彩蛋 | 预览配置 #{event.id}",
-                "",
-                f"🏷 活动标题：{event.title}",
-                f"🔐 答案：{event.answer or '未配置'}",
-                f"🧩 线索：{event.clues or []}",
-                f"🎁 奖励：{[f'{get_clue_reward_points(event, idx)}积分' for idx in range(len(event.clues or []))]}",
-                f"⏰ 时间：{event.clue_times or []}",
-            ]
-            await self.message_helper.safe_edit(
-                update,
-                "\n".join(preview_lines),
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"act:egg:{chat_id}:detail:{event.id}")]]),
-            )
-            return
-        if sub == "publish":
-            event_id = callback_data.get_int(4)
-            published = await publish_next_clue(session, chat_id, event_id=event_id)
-            await session.commit()
-            if published is None:
-                await self.message_helper.safe_edit(
-                    update,
-                    "🥚 当前没有可立即发布的线索，请先启用活动或检查是否已经全部发布。",
-                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"act:egg:{chat_id}:detail:{event_id}" if event_id else f"act:egg:{chat_id}:list:all")]]),
-                )
-                return
-            event, clue_index, clue_text, reward_summary = published
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text=(
-                    f"🥚 有奖彩蛋【{event.title}】| 第 {clue_index + 1} 条线索\n"
-                    f"🧩 线索：{clue_text}\n"
-                    f"🎁 当前命中奖励：{reward_summary}"
-                ),
-            )
-            await self._show_engagement_egg(update, context, chat_id, event_id=event.id)
-            return
-        if sub == "reset":
-            event = await get_egg_event(session, chat_id, callback_data.get_int(4))
-            if event is None:
-                await session.commit()
-                await self._show_engagement_egg_list(update, context, chat_id)
-                return
-            await archive_egg_snapshot(session, event, reward_points=0)
-            event.enabled = False
-            event.answer = None
-            event.clues = []
-            event.clue_rewards = []
-            event.clue_times = []
-            event.winner_user_id = None
-            event.status = "idle"
-            event.published_clue_count = 0
-            await session.commit()
-            await self._show_engagement_egg(update, context, chat_id, event_id=event.id)
+        if await self._handle_egg_operation(
+            update, context, session=session, chat_id=chat_id,
+            sub=sub, callback_data=callback_data,
+        ):
             return
         await session.commit()
         await self._show_engagement_egg_list(update, context, chat_id)
