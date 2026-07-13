@@ -110,65 +110,80 @@ async def banned_word_toggle_callback(update: Update, context: ContextTypes.DEFA
     await _banned_word_toggle_handler.handle_callback(update, context)
 
 
+def _parse_delete_word_callback(data: str) -> tuple[int, int]:
+    if not data.startswith("banned_word_delete_"):
+        return 0, 0
+    cb = CallbackParser.parse(data.split("_")[-1], separator=":")
+    return cb.get_int(0), cb.get_int(1)
+
+
+async def _resolve_delete_chat_id(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    callback_chat_id: int,
+) -> int | None:
+    chat = update.effective_chat
+    user = update.effective_user
+    if chat.type != "private":
+        return chat.id
+    if callback_chat_id != 0:
+        return callback_chat_id
+    db: Database = context.application.bot_data["db"]
+    target_chat_id = await ChatResolver.get_current_chat(db, user.id)
+    if target_chat_id is None:
+        await answer_callback_query_safely(update, "请先选择一个群组", show_alert=True)
+    return target_chat_id
+
+
+async def _delete_word_record(
+    context: ContextTypes.DEFAULT_TYPE,
+    target_chat_id: int,
+    word_id: int,
+) -> bool:
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        success = await delete_banned_word(session, word_id, chat_id=target_chat_id)
+        await session.commit()
+    return success
+
+
+async def _refresh_banned_word_list(q, context: ContextTypes.DEFAULT_TYPE, target_chat_id: int) -> None:
+    from backend.features.moderation.ui.banned_word import banned_word_list_keyboard
+
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        words = await get_chat_banned_words(session, target_chat_id)
+        total_triggers = await get_trigger_stats(session, target_chat_id)
+        await session.commit()
+    await safe_edit_banned_word_message(
+        q,
+        build_banned_word_list_text(words, total_triggers),
+        reply_markup=banned_word_list_keyboard(words, target_chat_id),
+    )
+
+
 async def banned_word_delete_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """删除违禁词回调"""
     if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
         return
     q = update.callback_query
 
-    chat = update.effective_chat
     user = update.effective_user
-    data = q.data
-    if not data.startswith("banned_word_delete_"):
-        return
-
-    # 解析 word_id 和可能的 chat_id
-    # 格式：banned_word_delete_{word_id} 或 banned_word_delete_{word_id}:{chat_id}
-    params = data.split("_")[-1]
-    cb = CallbackParser.parse(params, separator=":")
-    word_id = cb.get_int(0)
+    word_id, callback_chat_id = _parse_delete_word_callback(q.data or "")
     if word_id == 0:
+        await answer_callback_query_safely(update, "违禁词参数无效", show_alert=True)
         return
-
-    # 如果在私聊模式，提取目标群组ID
-    target_chat_id = None
-    if chat.type == "private":
-        target_chat_id = cb.get_int(1)
-        # 如果 callback_data 中没有 chat_id，从数据库获取
-        if target_chat_id == 0:
-            db: Database = context.application.bot_data["db"]
-            target_chat_id = await ChatResolver.get_current_chat(db, user.id)
-            if target_chat_id is None:
-                await answer_callback_query_safely(update, "请先选择一个群组", show_alert=True)
-                return
-    else:
-        target_chat_id = chat.id
-
+    target_chat_id = await _resolve_delete_chat_id(update, context, callback_chat_id)
+    if target_chat_id is None:
+        return
     if not await is_user_admin(context, target_chat_id, user.id):
         await answer_callback_query_safely(update, "没有该群组的管理权限", show_alert=True)
         return
-
-    db: Database = context.application.bot_data["db"]
-    async with db.session_factory() as session:
-        success = await delete_banned_word(session, word_id, chat_id=target_chat_id)
-        await session.commit()
-
-    if success:
-        await answer_callback_query_safely(update, "违禁词已删除", show_alert=False)
-        # 重新显示列表
-        async with db.session_factory() as session:
-            words = await get_chat_banned_words(session, target_chat_id)
-            total_triggers = await get_trigger_stats(session, target_chat_id)
-            await session.commit()
-
-        from backend.features.moderation.ui.banned_word import banned_word_list_keyboard
-        await safe_edit_banned_word_message(
-            q,
-            build_banned_word_list_text(words, total_triggers),
-            reply_markup=banned_word_list_keyboard(words, target_chat_id),
-        )
-    else:
+    if not await _delete_word_record(context, target_chat_id, word_id):
         await answer_callback_query_safely(update, "删除失败", show_alert=True)
+        return
+    await answer_callback_query_safely(update, "违禁词已删除", show_alert=False)
+    await _refresh_banned_word_list(q, context, target_chat_id)
 
 
 # ============================================
