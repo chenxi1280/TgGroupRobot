@@ -1,18 +1,22 @@
 from __future__ import annotations
 
 import datetime as dt
-import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import structlog
 from telegram import Message
 from telegram.ext import ContextTypes
 
-from backend.features.moderation.services.anti_spam_detection import _forward_source_ids
-from backend.features.moderation.services.anti_spam_rules import URL_RE
+from backend.features.moderation.services.garbage_guard_detection import (
+    detect_garbage_violation as detect_garbage_violation,
+)
 from backend.features.moderation.services.garbage_guard_rules import (
     RULE_DEFINITIONS,
     get_rule_config,
+)
+from backend.features.moderation.services.garbage_guard_types import (
+    GarbagePunishmentResult as GarbagePunishmentResult,
+    GarbageViolation as GarbageViolation,
 )
 from backend.features.moderation.services.moderation_service import (
     build_moderation_notice,
@@ -25,71 +29,8 @@ from backend.platform.db.schema.models.core import ChatSettings
 from backend.shared.services.action_executor import ActionExecutionResult, ActionExecutor
 
 
-CHINESE_RE = re.compile(r"[\u4e00-\u9fff]")
-LETTER_RE = re.compile(r"[A-Za-z]")
 GARBAGE_ACTION_FAILURE_NOTIFY_SECONDS = 300
 log = structlog.get_logger(__name__)
-
-
-@dataclass(frozen=True)
-class GarbageViolation:
-    rule_id: str
-    rule: str
-    detail: str
-    message_ids_to_delete: list[int] = field(default_factory=list)
-
-
-@dataclass(frozen=True)
-class GarbagePunishmentResult:
-    applied: bool
-    action_label: str
-    warning: WarningResult | None = None
-    threshold_reached: bool = False
-    delete_requested: bool = False
-    delete_applied: bool = False
-    escalation_requested: bool = False
-    escalation_applied: bool = False
-
-
-def _message_text(message: Message) -> str:
-    return getattr(message, "text", None) or getattr(message, "caption", None) or ""
-
-
-def _full_name(message: Message) -> str:
-    user = getattr(message, "from_user", None)
-    if user is None:
-        return ""
-    return " ".join(part for part in [user.first_name, user.last_name] if part)
-
-
-def _display_name_len(message: Message) -> int:
-    return len(_full_name(message))
-
-
-def _has_external_forward(message: Message) -> bool:
-    if getattr(message, "forward_origin", None) is not None:
-        return True
-    if getattr(message, "forward_from_chat", None) is not None:
-        return True
-    if getattr(message, "forward_from", None) is not None:
-        return True
-    if getattr(message, "forward_date", None) is not None:
-        return True
-    chat_id, user_id = _forward_source_ids(message)
-    return chat_id is not None or user_id is not None
-
-
-def _has_inline_buttons(message: Message) -> bool:
-    markup = getattr(message, "reply_markup", None)
-    inline_keyboard = getattr(markup, "inline_keyboard", None)
-    return bool(inline_keyboard)
-
-
-def _has_foreign_name(message: Message) -> bool:
-    full_name = _full_name(message).strip()
-    if not full_name:
-        return False
-    return not CHINESE_RE.search(full_name) and bool(LETTER_RE.search(full_name))
 
 
 def _action_part_label(action: str) -> str:
@@ -175,6 +116,21 @@ async def delete_garbage_message_fallback(
         return False
 
 
+def _garbage_fallback_needed(result, delete_message_enabled: bool) -> bool:
+    delete_failed = bool(getattr(result, "delete_requested", False)) and not bool(
+        getattr(result, "delete_applied", False)
+    )
+    return delete_message_enabled and (delete_failed or not bool(getattr(result, "applied", False)))
+
+
+def _garbage_result_unresolved(result, *, fallback_succeeded: bool) -> bool:
+    escalation_failed = bool(getattr(result, "escalation_requested", False)) and not bool(
+        getattr(result, "escalation_applied", False)
+    )
+    delete_only_recovered = fallback_succeeded and not escalation_failed
+    return escalation_failed or (not bool(getattr(result, "applied", False)) and not delete_only_recovered)
+
+
 async def handle_garbage_result_fallback(
     context: ContextTypes.DEFAULT_TYPE,
     *,
@@ -185,32 +141,23 @@ async def handle_garbage_result_fallback(
     result,
     delete_message_enabled: bool,
 ) -> None:
-    delete_failed = bool(getattr(result, "delete_requested", False)) and not bool(
-        getattr(result, "delete_applied", False)
-    )
-    escalation_failed = bool(getattr(result, "escalation_requested", False)) and not bool(
-        getattr(result, "escalation_applied", False)
-    )
-    fallback_attempted = False
+    applied = bool(getattr(result, "applied", False))
+    fallback_needed = _garbage_fallback_needed(result, delete_message_enabled)
     fallback_succeeded = False
-    fallback_failed = False
-    if delete_failed and delete_message_enabled:
-        fallback_succeeded = await delete_garbage_message_fallback(context, chat_id, message, rule_id=rule_id, detail=detail)
-        fallback_failed = not fallback_succeeded
-        fallback_attempted = True
-    if not bool(getattr(result, "applied", False)):
-        if delete_message_enabled and not fallback_attempted:
-            fallback_succeeded = await delete_garbage_message_fallback(context, chat_id, message, rule_id=rule_id, detail=detail)
-            fallback_failed = not fallback_succeeded
-            fallback_attempted = True
-        elif not fallback_attempted:
-            await notify_garbage_action_failure(context, chat_id, rule_id, detail=detail)
-            return
-
-    delete_only_recovered = fallback_succeeded and not escalation_failed
-    if escalation_failed or (not bool(getattr(result, "applied", False)) and not delete_only_recovered):
-        if not fallback_failed:
-            await notify_garbage_action_failure(context, chat_id, rule_id, detail=detail)
+    if fallback_needed:
+        fallback_succeeded = await delete_garbage_message_fallback(
+            context,
+            chat_id,
+            message,
+            rule_id=rule_id,
+            detail=detail,
+        )
+    if not applied and not fallback_needed:
+        await notify_garbage_action_failure(context, chat_id, rule_id, detail=detail)
+        return
+    fallback_failed = fallback_needed and not fallback_succeeded
+    if _garbage_result_unresolved(result, fallback_succeeded=fallback_succeeded) and not fallback_failed:
+        await notify_garbage_action_failure(context, chat_id, rule_id, detail=detail)
 
 
 async def execute_garbage_action_safely(
@@ -251,211 +198,215 @@ async def execute_garbage_action_safely(
         return ActionExecutionResult(action=action, applied=False, detail=str(exc))
 
 
-def detect_garbage_violation(settings: ChatSettings, message: Message) -> GarbageViolation | None:
-    text = _message_text(message)
+@dataclass(frozen=True)
+class _EscalationResult:
+    requested: bool = False
+    applied: bool = False
+    action: str | None = None
 
-    long_message = get_rule_config(settings, "long_message")
-    if long_message["enabled"] and len(text) >= int(long_message["message_max_length"]):
-        max_length = int(long_message["message_max_length"])
-        return GarbageViolation(
-            rule_id="long_message",
-            rule="long_message",
-            detail=f"消息长度 {len(text)} 字，达到/超过 {max_length} 字限制",
-            message_ids_to_delete=[message.message_id],
-        )
 
-    long_name = get_rule_config(settings, "long_name")
-    if long_name["enabled"] and _display_name_len(message) > int(long_name["name_max_length"]):
-        max_length = int(long_name["name_max_length"])
-        return GarbageViolation(
-            rule_id="long_name",
-            rule="long_name",
-            detail=f"昵称长度 {_display_name_len(message)} 字，超过 {max_length} 字限制",
-            message_ids_to_delete=[message.message_id],
-        )
+async def _delete_garbage_messages(context: ContextTypes.DEFAULT_TYPE, *, config: dict, chat_id: int, message_ids: list[int]) -> tuple[bool, bool]:
+    requested = bool(config.get("delete_message")) and bool(message_ids)
+    if not requested:
+        return False, False
+    result = await ActionExecutor.delete_many(context, chat_id=chat_id, message_ids=message_ids)
+    return True, bool(result.applied)
 
-    block_links = get_rule_config(settings, "block_links")
-    if block_links["enabled"] and text and URL_RE.search(text.lower()):
-        return GarbageViolation(
-            rule_id="block_links",
-            rule="link",
-            detail="消息包含链接",
-            message_ids_to_delete=[message.message_id],
-        )
 
-    block_buttons = get_rule_config(settings, "block_buttons")
-    if block_buttons["enabled"] and _has_inline_buttons(message):
-        return GarbageViolation(
-            rule_id="block_buttons",
-            rule="button",
-            detail="消息包含按钮",
-            message_ids_to_delete=[message.message_id],
-        )
+async def _add_garbage_warning(session, *, config: dict, chat_id: int, user_id: int, rule_id: str) -> tuple[WarningResult | None, bool]:
+    if not bool(config.get("warn_enabled")) or user_id <= 0:
+        return None, True
+    warning = await add_warning(
+        session,
+        chat_id=chat_id,
+        user_id=user_id,
+        rule=rule_id,
+        threshold=int(config.get("warn_threshold", 3) or 3),
+    )
+    return warning, warning.threshold_reached
 
-    spam_user = get_rule_config(settings, "spam_user")
-    user = getattr(message, "from_user", None)
-    if spam_user["enabled"] and user is not None:
-        if spam_user["check_no_username"] and not (user.username or "").strip():
-            return GarbageViolation(
-                rule_id="spam_user",
-                rule="no_username",
-                detail="用户没有用户名",
-                message_ids_to_delete=[message.message_id],
-            )
-        if spam_user["check_foreign_name"] and _has_foreign_name(message):
-            return GarbageViolation(
-                rule_id="spam_user",
-                rule="foreign_name",
-                detail=f"昵称疑似外文: {_full_name(message)}",
-                message_ids_to_delete=[message.message_id],
-            )
 
-    block_forwards = get_rule_config(settings, "block_forwards")
-    if block_forwards["enabled"] and _has_external_forward(message):
-        return GarbageViolation(
-            rule_id="block_forwards",
-            rule="external_forward",
-            detail="转发或引用外部消息",
-            message_ids_to_delete=[message.message_id],
-        )
-
+def _requested_escalation(config: dict, threshold_reached: bool) -> str | None:
+    should_escalate = threshold_reached or not bool(config.get("warn_enabled"))
+    if not should_escalate:
+        return None
+    if bool(config.get("kick_enabled")):
+        return "kick"
+    if bool(config.get("mute_enabled")):
+        return "mute"
     return None
 
 
-async def apply_garbage_punishment(
+async def _escalate_garbage_action(
     context: ContextTypes.DEFAULT_TYPE,
-    session,
     *,
-    settings: ChatSettings,
+    config: dict,
+    requested_action: str | None,
     chat_id: int,
-    target_user_id: int,
-    target_label: str,
+    user_id: int,
     rule_id: str,
     detail: str,
-    message_ids: list[int] | None = None,
-    sender_chat_id: int | None = None,
-    actor_user_id: int | None = None,
-    record_message_id: int | None = None,
+    actor_user_id: int | None,
+    message_id: int | None,
+    sender_chat_id: int | None,
+) -> _EscalationResult:
+    if requested_action is None:
+        return _EscalationResult()
+    resolution = await resolve_effective_action(
+        context,
+        chat_id,
+        user_id,
+        requested_action=requested_action,
+        sender_chat_id=sender_chat_id,
+    )
+    result = await execute_garbage_action_safely(
+        context,
+        action=resolution.action,
+        chat_id=chat_id,
+        user_id=user_id,
+        rule_id=rule_id,
+        detail=detail,
+        actor_user_id=actor_user_id,
+        message_id=message_id,
+        mute_seconds=int(config.get("mute_seconds", 3_600) or 3_600) if requested_action == "mute" else None,
+        sender_chat_id=sender_chat_id,
+    )
+    return _EscalationResult(requested=True, applied=bool(result.applied), action=resolution.action)
+
+
+async def _record_garbage_violation(
+    session,
+    *,
+    chat_id: int,
+    user_id: int,
+    message_id: int | None,
+    rule_id: str,
+    detail: str,
+    action_label: str,
+) -> None:
+    if user_id <= 0:
+        return
+    await record_violation(
+        session,
+        chat_id=chat_id,
+        user_id=user_id,
+        message_id=message_id,
+        rule=rule_id,
+        detail=detail,
+        action=action_label[:32],
+    )
+
+
+def _garbage_notice_text(config: dict, *, rule_id: str, target_label: str, detail: str, action_label: str, warning) -> str:
+    configured_text = str(config.get("notice_text") or "").strip()
+    if configured_text:
+        return configured_text
+    warning_text = f"警告次数: {warning.count}/{warning.threshold}" if warning is not None else ""
+    rule_label = RULE_DEFINITIONS[rule_id].label if rule_id in RULE_DEFINITIONS else "垃圾防护"
+    return build_moderation_notice(
+        f"🚫 {rule_label}已处理",
+        target_label,
+        detail,
+        action_label=action_label,
+        extra_lines=[warning_text] if warning_text else None,
+    )
+
+
+async def _send_garbage_notice(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    config: dict,
+    chat_id: int,
+    rule_id: str,
+    target_label: str,
+    detail: str,
+    action_label: str,
+    warning,
+) -> None:
+    if not bool(config.get("notice_enabled")):
+        return
+    text = _garbage_notice_text(
+        config,
+        rule_id=rule_id,
+        target_label=target_label,
+        detail=detail,
+        action_label=action_label,
+        warning=warning,
+    )
+    await send_temporary_notice(
+        context.bot,
+        chat_id=chat_id,
+        text=text,
+        delete_after_seconds=int(config.get("notice_delete_seconds", 10) or 10),
+    )
+
+
+def _punishment_result(
+    *,
+    action_label: str,
+    warning: WarningResult | None,
+    threshold_reached: bool,
+    delete_requested: bool,
+    delete_applied: bool,
+    escalation: _EscalationResult,
+) -> GarbagePunishmentResult:
+    return GarbagePunishmentResult(
+        applied=delete_applied or warning is not None or escalation.applied,
+        action_label=action_label,
+        warning=warning,
+        threshold_reached=threshold_reached,
+        delete_requested=delete_requested,
+        delete_applied=delete_applied,
+        escalation_requested=escalation.requested,
+        escalation_applied=escalation.applied,
+    )
+
+
+async def apply_garbage_punishment(
+    context: ContextTypes.DEFAULT_TYPE, session, *, settings: ChatSettings, chat_id: int, target_user_id: int,
+    target_label: str, rule_id: str, detail: str, message_ids: list[int] | None = None,
+    sender_chat_id: int | None = None, actor_user_id: int | None = None, record_message_id: int | None = None,
 ) -> GarbagePunishmentResult:
     config = get_rule_config(settings, rule_id)
-    message_ids = sorted(set(message_ids or []))
-    action_parts: list[str] = []
-    applied = False
-    delete_requested = bool(config.get("delete_message")) and bool(message_ids)
-    delete_applied = False
-    escalation_requested = False
-    escalation_applied = False
-
-    if delete_requested:
-        result = await ActionExecutor.delete_many(context, chat_id=chat_id, message_ids=message_ids)
-        delete_applied = bool(result.applied)
-        applied = result.applied or applied
-        action_parts.append("delete")
-
-    warning_result: WarningResult | None = None
-    threshold_reached = True
-    if bool(config.get("warn_enabled")) and target_user_id > 0:
-        warning_result = await add_warning(
-            session,
-            chat_id=chat_id,
-            user_id=target_user_id,
-            rule=rule_id,
-            threshold=int(config.get("warn_threshold", 3) or 3),
-        )
-        threshold_reached = warning_result.threshold_reached
-        applied = True
-        action_parts.append("warn")
-
-    should_escalate = threshold_reached or not bool(config.get("warn_enabled"))
-    if should_escalate:
-        if bool(config.get("kick_enabled")):
-            escalation_requested = True
-            resolution = await resolve_effective_action(
-                context,
-                chat_id,
-                target_user_id,
-                requested_action="kick",
-                sender_chat_id=sender_chat_id,
-            )
-            result = await execute_garbage_action_safely(
-                context,
-                action=resolution.action,
-                chat_id=chat_id,
-                user_id=target_user_id,
-                rule_id=rule_id,
-                detail=detail,
-                actor_user_id=actor_user_id,
-                message_id=message_ids[0] if message_ids else record_message_id,
-                sender_chat_id=sender_chat_id,
-            )
-            escalation_applied = bool(result.applied)
-            applied = result.applied or applied
-            action_parts.append(resolution.action)
-        elif bool(config.get("mute_enabled")):
-            escalation_requested = True
-            resolution = await resolve_effective_action(
-                context,
-                chat_id,
-                target_user_id,
-                requested_action="mute",
-                sender_chat_id=sender_chat_id,
-            )
-            result = await execute_garbage_action_safely(
-                context,
-                action=resolution.action,
-                chat_id=chat_id,
-                user_id=target_user_id,
-                rule_id=rule_id,
-                detail=detail,
-                actor_user_id=actor_user_id,
-                message_id=message_ids[0] if message_ids else record_message_id,
-                mute_seconds=int(config.get("mute_seconds", 3600) or 3600),
-                sender_chat_id=sender_chat_id,
-            )
-            escalation_applied = bool(result.applied)
-            applied = result.applied or applied
-            action_parts.append(resolution.action)
-
+    normalized_message_ids = sorted(set(message_ids or []))
+    delete_requested, delete_applied = await _delete_garbage_messages(
+        context, config=config, chat_id=chat_id, message_ids=normalized_message_ids,
+    )
+    warning_result, threshold_reached = await _add_garbage_warning(
+        session,
+        config=config,
+        chat_id=chat_id,
+        user_id=target_user_id,
+        rule_id=rule_id,
+    )
+    message_id = normalized_message_ids[0] if normalized_message_ids else record_message_id
+    escalation = await _escalate_garbage_action(
+        context,
+        config=config,
+        requested_action=_requested_escalation(config, threshold_reached),
+        chat_id=chat_id,
+        user_id=target_user_id,
+        rule_id=rule_id,
+        detail=detail,
+        actor_user_id=actor_user_id,
+        message_id=message_id,
+        sender_chat_id=sender_chat_id,
+    )
+    action_parts = [part for part in ("delete" if delete_requested else None, "warn" if warning_result else None, escalation.action) if part]
     action_label = format_garbage_action_label(action_parts)
-    if target_user_id > 0:
-        await record_violation(
-            session,
-            chat_id=chat_id,
-            user_id=target_user_id,
-            message_id=record_message_id,
-            rule=rule_id,
-            detail=detail,
-            action=action_label[:32],
-        )
-
-    if bool(config.get("notice_enabled")):
-        warning_text = ""
-        if warning_result is not None:
-            warning_text = f"警告次数: {warning_result.count}/{warning_result.threshold}"
-        text = str(config.get("notice_text") or "").strip()
-        if not text:
-            title = f"🚫 {RULE_DEFINITIONS.get(rule_id).label if rule_id in RULE_DEFINITIONS else '垃圾防护'}已处理"
-            text = build_moderation_notice(
-                title,
-                target_label,
-                detail,
-                action_label=action_label,
-                extra_lines=[warning_text] if warning_text else None,
-            )
-        await send_temporary_notice(
-            context.bot,
-            chat_id=chat_id,
-            text=text,
-            delete_after_seconds=int(config.get("notice_delete_seconds", 10) or 10),
-        )
-
-    return GarbagePunishmentResult(
-        applied=applied,
+    await _record_garbage_violation(
+        session, chat_id=chat_id, user_id=target_user_id, message_id=record_message_id,
+        rule_id=rule_id, detail=detail, action_label=action_label,
+    )
+    await _send_garbage_notice(
+        context, config=config, chat_id=chat_id, rule_id=rule_id, target_label=target_label,
+        detail=detail, action_label=action_label, warning=warning_result,
+    )
+    return _punishment_result(
         action_label=action_label,
         warning=warning_result,
         threshold_reached=threshold_reached,
         delete_requested=delete_requested,
         delete_applied=delete_applied,
-        escalation_requested=escalation_requested,
-        escalation_applied=escalation_applied,
+        escalation=escalation,
     )
