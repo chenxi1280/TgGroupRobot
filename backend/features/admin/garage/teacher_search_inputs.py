@@ -62,35 +62,51 @@ def _coordinate_pair(latitude_raw: str, longitude_raw: str) -> tuple[float, floa
     return latitude, longitude
 
 
-def _parse_coordinates_from_map_text(value: str) -> tuple[float, float] | None:
+def _fully_unquote(value: str) -> str:
     text = value.strip()
     for _ in range(3):
         decoded = unquote(text)
         if decoded == text:
-            break
+            return text
         text = decoded
+    return text
 
+
+def _pair_from_match(match) -> tuple[float, float] | None:
+    if match is None:
+        return None
+    return _coordinate_pair(match.group(1), match.group(2))
+
+
+def _pair_from_embedded_coordinates(text: str) -> tuple[float, float] | None:
     for pattern in (_AT_COORD_RE, _BANG_COORD_RE):
-        match = pattern.search(text)
-        if match:
-            pair = _coordinate_pair(match.group(1), match.group(2))
-            if pair is not None:
-                return pair
+        pair = _pair_from_match(pattern.search(text))
+        if pair is not None:
+            return pair
+    return None
 
-    parsed = urlparse(text)
+
+def _pair_from_query(parsed) -> tuple[float, float] | None:
     query_values = parse_qs(parsed.query)
     for key in ("q", "query", "ll", "center", "destination"):
         for raw_value in query_values.get(key, []):
-            match = _QUERY_COORD_RE.match(raw_value)
-            if match:
-                pair = _coordinate_pair(match.group(1), match.group(2))
-                if pair is not None:
-                    return pair
+            pair = _pair_from_match(_QUERY_COORD_RE.match(raw_value))
+            if pair is not None:
+                return pair
+    return None
 
+
+def _parse_coordinates_from_map_text(value: str) -> tuple[float, float] | None:
+    text = _fully_unquote(value)
+    pair = _pair_from_embedded_coordinates(text)
+    if pair is not None:
+        return pair
+    parsed = urlparse(text)
+    pair = _pair_from_query(parsed)
+    if pair is not None:
+        return pair
     if parsed.scheme == "geo":
-        match = _QUERY_COORD_RE.match(parsed.path)
-        if match:
-            return _coordinate_pair(match.group(1), match.group(2))
+        return _pair_from_match(_QUERY_COORD_RE.match(parsed.path))
     return None
 
 
@@ -120,16 +136,18 @@ async def _expand_map_url(url: str) -> str | None:
 
 async def _parse_coordinates_from_map_link(text: str) -> tuple[float, float] | None:
     for url in _extract_map_urls(text):
-        pair = _parse_coordinates_from_map_text(url)
+        pair = await _coordinates_from_map_url(url)
         if pair is not None:
             return pair
-        if _is_short_map_url(url):
-            expanded_url = await _expand_map_url(url)
-            if expanded_url:
-                pair = _parse_coordinates_from_map_text(expanded_url)
-                if pair is not None:
-                    return pair
     return None
+
+
+async def _coordinates_from_map_url(url: str) -> tuple[float, float] | None:
+    pair = _parse_coordinates_from_map_text(url)
+    if pair is not None or not _is_short_map_url(url):
+        return pair
+    expanded_url = await _expand_map_url(url)
+    return _parse_coordinates_from_map_text(expanded_url) if expanded_url else None
 
 
 async def _extract_location_pair_from_message(message, text_value: str) -> tuple[float, float] | None:
@@ -140,6 +158,29 @@ async def _extract_location_pair_from_message(message, text_value: str) -> tuple
     if location is not None:
         return float(location.latitude), float(location.longitude)
     return await _parse_coordinates_from_map_link(text_value)
+
+
+async def _clear_member_location_state(session, state, user_id: int) -> None:
+    from backend.platform.state.conversation_state_service import SELECTED_CHAT_STATE
+    from backend.platform.state.state_service import clear_user_state, set_user_state
+
+    await clear_user_state(session, chat_id=state.chat_id, user_id=user_id)
+    previous_chat_id = (state.state_data or {}).get("previous_selected_chat_id")
+    if not isinstance(previous_chat_id, int):
+        return
+    await set_user_state(
+        session,
+        chat_id=user_id,
+        user_id=user_id,
+        state_type=SELECTED_CHAT_STATE,
+        state_data={"managed_chat_id": previous_chat_id},
+    )
+
+
+async def _reject_member_location_state(update, session, state, *, text: str) -> None:
+    await _clear_member_location_state(session, state, update.effective_user.id)
+    await session.commit()
+    await update.effective_message.reply_text(text, reply_markup=ReplyKeyboardRemove())
 
 
 async def handle_teacher_search_feature_input(
@@ -191,42 +232,21 @@ async def handle_teacher_member_location_input(
     *, state,
     message_text: str,
 ) -> None:
-    from backend.features.garage.services.garage_features_service import GarageAuthService, TeacherSearchService
+    from backend.features.garage.services.garage_features_service import TeacherSearchService
     from backend.platform.db.schema.models.garage_features import TeacherSearchSetting
-    from backend.platform.state.conversation_state_service import SELECTED_CHAT_STATE
-    from backend.platform.state.state_service import clear_user_state, set_user_state
 
     if update.effective_user is None or update.effective_message is None:
         return
 
-    async def clear_location_state() -> None:
-        await clear_user_state(session, chat_id=state.chat_id, user_id=update.effective_user.id)
-        previous_selected_chat_id = (state.state_data or {}).get("previous_selected_chat_id")
-        if isinstance(previous_selected_chat_id, int):
-            await set_user_state(
-                session,
-                chat_id=update.effective_user.id,
-                user_id=update.effective_user.id,
-                state_type=SELECTED_CHAT_STATE,
-                state_data={"managed_chat_id": previous_selected_chat_id},
-            )
-
     state_data = state.state_data or {}
     target_chat_id = state_data.get("target_chat_id")
     if not isinstance(target_chat_id, int):
-        await clear_location_state()
-        await session.commit()
-        await update.effective_message.reply_text(
-            "定位状态异常，请回群重新点击“私聊更新定位”。",
-            reply_markup=ReplyKeyboardRemove(),
-        )
+        await _reject_member_location_state(update, session, state, text="定位状态异常，请回群重新点击“私聊更新定位”。")
         return
 
     setting = await session.get(TeacherSearchSetting, target_chat_id)
     if setting is None or not setting.nearby_search_enabled:
-        await clear_location_state()
-        await session.commit()
-        await update.effective_message.reply_text("该群暂未启用附近搜索。", reply_markup=ReplyKeyboardRemove())
+        await _reject_member_location_state(update, session, state, text="该群暂未启用附近搜索。")
         return
 
     location_pair = await _extract_location_pair_from_message(update.effective_message, message_text)
@@ -246,7 +266,7 @@ async def handle_teacher_member_location_input(
         longitude=longitude,
         operator_user_id=update.effective_user.id,
     )
-    await clear_location_state()
+    await _clear_member_location_state(session, state, update.effective_user.id)
     await session.commit()
     await update.effective_message.reply_text(
         "✅ 定位已更新。回到群里发送“附近”即可查询附近老师。",
@@ -423,24 +443,14 @@ async def _handle_delegate_location_input(
     if update.effective_user is None or update.effective_message is None:
         return
 
-    location = getattr(update.effective_message, "location", None)
-    if location is None:
-        venue = getattr(update.effective_message, "venue", None)
-        location = getattr(venue, "location", None) if venue is not None else None
-
-    if location is not None:
-        latitude = float(location.latitude)
-        longitude = float(location.longitude)
-    else:
-        parsed_pair = await _parse_coordinates_from_map_link(text_value)
-        if parsed_pair is not None:
-            latitude, longitude = parsed_pair
-        else:
-            await update.effective_message.reply_text(
-                _delegate_location_retry_prompt(),
-                reply_markup=ReplyKeyboardRemove(),
-            )
-            return
+    location_pair = await _extract_location_pair_from_message(update.effective_message, text_value)
+    if location_pair is None:
+        await update.effective_message.reply_text(
+            _delegate_location_retry_prompt(),
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        return
+    latitude, longitude = location_pair
 
     delegate_user_id = state.state_data.get("delegate_user_id")
     if not isinstance(delegate_user_id, int):
