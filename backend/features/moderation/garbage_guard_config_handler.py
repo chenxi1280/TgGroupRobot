@@ -34,12 +34,11 @@ from backend.shared.callback_parser import CallbackParser
 from backend.shared.services.chat_service import get_chat_settings
 from backend.shared.services.module_settings_service import ModuleSettingsService
 from backend.shared.services.permission_service import PermissionPolicyService
-_GARBAGE_GUARD_CONFIG_CALLBACK_THRESHOLD_3 = 3
-_GARBAGE_GUARD_CONFIG_CALLBACK_THRESHOLD_5 = 5
-
-
 
 _INT_RE = re.compile(r"-?\d+")
+MIN_CALLBACK_PARTS = 3
+FULL_CALLBACK_PARTS = 5
+QUICK_REPLY_FIELDS = frozenset({"mute_keyword", "kick_keyword"})
 
 
 async def _edit_config_message(q, text: str, reply_markup=None) -> None:
@@ -103,13 +102,178 @@ async def _render_whitelist(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     )
 
 
+def _extract_config_chat_id(cb: CallbackParser, op: str) -> int | None:
+    if op in {"home", "whitelist"}:
+        return cb.get_int_optional(2)
+    if op == "clear":
+        return cb.get_int_optional(3)
+    if op == "input":
+        index = 4 if cb.get(2) == "quick_reply_actions" else 3
+        return cb.get_int_optional(index)
+    index = 4 if cb.length() >= FULL_CALLBACK_PARTS else 3
+    return cb.get_int_optional(index)
+
+
+async def _start_garbage_config_input(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+    *,
+    state_type: str,
+    state_data: dict,
+    prompt: str,
+) -> None:
+    db: Database = context.application.bot_data["db"]
+    user_id = update.effective_user.id
+    async with db.session_factory() as session:
+        await ModuleSettingsService.ensure(
+            session,
+            chat_id=chat_id,
+            chat_type="supergroup" if chat_id < 0 else "private",
+            user_id=user_id,
+        )
+        await ConversationStateService.clear(session, chat_id, user_id)
+        await ConversationStateService.start(
+            session,
+            chat_id=chat_id,
+            user_id=user_id,
+            state_type=state_type,
+            state_data=state_data,
+        )
+        await session.commit()
+    await _edit_config_message(update.callback_query, prompt)
+
+
+async def _handle_config_input(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+    *,
+    cb: CallbackParser,
+) -> bool:
+    input_type = cb.get(2)
+    if input_type == "whitelist":
+        await _start_garbage_config_input(
+            update,
+            context,
+            chat_id,
+            state_type=ConversationStateType.garbage_guard_whitelist.value,
+            state_data={"target_chat_id": chat_id},
+            prompt=(
+                "📄 总白名单管理\n\n请输入用户 ID，多个 ID 可用空格、逗号或换行分隔。\n"
+                "发送“清空”可清空白名单。"
+            ),
+        )
+        return True
+    if input_type != "quick_reply_actions":
+        return False
+    field = cb.get(3)
+    if field not in QUICK_REPLY_FIELDS:
+        await answer_callback_query_safely(update, "无效的快捷回复配置项", show_alert=True)
+        return True
+    label = "禁言回复词" if field == "mute_keyword" else "踢出回复词"
+    await _start_garbage_config_input(
+        update,
+        context,
+        chat_id,
+        state_type=ConversationStateType.garbage_guard_quick_reply_keyword.value,
+        state_data={"target_chat_id": chat_id, "field": field},
+        prompt=f"👮 快捷回复操作\n\n请输入新的{label}，例如：j 或 T。\n不能包含空格或换行。",
+    )
+    return True
+
+
+async def _clear_whitelist(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+) -> None:
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        settings = await get_chat_settings(session, chat_id)
+        set_global_whitelist_user_ids(settings, [])
+        await session.commit()
+    await _render_whitelist(update, context, chat_id)
+
+
+def _update_rule_setting(settings, *, op: str, rule_id: str, field: str) -> bool:
+    rule = get_rule_config(settings, rule_id)
+    if op == "toggle" and field in rule:
+        set_rule_config(settings, rule_id, {field: not bool(rule.get(field))})
+        return True
+    if op == "cycle" and field in RULE_CYCLE_VALUES:
+        cycle_rule_value(settings, rule_id, field)
+        return True
+    return False
+
+
+async def _mutate_rule_setting(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+    *,
+    cb: CallbackParser,
+    op: str,
+) -> None:
+    rule_id = cb.get(2)
+    field = cb.get(3)
+    if rule_id not in RULE_DEFINITIONS:
+        await answer_callback_query_safely(update, "规则不存在", show_alert=True)
+        return
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        await ModuleSettingsService.ensure(
+            session,
+            chat_id=chat_id,
+            chat_type="supergroup" if chat_id < 0 else "private",
+            user_id=update.effective_user.id,
+        )
+        settings = await get_chat_settings(session, chat_id)
+        updated = _update_rule_setting(settings, op=op, rule_id=rule_id, field=field)
+        if not updated:
+            await session.commit()
+            await answer_callback_query_safely(update, "无效的规则配置项", show_alert=True)
+            return
+        await session.commit()
+    await _render_rule(update, context, chat_id, rule_id=rule_id)
+
+
+async def _dispatch_config_operation(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+    *,
+    cb: CallbackParser,
+    op: str,
+) -> None:
+    if op == "home":
+        await _render_home(update, context, chat_id)
+        return
+    if op == "whitelist":
+        await _render_whitelist(update, context, chat_id)
+        return
+    if op == "input" and await _handle_config_input(update, context, chat_id, cb=cb):
+        return
+    if op == "clear" and cb.get(2) == "whitelist":
+        await _clear_whitelist(update, context, chat_id)
+        return
+    if op == "rule" and cb.get(2) in RULE_DEFINITIONS:
+        await _render_rule(update, context, chat_id, rule_id=cb.get(2))
+        return
+    if op in {"toggle", "cycle"}:
+        await _mutate_rule_setting(update, context, chat_id, cb=cb, op=op)
+        return
+    await answer_callback_query_safely(update, "无效的垃圾防护操作", show_alert=True)
+
+
 async def garbage_guard_config_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.callback_query is None or update.effective_user is None:
         return
 
     q = update.callback_query
     cb = CallbackParser.parse(q.data or "")
-    if cb.length() < _GARBAGE_GUARD_CONFIG_CALLBACK_THRESHOLD_3:
+    if cb.length() < MIN_CALLBACK_PARTS:
+        await answer_callback_query_safely(update, "无效的垃圾防护参数", show_alert=True)
         return
 
     op = cb.get(1)
@@ -117,15 +281,7 @@ async def garbage_guard_config_callback(update: Update, context: ContextTypes.DE
         await answer_callback_query_safely(update, "当前项无需配置")
         return
 
-    if op in {"home", "whitelist"}:
-        chat_id = cb.get_int_optional(2)
-    elif op in {"clear"}:
-        chat_id = cb.get_int_optional(3)
-    elif op == "input":
-        chat_id = cb.get_int_optional(4) if cb.get(2) == "quick_reply_actions" else cb.get_int_optional(3)
-    else:
-        chat_id = cb.get_int_optional(4) if cb.length() >= _GARBAGE_GUARD_CONFIG_CALLBACK_THRESHOLD_5 else cb.get_int_optional(3)
-
+    chat_id = _extract_config_chat_id(cb, op)
     if chat_id is None or chat_id == 0:
         await answer_callback_query_safely(update, "无效的群组 ID", show_alert=True)
         return
@@ -142,106 +298,18 @@ async def garbage_guard_config_callback(update: Update, context: ContextTypes.DE
 
     await q.answer()
     mark_callback_query_answered(update)
+    await _dispatch_config_operation(update, context, chat_id, cb=cb, op=op)
 
-    if op == "home":
-        await _render_home(update, context, chat_id)
-        return
 
-    if op == "whitelist":
-        await _render_whitelist(update, context, chat_id)
-        return
+def _get_state_target_chat_id(state: ConversationState) -> int | None:
+    value = (state.state_data or {}).get("target_chat_id", state.chat_id)
+    return value if isinstance(value, int) and value != 0 else None
 
-    db: Database = context.application.bot_data["db"]
-    if op == "input" and cb.get(2) == "whitelist":
-        async with db.session_factory() as session:
-            await ModuleSettingsService.ensure(
-                session,
-                chat_id=chat_id,
-                chat_type="supergroup" if chat_id < 0 else "private",
-                user_id=update.effective_user.id,
-            )
-            await ConversationStateService.clear(session, chat_id, update.effective_user.id)
-            await ConversationStateService.start(
-                session,
-                chat_id=chat_id,
-                user_id=update.effective_user.id,
-                state_type=ConversationStateType.garbage_guard_whitelist.value,
-                state_data={"target_chat_id": chat_id},
-            )
-            await session.commit()
-        await _edit_config_message(
-            q,
-            "📄 总白名单管理\n\n请输入用户 ID，多个 ID 可用空格、逗号或换行分隔。\n发送“清空”可清空白名单。",
-        )
-        return
 
-    if op == "input" and cb.get(2) == "quick_reply_actions":
-        field = cb.get(3)
-        if field not in {"mute_keyword", "kick_keyword"}:
-            await answer_callback_query_safely(update, "无效的快捷回复配置项", show_alert=True)
-            return
-        async with db.session_factory() as session:
-            await ModuleSettingsService.ensure(
-                session,
-                chat_id=chat_id,
-                chat_type="supergroup" if chat_id < 0 else "private",
-                user_id=update.effective_user.id,
-            )
-            await ConversationStateService.clear(session, chat_id, update.effective_user.id)
-            await ConversationStateService.start(
-                session,
-                chat_id=chat_id,
-                user_id=update.effective_user.id,
-                state_type=ConversationStateType.garbage_guard_quick_reply_keyword.value,
-                state_data={"target_chat_id": chat_id, "field": field},
-            )
-            await session.commit()
-        label = "禁言回复词" if field == "mute_keyword" else "踢出回复词"
-        await _edit_config_message(q, f"👮 快捷回复操作\n\n请输入新的{label}，例如：j 或 T。\n不能包含空格或换行。")
-        return
-
-    if op == "clear" and cb.get(2) == "whitelist":
-        async with db.session_factory() as session:
-            settings = await get_chat_settings(session, chat_id)
-            set_global_whitelist_user_ids(settings, [])
-            await session.commit()
-        await _render_whitelist(update, context, chat_id)
-        return
-
-    if op == "rule":
-        rule_id = cb.get(2)
-        if rule_id not in RULE_DEFINITIONS:
-            await answer_callback_query_safely(update, "规则不存在", show_alert=True)
-            return
-        await _render_rule(update, context, chat_id, rule_id=rule_id)
-        return
-
-    if op not in {"toggle", "cycle"}:
-        return
-
-    rule_id = cb.get(2)
-    field = cb.get(3)
-    if rule_id not in RULE_DEFINITIONS:
-        await answer_callback_query_safely(update, "规则不存在", show_alert=True)
-        return
-
-    async with db.session_factory() as session:
-        await ModuleSettingsService.ensure(
-            session,
-            chat_id=chat_id,
-            chat_type="supergroup" if chat_id < 0 else "private",
-            user_id=update.effective_user.id,
-        )
-        settings = await get_chat_settings(session, chat_id)
-        rule = get_rule_config(settings, rule_id)
-        if op == "toggle":
-            if field in rule:
-                set_rule_config(settings, rule_id, {field: not bool(rule.get(field))})
-        elif op == "cycle" and field in RULE_CYCLE_VALUES:
-            cycle_rule_value(settings, rule_id, field)
-        await session.commit()
-
-    await _render_rule(update, context, chat_id, rule_id=rule_id)
+def _parse_whitelist_user_ids(message_text: str) -> list[int]:
+    if message_text.strip() in {"清空", "/clear"}:
+        return []
+    return [int(value) for value in _INT_RE.findall(message_text)]
 
 
 async def garbage_guard_whitelist_message_handler(
@@ -258,8 +326,8 @@ async def garbage_guard_whitelist_message_handler(
     if update.effective_user is None or update.effective_message is None:
         return
 
-    target_chat_id = state.state_data.get("target_chat_id") if state.state_data else state.chat_id
-    if not isinstance(target_chat_id, int) or target_chat_id == 0:
+    target_chat_id = _get_state_target_chat_id(state)
+    if target_chat_id is None:
         await ConversationStateService.clear(session, state.chat_id, update.effective_user.id)
         await session.commit()
         await update.effective_message.reply_text("❌ 无效的群组 ID，请重新进入配置")
@@ -278,10 +346,7 @@ async def garbage_guard_whitelist_message_handler(
         return
 
     settings = await get_chat_settings(session, target_chat_id)
-    if message_text.strip() in {"清空", "/clear"}:
-        user_ids: list[int] = []
-    else:
-        user_ids = [int(value) for value in _INT_RE.findall(message_text)]
+    user_ids = _parse_whitelist_user_ids(message_text)
     set_global_whitelist_user_ids(settings, user_ids)
     await ConversationStateService.clear(session, target_chat_id, update.effective_user.id)
     await session.commit()
