@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from backend.platform.scheduler.tasks import auction_task, game_task, guess_task
+from backend.platform.scheduler.tasks import auction_task, game_task, guess_task, solitaire_task
 
 
 class _Session:
@@ -80,6 +80,39 @@ async def test_game_task_rolls_back_round_when_result_announcement_fails(monkeyp
     assert db.sessions[1].rollbacks == 1
     assert db.sessions[1].commits == 0
     assert shown == []
+
+
+@pytest.mark.asyncio
+async def test_solitaire_task_commits_close_before_publishing(monkeypatch):
+    events: list[str] = []
+    db = _Db()
+
+    async def fake_list_due(db, now):
+        return [7]
+
+    async def fake_close_due(db, solitaire_id: int):
+        events.append(f"commit:{solitaire_id}")
+        return solitaire_task.ClosedSolitaire(
+            solitaire_id=solitaire_id,
+            chat_id=-1001,
+            title="测试接龙",
+            participant_count=2,
+            message_id=88,
+            message_text="closed",
+        )
+
+    async def fake_publish(app, snapshot):
+        events.append(f"publish:{snapshot.solitaire_id}")
+
+    monkeypatch.setattr(solitaire_task, "_list_due_solitaire_ids", fake_list_due)
+    monkeypatch.setattr(solitaire_task, "_close_due_solitaire", fake_close_due)
+    monkeypatch.setattr(solitaire_task, "_publish_closed_solitaire", fake_publish)
+
+    await solitaire_task.SolitaireTask().execute(
+        SimpleNamespace(bot_data={"db": db}, bot=SimpleNamespace())
+    )
+
+    assert events == ["commit:7", "publish:7"]
 
 
 @pytest.mark.asyncio
