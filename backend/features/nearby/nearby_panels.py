@@ -29,6 +29,80 @@ _PAGE_SIZE = 5
 log = structlog.get_logger(__name__)
 
 
+def _mydata_text(profile, target_chat_id: int) -> str:
+    lat = float(profile.latitude) if profile.latitude is not None else None
+    lon = float(profile.longitude) if profile.longitude is not None else None
+    location = f"{lat:.6f}, {lon:.6f}" if lat is not None and lon is not None else "未设置"
+    updated = profile.updated_at.astimezone(_LOCAL_TZ).strftime("%Y-%m-%d %H:%M")
+    return (
+        "👤 我的业务资料\n—————————————————\n"
+        f"群组ID: {target_chat_id}\n状态: {'可见' if profile.is_visible else '隐藏'}\n"
+        f"📍 定位: {location}\n💰 价格: {profile.price_text or '未设置'}\n"
+        f"📦 方式: {profile.method_text or '未设置'}\n🏠 备注: {profile.address_text or '未设置'}\n"
+        f"—————————————————\n数据更新于：{updated}"
+    )
+
+
+def _nearby_list_content(entries, page: int):
+    normalized_page = max(page, 0)
+    start = normalized_page * _PAGE_SIZE
+    end = start + _PAGE_SIZE
+    lines = ["📍 周边成员信息 (按距离排序)", "—————————————————"]
+    buttons: list[tuple[str, int]] = []
+    for entry in entries[start:end]:
+        lines.append(f"[{entry.display_name}] · 距离 {format_distance(entry.distance_km)}")
+        lines.append(f"💰 价格: {entry.price_text or '未设置'} | 📦 方式: {entry.method_text or '未设置'}")
+        buttons.append((entry.display_name, entry.user_id))
+    lines.extend([
+        "—————————————————",
+        f"数据更新于：{dt.datetime.now(dt.UTC).astimezone(_LOCAL_TZ).strftime('%Y-%m-%d %H:%M')}",
+        f"第 {normalized_page + 1} 页 / 共 {(len(entries) + _PAGE_SIZE - 1) // _PAGE_SIZE} 页",
+    ])
+    return lines, buttons, normalized_page, normalized_page > 0, end < len(entries)
+
+
+async def _load_member_detail_data(update, session, target_chat_id: int, *, viewer_id: int, target_user_id: int):
+    viewer = await get_profile(session, target_chat_id, viewer_id)
+    if viewer is None or viewer.latitude is None or viewer.longitude is None:
+        await reply_or_edit(update, "你还没有设置定位，先私聊发送 /mydata 并更新位置。")
+        await session.commit()
+        return None
+    profile_with_user = await get_profile_with_user(session, target_chat_id, target_user_id)
+    if profile_with_user is None:
+        await reply_or_edit(update, "该成员资料不存在。")
+        await session.commit()
+        return None
+    profile, user = profile_with_user
+    if not profile.is_visible or profile.latitude is None or profile.longitude is None:
+        await reply_or_edit(update, "该成员已隐藏位置或未设置定位。")
+        await session.commit()
+        return None
+    distance = haversine_distance_km(float(viewer.latitude), float(viewer.longitude), float(profile.latitude), lon2=float(profile.longitude))
+    await session.commit()
+    return profile, user, distance
+
+
+def _member_mention(user, display_name: str, target_user_id: int) -> str:
+    if user.username:
+        return f"@{user.username}"
+    label = f"@{display_name}" if not display_name.startswith("@") else display_name
+    return f'<a href="tg://user?id={target_user_id}">{html.escape(label)}</a>'
+
+
+def _member_detail_text(profile, user, distance: float, *, target_user_id: int) -> str:
+    display_name = build_user_display_name(user, user.id)
+    mention = _member_mention(user, display_name, target_user_id)
+    distance_text = format_distance(distance, fuzzy=profile.fuzzy_distance)
+    distance_mode = "模糊处理" if profile.fuzzy_distance else "精确距离"
+    return (
+        "👤 成员详细档案\n—————————————————\n"
+        f"用户： {html.escape(display_name)}\n@成员： {mention}\n距离： 📍 {distance_text} 处 ({distance_mode})\n"
+        f"业务详情：\n💰 服务价格： {html.escape(profile.price_text or '未设置')}\n"
+        f"📦 交付方式： {html.escape(profile.method_text or '未设置')}\n"
+        f"🏠 详细描述： {html.escape(profile.address_text or '未设置')}\n—————————————————"
+    )
+
+
 async def reply_or_edit(
     update: Update,
     text: str,
@@ -74,22 +148,7 @@ async def show_mydata_panel(
         )
         await session.commit()
 
-    lat = float(profile.latitude) if profile.latitude is not None else None
-    lon = float(profile.longitude) if profile.longitude is not None else None
-    location_text = f"{lat:.6f}, {lon:.6f}" if lat is not None and lon is not None else "未设置"
-    updated_local = profile.updated_at.astimezone(_LOCAL_TZ).strftime("%Y-%m-%d %H:%M")
-    text = (
-        "👤 我的业务资料\n"
-        "—————————————————\n"
-        f"群组ID: {target_chat_id}\n"
-        f"状态: {'可见' if profile.is_visible else '隐藏'}\n"
-        f"📍 定位: {location_text}\n"
-        f"💰 价格: {profile.price_text or '未设置'}\n"
-        f"📦 方式: {profile.method_text or '未设置'}\n"
-        f"🏠 备注: {profile.address_text or '未设置'}\n"
-        "—————————————————\n"
-        f"数据更新于：{updated_local}"
-    )
+    text = _mydata_text(profile, target_chat_id)
     keyboard = nearby_manage_keyboard(target_chat_id, profile.is_visible)
     await reply_or_edit(update, text, keyboard)
 
@@ -128,24 +187,7 @@ async def show_nearby_list(
         await reply_or_edit(update, "📍 周边成员信息\n\n当前没有可展示的成员。")
         return
 
-    page = max(page, 0)
-    start = page * _PAGE_SIZE
-    end = start + _PAGE_SIZE
-    page_entries = entries[start:end]
-    has_prev = page > 0
-    has_next = end < len(entries)
-
-    lines = ["📍 周边成员信息 (按距离排序)", "—————————————————"]
-    member_buttons: list[tuple[str, int]] = []
-    for entry in page_entries:
-        lines.append(f"[{entry.display_name}] · 距离 {format_distance(entry.distance_km)}")
-        lines.append(
-            f"💰 价格: {entry.price_text or '未设置'} | 📦 方式: {entry.method_text or '未设置'}"
-        )
-        member_buttons.append((entry.display_name, entry.user_id))
-    lines.append("—————————————————")
-    lines.append(f"数据更新于：{dt.datetime.now(dt.UTC).astimezone(_LOCAL_TZ).strftime('%Y-%m-%d %H:%M')}")
-    lines.append(f"第 {page + 1} 页 / 共 {(len(entries) + _PAGE_SIZE - 1) // _PAGE_SIZE} 页")
+    lines, member_buttons, page, has_prev, has_next = _nearby_list_content(entries, page)
 
     keyboard = nearby_list_keyboard(
         target_chat_id,
@@ -170,56 +212,12 @@ async def show_member_detail(
     db: Database = context.application.bot_data["db"]
 
     async with db.session_factory() as session:
-        viewer_profile = await get_profile(session, target_chat_id, viewer_id)
-        if viewer_profile is None or viewer_profile.latitude is None or viewer_profile.longitude is None:
-            await reply_or_edit(update, "你还没有设置定位，先私聊发送 /mydata 并更新位置。")
-            await session.commit()
-            return
-
-        profile_with_user = await get_profile_with_user(session, target_chat_id, target_user_id)
-        if profile_with_user is None:
-            await reply_or_edit(update, "该成员资料不存在。")
-            await session.commit()
-            return
-
-        profile, user = profile_with_user
-        if not profile.is_visible or profile.latitude is None or profile.longitude is None:
-            await reply_or_edit(update, "该成员已隐藏位置或未设置定位。")
-            await session.commit()
-            return
-
-        distance = haversine_distance_km(
-            float(viewer_profile.latitude),
-            float(viewer_profile.longitude),
-            float(profile.latitude),
-            lon2=float(profile.longitude),
+        detail_data = await _load_member_detail_data(
+            update, session, target_chat_id, viewer_id=viewer_id, target_user_id=target_user_id
         )
-        display_name = build_user_display_name(user, user.id)
-        distance_text = format_distance(distance, fuzzy=profile.fuzzy_distance)
-        distance_mode = "模糊处理" if profile.fuzzy_distance else "精确距离"
-        await session.commit()
-
-    if user.username:
-        mention_text = f"@{user.username}"
-    else:
-        mention_label = f"@{display_name}" if not display_name.startswith("@") else display_name
-        mention_text = f'<a href="tg://user?id={target_user_id}">{html.escape(mention_label)}</a>'
-
-    escaped_display_name = html.escape(display_name)
-    escaped_price = html.escape(profile.price_text or "未设置")
-    escaped_method = html.escape(profile.method_text or "未设置")
-    escaped_address = html.escape(profile.address_text or "未设置")
-    detail_text = (
-        "👤 成员详细档案\n"
-        "—————————————————\n"
-        f"用户： {escaped_display_name}\n"
-        f"@成员： {mention_text}\n"
-        f"距离： 📍 {distance_text} 处 ({distance_mode})\n"
-        "业务详情：\n"
-        f"💰 服务价格： {escaped_price}\n"
-        f"📦 交付方式： {escaped_method}\n"
-        f"🏠 详细描述： {escaped_address}\n"
-        "—————————————————"
-    )
+    if detail_data is None:
+        return
+    profile, user, distance = detail_data
+    detail_text = _member_detail_text(profile, user, distance, target_user_id=target_user_id)
     keyboard = nearby_detail_keyboard(target_chat_id, target_user_id, back_page)
     await reply_or_edit(update, detail_text, keyboard, parse_mode="HTML")
