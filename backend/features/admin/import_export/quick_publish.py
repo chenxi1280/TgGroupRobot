@@ -12,6 +12,73 @@ from backend.shared.ui.message_config_panel import (
 
 
 class QuickPublishAdminMixin:
+    async def _start_quick_publish_input(
+        self, update, context, *, chat_id: int, field: str, state_type: str
+    ) -> None:
+        prompts = {
+            "text": "请输入要发布的文本内容：",
+            "media": "请发送要发布的图片/视频/文件（可带说明文字）：",
+            "buttons": "请输入按钮配置（文本|链接，每行多个按钮用 ; 分隔，或直接粘贴 JSON）：",
+        }
+        prompt = prompts.get(field)
+        if prompt is None:
+            await answer_callback_query_safely(update, "未识别的输入类型", show_alert=True)
+            return
+        await self._start_text_input_state(
+            context, update.effective_user.id, update.effective_user.id,
+            state_type=state_type, payload={"target_chat_id": chat_id, "field": field},
+        )
+        keyboard = InlineKeyboardMarkup(
+            [[InlineKeyboardButton("🔙 返回", callback_data=f"qpub:home:{chat_id}")]]
+        )
+        await self.message_helper.safe_edit(update, prompt, reply_markup=keyboard)
+
+    async def _send_quick_publish_media(
+        self, context, *, chat_id: int, media_type, media_file_id, text: str, reply_markup
+    ) -> None:
+        senders = {
+            "photo": (context.bot.send_photo, "photo"),
+            "video": (context.bot.send_video, "video"),
+            "document": (context.bot.send_document, "document"),
+            "animation": (context.bot.send_animation, "animation"),
+        }
+        sender = senders.get(media_type)
+        if sender is None:
+            await context.bot.send_message(
+                chat_id=chat_id, text=text or "（无文本）", reply_markup=reply_markup
+            )
+            return
+        method, media_field = sender
+        await method(
+            chat_id=chat_id, caption=text or None, reply_markup=reply_markup,
+            **{media_field: media_file_id},
+        )
+
+    async def _send_quick_publish(self, update, context, *, chat_id: int, service) -> None:
+        draft = _get_quick_publish_draft(context, chat_id)
+        text = (draft.get("text") or "").strip()
+        media_file_id = draft.get("media_file_id")
+        if not text and not media_file_id:
+            await answer_callback_query_safely(update, "请先设置文本或媒体内容", show_alert=True)
+            return
+        try:
+            buttons = draft.get("buttons") or []
+            reply_markup = service.build_button_markup(buttons) if buttons else None
+        except ValidationError as exc:
+            await answer_callback_query_safely(update, str(exc), show_alert=True)
+            return
+        if media_file_id:
+            await self._send_quick_publish_media(
+                context, chat_id=chat_id, media_type=draft.get("media_type"),
+                media_file_id=media_file_id, text=text, reply_markup=reply_markup,
+            )
+        else:
+            await context.bot.send_message(
+                chat_id=chat_id, text=text, reply_markup=reply_markup
+            )
+        draft.update({"text": "", "media_type": None, "media_file_id": None, "buttons": []})
+        await self._show_quick_publish_menu(update, context, chat_id)
+
     async def _handle_quick_publish(
         self,
         update: Update,
@@ -43,26 +110,9 @@ class QuickPublishAdminMixin:
             return
 
         if action == "input":
-            field = callback_data.get(3)
-            if field not in {"text", "media", "buttons"}:
-                await answer_callback_query_safely(update, "未识别的输入类型", show_alert=True)
-                return
-            await self._start_text_input_state(
-                context,
-                update.effective_user.id,
-                update.effective_user.id,
+            await self._start_quick_publish_input(
+                update, context, chat_id=chat_id, field=callback_data.get(3),
                 state_type=ConversationStateType.quick_publish_input.value,
-                payload={"target_chat_id": chat_id, "field": field},
-            )
-            prompt_map = {
-                "text": "请输入要发布的文本内容：",
-                "media": "请发送要发布的图片/视频/文件（可带说明文字）：",
-                "buttons": "请输入按钮配置（文本|链接，每行多个按钮用 ; 分隔，或直接粘贴 JSON）：",
-            }
-            await self.message_helper.safe_edit(
-                update,
-                prompt_map[field],
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"qpub:home:{chat_id}")]]),
             )
             return
 
@@ -73,40 +123,9 @@ class QuickPublishAdminMixin:
             return
 
         if action == "send":
-            draft = _get_quick_publish_draft(context, chat_id)
-            text = (draft.get("text") or "").strip()
-            media_type = draft.get("media_type")
-            media_file_id = draft.get("media_file_id")
-            buttons = draft.get("buttons") or []
-
-            if not text and not media_file_id:
-                await answer_callback_query_safely(update, "请先设置文本或媒体内容", show_alert=True)
-                return
-
-            reply_markup = None
-            if buttons:
-                try:
-                    reply_markup = GarageForwardService.build_button_markup(buttons)
-                except ValidationError as exc:
-                    await answer_callback_query_safely(update, str(exc), show_alert=True)
-                    return
-
-            if media_file_id:
-                if media_type == "photo":
-                    await context.bot.send_photo(chat_id=chat_id, photo=media_file_id, caption=text or None, reply_markup=reply_markup)
-                elif media_type == "video":
-                    await context.bot.send_video(chat_id=chat_id, video=media_file_id, caption=text or None, reply_markup=reply_markup)
-                elif media_type == "document":
-                    await context.bot.send_document(chat_id=chat_id, document=media_file_id, caption=text or None, reply_markup=reply_markup)
-                elif media_type == "animation":
-                    await context.bot.send_animation(chat_id=chat_id, animation=media_file_id, caption=text or None, reply_markup=reply_markup)
-                else:
-                    await context.bot.send_message(chat_id=chat_id, text=text or "（无文本）", reply_markup=reply_markup)
-            else:
-                await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
-
-            draft.update({"text": "", "media_type": None, "media_file_id": None, "buttons": []})
-            await self._show_quick_publish_menu(update, context, chat_id)
+            await self._send_quick_publish(
+                update, context, chat_id=chat_id, service=GarageForwardService
+            )
             return
 
         await self._show_quick_publish_menu(update, context, chat_id)
