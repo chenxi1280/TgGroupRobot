@@ -67,48 +67,71 @@ async def create_event(session: AsyncSession, chat_id: int, creator_user_id: int
     return event
 
 
-def format_event_preview(draft: dict, *, toast: str | None = None) -> str:
+def _event_preview_values(draft: dict) -> dict[str, str]:
     options = draft.get("options") or []
-    option_text = f"已设置 {len(options)} 项" if options else WAITING_VALUE
-    banker_text = f"庄家 {draft['banker_user_id']}" if draft.get("banker_user_id") else "无庄"
-    cover_text = "已设置" if draft.get("cover_file_id") else WAITING_VALUE
-    command_text = summarize_text(draft.get("command_keyword"), limit=32)
-    deadline_text = summarize_text(draft.get("deadline_at"), limit=32)
+    return {
+        "options": f"已设置 {len(options)} 项" if options else WAITING_VALUE,
+        "banker": f"庄家 {draft['banker_user_id']}" if draft.get("banker_user_id") else "无庄",
+        "cover": "已设置" if draft.get("cover_file_id") else WAITING_VALUE,
+        "command": summarize_text(draft.get("command_keyword"), limit=32),
+        "deadline": summarize_text(draft.get("deadline_at"), limit=32),
+    }
+
+
+def _event_preview_completion(draft: dict, command_text: str) -> list[str]:
+    return format_completion_lines(
+        [
+            ("活动名字", bool(str(draft.get("title") or "").strip())),
+            ("竞猜选项", bool(draft.get("options") or [])),
+            ("截止时间", bool(str(draft.get("deadline_at") or "").strip())),
+        ],
+        next_step="预览无误后发布到群",
+        test_step=f"发布后在群里发送 `{command_text if command_text != WAITING_VALUE else '竞猜'} 选项 金额` 测试下注",
+    )
+
+
+def format_event_preview(draft: dict, *, toast: str | None = None) -> str:
+    values = _event_preview_values(draft)
     lines = [
         "⚽ 竞猜活动",
         "",
         f"📮 活动名字: {summarize_text(draft.get('title'), limit=48)}",
         "",
-        f"🏞️ 封面设置: {cover_text}",
+        f"🏞️ 封面设置: {values['cover']}",
         "",
         f"📋 活动说明: {summarize_text(draft.get('description'), limit=80)}",
         "",
-        f"👾 本局庄家: {banker_text}",
+        f"👾 本局庄家: {values['banker']}",
         "",
         f"🧧 公共奖池: {int(draft.get('public_pool') or 0)}",
         "",
-        f"📻 竞猜选项: {option_text}",
+        f"📻 竞猜选项: {values['options']}",
         "",
-        f"🔎 群内指令: {command_text}",
+        f"🔎 群内指令: {values['command']}",
         "",
-        f"⏰ 截止时间: {deadline_text}",
+        f"⏰ 截止时间: {values['deadline']}",
         "",
         f"🔗 重复下注: {'允许' if draft.get('allow_repeat_bet') else '禁止'}",
     ]
-    lines.extend(
-        format_completion_lines(
-            [
-                ("活动名字", bool(str(draft.get("title") or "").strip())),
-                ("竞猜选项", bool(options)),
-                ("截止时间", bool(str(draft.get("deadline_at") or "").strip())),
-            ],
-            next_step="预览无误后发布到群",
-            test_step=f"发布后在群里发送 `{command_text if command_text != WAITING_VALUE else '竞猜'} 选项 金额` 测试下注",
-        )
-    )
+    lines.extend(_event_preview_completion(draft, values["command"]))
     if toast:
         lines = [toast, ""] + lines
     return "\n".join(lines)
+
+
+def _event_runtime_status_lines(event: GuessEvent) -> list[str]:
+    lines: list[str] = []
+    if event.description:
+        lines.extend(["", event.description])
+    if event.status == "running":
+        lines.extend(["", f"发送 `{event.command_keyword}` 查看规则，发送 `{event.command_keyword} 选项 金额` 参与。"])
+        mode_text = "庄家模式：输家积分给庄家，庄家按 1:1 赔付赢家。" if event.mode == "banker" else "无庄模式：赢家平分输家积分，非整除时向上取整。"
+        lines.append(mode_text)
+    if event.status == "opened" and event.winner_option:
+        lines.extend(["", f"🏁 开奖结果：{event.winner_option}", "✅ 结算已完成，积分变动可在积分记录中核对。"])
+    if event.status == "pending":
+        lines.extend(["", "⏰ 已截止下注，请等待群内开奖结果。"])
+    return lines
 
 
 def format_event_runtime(event: GuessEvent) -> str:
@@ -125,18 +148,7 @@ def format_event_runtime(event: GuessEvent) -> str:
         "选项：",
         options,
     ]
-    if event.description:
-        lines.extend(["", event.description])
-    if event.status == "running":
-        lines.extend(["", f"发送 `{event.command_keyword}` 查看规则，发送 `{event.command_keyword} 选项 金额` 参与。"])
-        if event.mode == "banker":
-            lines.append("庄家模式：输家积分给庄家，庄家按 1:1 赔付赢家。")
-        else:
-            lines.append("无庄模式：赢家平分输家积分，非整除时向上取整。")
-    if event.status == "opened" and event.winner_option:
-        lines.extend(["", f"🏁 开奖结果：{event.winner_option}", "✅ 结算已完成，积分变动可在积分记录中核对。"])
-    if event.status == "pending":
-        lines.extend(["", "⏰ 已截止下注，请等待群内开奖结果。"])
+    lines.extend(_event_runtime_status_lines(event))
     return "\n".join(lines)
 
 
@@ -165,6 +177,26 @@ async def place_bet(session: AsyncSession, *, event: GuessEvent, user_id: int, o
     return bet
 
 
+async def _apply_guess_settlement_plan(session, event: GuessEvent, plan: GuessSettlementPlan, *, banker_user_id: int | None) -> None:
+    for user_id, payout in plan.winner_payouts.items():
+        if payout > 0:
+            await change_points(
+                session, event.chat_id, user_id, amount=payout,
+                txn_type=PointsTxnType.reward.value, reason=f"竞猜中奖 #{event.id}",
+            )
+    for user_id, rake in plan.rake_payouts.items():
+        if rake > 0:
+            await change_points(
+                session, event.chat_id, user_id, amount=rake,
+                txn_type=PointsTxnType.reward.value, reason=f"竞猜抽水 #{event.id}",
+            )
+    if banker_user_id is not None and plan.banker_delta != 0:
+        await _apply_points_delta_allow_negative(
+            session, event.chat_id, banker_user_id,
+            amount=plan.banker_delta, reason=f"竞猜庄家结算 #{event.id}",
+        )
+
+
 async def settle_event(session: AsyncSession, *, event: GuessEvent, winner_option: str) -> str:
     if event.status not in {"pending", "running"}:
         raise ValidationError("当前活动状态不允许开奖。")
@@ -186,15 +218,7 @@ async def settle_event(session: AsyncSession, *, event: GuessEvent, winner_optio
         rake_owner_user_id=setting.rake_owner_user_id,
     )
 
-    for user_id, payout in plan.winner_payouts.items():
-        if payout > 0:
-            await change_points(session, event.chat_id, user_id, amount=payout, txn_type=PointsTxnType.reward.value, reason=f"竞猜中奖 #{event.id}")
-    for user_id, rake_amount in plan.rake_payouts.items():
-        if rake_amount > 0:
-            await change_points(session, event.chat_id, user_id, amount=rake_amount, txn_type=PointsTxnType.reward.value, reason=f"竞猜抽水 #{event.id}")
-    if banker_user_id is not None and plan.banker_delta != 0:
-        await _apply_points_delta_allow_negative(session, event.chat_id, banker_user_id, amount=plan.banker_delta, reason=f"竞猜庄家结算 #{event.id}")
-
+    await _apply_guess_settlement_plan(session, event, plan, banker_user_id=banker_user_id)
     event.status = "opened"
     event.winner_option = winner_option
     event.updated_at = now()
