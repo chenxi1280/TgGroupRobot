@@ -76,6 +76,24 @@ async def show_teacher_self_list(
     )
 
 
+def _teacher_self_home_text(profile, pool_info, *, chat_title: str) -> str:
+    has_labels = profile is not None and bool(profile.labels)
+    labels = " / ".join(profile.labels) if has_labels else "未设置"
+    has_location = (
+        profile is not None and profile.latitude is not None
+        and profile.longitude is not None
+    )
+    region = profile.region_text if profile and profile.region_text else "未设置"
+    price = profile.price_text if profile and profile.price_text else "未设置"
+    return "\n".join([
+        "👩‍🏫 老师资料维护", "", f"群组：{chat_title}",
+        f"认证来源：{pool_info.display_text}",
+        f"服务定位：{'已设置' if has_location else '未设置'}",
+        f"地区/地址：{region}", f"价格：{price}", f"服务标签：{labels}", "",
+        "资料由管理员维护；老师本人仅可更新服务定位。",
+    ])
+
+
 async def show_teacher_self_home(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -102,24 +120,9 @@ async def show_teacher_self_home(
         )
         await session.commit()
 
-    labels = " / ".join(profile.labels or []) if profile and profile.labels else "未设置"
-    location_text = "已设置" if profile and profile.latitude is not None and profile.longitude is not None else "未设置"
     chat_title = await _resolve_chat_title(context, chat_id)
-    text_lines = [
-        "👩‍🏫 老师资料维护",
-        "",
-        f"群组：{chat_title}",
-        f"认证来源：{pool_info.display_text}",
-        f"服务定位：{location_text}",
-        f"地区/地址：{profile.region_text if profile and profile.region_text else '未设置'}",
-        f"价格：{profile.price_text if profile and profile.price_text else '未设置'}",
-        f"服务标签：{labels}",
-        "",
-        "资料由管理员维护；老师本人仅可更新服务定位。",
-    ]
     await admin_handler_instance().message_helper.safe_edit(
-        update,
-        "\n".join(text_lines),
+        update, _teacher_self_home_text(profile, pool_info, chat_title=chat_title),
         reply_markup=_teacher_self_home_keyboard(chat_id),
     )
 
@@ -162,6 +165,53 @@ async def _start_teacher_self_state(
     )
 
 
+async def _resolve_teacher_self_chat(update, context, callback) -> int | None:
+    chat_id = callback.get_int_optional(3)
+    if chat_id is None:
+        await admin_handler_instance().message_helper.safe_edit(
+            update, "老师资料入口参数无效，请重新进入。"
+        )
+        return None
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        is_teacher = await GarageAuthService.is_effective_certified_teacher(
+            session, chat_id, update.effective_user.id
+        )
+        await session.commit()
+    if is_teacher:
+        return chat_id
+    await show_teacher_self_list(
+        update, context,
+        empty_text="你已不在该群的认证老师名单中，请重新选择可维护的群。",
+    )
+    return None
+
+
+async def _dispatch_teacher_self_action(update, context, *, action: str, chat_id: int) -> None:
+    if action == "home":
+        await show_teacher_self_home(update, context, chat_id)
+        return
+    if action == "location":
+        await _start_teacher_self_state(
+            update, context, chat_id=chat_id, state_type=SELF_LOCATION_STATE,
+            prompt_text=(
+                "📍 更新服务定位\n\n请发送 Telegram 位置或共享地点，也可以粘贴 Google 地图定位链接。\n"
+                "该定位用于老师附近搜索，不会同步成群友自己的查询定位。"
+            ),
+        )
+        return
+    if action in {"region", "price", "labels"}:
+        keyboard = InlineKeyboardMarkup(
+            [[InlineKeyboardButton("🔙 返回", callback_data=f"teacher:self:home:{chat_id}")]]
+        )
+        await admin_handler_instance().message_helper.safe_edit(
+            update, "老师资料由管理员维护；老师本人仅可更新服务定位。",
+            reply_markup=keyboard,
+        )
+        return
+    await show_teacher_self_list(update, context)
+
+
 async def teacher_self_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.callback_query is None or update.effective_user is None or update.effective_chat is None:
         return
@@ -178,50 +228,12 @@ async def teacher_self_callback(update: Update, context: ContextTypes.DEFAULT_TY
         await show_teacher_self_list(update, context)
         return
 
-    chat_id = callback.get_int_optional(3)
+    chat_id = await _resolve_teacher_self_chat(update, context, callback)
     if chat_id is None:
-        await admin_handler_instance().message_helper.safe_edit(update, "老师资料入口参数无效，请重新进入。")
         return
-
-    db: Database = context.application.bot_data["db"]
-    async with db.session_factory() as session:
-        is_teacher = await GarageAuthService.is_effective_certified_teacher(session, chat_id, update.effective_user.id)
-        await session.commit()
-    if not is_teacher:
-        await show_teacher_self_list(
-            update,
-            context,
-            empty_text="你已不在该群的认证老师名单中，请重新选择可维护的群。",
-        )
-        return
-
-    if action == "home":
-        await show_teacher_self_home(update, context, chat_id)
-        return
-    if action == "location":
-        await _start_teacher_self_state(
-            update,
-            context,
-            chat_id=chat_id,
-            state_type=SELF_LOCATION_STATE,
-            prompt_text=(
-                "📍 更新服务定位\n\n"
-                "请发送 Telegram 位置或共享地点，也可以粘贴 Google 地图定位链接。\n"
-                "该定位用于老师附近搜索，不会同步成群友自己的查询定位。"
-            ),
-        )
-        return
-    if action in {"region", "price", "labels"}:
-        await admin_handler_instance().message_helper.safe_edit(
-            update,
-            "老师资料由管理员维护；老师本人仅可更新服务定位。",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔙 返回", callback_data=f"teacher:self:home:{chat_id}")]
-            ]),
-        )
-        return
-
-    await show_teacher_self_list(update, context)
+    await _dispatch_teacher_self_action(
+        update, context, action=action, chat_id=chat_id
+    )
 
 
 async def handle_teacher_self_input(
