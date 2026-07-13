@@ -99,21 +99,40 @@ async def _apply_delivery_action(
 ) -> None:
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
-        if action == "retry":
-            await retry_delivery(session, history_id, chat_id)
-        elif action == "cancel":
-            await cancel_delivery(session, history_id, chat_id)
-        elif action == "replay_do":
-            await replay_uncertain_delivery(
-                session,
-                history_id,
-                chat_id,
-                admin_id=admin_id,
-                reason="telegram_admin_confirmed_replay",
-            )
-        else:
-            raise ValueError(f"unknown ad operation: {action}")
+        await _mutate_delivery(
+            session,
+            action=action,
+            history_id=history_id,
+            chat_id=chat_id,
+            admin_id=admin_id,
+        )
         await session.commit()
+
+
+async def _mutate_delivery(
+    session,
+    *,
+    action: str,
+    history_id: int,
+    chat_id: int,
+    admin_id: int,
+) -> None:
+    if action == "retry":
+        await retry_delivery(session, history_id, chat_id)
+        return
+    if action == "cancel":
+        await cancel_delivery(session, history_id, chat_id)
+        return
+    if action == "replay_do":
+        await replay_uncertain_delivery(
+            session,
+            history_id,
+            chat_id,
+            admin_id=admin_id,
+            reason="telegram_admin_confirmed_replay",
+        )
+        return
+    raise ValueError(f"unknown ad operation: {action}")
 
 
 async def _show_replay_confirmation(update: Update, chat_id: int, history_id: int) -> None:

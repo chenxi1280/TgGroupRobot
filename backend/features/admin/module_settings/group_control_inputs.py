@@ -13,6 +13,29 @@ from backend.features.admin.module_settings.input_runtime import (
 from backend.features.admin.module_settings.input_utils import is_valid_hhmm
 
 
+def _apply_group_lock_text(settings, state_type: str, message_text: str) -> str | None:
+    value = message_text.strip()
+    if state_type == "group_lock_open_keyword_input":
+        settings.group_lock_open_phrase = value
+        return None
+    if state_type == "group_lock_close_keyword_input":
+        settings.group_lock_close_phrase = value
+        return None
+    if state_type not in {"group_lock_open_time_input", "group_lock_close_time_input"}:
+        return "未识别的关群设置输入状态"
+    if not is_valid_hhmm(value):
+        return "时间格式错误，请使用 HH:MM，例如 08:00"
+    if state_type == "group_lock_open_time_input":
+        settings.group_lock_open_time = value
+        settings.night_mode_end_time = value
+        return None
+    if state_type == "group_lock_close_time_input":
+        settings.group_lock_close_time = value
+        settings.night_mode_start_time = value
+        return None
+    return None
+
+
 async def handle_group_lock_text_input(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -26,24 +49,10 @@ async def handle_group_lock_text_input(
     if not await require_settings_manage(update, context, target_chat_id):
         return
     settings = await admin_module().get_chat_settings(session, target_chat_id)
-    if state.state_type == "group_lock_open_keyword_input":
-        settings.group_lock_open_phrase = message_text.strip()
-    elif state.state_type == "group_lock_close_keyword_input":
-        settings.group_lock_close_phrase = message_text.strip()
-    elif state.state_type == "group_lock_open_time_input":
-        value = message_text.strip()
-        if not is_valid_hhmm(value):
-            await update.effective_message.reply_text("时间格式错误，请使用 HH:MM，例如 08:00")
-            return
-        settings.group_lock_open_time = value
-        settings.night_mode_end_time = value
-    elif state.state_type == "group_lock_close_time_input":
-        value = message_text.strip()
-        if not is_valid_hhmm(value):
-            await update.effective_message.reply_text("时间格式错误，请使用 HH:MM，例如 02:00")
-            return
-        settings.group_lock_close_time = value
-        settings.night_mode_start_time = value
+    error = _apply_group_lock_text(settings, state.state_type, message_text)
+    if error is not None:
+        await update.effective_message.reply_text(error)
+        return
     await clear_admin_input_state(session, target_chat_id=target_chat_id, user_id=update.effective_user.id)
     await session.commit()
     await admin_handler_instance()._show_night_mode_menu(update, context, target_chat_id)

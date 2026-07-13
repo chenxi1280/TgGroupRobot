@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 from telegram import Update
-from telegram.ext import ContextTypes, ConversationHandler
-from sqlalchemy import func, select
+from telegram.ext import ContextTypes, ConversationHandler as ConversationHandler
 
 from backend.features.admin.points_config_messages import (
     handle_points_config_cancel,
@@ -10,7 +9,6 @@ from backend.features.admin.points_config_messages import (
 )
 from backend.features.admin.points_config_shared import (
     WAIT_VALUE,
-    resolve_points_target_user as _resolve_points_target_user,
     safe_edit_message as _safe_edit_message,
 )
 from backend.features.admin.points_config_views import (
@@ -22,10 +20,7 @@ from backend.features.admin.points_config_views import (
 )
 from backend.platform.db.runtime.session import Database
 from backend.shared.handlers.base.base_handler import BaseHandler
-from backend.features.admin.ui.points import back_button, points_config_keyboard, points_rule_keyboard
-from backend.platform.db.schema.models.core import PointsAccount, PointsTransaction, SignInLog, TgUser, UserDailyStats
-from backend.platform.db.schema.models.enums import PointsTxnType
-from backend.features.points.services.points_service import change_points, get_balance
+from backend.features.admin.ui.points import back_button
 from backend.shared.services.chat_service import get_chat_settings
 from backend.shared.callback_parser import CallbackParser
 _POINTS_CONFIG_CALLBACK_THRESHOLD_4 = 4
@@ -61,20 +56,23 @@ class PointsConfigHandler(BaseHandler):
         field = callback_data.get(2)
 
         # 根据操作类型分发
-        if action == "home":
-            await self._show_points_home(update, context, target_chat_id, changed=False)
-        elif action == "toggle":
-            await self._handle_toggle(update, context, target_chat_id, field)
-        elif action == "edit":
-            return await self._handle_edit(update, context, target_chat_id, field=field)
-        elif action == "rule":
-            await self._handle_rule(update, context, target_chat_id, rule_type=field)
-        elif action == "view":
-            await self._handle_view(update, context, target_chat_id, feature=field)
-        elif action == "todo":
-            return await self._handle_todo(update, context, target_chat_id, feature=field)
-        elif action == "cancel":
-            await self._handle_cancel(update, context, target_chat_id)
+        match action:
+            case "home":
+                await self._show_points_home(update, context, target_chat_id, changed=False)
+            case "toggle":
+                await self._handle_toggle(update, context, target_chat_id, field)
+            case "edit":
+                return await self._handle_edit(update, context, target_chat_id, field=field)
+            case "rule":
+                await self._handle_rule(update, context, target_chat_id, rule_type=field)
+            case "view":
+                await self._handle_view(update, context, target_chat_id, feature=field)
+            case "todo":
+                return await self._handle_todo(update, context, target_chat_id, feature=field)
+            case "cancel":
+                await self._handle_cancel(update, context, target_chat_id)
+            case _:
+                await _safe_edit_message(q, "未识别的积分配置操作")
         return None
 
     async def _load_settings(self, context: ContextTypes.DEFAULT_TYPE, chat_id: int):
@@ -165,11 +163,6 @@ class PointsConfigHandler(BaseHandler):
         *, field: str,
     ) -> None:
         """处理数值编辑 - 进入对话状态"""
-        db: Database = context.application.bot_data["db"]
-        async with db.session_factory() as session:
-            settings = await get_chat_settings(session, chat_id)
-            await session.commit()
-
         # 保存编辑状态
         context.user_data["points_edit_field"] = field
         context.user_data["points_edit_chat_id"] = chat_id
