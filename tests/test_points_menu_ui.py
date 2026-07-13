@@ -8,6 +8,7 @@ from telegram.ext import CallbackQueryHandler, ConversationHandler
 from backend.features.admin import points_config_handler
 from backend.features.admin.ui.points import points_config_keyboard, points_rule_keyboard
 from backend.features.points.points_router import PointsRouter
+from backend.platform.telegram.conversation_callback_handler import PerUserConversationCallbackHandler
 
 
 class _SessionContext:
@@ -135,7 +136,7 @@ def test_points_edit_conversation_back_button_exits_wait_state():
     fallback_patterns = [
         getattr(getattr(handler, "pattern", None), "pattern", "")
         for handler in conversation.fallbacks
-        if isinstance(handler, CallbackQueryHandler)
+        if isinstance(handler, (CallbackQueryHandler, PerUserConversationCallbackHandler))
     ]
 
     assert any("pts:home" in pattern for pattern in fallback_patterns)

@@ -32,6 +32,7 @@ from backend.features.invite.invite_link_handler import (
     WAIT_NAME, WAIT_LIMIT, WAIT_EXPIRE,
 )
 from backend.app.router_base import BaseRouter
+from backend.platform.telegram.conversation_callback_handler import PerUserConversationCallbackHandler
 
 log = structlog.get_logger(__name__)
 
@@ -77,7 +78,7 @@ class InviteRouter(BaseRouter):
         
         # 邀请链接创建流程对话
         invite_link_conv = ConversationHandler(
-            entry_points=[CallbackQueryHandler(invite_link_create_start_callback, pattern=r"^inv:create")],
+            entry_points=[PerUserConversationCallbackHandler(invite_link_create_start_callback, pattern=r"^inv:create")],
             states={
                 WAIT_NAME: [MessageHandler((filters.ChatType.GROUPS | filters.ChatType.PRIVATE) & filters.TEXT & ~filters.COMMAND, invite_link_create_name_message)],
                 WAIT_LIMIT: [MessageHandler((filters.ChatType.GROUPS | filters.ChatType.PRIVATE) & filters.TEXT & ~filters.COMMAND, invite_link_create_limit_message)],
@@ -85,7 +86,7 @@ class InviteRouter(BaseRouter):
             },
             fallbacks=[
                 CommandHandler("cancel", invite_link_cancel_callback),
-                CallbackQueryHandler(invite_link_cancel_callback, pattern=r"^inv:cancel$"),
+                PerUserConversationCallbackHandler(invite_link_cancel_callback, pattern=r"^inv:cancel$"),
             ],
             per_chat=True,
         )

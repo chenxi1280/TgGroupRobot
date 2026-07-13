@@ -13,6 +13,8 @@ import structlog
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from backend.shared.errors import BusinessRuleError
+
 log = structlog.get_logger(__name__)
 
 # Handler 函数类型
@@ -90,14 +92,19 @@ class GroupMessageHandler:
         )
 
         # 核心功能（违禁词检测 + 自动回复）
-        should_stop = await self._safe_execute(self._get_core_handler(), update, context, "core")
+        should_stop = await self._safe_execute(
+            self._get_core_handler(),
+            update,
+            context,
+            handler_name="core",
+        )
         if should_stop:
             log.info("group_message_handler_short_circuited", chat_id=chat.id, user_id=user.id)
             return True
 
         # 业务功能（按顺序执行）
         for name, handler in self._get_business_handlers():
-            if await self._safe_execute(handler, update, context, name):
+            if await self._safe_execute(handler, update, context, handler_name=name):
                 log.info("group_business_handler_consumed", chat_id=chat.id, user_id=user.id, handler=name)
                 return True
         return False
@@ -107,23 +114,38 @@ class GroupMessageHandler:
         handler: HandlerFunc,
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
+        *,
         handler_name: str,
-    ) -> None:
+    ) -> bool:
         """安全执行处理器，捕获并记录异常
+
+        只有显式 ``BusinessRuleError`` 可记录后继续；其它异常保留堆栈并上抛。
 
         Args:
             handler: 处理器函数
             update: Telegram 更新对象
             context: Bot 上下文
             handler_name: 处理器名称（用于日志）
+
+        Returns:
+            处理器是否消费了该消息（``True`` 表示短路）
         """
         try:
             result = await handler(update, context)
             return bool(result)
-        except Exception as e:
+        except BusinessRuleError as exc:
             log.warning(
+                "group_handler_business_error",
+                handler=handler_name,
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+        except Exception as exc:
+            log.exception(
                 "group_handler_failed",
                 handler=handler_name,
-                error=str(e),
+                error=str(exc),
+                error_type=type(exc).__name__,
             )
+            raise
         return False

@@ -116,7 +116,10 @@ def _callback_query_patterns() -> list[tuple[str, int, str]]:
         tree = ast.parse(path.read_text(encoding="utf-8"))
         rel_path = str(path.relative_to(PROJECT_ROOT))
         for node in ast.walk(tree):
-            if not isinstance(node, ast.Call) or _call_name(node) != "CallbackQueryHandler":
+            if not isinstance(node, ast.Call) or _call_name(node) not in {
+                "CallbackQueryHandler",
+                "PerUserConversationCallbackHandler",
+            }:
                 continue
             for keyword in node.keywords:
                 if keyword.arg != "pattern":

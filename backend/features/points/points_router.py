@@ -16,6 +16,7 @@ from backend.features.admin.points_config_handler import (
     WAIT_VALUE as PTS_WAIT_VALUE,
 )
 from backend.app.router_base import BaseRouter
+from backend.platform.telegram.conversation_callback_handler import PerUserConversationCallbackHandler
 
 log = structlog.get_logger(__name__)
 
@@ -36,7 +37,7 @@ class PointsRouter(BaseRouter):
         
         # 积分配置流程对话
         points_config_conv = ConversationHandler(
-            entry_points=[CallbackQueryHandler(points_config_callback, pattern=r"^pts:edit:")],
+            entry_points=[PerUserConversationCallbackHandler(points_config_callback, pattern=r"^pts:edit:")],
             states={
                 PTS_WAIT_VALUE: [
                     MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND, points_config_message_handler)
@@ -44,8 +45,8 @@ class PointsRouter(BaseRouter):
             },
             fallbacks=[
                 CommandHandler("cancel", points_config_cancel_callback),
-                CallbackQueryHandler(points_config_cancel_callback, pattern=r"^pts:home:-?\d+$"),
-                CallbackQueryHandler(points_config_cancel_callback, pattern=r"^adm:menu:"),
+                PerUserConversationCallbackHandler(points_config_cancel_callback, pattern=r"^pts:home:-?\d+$"),
+                PerUserConversationCallbackHandler(points_config_cancel_callback, pattern=r"^adm:menu:"),
             ],
             per_chat=True,
         )

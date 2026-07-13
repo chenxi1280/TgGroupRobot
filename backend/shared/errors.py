@@ -32,6 +32,10 @@ class HandlerError(Exception):
         return self.message
 
 
+class BusinessRuleError(HandlerError):
+    """允许当前流水线记录业务拒绝并继续后续处理器的显式异常。"""
+
+
 class ChatNotFoundError(HandlerError):
     """群组不存在错误
 
