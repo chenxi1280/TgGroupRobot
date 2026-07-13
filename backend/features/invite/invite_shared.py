@@ -26,6 +26,9 @@ from backend.platform.state.state_service import clear_user_state
 WAIT_NAME = 1
 WAIT_LIMIT = 2
 WAIT_EXPIRE = 3
+DEFAULT_INVITE_TEXT = "🔗 邀请好友加入 {group}\n邀请人：{inviter}\n新成员：{invitee}"
+CLEAR_COVER_INPUTS = frozenset({"清空", "删除", "/clear"})
+RESET_TEXT_INPUTS = frozenset({"清空", "默认", "恢复默认", "/default"})
 
 
 class InviteLinkHandler(BaseHandler):
@@ -173,7 +176,7 @@ def parse_invite_buttons(raw: str) -> list[list[dict]]:
 
 
 def format_invite_preview(settings, chat_title: str) -> tuple[str, InlineKeyboardMarkup | None]:
-    template = settings.invite_link_text_template or "🔗 邀请好友加入 {group}\n邀请人：{inviter}\n新成员：{invitee}"
+    template = settings.invite_link_text_template or DEFAULT_INVITE_TEXT
     text = template.format(inviter="测试邀请人", invitee="测试新成员", group=chat_title)
     buttons = []
     for row in settings.invite_link_buttons or []:
@@ -187,6 +190,37 @@ async def show_invite_link_menu_from_message(
     target_chat_id: int,
 ) -> None:
     await _invite_link_handler.show_menu(update, context, target_chat_id, chat_title=str(target_chat_id))
+
+
+def _apply_cover_input(message, settings, normalized_text: str) -> str | None:
+    if normalized_text in CLEAR_COVER_INPUTS:
+        settings.invite_link_cover_file_id = None
+        settings.invite_link_cover_media_type = None
+        return None
+    if message.photo:
+        settings.invite_link_cover_file_id = message.photo[-1].file_id
+        settings.invite_link_cover_media_type = "photo"
+        return None
+    if message.video:
+        settings.invite_link_cover_file_id = message.video.file_id
+        settings.invite_link_cover_media_type = "video"
+        return None
+    return "❌ 请发送图片、视频，或发送“清空”移除封面。"
+
+
+def _apply_text_input(settings, normalized_text: str) -> None:
+    settings.invite_link_text_template = (
+        DEFAULT_INVITE_TEXT if normalized_text in RESET_TEXT_INPUTS else normalized_text[:4000]
+    )
+
+
+def _apply_invite_config_input(*, state_type: str, message, settings, normalized_text: str) -> str | None:
+    if state_type == "invite_link_cover_input":
+        return _apply_cover_input(message, settings, normalized_text)
+    if state_type == "invite_link_text_input":
+        _apply_text_input(settings, normalized_text)
+        return None
+    return "❌ 当前状态不支持邀请链接配置。"
 
 
 async def handle_invite_link_config_input(
@@ -209,26 +243,14 @@ async def handle_invite_link_config_input(
     settings = await get_chat_settings(session, target_chat_id)
     normalized_text = message_text.strip()
 
-    if state.state_type == "invite_link_cover_input":
-        if normalized_text in {"清空", "删除", "/clear"}:
-            settings.invite_link_cover_file_id = None
-            settings.invite_link_cover_media_type = None
-        elif update.effective_message.photo:
-            settings.invite_link_cover_file_id = update.effective_message.photo[-1].file_id
-            settings.invite_link_cover_media_type = "photo"
-        elif update.effective_message.video:
-            settings.invite_link_cover_file_id = update.effective_message.video.file_id
-            settings.invite_link_cover_media_type = "video"
-        else:
-            await update.effective_message.reply_text("❌ 请发送图片、视频，或发送“清空”移除封面。")
-            return
-    elif state.state_type == "invite_link_text_input":
-        if normalized_text in {"清空", "默认", "恢复默认", "/default"}:
-            settings.invite_link_text_template = "🔗 邀请好友加入 {group}\n邀请人：{inviter}\n新成员：{invitee}"
-        else:
-            settings.invite_link_text_template = normalized_text[:4000]
-    else:
-        await update.effective_message.reply_text("❌ 当前状态不支持邀请链接配置。")
+    error = _apply_invite_config_input(
+        state_type=state.state_type,
+        message=update.effective_message,
+        settings=settings,
+        normalized_text=normalized_text,
+    )
+    if error is not None:
+        await update.effective_message.reply_text(error)
         return
 
     await clear_user_state(session, update.effective_user.id, update.effective_user.id)
