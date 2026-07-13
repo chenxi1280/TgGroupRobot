@@ -56,6 +56,46 @@ from backend.shared.services.permission_service import is_user_admin
 from backend.shared.time_ui import build_copy_options_keyboard, build_numeric_duration_prompt_text
 
 
+def _parse_optional_positive_int(text: str | None, unit_label: str) -> tuple[int | None, str | None]:
+    if text == "/skip":
+        return None, None
+    try:
+        value = int(text or "")
+    except ValueError:
+        return None, f"请输入有效的{unit_label}或 /skip 跳过"
+    if value <= 0:
+        return None, f"{unit_label}必须大于0，请重新输入或 /skip 跳过"
+    return value, None
+
+
+def _build_invite_creation_result_text(result) -> str:
+    if not result.success:
+        reasons = {
+            "limit_reached": "已达到创建限制",
+            "permission_denied": "权限不足",
+            "error": "创建失败",
+        }
+        return f"❌ {reasons.get(result.reason, '未知错误')}"
+    invite_link = result.invite_link
+    text = (
+        "✅ 邀请链接创建成功！\n\n"
+        f"链接: `{invite_link.invite_link}`\n"
+        f"名称: {invite_link.name or '未命名'}\n"
+        f"成员限制: {invite_link.member_limit or '无限制'}\n"
+    )
+    if invite_link.expire_date is not None:
+        text += f"过期时间: {invite_link.expire_date.strftime('%Y-%m-%d %H:%M:%S UTC')}\n"
+    return text
+
+
+async def _reply_invite_creation_result(message, result, target_chat_id: int) -> None:
+    await message.reply_text(
+        _build_invite_creation_result_text(result),
+        reply_markup=invite_link_menu_keyboard(target_chat_id),
+        parse_mode="Markdown" if result.success else None,
+    )
+
+
 async def invite_link_create_start_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
         return
@@ -113,21 +153,14 @@ async def invite_link_create_limit_message(update: Update, context: ContextTypes
         return ConversationHandler.END
     user = update.effective_user
     chat = update.effective_chat
-    text = update.effective_message.text
+    member_limit, error = _parse_optional_positive_int(update.effective_message.text, "成员数量")
+    if error is not None:
+        await update.effective_message.reply_text(error)
+        return WAIT_LIMIT
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
         state = await get_user_state(session, chat.id, user.id)
-        state_data = state.state_data if state else {}
-        member_limit = None
-        if text != "/skip":
-            try:
-                member_limit = int(text)
-                if member_limit <= 0:
-                    await update.effective_message.reply_text("成员数量必须大于0，请重新输入或 /skip 跳过")
-                    return WAIT_LIMIT
-            except ValueError:
-                await update.effective_message.reply_text("请输入有效的数字或 /skip 跳过")
-                return WAIT_LIMIT
+        state_data = dict(state.state_data if state else {})
         state_data["member_limit"] = member_limit
         await set_user_state(session, chat.id, user.id, state_type="invite_link_create", state_data=state_data)
         await session.commit()
@@ -156,23 +189,16 @@ async def invite_link_create_expire_message(update: Update, context: ContextType
         return ConversationHandler.END
     user = update.effective_user
     chat = update.effective_chat
-    text = update.effective_message.text
+    days, error = _parse_optional_positive_int(update.effective_message.text, "天数")
+    if error is not None:
+        await update.effective_message.reply_text(error)
+        return WAIT_EXPIRE
+    expire_date = dt.datetime.now(dt.UTC) + dt.timedelta(days=days) if days is not None else None
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
         state = await get_user_state(session, chat.id, user.id)
-        state_data = state.state_data if state else {}
+        state_data = dict(state.state_data if state else {})
         target_chat_id = int(state_data.get("target_chat_id") or chat.id)
-        expire_date = None
-        if text != "/skip":
-            try:
-                days = int(text)
-                if days <= 0:
-                    await update.effective_message.reply_text("天数必须大于0，请重新输入或 /skip 跳过")
-                    return WAIT_EXPIRE
-                expire_date = dt.datetime.now(dt.UTC) + dt.timedelta(days=days)
-            except ValueError:
-                await update.effective_message.reply_text("请输入有效的天数或 /skip 跳过")
-                return WAIT_EXPIRE
         state_data["expire_date"] = expire_date
         result = await create_invite_link(
             session,
@@ -185,19 +211,7 @@ async def invite_link_create_expire_message(update: Update, context: ContextType
         )
         await clear_user_state(session, chat.id, user.id)
         await session.commit()
-        if result.success:
-            text_msg = (
-                "✅ 邀请链接创建成功！\n\n"
-                f"链接: `{result.invite_link.invite_link}`\n"
-                f"名称: {result.invite_link.name or '未命名'}\n"
-                f"成员限制: {result.invite_link.member_limit or '无限制'}\n"
-            )
-            if result.invite_link.expire_date:
-                text_msg += f"过期时间: {result.invite_link.expire_date.strftime('%Y-%m-%d %H:%M:%S UTC')}\n"
-            await update.effective_message.reply_text(text_msg, reply_markup=invite_link_menu_keyboard(target_chat_id), parse_mode="Markdown")
-        else:
-            reason_text = {"limit_reached": "已达到创建限制", "permission_denied": "权限不足", "error": "创建失败"}.get(result.reason, "未知错误")
-            await update.effective_message.reply_text(f"❌ {reason_text}", reply_markup=invite_link_menu_keyboard(target_chat_id))
+    await _reply_invite_creation_result(update.effective_message, result, target_chat_id)
     return ConversationHandler.END
 
 
