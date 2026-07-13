@@ -56,7 +56,28 @@ def points_config_keyboard(settings, chat_id: int) -> InlineKeyboardMarkup:
     speech_rank_on, speech_rank_off = _toggle_labels(getattr(settings, "points_speech_rank_enabled", True), "开启")
     personal_speech_on, personal_speech_off = _toggle_labels(getattr(settings, "points_personal_speech_enabled", True), "开启")
 
-    return InlineKeyboardMarkup([
+    return InlineKeyboardMarkup(_points_config_rows(
+        chat_id,
+        state_labels=(state_on, state_off),
+        display_labels=(display_on, display_off),
+        speech_rank_labels=(speech_rank_on, speech_rank_off),
+        personal_speech_labels=(personal_speech_on, personal_speech_off),
+    ))
+
+
+def _points_config_rows(
+    chat_id: int,
+    *,
+    state_labels: tuple[str, str],
+    display_labels: tuple[str, str],
+    speech_rank_labels: tuple[str, str],
+    personal_speech_labels: tuple[str, str],
+) -> list[list[InlineKeyboardButton]]:
+    state_on, state_off = state_labels
+    display_on, display_off = display_labels
+    speech_rank_on, speech_rank_off = speech_rank_labels
+    personal_speech_on, personal_speech_off = personal_speech_labels
+    toggle_rows = [
         [
             InlineKeyboardButton("状态：", callback_data=f"pts:home:{chat_id}"),
             InlineKeyboardButton(state_on, callback_data=f"pts:toggle:all_enabled:{chat_id}:1"),
@@ -77,6 +98,12 @@ def points_config_keyboard(settings, chat_id: int) -> InlineKeyboardMarkup:
             InlineKeyboardButton(personal_speech_on, callback_data=f"pts:toggle:points_personal_speech_enabled:{chat_id}:1"),
             InlineKeyboardButton(personal_speech_off, callback_data=f"pts:toggle:points_personal_speech_enabled:{chat_id}:0"),
         ],
+    ]
+    return toggle_rows + _points_admin_rows(chat_id)
+
+
+def _points_admin_rows(chat_id: int) -> list[list[InlineKeyboardButton]]:
+    return [
         [
             InlineKeyboardButton("⚙️ 签到规则", callback_data=f"pts:rule:checkin:{chat_id}"),
             InlineKeyboardButton("⚙️ 发言规则", callback_data=f"pts:rule:speech:{chat_id}"),
@@ -100,7 +127,7 @@ def points_config_keyboard(settings, chat_id: int) -> InlineKeyboardMarkup:
             InlineKeyboardButton("🗑 清空积分", callback_data=f"pts:edit:clear_points:{chat_id}"),
         ],
         [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
-    ])
+    ]
 
 
 def points_rule_keyboard(rule_type: str, settings, chat_id: int) -> InlineKeyboardMarkup:

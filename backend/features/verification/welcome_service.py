@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import html
 from dataclasses import dataclass
 
 from sqlalchemy import select
@@ -116,6 +115,35 @@ class WelcomeService:
         last_sent_message_id: int | None | object = ...,
     ) -> WelcomeMessage:
         welcome = await WelcomeService.get_message(session, chat_id, welcome_id)
+        WelcomeService._apply_core_fields(
+            welcome,
+            title=title,
+            enabled=enabled,
+            welcome_mode=welcome_mode,
+            text_content=text_content,
+            buttons=buttons,
+        )
+        WelcomeService._apply_delivery_fields(
+            welcome,
+            cover_media_type=cover_media_type,
+            cover_media_file_id=cover_media_file_id,
+            delete_mode=delete_mode,
+            delete_delay_seconds=delete_delay_seconds,
+            last_sent_message_id=last_sent_message_id,
+        )
+        await session.flush()
+        return welcome
+
+    @staticmethod
+    def _apply_core_fields(
+        welcome: WelcomeMessage,
+        *,
+        title: str | None,
+        enabled: bool | None,
+        welcome_mode: str | None,
+        text_content: str | None,
+        buttons: list | None,
+    ) -> None:
         if title is not None:
             welcome.title = title.strip() or "待配置"
         if enabled is not None:
@@ -128,6 +156,17 @@ class WelcomeService:
             welcome.text_content = text_content.strip() or WelcomeService.DEFAULT_TEXT
         if buttons is not None:
             welcome.buttons = WelcomeService.normalize_buttons(buttons)
+
+    @staticmethod
+    def _apply_delivery_fields(
+        welcome: WelcomeMessage,
+        *,
+        cover_media_type: str | None | object,
+        cover_media_file_id: str | None | object,
+        delete_mode: str | None,
+        delete_delay_seconds: int | None | object,
+        last_sent_message_id: int | None | object,
+    ) -> None:
         if cover_media_type is not ...:
             welcome.cover_media_type = cover_media_type
         if cover_media_file_id is not ...:
@@ -140,8 +179,6 @@ class WelcomeService:
             welcome.delete_delay_seconds = delete_delay_seconds
         if last_sent_message_id is not ...:
             welcome.last_sent_message_id = last_sent_message_id
-        await session.flush()
-        return welcome
 
     @staticmethod
     def _render_template(template: str, *, member: User | TgUser | None, group_name: str, user_id: int) -> str:
@@ -237,32 +274,82 @@ class WelcomeService:
         if not resolved_ids:
             return False
 
-        sent_any = False
         chat = await session.get(TgChat, chat_id)
         group_name = chat.title if chat else "本群"
+        sent_any = False
         for welcome in welcomes:
-            for member_id in resolved_ids:
-                member = member_map.get(member_id)
-                if member is None:
-                    member = await session.get(TgUser, member_id)
-                payload = WelcomePayload(
-                    text=WelcomeService._render_template(
-                        welcome.text_content,
-                        member=member,
-                        group_name=group_name,
-                        user_id=member_id,
-                    ),
-                    reply_markup=WelcomeService.build_markup(welcome.buttons),
-                    parse_mode="HTML",
-                    media_type=welcome.cover_media_type,
-                    media_file_id=welcome.cover_media_file_id,
-                )
-                message = await WelcomeService._send_rendered_payload(context, chat_id, payload=payload)
-                if message is None:
-                    continue
-                sent_any = True
-                await WelcomeService._apply_delete_strategy(session, welcome, message.message_id, context=context, chat_id=chat_id)
+            sent = await WelcomeService._send_to_members(
+                context,
+                session,
+                chat_id=chat_id,
+                welcome=welcome,
+                member_map=member_map,
+                member_ids=resolved_ids,
+                group_name=group_name,
+            )
+            sent_any = sent_any or sent
         return sent_any
+
+    @staticmethod
+    async def _send_to_members(
+        context: ContextTypes.DEFAULT_TYPE,
+        session: AsyncSession,
+        *,
+        chat_id: int,
+        welcome: WelcomeMessage,
+        member_map: dict[int, User],
+        member_ids: list[int],
+        group_name: str,
+    ) -> bool:
+        sent_any = False
+        for member_id in member_ids:
+            member = member_map.get(member_id) or await session.get(TgUser, member_id)
+            sent = await WelcomeService._send_mode_message(
+                context,
+                session,
+                chat_id=chat_id,
+                welcome=welcome,
+                member=member,
+                member_id=member_id,
+                group_name=group_name,
+            )
+            sent_any = sent_any or sent
+        return sent_any
+
+    @staticmethod
+    async def _send_mode_message(
+        context: ContextTypes.DEFAULT_TYPE,
+        session: AsyncSession,
+        *,
+        chat_id: int,
+        welcome: WelcomeMessage,
+        member: TgUser | User | None,
+        member_id: int,
+        group_name: str,
+    ) -> bool:
+        payload = WelcomePayload(
+            text=WelcomeService._render_template(
+                welcome.text_content,
+                member=member,
+                group_name=group_name,
+                user_id=member_id,
+            ),
+            reply_markup=WelcomeService.build_markup(welcome.buttons),
+            parse_mode="HTML",
+            media_type=welcome.cover_media_type,
+            media_file_id=welcome.cover_media_file_id,
+        )
+        message = await WelcomeService._send_rendered_payload(context, chat_id, payload=payload)
+        if message is None:
+            return False
+        await WelcomeService._apply_delete_strategy(
+            session,
+            welcome,
+            message.message_id,
+            context=context,
+            chat_id=chat_id,
+        )
+        return True
 
     @staticmethod
     async def _send_rendered_payload(
