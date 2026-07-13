@@ -22,124 +22,168 @@ from sqlalchemy.orm import selectinload
 
 log = structlog.get_logger(__name__)
 
+_JOIN_FAILURE_MESSAGES = {
+    "full": "❌ 接龙已满员",
+    "closed": "❌ 接龙已关闭",
+    "expired": "❌ 接龙已过期",
+    "insufficient_points": "❌ 积分不足",
+    "already_joined": "❌ 你已经参与过这个接龙",
+}
+
+
+async def _callback_solitaire_id(query, prefix: str) -> int | None:
+    data = query.data or ""
+    if not data.startswith(prefix):
+        return None
+    try:
+        return int(data.split(":", 1)[1])
+    except (ValueError, IndexError):
+        await query.answer("无效的接龙")
+        return None
+
+
+def _user_mention(user) -> str:
+    if user.username:
+        return user.username
+    first_name = user.first_name or "用户"
+    return f'<a href="tg://user?id={user.id}">@{first_name}</a>'
+
+
+async def _send_join_error(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str) -> None:
+    await update.callback_query.answer()
+    await context.bot.send_message(chat_id=update.effective_chat.id, text=text, parse_mode="HTML")
+
+
+async def _load_joinable_solitaire(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    session,
+    *,
+    solitaire_id: int,
+):
+    solitaire = await get_solitaire(session, solitaire_id)
+    if solitaire is None:
+        await _send_join_error(update, context, "❌ 接龙不存在")
+        return None
+    if not await is_group_text_command_enabled(session, solitaire.chat_id, "solitaire"):
+        await update.callback_query.answer("接龙入口已关闭。", show_alert=True)
+        return None
+    if solitaire.status != SolitaireStatus.active.value:
+        await _send_join_error(update, context, "❌ 接龙已关闭")
+        return None
+    if solitaire.max_participants and len(solitaire.entries_rel) >= solitaire.max_participants:
+        await _send_join_error(update, context, "❌ 接龙已满员")
+        return None
+    return solitaire
+
+
+async def _has_required_points(update: Update, context: ContextTypes.DEFAULT_TYPE, session, *, solitaire, user) -> bool:
+    if not solitaire.points_required or solitaire.points_required <= 0:
+        return True
+    from backend.features.points.services.points_service import get_balance
+
+    points = await get_balance(session, solitaire.chat_id, user.id)
+    if points >= solitaire.points_required:
+        return True
+    text = (
+        f"{_user_mention(user)} ❌ 积分不足\n"
+        f"参与接龙需要 {solitaire.points_required} 积分，你当前有 {points} 积分"
+    )
+    await _send_join_error(update, context, text)
+    return False
+
+
+async def _has_existing_entry(session, solitaire_id: int, user_id: int) -> bool:
+    result = await session.execute(
+        select(SolitaireEntry).where(
+            SolitaireEntry.solitaire_id == solitaire_id,
+            SolitaireEntry.user_id == user_id,
+        )
+    )
+    return result.scalar_one_or_none() is not None
+
+
+async def _reject_existing_join(update: Update, context: ContextTypes.DEFAULT_TYPE, user) -> None:
+    text = f"{_user_mention(user)} ❌ 你已经参与过这个接龙\n如需修改内容，请回复接龙消息发送新内容。"
+    await _send_join_error(update, context, text)
+
+
+async def _refresh_solitaire_message(
+    context: ContextTypes.DEFAULT_TYPE,
+    db: Database,
+    solitaire_id: int,
+    *,
+    user_id: int,
+) -> None:
+    async with db.session_factory() as session:
+        stmt = select(Solitaire).options(selectinload(Solitaire.entries_rel)).where(Solitaire.id == solitaire_id)
+        solitaire = (await session.execute(stmt)).scalar_one_or_none()
+        if solitaire is None or not solitaire.message_id:
+            return
+        try:
+            await context.bot.edit_message_text(
+                chat_id=solitaire.chat_id,
+                message_id=solitaire.message_id,
+                text=format_solitaire_message(solitaire),
+                reply_markup=get_join_solitaire_keyboard(solitaire_id),
+            )
+        except Exception as exc:
+            if "Message is not modified" in str(exc):
+                return
+            log.warning(
+                "solitaire_join_message_refresh_failed",
+                chat_id=solitaire.chat_id,
+                solitaire_id=solitaire_id,
+                message_id=solitaire.message_id,
+                user_id=user_id,
+                error=str(exc),
+            )
+
+
+async def _reply_join_result(update: Update, context: ContextTypes.DEFAULT_TYPE, result, *, db: Database, solitaire_id: int) -> None:
+    query = update.callback_query
+    user = update.effective_user
+    if not result.success:
+        await query.answer()
+        failure = _JOIN_FAILURE_MESSAGES.get(result.reason, "❌ 参与失败")
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=f"{_user_mention(user)} {failure}",
+            parse_mode="HTML",
+        )
+        return
+    await _refresh_solitaire_message(context, db, solitaire_id, user_id=user.id)
+    await query.answer("参与成功！")
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=f"{_user_mention(user)} ✅ 已参与接龙\n如需填写具体内容，请回复接龙消息发送内容；再次回复可更新。",
+        parse_mode="HTML",
+        reply_to_message_id=getattr(query.message, "message_id", None),
+        allow_sending_without_reply=True,
+    )
+
 
 async def join_solitaire_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
         return
-    q = update.callback_query
-
-    data = q.data or ""
-    if not data.startswith("join_solitaire:"):
+    solitaire_id = await _callback_solitaire_id(update.callback_query, "join_solitaire:")
+    if solitaire_id is None:
         return
-    try:
-        solitaire_id = int(data.split(":")[1])
-    except (ValueError, IndexError):
-        await q.answer("无效的接龙")
-        return
-
     user = update.effective_user
-    user_id = user.id
-    user_mention = user.username or f"<a href=\"tg://user?id={user_id}\">@{user.first_name or '用户'}</a>"
     db: Database = context.application.bot_data["db"]
-
     async with db.session_factory() as session:
-        solitaire = await get_solitaire(session, solitaire_id)
-        if not solitaire:
-            await q.answer()
-            await context.bot.send_message(chat_id=update.effective_chat.id, text="❌ 接龙不存在", parse_mode="HTML")
+        solitaire = await _load_joinable_solitaire(update, context, session, solitaire_id=solitaire_id)
+        if solitaire is None:
             return
-        if not await is_group_text_command_enabled(session, solitaire.chat_id, "solitaire"):
-            await q.answer("接龙入口已关闭。", show_alert=True)
+        if not await _has_required_points(update, context, session, solitaire=solitaire, user=user):
             return
-        if solitaire.status != SolitaireStatus.active.value:
-            await q.answer()
-            await context.bot.send_message(chat_id=update.effective_chat.id, text="❌ 接龙已关闭", parse_mode="HTML")
+        if await _has_existing_entry(session, solitaire_id, user.id):
+            await _reject_existing_join(update, context, user)
             return
-        if solitaire.max_participants and len(solitaire.entries_rel) >= solitaire.max_participants:
-            await q.answer()
-            await context.bot.send_message(chat_id=update.effective_chat.id, text="❌ 接龙已满员", parse_mode="HTML")
-            return
-
-        if solitaire.points_required and solitaire.points_required > 0:
-            from backend.features.points.services.points_service import get_balance
-
-            points = await get_balance(session, solitaire.chat_id, user_id)
-            if points < solitaire.points_required:
-                await q.answer()
-                await context.bot.send_message(
-                    chat_id=update.effective_chat.id,
-                    text=f"{user_mention} ❌ 积分不足\n参与接龙需要 {solitaire.points_required} 积分，你当前有 {points} 积分",
-                    parse_mode="HTML",
-                )
-                return
-
-        existing_result = await session.execute(
-            select(SolitaireEntry).where(
-                SolitaireEntry.solitaire_id == solitaire_id,
-                SolitaireEntry.user_id == user_id,
-            )
-        )
-        if existing_result.scalar_one_or_none():
-            await q.answer()
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text=f"{user_mention} ❌ 你已经参与过这个接龙\n如需修改内容，请回复接龙消息发送新内容。",
-                parse_mode="HTML",
-            )
-            return
-
-        username = user.username or user.first_name or f"用户{user_id}"
-        result = await join_solitaire(session, solitaire_id, user_id, username=username, content="✅ 已参与")
+        username = user.username or user.first_name or f"用户{user.id}"
+        result = await join_solitaire(session, solitaire_id, user.id, username=username, content="✅ 已参与")
         await session.commit()
-
-        if result.success:
-            async with db.session_factory() as new_session:
-                stmt = select(Solitaire).options(selectinload(Solitaire.entries_rel)).where(Solitaire.id == solitaire_id)
-                query_result = await new_session.execute(stmt)
-                solitaire = query_result.scalar_one_or_none()
-                if solitaire is None:
-                    await q.answer("❌ 接龙不存在")
-                    return
-                if solitaire.message_id:
-                    try:
-                        await context.bot.edit_message_text(
-                            chat_id=solitaire.chat_id,
-                            message_id=solitaire.message_id,
-                            text=format_solitaire_message(solitaire),
-                            reply_markup=get_join_solitaire_keyboard(solitaire_id),
-                        )
-                    except Exception as exc:
-                        if "Message is not modified" not in str(exc):
-                            log.warning(
-                                "solitaire_join_message_refresh_failed",
-                                chat_id=solitaire.chat_id,
-                                solitaire_id=solitaire_id,
-                                message_id=solitaire.message_id,
-                                user_id=user_id,
-                                error=str(exc),
-                            )
-            await q.answer("参与成功！")
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text=f"{user_mention} ✅ 已参与接龙\n如需填写具体内容，请回复接龙消息发送内容；再次回复可更新。",
-                parse_mode="HTML",
-                reply_to_message_id=getattr(q.message, "message_id", None),
-                allow_sending_without_reply=True,
-            )
-        else:
-            await q.answer()
-            reason_map = {
-                "full": "❌ 接龙已满员",
-                "closed": "❌ 接龙已关闭",
-                "expired": "❌ 接龙已过期",
-                "insufficient_points": "❌ 积分不足",
-                "already_joined": "❌ 你已经参与过这个接龙",
-            }
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text=f"{user_mention} {reason_map.get(result.reason, '❌ 参与失败')}",
-                parse_mode="HTML",
-            )
+    await _reply_join_result(update, context, result, db=db, solitaire_id=solitaire_id)
 
 
 async def edit_solitaire_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -180,6 +224,73 @@ async def edit_solitaire_callback(update: Update, context: ContextTypes.DEFAULT_
     await q.answer("原报名已删除，请点击「参与接龙」重新报名", show_alert=True)
 
 
+def _display_name(user) -> str:
+    if user.username:
+        return user.username
+    if user.first_name:
+        return user.first_name + (f" {user.last_name}" if user.last_name else "")
+    return f"用户{user.id}"
+
+
+async def _find_reply_solitaire(session, chat_id: int, reply_message_id: int):
+    solitaires = await get_chat_solitaires(session, chat_id, active_only=True)
+    return next((item for item in solitaires if item.message_id == reply_message_id), None)
+
+
+async def _update_existing_join(session, message, *, solitaire_id: int, user_id: int) -> bool:
+    if not await _has_existing_entry(session, solitaire_id, user_id):
+        return False
+    result = await update_entry(session, solitaire_id, user_id, content=message.text)
+    await session.commit()
+    if not result.success:
+        await message.reply_text("❌ 更新失败")
+        return True
+    solitaire = await get_solitaire(session, solitaire_id)
+    if solitaire is not None:
+        await message.reply_to_message.edit_text(format_solitaire_message(solitaire))
+    await message.reply_text("✅ 已更新你的接龙内容")
+    return True
+
+
+async def _refresh_reply_solitaire(message, db: Database, solitaire_id: int) -> bool:
+    async with db.session_factory() as session:
+        stmt = select(Solitaire).options(selectinload(Solitaire.entries_rel)).where(Solitaire.id == solitaire_id)
+        solitaire = (await session.execute(stmt)).scalar_one_or_none()
+        if solitaire is None:
+            await message.reply_text("❌ 接龙不存在")
+            return False
+        await message.reply_to_message.edit_text(format_solitaire_message(solitaire))
+        return True
+
+
+_MESSAGE_JOIN_FAILURES = {
+    "not_found": "接龙不存在",
+    "already_closed": "接龙已结束",
+    "already_joined": "你已经参与了，请回复更新内容",
+    "full": "接龙人数已满",
+    "expired": "接龙已截止",
+    "insufficient_points": "积分不足，无法参与",
+    "error": "参与失败",
+}
+
+
+async def _join_from_message(session, message, *, target_solitaire, user, db: Database) -> None:
+    result = await join_solitaire(
+        session,
+        target_solitaire.id,
+        user.id,
+        username=_display_name(user),
+        content=message.text,
+    )
+    await session.commit()
+    if not result.success:
+        reason_text = _MESSAGE_JOIN_FAILURES.get(result.reason, "未知错误")
+        await message.reply_text(f"❌ {reason_text}")
+        return
+    if await _refresh_reply_solitaire(message, db, target_solitaire.id):
+        await message.reply_text("✅ 接龙成功！")
+
+
 async def solitaire_join_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.effective_message is None or update.effective_chat is None or update.effective_user is None:
         return
@@ -191,62 +302,13 @@ async def solitaire_join_message_handler(update: Update, context: ContextTypes.D
     user = update.effective_user
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
-        solitaires = await get_chat_solitaires(session, chat.id, active_only=True)
-        target_solitaire = next((item for item in solitaires if item.message_id == message.reply_to_message.message_id), None)
-        if not target_solitaire:
+        target_solitaire = await _find_reply_solitaire(session, chat.id, message.reply_to_message.message_id)
+        if target_solitaire is None:
             return
         if not await is_group_text_command_enabled(session, chat.id, "solitaire"):
             await session.commit()
             await message.reply_text("接龙入口已关闭。")
             return
-
-        existing_result = await session.execute(
-            select(SolitaireEntry).where(
-                SolitaireEntry.solitaire_id == target_solitaire.id,
-                SolitaireEntry.user_id == user.id,
-            )
-        )
-        if existing_result.scalar_one_or_none():
-            result = await update_entry(session, target_solitaire.id, user.id, content=message.text)
-            if result.success:
-                await session.commit()
-                solitaire = await get_solitaire(session, target_solitaire.id)
-                if solitaire:
-                    await message.reply_to_message.edit_text(format_solitaire_message(solitaire))
-                await message.reply_text("✅ 已更新你的接龙内容")
-            else:
-                await session.commit()
-                await message.reply_text("❌ 更新失败")
+        if await _update_existing_join(session, message, solitaire_id=target_solitaire.id, user_id=user.id):
             return
-
-        if user.username:
-            display_name = user.username
-        elif user.first_name:
-            display_name = user.first_name + (f" {user.last_name}" if user.last_name else "")
-        else:
-            display_name = f"用户{user.id}"
-
-        result = await join_solitaire(session, target_solitaire.id, user.id, username=display_name, content=message.text)
-        if result.success:
-            await session.commit()
-            async with db.session_factory() as new_session:
-                stmt = select(Solitaire).options(selectinload(Solitaire.entries_rel)).where(Solitaire.id == target_solitaire.id)
-                query_result = await new_session.execute(stmt)
-                solitaire = query_result.scalar_one_or_none()
-                if solitaire is None:
-                    await message.reply_text("❌ 接龙不存在")
-                    return
-                await message.reply_to_message.edit_text(format_solitaire_message(solitaire))
-            await message.reply_text("✅ 接龙成功！")
-        else:
-            await session.commit()
-            reason_text = {
-                "not_found": "接龙不存在",
-                "already_closed": "接龙已结束",
-                "already_joined": "你已经参与了，请回复更新内容",
-                "full": "接龙人数已满",
-                "expired": "接龙已截止",
-                "insufficient_points": "积分不足，无法参与",
-                "error": "参与失败",
-            }.get(result.reason, "未知错误")
-            await message.reply_text(f"❌ {reason_text}")
+        await _join_from_message(session, message, target_solitaire=target_solitaire, user=user, db=db)
