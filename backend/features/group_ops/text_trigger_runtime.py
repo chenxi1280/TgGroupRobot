@@ -121,99 +121,124 @@ async def try_bottom_button_text_trigger(
     return True
 
 
+def _is_matching_group_update(update, chat_id: int) -> bool:
+    if update.effective_chat is None or update.effective_user is None or update.effective_message is None:
+        return False
+    return update.effective_chat.id == chat_id and update.effective_chat.type in {"group", "supergroup"}
+
+
+async def _resolve_text_trigger_admin(context, chat_id: int, user_id: int) -> bool:
+    from backend.shared.services.permission_service import is_user_admin
+
+    try:
+        return await is_user_admin(context, chat_id, user_id)
+    except Exception as exc:
+        log.warning("text_trigger_admin_check_failed", chat_id=chat_id, user_id=user_id, error=str(exc))
+        return False
+
+
+async def _try_attendance_keyword(context, session, update, *, payload: str, teacher_setting, is_teacher: bool) -> bool:
+    from backend.features.group_ops.group_hooks.teacher_search import _reply_attendance_checkin
+
+    if (getattr(teacher_setting, "attendance_mode", "message") or "message") == "external":
+        return False
+    keywords = {
+        "full": getattr(teacher_setting, "attendance_full_keyword", "满课") or "满课",
+        "rest": getattr(teacher_setting, "attendance_rest_keyword", "休息") or "休息",
+    }
+    status = next((key for key, keyword in keywords.items() if payload == keyword), None)
+    if status is None:
+        return False
+    await _reply_attendance_checkin(
+        context,
+        session,
+        update.effective_chat,
+        user=update.effective_user,
+        message=update.effective_message,
+        teacher_setting=teacher_setting,
+        is_teacher=is_teacher,
+        status=status,
+    )
+    return True
+
+
+async def _load_garage_trigger_context(session, chat_id: int, user_id: int) -> dict:
+    from backend.features.garage.services.garage_features_service import CarReviewService, GarageAuthService, TeacherSearchService
+
+    teacher_setting = await TeacherSearchService.get_setting(session, chat_id)
+    is_teacher = await GarageAuthService.is_certified_teacher(session, chat_id, user_id)
+    attendance_teacher = is_teacher
+    if not attendance_teacher and getattr(teacher_setting, "attendance_enabled", False):
+        attendance_teacher = await TeacherSearchService.is_certified_teacher_for_attendance_source(session, chat_id, user_id)
+    return {
+        "teacher_setting": teacher_setting,
+        "car_review_setting": await CarReviewService.get_setting(session, chat_id),
+        "is_teacher": is_teacher,
+        "is_attendance_teacher": attendance_teacher,
+        "is_whitelisted": await GarageAuthService.is_whitelisted(session, chat_id, user_id),
+    }
+
+
+def _garage_text_processors():
+    from backend.features.group_ops.group_hooks.car_review import _process_car_review_features
+    from backend.features.group_ops.group_hooks.teacher_search import _process_teacher_search_features
+    from backend.shared.services.chat_service import get_chat_settings
+
+    return _process_teacher_search_features, _process_car_review_features, get_chat_settings
+
+
+async def _garage_trigger_runtime(context, update, chat_id: int):
+    db: Database = context.application.bot_data["db"]
+    is_admin = await _resolve_text_trigger_admin(context, chat_id, update.effective_user.id)
+    return db, is_admin
+
+
 async def _try_garage_text_trigger(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     chat_id: int,
     *, payload: str,
 ) -> bool:
-    if update.effective_chat is None or update.effective_user is None or update.effective_message is None:
-        return False
-    if update.effective_chat.id != chat_id:
-        return False
-    if update.effective_chat.type not in {"group", "supergroup"}:
+    if not _is_matching_group_update(update, chat_id):
         return False
 
-    from backend.features.garage.services.garage_features_service import (
-        CarReviewService,
-        GarageAuthService,
-        TeacherSearchService,
-    )
-    from backend.features.group_ops.group_hooks.car_review import _process_car_review_features
-    from backend.features.group_ops.group_hooks.teacher_search import (
-        _process_teacher_search_features,
-        _reply_attendance_checkin,
-    )
-    from backend.shared.services.permission_service import is_user_admin
-    from backend.shared.services.chat_service import get_chat_settings
-
-    db: Database = context.application.bot_data["db"]
-    try:
-        is_admin = await is_user_admin(context, chat_id, update.effective_user.id)
-    except Exception as exc:
-        log.warning(
-            "text_trigger_admin_check_failed",
-            chat_id=chat_id,
-            user_id=update.effective_user.id,
-            error=str(exc),
-        )
-        is_admin = False
-
+    process_teacher_search, process_car_review, get_chat_settings = _garage_text_processors()
+    db, is_admin = await _garage_trigger_runtime(context, update, chat_id)
     async with db.session_factory() as session:
-        teacher_setting = await TeacherSearchService.get_setting(session, chat_id)
-        car_review_setting = await CarReviewService.get_setting(session, chat_id)
-        is_teacher = await GarageAuthService.is_certified_teacher(session, chat_id, update.effective_user.id)
-        is_attendance_teacher = is_teacher
-        if not is_attendance_teacher and getattr(teacher_setting, "attendance_enabled", False):
-            is_attendance_teacher = await TeacherSearchService.is_certified_teacher_for_attendance_source(
-                session,
-                chat_id,
-                update.effective_user.id,
-            )
-        is_whitelisted = await GarageAuthService.is_whitelisted(session, chat_id, update.effective_user.id)
-        attendance_mode = getattr(teacher_setting, "attendance_mode", "message") or "message"
-        if attendance_mode != "external":
-            attendance_keywords = {
-                "full": getattr(teacher_setting, "attendance_full_keyword", "满课") or "满课",
-                "rest": getattr(teacher_setting, "attendance_rest_keyword", "休息") or "休息",
-            }
-            for status, keyword in attendance_keywords.items():
-                if payload == keyword:
-                    await _reply_attendance_checkin(
-                        context,
-                        session,
-                        update.effective_chat,
-                        user=update.effective_user,
-                        message=update.effective_message,
-                        teacher_setting=teacher_setting,
-                        is_teacher=is_attendance_teacher,
-                        status=status,
-                    )
-                    return True
-        chat_settings = await get_chat_settings(session, chat_id)
-        if await _process_teacher_search_features(
+        garage = await _load_garage_trigger_context(session, chat_id, update.effective_user.id)
+        if await _try_attendance_keyword(
             context,
             session,
-            update.effective_chat,
-            user=update.effective_user,
-            message=update.effective_message,
-            text=payload,
-            teacher_setting=teacher_setting,
-            chat_settings=chat_settings,
-            is_teacher=is_teacher,
-            is_attendance_teacher=is_attendance_teacher,
-            is_admin=is_admin,
-            is_whitelisted=is_whitelisted,
+            update,
+            payload=payload,
+            teacher_setting=garage["teacher_setting"],
+            is_teacher=garage["is_attendance_teacher"],
         ):
             return True
-        handled = await _process_car_review_features(
+        chat_settings = await get_chat_settings(session, chat_id)
+        if await process_teacher_search(
             context,
             session,
             update.effective_chat,
             user=update.effective_user,
             message=update.effective_message,
             text=payload,
-            car_review_setting=car_review_setting,
+            teacher_setting=garage["teacher_setting"],
+            chat_settings=chat_settings,
+            is_teacher=garage["is_teacher"],
+            is_attendance_teacher=garage["is_attendance_teacher"],
+            is_admin=is_admin,
+            is_whitelisted=garage["is_whitelisted"],
+        ):
+            return True
+        handled = await process_car_review(
+            context,
+            session,
+            update.effective_chat,
+            user=update.effective_user,
+            message=update.effective_message,
+            text=payload,
+            car_review_setting=garage["car_review_setting"],
             chat_settings=chat_settings,
         )
         if not handled:
@@ -228,6 +253,30 @@ async def _try_teacher_search_trigger(
     *, payload: str,
 ) -> bool:
     return await _try_garage_text_trigger(update, context, chat_id, payload=payload)
+
+
+async def _handle_invite_rank(update, db, chat_id: int, *, user_id: int) -> None:
+    from backend.features.invite.services.invite_service import get_invite_leaderboard, get_user_rank
+
+    async with db.session_factory() as session:
+        enabled = await is_group_text_command_enabled(session, chat_id, "invite_rank")
+        await session.commit()
+    if not enabled:
+        await update.effective_message.reply_text("该指令已关闭。")
+        return
+    async with db.session_factory() as session:
+        leaderboard = await get_invite_leaderboard(session, chat_id, limit=10)
+        user_rank = await get_user_rank(session, chat_id, user_id)
+        await session.commit()
+    if not leaderboard:
+        await update.effective_message.reply_text("🏆 邀请排行榜\n\n暂无邀请数据")
+        return
+    lines = ["🏆 邀请排行榜（前10名）", ""]
+    for index, (ranked_user_id, count, username) in enumerate(leaderboard, start=1):
+        lines.append(f"{index}. {username or f'用户{ranked_user_id}'} - {count} 人")
+    if user_rank:
+        lines.append(f"\n你的排名: 第 {user_rank} 名")
+    await update.effective_message.reply_text("\n".join(lines))
 
 
 async def _try_invite_trigger(
@@ -252,32 +301,8 @@ async def _try_invite_trigger(
 
         await link_stat_command(update, context)
         return True
-
     db: Database = context.application.bot_data["db"]
-    async with db.session_factory() as session:
-        if not await is_group_text_command_enabled(session, chat_id, "invite_rank"):
-            await session.commit()
-            await update.effective_message.reply_text("该指令已关闭。")
-            return True
-        await session.commit()
-
-    from backend.features.invite.services.invite_service import get_invite_leaderboard, get_user_rank
-
-    async with db.session_factory() as session:
-        leaderboard = await get_invite_leaderboard(session, chat_id, limit=10)
-        user_rank = await get_user_rank(session, chat_id, update.effective_user.id)
-        await session.commit()
-
-    if not leaderboard:
-        await update.effective_message.reply_text("🏆 邀请排行榜\n\n暂无邀请数据")
-        return True
-
-    lines = ["🏆 邀请排行榜（前10名）", ""]
-    for index, (user_id, count, username) in enumerate(leaderboard, start=1):
-        lines.append(f"{index}. {username or f'用户{user_id}'} - {count} 人")
-    if user_rank:
-        lines.append(f"\n你的排名: 第 {user_rank} 名")
-    await update.effective_message.reply_text("\n".join(lines))
+    await _handle_invite_rank(update, db, chat_id, user_id=update.effective_user.id)
     return True
 
 
