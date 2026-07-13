@@ -10,17 +10,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.features.subscription.services.renewal_service import hash_card_code, normalize_card_code
 from backend.features.web_admin.auth_service import append_audit
+from backend.features.web_admin.card_serialization import (
+    is_card_voided,
+    serialize_batch,
+    serialize_card,
+    serialize_cards,
+)
 from backend.platform.db.schema.models.core import (
     AdminAccount,
-    ChatMember,
     RenewalCardKey,
     RenewalCardKeyBatch,
-    TgChat,
-    TgUser,
 )
 
 
 COPY_CARD_LIMIT = 40
+MAX_BATCH_QUANTITY = 500
+SECONDS_PER_DAY = 86_400
 KEY_SPECS = [
     {"days": 30, "label": "30天"},
     {"days": 60, "label": "60天"},
@@ -51,15 +56,6 @@ def _spec_days(value: int) -> int:
     return days
 
 
-def _format_user(user_id: int | None, username: str | None, first_name: str | None, *, last_name: str | None) -> str:
-    if user_id is None:
-        return ""
-    name = " ".join(part for part in [first_name, last_name] if part).strip()
-    if username:
-        return f"{name or username} (@{username})"
-    return name or str(user_id)
-
-
 def _generate_card_code() -> str:
     chunks = [
         "".join(secrets.choice(_ALPHABET) for _ in range(4))
@@ -73,10 +69,6 @@ def _batch_no() -> str:
     return f"RK{timestamp}{secrets.token_hex(3).upper()}"
 
 
-def is_card_voided(card: RenewalCardKey) -> bool:
-    return str(getattr(card, "copy_status", "") or "") == "voided"
-
-
 async def _ensure_unique_card_code(session: AsyncSession) -> str:
     for _ in range(20):
         code = _generate_card_code()
@@ -86,6 +78,32 @@ async def _ensure_unique_card_code(session: AsyncSession) -> str:
         if result.scalar_one_or_none() is None:
             return code
     raise RuntimeError("生成唯一卡密失败，请重试")
+
+
+async def _generate_cards(
+    session: AsyncSession,
+    batch: RenewalCardKeyBatch,
+    *,
+    admin_id: int,
+    days: int,
+    count: int,
+) -> list[RenewalCardKey]:
+    cards = []
+    for _ in range(count):
+        code = await _ensure_unique_card_code(session)
+        card = RenewalCardKey(
+            batch_id=batch.id,
+            card_code_plain=normalize_card_code(code),
+            card_key_hash=hash_card_code(code),
+            spec_days=days,
+            created_by_admin_id=admin_id,
+            duration_seconds=days * SECONDS_PER_DAY,
+            expires_at=None,
+        )
+        session.add(card)
+        cards.append(card)
+    await session.flush()
+    return cards
 
 
 async def generate_card_batch(
@@ -99,7 +117,7 @@ async def generate_card_batch(
     count = int(quantity)
     if count <= 0:
         raise ValueError("生成数量必须大于 0")
-    if count > 500:
+    if count > MAX_BATCH_QUANTITY:
         raise ValueError("单批最多生成 500 个卡密")
 
     batch = RenewalCardKeyBatch(
@@ -111,21 +129,13 @@ async def generate_card_batch(
     session.add(batch)
     await session.flush()
 
-    cards: list[RenewalCardKey] = []
-    for _ in range(count):
-        code = await _ensure_unique_card_code(session)
-        card = RenewalCardKey(
-            batch_id=batch.id,
-            card_code_plain=normalize_card_code(code),
-            card_key_hash=hash_card_code(code),
-            spec_days=days,
-            created_by_admin_id=admin.id,
-            duration_seconds=days * 86400,
-            expires_at=None,
-        )
-        session.add(card)
-        cards.append(card)
-    await session.flush()
+    cards = await _generate_cards(
+        session,
+        batch,
+        admin_id=admin.id,
+        days=days,
+        count=count,
+    )
 
     await append_audit(
         session,
@@ -156,12 +166,7 @@ async def list_batches(
     limit: int = 100,
     offset: int = 0,
 ) -> dict[str, Any]:
-    conditions = []
-    if spec_days:
-        conditions.append(RenewalCardKeyBatch.spec_days == _spec_days(spec_days))
-    keyword_value = (keyword or "").strip()
-    if keyword_value:
-        conditions.append(RenewalCardKeyBatch.batch_no.ilike(f"%{keyword_value}%"))
+    conditions = _batch_filters(spec_days=spec_days, keyword=keyword)
 
     total = int(
         (
@@ -184,7 +189,35 @@ async def list_batches(
         return {"items": [], "total": total}
 
     batch_ids = [batch.id for batch in batches]
-    stats_rows = (
+    stats = await _load_batch_stats(session, batch_ids)
+    return {
+        "items": [
+            serialize_batch(
+                batch,
+                used_count=stats.get(batch.id, {}).get("used", 0),
+                voided_count=stats.get(batch.id, {}).get("voided", 0),
+            )
+            for batch in batches
+        ],
+        "total": total,
+    }
+
+
+def _batch_filters(*, spec_days: int | None, keyword: str | None) -> list[Any]:
+    conditions = []
+    if spec_days:
+        conditions.append(RenewalCardKeyBatch.spec_days == _spec_days(spec_days))
+    keyword_value = (keyword or "").strip()
+    if keyword_value:
+        conditions.append(RenewalCardKeyBatch.batch_no.ilike(f"%{keyword_value}%"))
+    return conditions
+
+
+async def _load_batch_stats(
+    session: AsyncSession,
+    batch_ids: list[int],
+) -> dict[int, dict[str, int]]:
+    rows = (
         await session.execute(
             select(
                 RenewalCardKey.batch_id,
@@ -196,25 +229,14 @@ async def list_batches(
             .group_by(RenewalCardKey.batch_id)
         )
     ).all()
-    stats = {
+    return {
         int(batch_id): {
             "total": int(total_count or 0),
             "used": int(used_count or 0),
             "voided": int(voided_count or 0),
         }
-        for batch_id, total_count, used_count, voided_count in stats_rows
+        for batch_id, total_count, used_count, voided_count in rows
         if batch_id is not None
-    }
-    return {
-        "items": [
-            serialize_batch(
-                batch,
-                used_count=stats.get(batch.id, {}).get("used", 0),
-                voided_count=stats.get(batch.id, {}).get("voided", 0),
-            )
-            for batch in batches
-        ],
-        "total": total,
     }
 
 
@@ -297,7 +319,25 @@ async def copy_cards(
         raise ValueError("请选择要复制的卡密")
     if len(ids) > COPY_CARD_LIMIT:
         raise ValueError(f"单次最多复制 {COPY_CARD_LIMIT} 个卡密，请改用导出")
+    cards = await _load_copyable_cards(session, ids)
+    now = _utcnow()
+    lines = [_mark_card_copied(card, now=now, with_meta=with_meta) for card in cards]
+    await _increment_batch_counter(session, cards, field="copy_count")
+    await append_audit(
+        session,
+        admin_account_id=admin.id,
+        action="renewal.cards.copy",
+        target_type="renewal_card_key",
+        target_id=",".join(str(item) for item in ids),
+        detail={"count": len(cards), "with_meta": with_meta},
+    )
+    return CopyResult(count=len(cards), total=len(cards), copied_text="\n".join(lines))
 
+
+async def _load_copyable_cards(
+    session: AsyncSession,
+    ids: list[int],
+) -> list[RenewalCardKey]:
     cards = (
         await session.execute(
             select(RenewalCardKey)
@@ -313,34 +353,38 @@ async def copy_cards(
         raise ValueError("包含已激活卡密，无法复制")
     if any(not card.card_code_plain for card in cards):
         raise ValueError("包含历史卡密，无法复制明文")
+    return list(cards)
 
-    now = _utcnow()
-    lines = []
-    for card in cards:
-        card.copy_status = "copied"
-        card.copied_at = now
-        if with_meta:
-            lines.append(f"{card.card_code_plain} | {card.spec_days or '-'}天 | 批次{card.batch_id or '-'}")
-        else:
-            lines.append(card.card_code_plain or "")
 
+def _mark_card_copied(
+    card: RenewalCardKey,
+    *,
+    now: dt.datetime,
+    with_meta: bool,
+) -> str:
+    card.copy_status = "copied"
+    card.copied_at = now
+    if with_meta:
+        return f"{card.card_code_plain} | {card.spec_days or '-'}天 | 批次{card.batch_id or '-'}"
+    return card.card_code_plain or ""
+
+
+async def _increment_batch_counter(
+    session: AsyncSession,
+    cards: list[RenewalCardKey],
+    *,
+    field: str,
+) -> None:
     batch_ids = {card.batch_id for card in cards if card.batch_id}
-    if batch_ids:
-        batches = (
-            await session.execute(select(RenewalCardKeyBatch).where(RenewalCardKeyBatch.id.in_(batch_ids)))
-        ).scalars().all()
-        for batch in batches:
-            batch.copy_count += 1
-
-    await append_audit(
-        session,
-        admin_account_id=admin.id,
-        action="renewal.cards.copy",
-        target_type="renewal_card_key",
-        target_id=",".join(str(item) for item in ids),
-        detail={"count": len(cards), "with_meta": with_meta},
-    )
-    return CopyResult(count=len(cards), total=len(cards), copied_text="\n".join(lines))
+    if not batch_ids:
+        return
+    batches = (
+        await session.execute(
+            select(RenewalCardKeyBatch).where(RenewalCardKeyBatch.id.in_(batch_ids))
+        )
+    ).scalars().all()
+    for batch in batches:
+        setattr(batch, field, int(getattr(batch, field)) + 1)
 
 
 async def void_cards(
@@ -352,7 +396,23 @@ async def void_cards(
     ids = [int(item) for item in card_ids if int(item) > 0]
     if not ids:
         raise ValueError("请选择要作废的卡密")
+    cards = await _load_voidable_cards(session, ids)
+    changed = _mark_cards_voided(cards, now=_utcnow())
+    await append_audit(
+        session,
+        admin_account_id=admin.id,
+        action="renewal.cards.void",
+        target_type="renewal_card_key",
+        target_id=",".join(str(item) for item in ids),
+        detail={"count": len(cards), "changed": changed},
+    )
+    return {"count": len(cards), "changed": changed}
 
+
+async def _load_voidable_cards(
+    session: AsyncSession,
+    ids: list[int],
+) -> list[RenewalCardKey]:
     cards = (
         await session.execute(
             select(RenewalCardKey)
@@ -366,9 +426,11 @@ async def void_cards(
     used = [card.id for card in cards if card.used]
     if used:
         raise ValueError("已激活卡密不能作废")
+    return list(cards)
 
+
+def _mark_cards_voided(cards: list[RenewalCardKey], *, now: dt.datetime) -> int:
     changed = 0
-    now = _utcnow()
     for card in cards:
         if is_card_voided(card):
             continue
@@ -376,16 +438,7 @@ async def void_cards(
         card.export_status = "voided"
         card.copied_at = now
         changed += 1
-
-    await append_audit(
-        session,
-        admin_account_id=admin.id,
-        action="renewal.cards.void",
-        target_type="renewal_card_key",
-        target_id=",".join(str(item) for item in ids),
-        detail={"count": len(cards), "changed": changed},
-    )
-    return {"count": len(cards), "changed": changed}
+    return changed
 
 
 async def rows_for_export(
@@ -412,13 +465,7 @@ async def rows_for_export(
         card.export_status = "exported"
         card.exported_at = now
 
-    batch_ids = {card.batch_id for card in cards if card.batch_id}
-    if batch_ids:
-        batches = (
-            await session.execute(select(RenewalCardKeyBatch).where(RenewalCardKeyBatch.id.in_(batch_ids)))
-        ).scalars().all()
-        for batch in batches:
-            batch.export_count += 1
+    await _increment_batch_counter(session, list(cards), field="export_count")
 
     await append_audit(
         session,
@@ -429,88 +476,3 @@ async def rows_for_export(
         detail={"count": len(cards), "spec_days": spec_days, "status": status, "keyword": keyword},
     )
     return await serialize_cards(session, cards)
-
-
-def serialize_batch(batch: RenewalCardKeyBatch, *, used_count: int = 0, voided_count: int = 0) -> dict[str, Any]:
-    quantity = int(batch.quantity or 0)
-    used = int(used_count or 0)
-    voided = int(voided_count or 0)
-    return {
-        "id": batch.id,
-        "batch_no": batch.batch_no,
-        "spec_days": batch.spec_days,
-        "quantity": batch.quantity,
-        "used_count": used,
-        "voided_count": voided,
-        "available_count": max(quantity - used - voided, 0),
-        "copy_count": batch.copy_count,
-        "export_count": batch.export_count,
-        "created_at": batch.created_at.isoformat() if batch.created_at else None,
-    }
-
-
-def serialize_card(card: RenewalCardKey) -> dict[str, Any]:
-    voided = is_card_voided(card)
-    return {
-        "id": card.id,
-        "batch_id": card.batch_id,
-        "card_code": card.card_code_plain,
-        "has_plaintext": bool(card.card_code_plain),
-        "spec_days": card.spec_days,
-        "duration_seconds": card.duration_seconds,
-        "used": bool(card.used),
-        "voided": voided,
-        "status": "voided" if voided else ("used" if card.used else "available"),
-        "used_by_chat_id": card.used_by_chat_id,
-        "used_by_user_id": card.used_by_user_id,
-        "used_at": card.used_at.isoformat() if card.used_at else None,
-        "copy_status": card.copy_status,
-        "export_status": card.export_status,
-        "created_at": card.created_at.isoformat() if card.created_at else None,
-    }
-
-
-async def serialize_cards(session: AsyncSession, cards: list[RenewalCardKey]) -> list[dict[str, Any]]:
-    if not cards:
-        return []
-    chat_ids = {card.used_by_chat_id for card in cards if card.used_by_chat_id is not None}
-    user_ids = {card.used_by_user_id for card in cards if card.used_by_user_id is not None}
-
-    chat_map: dict[int, str] = {}
-    if chat_ids:
-        chats = (await session.execute(select(TgChat).where(TgChat.id.in_(chat_ids)))).scalars().all()
-        chat_map = {chat.id: chat.title or f"群组{chat.id}" for chat in chats}
-
-    user_map: dict[int, str] = {}
-    if user_ids:
-        users = (await session.execute(select(TgUser).where(TgUser.id.in_(user_ids)))).scalars().all()
-        user_map = {
-            user.id: _format_user(user.id, user.username, user.first_name, last_name=user.last_name)
-            for user in users
-        }
-
-    owner_map: dict[int, str] = {}
-    if chat_ids:
-        owner_rows = (
-            await session.execute(
-                select(ChatMember.chat_id, TgUser.id, TgUser.username, TgUser.first_name, TgUser.last_name)
-                .join(TgUser, TgUser.id == ChatMember.user_id)
-                .where(ChatMember.chat_id.in_(chat_ids))
-                .where(ChatMember.role == "owner")
-            )
-        ).all()
-        for chat_id, user_id, username, first_name, last_name in owner_rows:
-            owner_map.setdefault(int(chat_id), _format_user(user_id, username, first_name, last_name=last_name))
-
-    items = []
-    for card in cards:
-        item = serialize_card(card)
-        if card.used_by_chat_id is not None:
-            item["used_by_chat_title"] = chat_map.get(card.used_by_chat_id, f"群组{card.used_by_chat_id}")
-            item["owner_text"] = owner_map.get(card.used_by_chat_id, "")
-        else:
-            item["used_by_chat_title"] = ""
-            item["owner_text"] = ""
-        item["used_by_user_text"] = user_map.get(card.used_by_user_id or 0, "")
-        items.append(item)
-    return items

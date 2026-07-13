@@ -16,6 +16,7 @@ from backend.platform.db.schema.models.core import AdminAccount, AdminAuditLog, 
 
 SESSION_COOKIE_NAME = "tgg_admin_session"
 _PBKDF2_ITERATIONS = 260_000
+MIN_ADMIN_PASSWORD_LENGTH = 6
 log = structlog.get_logger(__name__)
 
 
@@ -76,7 +77,7 @@ async def ensure_bootstrap_admin(session: AsyncSession, settings: Settings) -> A
     password = (settings.admin_bootstrap_password or "").strip()
     if not username or not password:
         return None
-    if len(password) < 6:
+    if len(password) < MIN_ADMIN_PASSWORD_LENGTH:
         return None
 
     account = AdminAccount(
