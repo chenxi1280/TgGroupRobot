@@ -49,9 +49,9 @@ def _resolve_chat_id(cb: CallbackParser, action: str) -> int | None:
     return None
 
 
-def _sync_master_toggle(settings) -> None:
-    """根据分项开关回填总开关，兼容旧运行时逻辑。"""
-    per_item_enabled = any(
+def _master_toggle_value(settings) -> bool:
+    """根据分项开关计算总开关值。"""
+    return any(
         bool(getattr(settings, field_name, False))
         for field_name in (
             "auto_delete_join",
@@ -62,9 +62,6 @@ def _sync_master_toggle(settings) -> None:
             "auto_delete_anonymous",
         )
     )
-    settings.auto_delete_enabled = per_item_enabled
-
-
 def _format_enabled_types(settings) -> str:
     enabled_labels = [
         label
@@ -81,63 +78,22 @@ def _format_enabled_types(settings) -> str:
     return "、".join(enabled_labels) if enabled_labels else "暂无"
 
 
-async def auto_delete_config_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """自动删除配置回调处理器"""
-    if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
-        return
+def _resolve_next_value(cb, *, action: str, current: bool) -> bool | None:
+    if action == "toggle":
+        return not current
+    desired = cb.get_int_optional(3)
+    if desired not in {0, 1}:
+        return None
+    return bool(desired)
 
-    q = update.callback_query
-    try:
-        await q.answer()
-    except TelegramError:
-        # 回调查询已过期，忽略错误继续处理
-        pass
 
-    if update.effective_chat.type != "private":
-        await q.edit_message_text("请在私聊中使用此功能")
-        return
-
-    data = q.data or ""
-    cb = CallbackParser.parse(data)
-
-    if cb.length() < _AUTO_DELETE_CONFIG_CALLBACK_THRESHOLD_4:
-        await _safe_edit_message(q, "参数错误")
-        return
-
-    action = cb.get(1)
-    field = cb.get(2)
-    chat_id = _resolve_chat_id(cb, action)
-    if chat_id is None:
-        log.warning("invalid_chat_id", data=q.data)
-        await _safe_edit_message(q, "无效的群组ID")
-        return
-
-    allowed, reason = await PermissionPolicyService.require_manage(
-        context,
-        chat_id,
-        update.effective_user.id,
-        capability="settings",
-    )
-    if not allowed:
-        await _safe_edit_message(q, build_public_error_text(RuntimeError(reason or "没有权限")))
-        return
-
-    if action == "noop":
-        return
-
-    if action not in {"toggle", "set"}:
-        await _safe_edit_message(q, "无效操作")
-        return
-
+async def _update_auto_delete_settings(
+    update, context, *, q, cb, chat_id: int, action: str, actual_field: str
+):
     db: Database = context.application.bot_data["db"]
-
-    # 获取完整字段名
-    actual_field = FIELD_MAPPING.get(field, field)
-
     async with db.session_factory() as session:
         settings = await ModuleSettingsService.ensure(
-            session,
-            chat_id=chat_id,
+            session, chat_id=chat_id,
             chat_type="supergroup" if chat_id < 0 else "private",
             user_id=update.effective_user.id,
             username=update.effective_user.username,
@@ -145,46 +101,96 @@ async def auto_delete_config_callback(update: Update, context: ContextTypes.DEFA
             last_name=update.effective_user.last_name,
             language_code=update.effective_user.language_code,
         )
-
-        if hasattr(settings, actual_field):
-            current = bool(getattr(settings, actual_field))
-            if action == "set":
-                desired = cb.get_int_optional(3)
-                if desired not in {0, 1}:
-                    await _safe_edit_message(q, "无效配置值")
-                    return
-                next_value = bool(desired)
-            else:
-                next_value = not current
-
-            log.info(
-                "auto_delete_toggle",
-                field=actual_field,
-                before=current,
-                after=next_value,
-                chat_id=chat_id,
-                action=action,
-            )
-            setattr(settings, actual_field, next_value)
-            _sync_master_toggle(settings)
-            await session.commit()
-
-        # 在同一个会话中重新查询获取最新数据
-        settings = await ModuleSettingsService.ensure(
-            session,
-            chat_id=chat_id,
+        current = bool(getattr(settings, actual_field))
+        next_value = _resolve_next_value(cb, action=action, current=current)
+        if next_value is None:
+            await _safe_edit_message(q, "无效配置值")
+            return None
+        log.info(
+            "auto_delete_toggle", field=actual_field, before=current,
+            after=next_value, chat_id=chat_id, action=action,
+        )
+        setattr(settings, actual_field, next_value)
+        settings.auto_delete_enabled = _master_toggle_value(settings)
+        await session.commit()
+        return await ModuleSettingsService.ensure(
+            session, chat_id=chat_id,
             chat_type="supergroup" if chat_id < 0 else "private",
         )
 
-    keyboard = auto_delete_config_keyboard(settings, chat_id)
 
-    text = "🧹 删除系统提示\n\n"
-    text += "本功能会自动清除系统提示消息\n\n"
-    text += f"总开关状态：{'✅ 已生效' if bool(getattr(settings, 'auto_delete_enabled', False)) else '❌ 未生效'}\n"
-    text += f"当前明细：{_format_enabled_types(settings)}\n\n"
-    text += "配置已更新"
-    if bool(getattr(settings, "auto_delete_enabled", False)):
+async def _render_auto_delete_settings(q, context, *, settings, chat_id: int) -> None:
+    text = "\n".join([
+        "🧹 删除系统提示", "", "本功能会自动清除系统提示消息", "",
+        f"总开关状态：{'✅ 已生效' if bool(settings.auto_delete_enabled) else '❌ 未生效'}",
+        f"当前明细：{_format_enabled_types(settings)}", "", "配置已更新",
+    ])
+    if settings.auto_delete_enabled:
         permission_warning = await get_auto_delete_permission_warning(context, chat_id)
         if permission_warning:
-            text += f"\n\n{permission_warning}"
-    await _safe_edit_message(q, text, reply_markup=keyboard)
+            text = f"{text}\n\n{permission_warning}"
+    await _safe_edit_message(
+        q, text, reply_markup=auto_delete_config_keyboard(settings, chat_id)
+    )
+
+
+async def _answer_auto_delete_callback(q) -> None:
+    try:
+        await q.answer()
+    except TelegramError as exc:
+        log.warning("answer_callback_query_failed", error=str(exc), callback_data=q.data)
+
+
+async def _parse_auto_delete_request(update, context, *, q):
+    if update.effective_chat.type != "private":
+        await q.edit_message_text("请在私聊中使用此功能")
+        return None
+    cb = CallbackParser.parse(q.data or "")
+    if cb.length() < _AUTO_DELETE_CONFIG_CALLBACK_THRESHOLD_4:
+        await _safe_edit_message(q, "参数错误")
+        return None
+    action = cb.get(1)
+    chat_id = _resolve_chat_id(cb, action)
+    if chat_id is None:
+        log.warning("invalid_chat_id", data=q.data)
+        await _safe_edit_message(q, "无效的群组ID")
+        return None
+    allowed, reason = await PermissionPolicyService.require_manage(
+        context, chat_id, update.effective_user.id, capability="settings"
+    )
+    if not allowed:
+        error = build_public_error_text(RuntimeError(reason or "没有权限"))
+        await _safe_edit_message(q, error)
+        return None
+    return cb, action, chat_id
+
+
+async def auto_delete_config_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """自动删除配置回调处理器"""
+    if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
+        return
+
+    q = update.callback_query
+    await _answer_auto_delete_callback(q)
+    request = await _parse_auto_delete_request(update, context, q=q)
+    if request is None:
+        return
+    cb, action, chat_id = request
+    if action == "noop":
+        return
+
+    if action not in {"toggle", "set"}:
+        await _safe_edit_message(q, "无效操作")
+        return
+
+    actual_field = FIELD_MAPPING.get(cb.get(2))
+    if actual_field is None:
+        await _safe_edit_message(q, "无效配置字段")
+        return
+    settings = await _update_auto_delete_settings(
+        update, context, q=q, cb=cb, chat_id=chat_id,
+        action=action, actual_field=actual_field,
+    )
+    if settings is None:
+        return
+    await _render_auto_delete_settings(q, context, settings=settings, chat_id=chat_id)
