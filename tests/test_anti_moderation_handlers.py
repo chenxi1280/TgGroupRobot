@@ -340,7 +340,7 @@ async def test_anti_spam_handler_records_final_action(monkeypatch):
         await anti_spam_handler.anti_spam_message_handler(update, context)
 
     assert recorded[0]["action"] == "delete"
-    assert executed[0]["args"][3] == "delete"
+    assert executed[0]["kwargs"]["action"] == "delete"
     assert session.commits == 1
 
 
