@@ -27,6 +27,19 @@ def parse_buttons_text(text: str) -> list[list[dict[str, str]]]:
     return parse_button_rows(text, allow_empty=True)
 
 
+async def _target_candidates(update, context, parser: CallbackParser | None) -> list[int]:
+    candidates: list[int] = []
+    if parser is not None:
+        callback_chat_id = parser.get_int_optional(2)
+        if callback_chat_id not in (None, 0):
+            candidates.append(callback_chat_id)
+    db: Database = context.application.bot_data["db"]
+    current_chat_id = await ChatResolver.get_current_chat(db, update.effective_user.id)
+    if current_chat_id not in (None, 0) and current_chat_id not in candidates:
+        candidates.append(current_chat_id)
+    return candidates
+
+
 async def resolve_target_chat_id(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -45,16 +58,7 @@ async def resolve_target_chat_id(
             return None
         return chat.id
 
-    candidate_ids: list[int] = []
-    if parser is not None:
-        callback_chat_id = parser.get_int_optional(2)
-        if callback_chat_id not in (None, 0):
-            candidate_ids.append(callback_chat_id)
-
-    db: Database = context.application.bot_data["db"]
-    current_chat_id = await ChatResolver.get_current_chat(db, user.id)
-    if current_chat_id not in (None, 0) and current_chat_id not in candidate_ids:
-        candidate_ids.append(current_chat_id)
+    candidate_ids = await _target_candidates(update, context, parser)
 
     for candidate_chat_id in candidate_ids:
         allowed = await PermissionPolicyService.can_manage(

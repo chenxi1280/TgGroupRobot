@@ -1,44 +1,40 @@
 from __future__ import annotations
 
-import structlog
-import datetime as dt
-import re
 from telegram import Update
 from telegram.ext import ContextTypes
 
 from backend.platform.db.runtime.session import Database
 from backend.shared.handlers.base.base_handler import BaseHandler
-from backend.shared.handlers.base.chat_resolver import ChatResolver
 from backend.features.automation.ui.ads import (
-    ads_create_keyboard,
-    ads_detail_keyboard,
-    ads_frequency_keyboard,
     ads_list_keyboard,
     ads_menu_keyboard,
 )
 from backend.features.automation.services.ad_service import (
-    create_ad_campaign,
-    delete_ad,
-    get_ad,
-    get_ad_next_send_time,
     get_chat_ads,
     is_ad_exhausted,
     is_rotation_ad,
-    mark_ad_sent,
     should_send_ad,
-    toggle_ad,
 )
-from backend.shared.services.module_settings_service import ModuleSettingsService
-from backend.shared.services.permission_service import PermissionPolicyService
-from backend.features.group_ops.services.chat_group_service import get_user_managed_chats
-from backend.shared.services.publish_service import PublishService
-from backend.platform.state.conversation_state_service import ConversationStateService
-from backend.shared.services.chat_service import ensure_chat, get_chat_settings
 from backend.platform.db.schema.models.core import AdCampaign
 
-from backend.platform.telegram.errors import answer_callback_query_safely, build_public_error_text, mark_callback_query_answered
 
-log = structlog.get_logger(__name__)
+def _ads_stats_values(ads: list[AdCampaign]) -> dict[str, int]:
+    return {
+        "启用中": sum(map(lambda ad: bool(ad.enabled), ads)),
+        "轮播任务": sum(map(is_rotation_ad, ads)),
+        "已配置调度": sum(map(lambda ad: bool(ad.schedule_time or ad.start_time or ad.interval_hours), ads)),
+        "当前到点": sum(map(should_send_ad, ads)),
+        "已达次数上限": sum(map(is_ad_exhausted, ads)),
+        "含图片": sum(map(lambda ad: bool(ad.has_image), ads)),
+    }
+
+
+def _format_ads_stats(ads: list[AdCampaign]) -> str:
+    counters = _ads_stats_values(ads)
+    lines = ["📊 轮播广告看板", "", f"总任务数: {len(ads)}"]
+    lines.extend(f"{label}: {value}" for label, value in counters.items())
+    lines.extend(["", "说明: 当前已支持轮播、定时开始、发送次数控制和图片投放。"])
+    return "\n".join(lines)
 
 
 class AdsHandler(BaseHandler):
@@ -111,25 +107,8 @@ class AdsHandler(BaseHandler):
             ads = await get_chat_ads(session, target_chat_id)
             await session.commit()
 
-        enabled_count = sum(1 for ad in ads if ad.enabled)
-        with_image_count = sum(1 for ad in ads if ad.has_image)
-        scheduled_count = sum(1 for ad in ads if ad.schedule_time or ad.start_time or ad.interval_hours)
-        rotation_count = sum(1 for ad in ads if is_rotation_ad(ad))
-        due_count = sum(1 for ad in ads if should_send_ad(ad))
-        exhausted_count = sum(1 for ad in ads if is_ad_exhausted(ad))
-
-        text = "📊 轮播广告看板\n\n"
-        text += f"总任务数: {len(ads)}\n"
-        text += f"启用中: {enabled_count}\n"
-        text += f"轮播任务: {rotation_count}\n"
-        text += f"已配置调度: {scheduled_count}\n"
-        text += f"当前到点: {due_count}\n"
-        text += f"已达次数上限: {exhausted_count}\n"
-        text += f"含图片: {with_image_count}\n\n"
-        text += "说明: 当前已支持轮播、定时开始、发送次数控制和图片投放。"
-
         keyboard = ads_menu_keyboard(target_chat_id)
-        await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
+        await self.message_helper.safe_edit(update, text=_format_ads_stats(ads), reply_markup=keyboard)
 
 
 _ads_handler = AdsHandler()

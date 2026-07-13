@@ -12,6 +12,13 @@ from backend.platform.delivery import DeliveryOutcome
 from backend.shared.services.publish_service import PublishService
 
 log = structlog.get_logger(__name__)
+_MEDIA_SENDERS = {
+    "photo": (PublishService.send_photo, "photo"),
+    "video": (PublishService.send_video, "video"),
+    "document": (PublishService.send_document, "document"),
+    "animation": (PublishService.send_animation, "animation"),
+    "sticker": (PublishService.send_sticker, "sticker"),
+}
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -80,16 +87,12 @@ def _build_publish_call(snapshot: dict[str, Any]):
     media_type = snapshot.get("media_type")
     file_id = snapshot.get("media_file_id")
     text = snapshot.get("text")
-    if media_type == "photo" and file_id:
-        return PublishService.send_photo, {"photo": file_id, "caption": text, **common}
-    if media_type == "video" and file_id:
-        return PublishService.send_video, {"video": file_id, "caption": text, **common}
-    if media_type == "document" and file_id:
-        return PublishService.send_document, {"document": file_id, "caption": text, **common}
-    if media_type == "animation" and file_id:
-        return PublishService.send_animation, {"animation": file_id, "caption": text, **common}
-    if media_type == "sticker" and file_id:
-        return PublishService.send_sticker, {"sticker": file_id}
+    if media_type in _MEDIA_SENDERS and file_id:
+        method, field = _MEDIA_SENDERS[media_type]
+        payload = {field: file_id}
+        if media_type != "sticker":
+            payload.update({"caption": text, **common})
+        return method, payload
     if str(text or "").strip():
         return PublishService.send, {"text": text, **common}
     raise ValueError("scheduled message snapshot has no sendable content")

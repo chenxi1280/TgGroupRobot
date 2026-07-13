@@ -10,6 +10,17 @@ from backend.platform.db.schema.models.enums import ScheduleType
 from backend.shared.services.base import ServiceBase
 from backend.shared.services.result import CreateResult, ToggleResult, UpdateResult
 
+_SCHEDULE_DELTAS = {
+    ScheduleType.every_minute.value: dt.timedelta(minutes=1),
+    ScheduleType.every_5_minutes.value: dt.timedelta(minutes=5),
+    ScheduleType.every_15_minutes.value: dt.timedelta(minutes=15),
+    ScheduleType.every_30_minutes.value: dt.timedelta(minutes=30),
+    ScheduleType.every_hour.value: dt.timedelta(hours=1),
+    ScheduleType.every_6_hours.value: dt.timedelta(hours=6),
+    ScheduleType.every_12_hours.value: dt.timedelta(hours=12),
+    ScheduleType.every_day.value: dt.timedelta(days=1),
+}
+
 
 def calculate_next_send_time(
     schedule_type: str,
@@ -19,31 +30,10 @@ def calculate_next_send_time(
     if base_time is None:
         base_time = dt.datetime.now(dt.UTC)
 
-    match schedule_type:
-        case ScheduleType.none.value:
-            return base_time
-        case ScheduleType.every_minute.value:
-            return base_time + dt.timedelta(minutes=1)
-        case ScheduleType.every_5_minutes.value:
-            return base_time + dt.timedelta(minutes=5)
-        case ScheduleType.every_15_minutes.value:
-            return base_time + dt.timedelta(minutes=15)
-        case ScheduleType.every_30_minutes.value:
-            return base_time + dt.timedelta(minutes=30)
-        case ScheduleType.every_hour.value:
-            return base_time + dt.timedelta(hours=1)
-        case ScheduleType.every_6_hours.value:
-            return base_time + dt.timedelta(hours=6)
-        case ScheduleType.every_12_hours.value:
-            return base_time + dt.timedelta(hours=12)
-        case ScheduleType.every_day.value:
-            return base_time + dt.timedelta(days=1)
-        case ScheduleType.custom.value:
-            if interval_minutes and interval_minutes > 0:
-                return base_time + dt.timedelta(minutes=interval_minutes)
-            return base_time
-        case _:
-            return base_time
+    if schedule_type == ScheduleType.custom.value:
+        delta = dt.timedelta(minutes=interval_minutes) if interval_minutes and interval_minutes > 0 else dt.timedelta()
+        return base_time + delta
+    return base_time + _SCHEDULE_DELTAS.get(schedule_type, dt.timedelta())
 
 
 async def create_scheduled_message(

@@ -6,8 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.platform.db.schema.models.core import AdCampaign
 from backend.shared.services.base import ServiceBase
-_SHOULD_SEND_AD_THRESHOLD_30 = 30
-_SHOULD_SEND_AD_THRESHOLD_7 = 7
+_FREQUENCY_DAYS = {"daily": 1, "weekly": 7, "monthly": 30}
 
 
 
@@ -23,6 +22,15 @@ def is_ad_exhausted(ad: AdCampaign) -> bool:
     return bool(ad.max_send_count and (ad.send_count or 0) >= ad.max_send_count)
 
 
+def _frequency_next_send_time(ad: AdCampaign, base_start: dt.datetime) -> dt.datetime | None:
+    if ad.frequency in (None, "once"):
+        return None if ad.last_sent_at else ad.schedule_time or ad.created_at
+    days = _FREQUENCY_DAYS.get(ad.frequency)
+    if days is None:
+        return None
+    return ad.last_sent_at + dt.timedelta(days=days) if ad.last_sent_at else base_start
+
+
 def get_ad_next_send_time(ad: AdCampaign) -> dt.datetime | None:
     """计算广告下一次理论发送时间。"""
     if not ad.enabled or is_ad_exhausted(ad):
@@ -35,19 +43,19 @@ def get_ad_next_send_time(ad: AdCampaign) -> dt.datetime | None:
             return ad.last_sent_at + dt.timedelta(hours=ad.interval_hours)
         return base_start
 
-    if ad.frequency in (None, "once"):
-        if ad.last_sent_at:
-            return None
-        return ad.schedule_time or ad.created_at
+    return _frequency_next_send_time(ad, base_start)
 
-    if ad.frequency == "daily":
-        return (ad.last_sent_at or base_start) + dt.timedelta(days=1) if ad.last_sent_at else base_start
-    if ad.frequency == "weekly":
-        return (ad.last_sent_at or base_start) + dt.timedelta(days=7) if ad.last_sent_at else base_start
-    if ad.frequency == "monthly":
-        return (ad.last_sent_at or base_start) + dt.timedelta(days=30) if ad.last_sent_at else base_start
 
-    return None
+def _rotation_due(ad: AdCampaign, now: dt.datetime) -> bool:
+    start_at = ad.start_time or ad.schedule_time or ad.created_at
+    if start_at and now < start_at:
+        return False
+    if is_ad_exhausted(ad):
+        return False
+    if not ad.last_sent_at:
+        return True
+    next_send_time = ad.last_sent_at + dt.timedelta(hours=ad.interval_hours)
+    return now >= next_send_time
 
 
 def should_send_ad(ad: AdCampaign) -> bool:
@@ -57,38 +65,17 @@ def should_send_ad(ad: AdCampaign) -> bool:
     now = dt.datetime.now(dt.UTC)
 
     if ad.interval_hours and ad.interval_hours > 0:
-        start_at = ad.start_time or ad.schedule_time or ad.created_at
-        if start_at and now < start_at:
-            return False
-
-        send_count = ad.send_count or 0
-        if ad.max_send_count and send_count >= ad.max_send_count:
-            return False
-
-        if ad.last_sent_at:
-            next_send_time = ad.last_sent_at + dt.timedelta(hours=ad.interval_hours)
-            return now >= next_send_time
-        return True
+        return _rotation_due(ad, now)
 
     if ad.schedule_time and now < ad.schedule_time:
         return False
 
     if ad.frequency in (None, "once"):
         return ad.last_sent_at is None
-    if ad.frequency == "daily":
-        if ad.last_sent_at:
-            return (now - ad.last_sent_at).days >= 1
-        return True
-    if ad.frequency == "weekly":
-        if ad.last_sent_at:
-            return (now - ad.last_sent_at).days >= _SHOULD_SEND_AD_THRESHOLD_7
-        return True
-    if ad.frequency == "monthly":
-        if ad.last_sent_at:
-            return (now - ad.last_sent_at).days >= _SHOULD_SEND_AD_THRESHOLD_30
-        return True
-
-    return ad.last_sent_at is None
+    days = _FREQUENCY_DAYS.get(ad.frequency)
+    if days is None or ad.last_sent_at is None:
+        return ad.last_sent_at is None
+    return (now - ad.last_sent_at).days >= days
 
 
 async def get_scheduled_ads(session: AsyncSession) -> list[AdCampaign]:

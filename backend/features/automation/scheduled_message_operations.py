@@ -71,14 +71,7 @@ class ScheduledMessageOperationsMixin:
     async def _apply_operation(self, context, chat_id: int, occurrence_id: int, *, action: str) -> str:
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
-            if action == "retry":
-                await retry_occurrence(session, occurrence_id, chat_id)
-            elif action == "cancel":
-                await cancel_occurrence(session, occurrence_id, chat_id)
-            elif action == "replay":
-                await replay_uncertain_occurrence(session, occurrence_id, chat_id)
-            else:
-                raise ValueError(f"unknown occurrence operation: {action}")
+            await _mutate_occurrence(session, occurrence_id, chat_id, action=action)
             occurrence = await _load_occurrence(session, occurrence_id)
             task = await session.get(ScheduledMessageTask, occurrence.task_id)
             if task is None:
@@ -92,6 +85,34 @@ async def _load_occurrence(session, occurrence_id: int):
     if occurrence is None:
         raise RuntimeError("执行记录不存在")
     return occurrence
+
+
+async def _mutate_occurrence(session, occurrence_id: int, chat_id: int, *, action: str) -> None:
+    operations = {
+        "retry": retry_occurrence,
+        "cancel": cancel_occurrence,
+        "replay": replay_uncertain_occurrence,
+    }
+    operation = operations.get(action)
+    if operation is None:
+        raise ValueError(f"unknown occurrence operation: {action}")
+    await operation(session, occurrence_id, chat_id)
+
+
+def _occurrence_keyboard_row(chat_id: int, item) -> list[InlineKeyboardButton] | None:
+    if item.status in {DeliveryStatus.retryable_failed.value, DeliveryStatus.permanent_failed.value}:
+        return [
+            InlineKeyboardButton(f"重试 #{item.id}", callback_data=f"sm:occ_retry:{chat_id}:{item.id}"),
+            InlineKeyboardButton("取消", callback_data=f"sm:occ_cancel:{chat_id}:{item.id}"),
+        ]
+    if item.status == DeliveryStatus.uncertain.value:
+        return [
+            InlineKeyboardButton(f"确认重放 #{item.id}", callback_data=f"sm:occ_replay_confirm:{chat_id}:{item.id}"),
+            InlineKeyboardButton("取消", callback_data=f"sm:occ_cancel:{chat_id}:{item.id}"),
+        ]
+    if item.status == DeliveryStatus.pending.value:
+        return [InlineKeyboardButton(f"取消 #{item.id}", callback_data=f"sm:occ_cancel:{chat_id}:{item.id}")]
+    return None
 
 
 def _format_history(task, occurrences) -> str:
@@ -109,17 +130,8 @@ def _format_history(task, occurrences) -> str:
 def _history_keyboard(chat_id: int, task_key: str, occurrences) -> InlineKeyboardMarkup:
     rows = []
     for item in occurrences:
-        if item.status in {DeliveryStatus.retryable_failed.value, DeliveryStatus.permanent_failed.value}:
-            rows.append([
-                InlineKeyboardButton(f"重试 #{item.id}", callback_data=f"sm:occ_retry:{chat_id}:{item.id}"),
-                InlineKeyboardButton("取消", callback_data=f"sm:occ_cancel:{chat_id}:{item.id}"),
-            ])
-        elif item.status == DeliveryStatus.uncertain.value:
-            rows.append([
-                InlineKeyboardButton(f"确认重放 #{item.id}", callback_data=f"sm:occ_replay_confirm:{chat_id}:{item.id}"),
-                InlineKeyboardButton("取消", callback_data=f"sm:occ_cancel:{chat_id}:{item.id}"),
-            ])
-        elif item.status == DeliveryStatus.pending.value:
-            rows.append([InlineKeyboardButton(f"取消 #{item.id}", callback_data=f"sm:occ_cancel:{chat_id}:{item.id}")])
+        row = _occurrence_keyboard_row(chat_id, item)
+        if row is not None:
+            rows.append(row)
     rows.append([InlineKeyboardButton("🔙 返回任务", callback_data=f"sm:open:{chat_id}:{task_key}")])
     return InlineKeyboardMarkup(rows)

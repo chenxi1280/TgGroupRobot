@@ -8,7 +8,7 @@ from backend.features.automation.services.ad_rotation_service import (
     format_interval_seconds_label,
 )
 from backend.shared.time_ui import build_back_keyboard, build_interval_keyboard
-from backend.shared.ui.message_config_panel import action_button, button_count, mark_configured
+from backend.shared.ui.message_config_panel import action_button, button_count
 from backend.shared.ui.base.helpers import create_back_button
 
 
@@ -25,18 +25,22 @@ def ads_menu_keyboard(chat_id: int | None = None) -> InlineKeyboardMarkup:
     ])
 
 
-def ads_rules_keyboard(chat_id: int, rule) -> InlineKeyboardMarkup:
-    enabled_on = "✅ 启动" if rule.enabled else "启动"
-    enabled_off = "关闭" if rule.enabled else "✅ 关闭"
-    mode_send = "✅ 发送" if rule.mode == "send" else "发送"
-    mode_send_pin = "✅ 发送+置顶" if rule.mode == "send_pin" else "发送+置顶"
-    unpin_on = "✅ 开启" if rule.unpin_previous else "开启"
-    unpin_off = "关闭" if rule.unpin_previous else "✅ 关闭"
+def _selected_label(label: str, selected: bool) -> str:
+    return f"✅ {label}" if selected else label
 
-    delete_none = "✅ 不删" if rule.delete_policy == "none" else "不删"
-    delete_prev = "✅ 删上条" if rule.delete_policy == "delete_prev" else "删上条"
-    delete_prev_cycle = "✅ 删上轮" if rule.delete_policy == "delete_prev_cycle" else "删上轮"
-    delete_delay = "✅ 延迟删" if rule.delete_policy == "delete_delay" else "延迟删"
+
+def ads_rules_keyboard(chat_id: int, rule) -> InlineKeyboardMarkup:
+    enabled_on = _selected_label("启动", rule.enabled)
+    enabled_off = _selected_label("关闭", not rule.enabled)
+    mode_send = _selected_label("发送", rule.mode == "send")
+    mode_send_pin = _selected_label("发送+置顶", rule.mode == "send_pin")
+    unpin_on = _selected_label("开启", rule.unpin_previous)
+    unpin_off = _selected_label("关闭", not rule.unpin_previous)
+
+    delete_none = _selected_label("不删", rule.delete_policy == "none")
+    delete_prev = _selected_label("删上条", rule.delete_policy == "delete_prev")
+    delete_prev_cycle = _selected_label("删上轮", rule.delete_policy == "delete_prev_cycle")
+    delete_delay = _selected_label("延迟删", rule.delete_policy == "delete_delay")
 
     interval_label = format_interval_seconds_label(getattr(rule, "interval_seconds", 7200))
 
