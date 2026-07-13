@@ -127,74 +127,80 @@ class PrivateChatContext:
         error_message_select_chat: str = "请先选择一个群组",
         error_message_no_permission: str = "你没有该群组的管理权限",
     ) -> int | None:
-        """解析目标群组 ID 并检查管理员权限
-
-        统一处理私聊/群聊场景：
-        - 私聊场景：从 callback_data 或数据库获取群组 ID，并检查权限
-        - 群聊场景：直接使用当前群组 ID，并检查权限
-
-        Args:
-            update: Telegram 更新对象
-            context: Bot 上下文
-            target_chat_id: 已知的目标群组 ID（可选）
-            chat_index: callback_data 中群组 ID 的索引位置
-            error_message_select_chat: 未选择群组时的错误提示
-            error_message_no_permission: 无权限时的错误提示
-
-        Returns:
-            int | None: 目标群组 ID，如果失败返回 None（已发送错误消息）
-
-        Example:
-            >>> target_chat_id = await PrivateChatContext.resolve_target_chat_with_permission_check(
-            ...     update, context
-            ... )
-            >>> if target_chat_id is None:
-            ...     return  # 错误消息已发送
-        """
+        """解析私聊或群聊的目标群，并校验管理员权限。"""
         if update.effective_chat is None or update.effective_user is None:
             return None
-
         chat = update.effective_chat
-        user = update.effective_user
-
-        # 群聊场景：直接使用当前群组
         if chat.type != "private":
-            if not await is_user_admin(context, chat.id, user.id):
-                if update.effective_message:
-                    await update.effective_message.reply_text(error_message_no_permission)
-                return None
-            return chat.id
-
-        # 私聊场景：解析目标群组
-        if target_chat_id is None:
-            # 尝试从 callback_data 解析
-            if update.callback_query:
-                target_chat_id = await PrivateChatContext.resolve_target_chat_from_callback(
-                    update,
-                    context,
-                    chat_index,
-                    allow_fallback_to_current_chat=allow_fallback_to_current_chat,
-                )
-
-            # 如果 callback_data 中也没有，从数据库获取
-            if (target_chat_id is None or target_chat_id == 0) and allow_fallback_to_current_chat:
-                db: Database = context.application.bot_data["db"]
-                target_chat_id = await get_user_current_chat(db, user.id)
-
-        # 检查是否获取到群组 ID
-        if target_chat_id is None or target_chat_id == 0:
-            if update.callback_query:
-                await update.callback_query.answer(error_message_select_chat, show_alert=True)
-            elif update.effective_message:
-                await update.effective_message.reply_text(error_message_select_chat)
+            allowed = await PrivateChatContext._require_admin(
+                update,
+                context,
+                chat.id,
+                error_message=error_message_no_permission,
+            )
+            return chat.id if allowed else None
+        resolved_chat_id = await PrivateChatContext._resolve_private_target(
+            update,
+            context,
+            target_chat_id,
+            chat_index=chat_index,
+            allow_fallback_to_current_chat=allow_fallback_to_current_chat,
+        )
+        if resolved_chat_id in {None, 0}:
+            await PrivateChatContext._send_context_error(update, error_message_select_chat)
             return None
-
-        # 检查管理员权限
-        if not await is_user_admin(context, target_chat_id, user.id):
-            if update.callback_query:
-                await update.callback_query.answer(error_message_no_permission, show_alert=True)
-            elif update.effective_message:
-                await update.effective_message.reply_text(error_message_no_permission)
+        if not await PrivateChatContext._require_admin(
+            update,
+            context,
+            resolved_chat_id,
+            error_message=error_message_no_permission,
+        ):
             return None
+        return resolved_chat_id
 
-        return target_chat_id
+    @staticmethod
+    async def _resolve_private_target(
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        target_chat_id: int | None,
+        *,
+        chat_index: int,
+        allow_fallback_to_current_chat: bool,
+    ) -> int | None:
+        if target_chat_id is not None:
+            return target_chat_id
+        if update.callback_query is not None:
+            return await PrivateChatContext.resolve_target_chat_from_callback(
+                update,
+                context,
+                chat_index,
+                allow_fallback_to_current_chat=allow_fallback_to_current_chat,
+            )
+        if not allow_fallback_to_current_chat:
+            return None
+        db: Database = context.application.bot_data["db"]
+        return await get_user_current_chat(db, update.effective_user.id)
+
+    @staticmethod
+    async def _send_context_error(update: Update, message: str) -> None:
+        if update.callback_query is not None:
+            await update.callback_query.answer(message, show_alert=True)
+            return
+        if update.effective_message is not None:
+            await update.effective_message.reply_text(message)
+
+    @staticmethod
+    async def _require_admin(
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        target_chat_id: int,
+        *,
+        error_message: str,
+    ) -> bool:
+        user = update.effective_user
+        if user is None:
+            return False
+        if await is_user_admin(context, target_chat_id, user.id):
+            return True
+        await PrivateChatContext._send_context_error(update, error_message)
+        return False
