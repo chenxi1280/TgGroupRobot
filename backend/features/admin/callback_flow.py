@@ -33,6 +33,69 @@ async def private_admin_callback_impl(update: Update, context: ContextTypes.DEFA
     await admin_runtime.process(update, context, target_chat_id)
 
 
+async def _handle_group_admin_menu(
+    update, context, *, callback, session, settings, chat_id: int, cb
+) -> bool:
+    if cb.get(1) != "menu":
+        return False
+    menu = cb.get(2)
+    if menu == "main":
+        await session.commit()
+        await admin_runtime.message_helper.safe_edit(
+            callback, t(settings.language, "admin.title"),
+            reply_markup=admin_main_menu(),
+        )
+        return True
+    if menu == "settings":
+        await session.commit()
+        await admin_runtime.message_helper.safe_edit(
+            callback, "开关设置：",
+            reply_markup=toggle_menu(get_settings_toggle_rows(settings), back_to="main"),
+        )
+        return True
+    if menu != "verification":
+        return False
+    await session.commit()
+    await admin_runtime._show_verification_menu(update, context, chat_id)
+    return True
+
+
+async def _handle_group_admin_toggle(callback, *, session, settings, cb) -> bool:
+    if cb.get(1) != "toggle":
+        return False
+    field = cb.get(2)
+    if field not in SETTINGS_TOGGLE_FIELDS or not hasattr(settings, field):
+        return False
+    setattr(settings, field, not bool(getattr(settings, field)))
+    await session.commit()
+    await admin_runtime.message_helper.safe_edit(
+        callback, "开关设置：",
+        reply_markup=toggle_menu(get_settings_toggle_rows(settings), back_to="main"),
+    )
+    return True
+
+
+async def _handle_group_verification_mode(callback, *, session, settings, cb) -> bool:
+    if cb.get(1) != "vfy_mode" or cb.get(2) not in {"button", "math", "mute"}:
+        return False
+    settings.verification_mode = cb.get(2)
+    settings.verification_enabled = True
+    await session.commit()
+    text = format_verification_menu_text(
+        chat_title="群组", enabled=settings.verification_enabled,
+        verification_mode=settings.verification_mode,
+        timeout_seconds=settings.verification_timeout_seconds,
+        restrict_can_send=settings.verification_restrict_can_send,
+        timeout_action=settings.verification_timeout_action,
+        mute_duration=settings.verification_mute_duration,
+    )
+    await admin_runtime.message_helper.safe_edit(
+        callback, text,
+        reply_markup=verification_mode_menu(settings.verification_mode),
+    )
+    return True
+
+
 async def group_admin_callback_impl(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
         return
@@ -51,54 +114,19 @@ async def group_admin_callback_impl(update: Update, context: ContextTypes.DEFAUL
         settings = await get_chat_settings(session, chat.id)
 
         cb = CallbackParser.parse(callback.data or "")
-        if cb.get(1) == "menu":
-            menu = cb.get(2)
-            if menu == "main":
-                await session.commit()
-                await admin_runtime.message_helper.safe_edit(callback, t(settings.language, "admin.title"), reply_markup=admin_main_menu())
-                return
-            if menu == "settings":
-                await session.commit()
-                await admin_runtime.message_helper.safe_edit(
-                    callback,
-                    "开关设置：",
-                    reply_markup=toggle_menu(get_settings_toggle_rows(settings), back_to="main"),
-                )
-                return
-            if menu == "verification":
-                await session.commit()
-                await admin_runtime._show_verification_menu(update, context, chat.id)
-                return
-
-        if cb.get(1) == "toggle":
-            field = cb.get(2)
-            if field in SETTINGS_TOGGLE_FIELDS and hasattr(settings, field):
-                setattr(settings, field, not bool(getattr(settings, field)))
-                await session.commit()
-                await admin_runtime.message_helper.safe_edit(
-                    callback,
-                    "开关设置：",
-                    reply_markup=toggle_menu(get_settings_toggle_rows(settings), back_to="main"),
-                )
-                return
-
-        if cb.get(1) == "vfy_mode":
-            selected_mode = cb.get(2)
-            if selected_mode in {"button", "math", "mute"}:
-                settings.verification_mode = selected_mode
-                settings.verification_enabled = True
-                await session.commit()
-                text = format_verification_menu_text(
-                    chat_title="群组",
-                    enabled=settings.verification_enabled,
-                    verification_mode=settings.verification_mode,
-                    timeout_seconds=settings.verification_timeout_seconds,
-                    restrict_can_send=settings.verification_restrict_can_send,
-                    timeout_action=settings.verification_timeout_action,
-                    mute_duration=settings.verification_mute_duration,
-                )
-                await admin_runtime.message_helper.safe_edit(callback, text, reply_markup=verification_mode_menu(settings.verification_mode))
-                return
+        if await _handle_group_admin_menu(
+            update, context, callback=callback, session=session,
+            settings=settings, chat_id=chat.id, cb=cb,
+        ):
+            return
+        if await _handle_group_admin_toggle(
+            callback, session=session, settings=settings, cb=cb
+        ):
+            return
+        if await _handle_group_verification_mode(
+            callback, session=session, settings=settings, cb=cb
+        ):
+            return
 
         await session.commit()
 
