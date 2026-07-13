@@ -5,6 +5,8 @@ from decimal import Decimal, InvalidOperation
 
 from backend.shared.services.base import ValidationError
 from backend.shared.time_helper import LOCAL_TIMEZONE
+_PARSE_OPTIONS_THRESHOLD_2 = 2
+
 
 
 def now() -> dt.datetime:
@@ -56,6 +58,6 @@ def parse_options(raw: str) -> list[dict]:
         if not key or not label:
             raise ValidationError("竞猜选项格式错误，请按 `编号:文案` 或每行一个文案输入。")
         options.append({"key": key[:16], "label": label[:32]})
-    if len(options) < 2:
+    if len(options) < _PARSE_OPTIONS_THRESHOLD_2:
         raise ValidationError("至少需要 2 个竞猜选项。")
     return options

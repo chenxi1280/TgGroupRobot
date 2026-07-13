@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from backend.features.admin.support import *
+_SHOW_CAR_REVIEW_REPORTS_MENU_THRESHOLD_3 = 3
+
 
 
 class GarageReviewViewsMixin:
@@ -195,7 +197,7 @@ class GarageReviewViewsMixin:
             if item_status == normalized_status:
                 label = f"✅ {label}"
             button = InlineKeyboardButton(label, callback_data=f"crv:reports:{chat_id}:{code}")
-            if idx < 3:
+            if idx < _SHOW_CAR_REVIEW_REPORTS_MENU_THRESHOLD_3:
                 filter_row_1.append(button)
             else:
                 filter_row_2.append(button)

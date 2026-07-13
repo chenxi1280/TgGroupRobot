@@ -23,6 +23,8 @@ from backend.platform.state.state_service import clear_user_state, get_user_stat
 from backend.shared.services.permission_service import is_user_admin
 from backend.shared.services.user_service import ensure_user
 from backend.shared.callback_parser import CallbackParser
+_FORMAT_MENU_TEXT_THRESHOLD_15 = 15
+
 
 class BannedWordMenuHandler(BaseHandler):
     """违禁词菜单 Handler"""
@@ -114,7 +116,7 @@ class BannedWordMenuHandler(BaseHandler):
         if words:
             for w in words[:15]:
                 text += self._format_word_item(w)
-            if len(words) > 15:
+            if len(words) > _FORMAT_MENU_TEXT_THRESHOLD_15:
                 text += f"\n... 还有 {len(words) - 15} 条"
         else:
             text += "暂无违禁词"

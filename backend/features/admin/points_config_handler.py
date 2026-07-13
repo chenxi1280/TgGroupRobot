@@ -28,6 +28,8 @@ from backend.platform.db.schema.models.enums import PointsTxnType
 from backend.features.points.services.points_service import change_points, get_balance
 from backend.shared.services.chat_service import get_chat_settings
 from backend.shared.callback_parser import CallbackParser
+_POINTS_CONFIG_CALLBACK_THRESHOLD_4 = 4
+
 
 
 class PointsConfigHandler(BaseHandler):
@@ -272,7 +274,7 @@ async def points_config_callback(update: Update, context: ContextTypes.DEFAULT_T
     data = q.data or ""
     cb = CallbackParser.parse(data)
 
-    if cb.length() < 4:
+    if cb.length() < _POINTS_CONFIG_CALLBACK_THRESHOLD_4:
         return
 
     chat_id = cb.get_int(3)

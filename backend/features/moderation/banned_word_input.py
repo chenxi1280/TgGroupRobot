@@ -18,6 +18,8 @@ from backend.features.moderation.banned_word_runtime import (
     banned_word_check_handler_impl,
     banned_word_config_handler_impl,
 )
+_PARSE_BANNED_WORD_CONFIG_THRESHOLD_2 = 2
+
 
 async def banned_word_config_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await banned_word_config_handler_impl(update, context)
@@ -27,7 +29,7 @@ async def _parse_banned_word_config(update: Update, session, state: object, *, t
     """解析违禁词配置"""
     try:
         lines = text.strip().split("\n")
-        if len(lines) < 2:
+        if len(lines) < _PARSE_BANNED_WORD_CONFIG_THRESHOLD_2:
             raise ValueError("配置格式不完整")
 
         # 解析违禁词（第一行）

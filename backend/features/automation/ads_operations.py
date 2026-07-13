@@ -15,6 +15,8 @@ from backend.features.automation.services.ad_rotation_service import get_or_crea
 from backend.platform.db.runtime.session import Database
 from backend.platform.delivery import DeliveryStatus
 from backend.platform.telegram.errors import answer_callback_query_safely, build_public_error_text
+_ADS_HISTORY_CALLBACK_THRESHOLD_3 = 3
+
 
 STATUS_LABELS = {
     DeliveryStatus.pending.value: "待执行",
@@ -32,7 +34,7 @@ async def ads_history_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     if chat_id is None:
         return
     parts = str(update.callback_query.data).split(":")
-    status = parts[3] if len(parts) > 3 and parts[3] != "all" else None
+    status = parts[3] if len(parts) > _ADS_HISTORY_CALLBACK_THRESHOLD_3 and parts[3] != "all" else None
     await _show_history(update, context, chat_id, status=status)
 
 

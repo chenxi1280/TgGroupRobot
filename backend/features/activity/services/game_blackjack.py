@@ -12,6 +12,13 @@ from backend.features.points.services.points_service import change_points
 from backend.platform.db.schema.models.enums import PointsTxnType
 from backend.platform.db.schema.models.expansion import GameParticipant, GameRound
 from backend.shared.services.base import ValidationError
+_BLACKJACK_HIT_THRESHOLD_21 = 21
+_BLACKJACK_TOTAL_THRESHOLD_21 = 21
+_FINALIZE_BLACKJACK_ROUND_THRESHOLD_17 = 17
+_FINALIZE_BLACKJACK_ROUND_THRESHOLD_21 = 21
+_IS_BLACKJACK_NATURAL_THRESHOLD_2 = 2
+_IS_BLACKJACK_NATURAL_THRESHOLD_21 = 21
+
 
 BLACKJACK_TURN_SECONDS = 120
 
@@ -25,14 +32,14 @@ def build_blackjack_deck() -> list[int]:
 def blackjack_total(cards: list[int]) -> int:
     total = sum(11 if card == 1 else card for card in cards)
     aces = sum(1 for card in cards if card == 1)
-    while total > 21 and aces > 0:
+    while total > _BLACKJACK_TOTAL_THRESHOLD_21 and aces > 0:
         total -= 10
         aces -= 1
     return total
 
 
 def is_blackjack_natural(cards: list[int]) -> bool:
-    return len(cards) == 2 and blackjack_total(cards) == 21
+    return len(cards) == _IS_BLACKJACK_NATURAL_THRESHOLD_2 and blackjack_total(cards) == _IS_BLACKJACK_NATURAL_THRESHOLD_21
 
 
 def format_blackjack_help(enabled: bool, rake_ratio: str | None) -> str:
@@ -156,7 +163,7 @@ async def blackjack_hit(
     round_obj.settle_at = now_utc() + dt.timedelta(seconds=BLACKJACK_TURN_SECONDS)
     player_total = blackjack_total(player_cards)
     outcome = None
-    if player_total > 21:
+    if player_total > _BLACKJACK_HIT_THRESHOLD_21:
         outcome = await finalize_blackjack_round(session, round_obj, participant, mode="bust")
     await session.flush()
     return round_obj, participant, outcome
@@ -185,7 +192,7 @@ async def finalize_blackjack_round(
     player_natural = is_blackjack_natural(player_cards)
     dealer_natural = is_blackjack_natural(dealer_cards)
     if mode != "bust" and not player_natural:
-        while blackjack_total(dealer_cards) < 17:
+        while blackjack_total(dealer_cards) < _FINALIZE_BLACKJACK_ROUND_THRESHOLD_17:
             if not deck:
                 deck = build_blackjack_deck()
             dealer_cards.append(deck.pop())
@@ -230,7 +237,7 @@ async def finalize_blackjack_round(
         outcome_label = f"✅ 本局获胜，获得 {payout} 积分"
     elif dealer_natural and not player_natural:
         participant.status = "lost"
-    elif dealer_total > 21 or player_total > dealer_total:
+    elif dealer_total > _FINALIZE_BLACKJACK_ROUND_THRESHOLD_21 or player_total > dealer_total:
         participant.status = "won"
         multiplier = Decimal("2")
         gross_payout = int((Decimal(participant.bet_points) * multiplier).quantize(Decimal("1")))

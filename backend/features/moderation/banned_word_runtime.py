@@ -19,6 +19,8 @@ from backend.platform.db.schema.models.enums import BannedWordMatchType, Convers
 from backend.platform.state.state_service import clear_user_state, get_user_state
 from backend.shared.handlers.base.chat_resolver import ChatResolver
 from backend.shared.services.permission_service import is_user_admin
+_PARSE_BANNED_WORD_CONFIG_TEXT_THRESHOLD_2 = 2
+
 
 log = structlog.get_logger(__name__)
 
@@ -181,7 +183,7 @@ async def _parse_banned_word_config(update: Update, session, state: object, *, t
 
 def _parse_banned_word_config_text(text: str) -> dict:
     lines = text.strip().split("\n")
-    if len(lines) < 2:
+    if len(lines) < _PARSE_BANNED_WORD_CONFIG_TEXT_THRESHOLD_2:
         raise ValueError("配置格式不完整")
 
     word = lines[0].strip()

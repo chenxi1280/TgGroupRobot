@@ -44,6 +44,9 @@ from backend.features.points.services.points_service import (
 from backend.shared.services.user_service import ensure_user
 from backend.shared.services.publish_service import PublishService
 from backend.platform.telegram.errors import answer_callback_query_safely, mark_callback_query_answered
+_SHOULD_SEND_LEVEL_BLOCK_NOTICE_THRESHOLD_1000 = 1000
+_SHOULD_SEND_LEVEL_BLOCK_NOTICE_THRESHOLD_60 = 60
+
 
 
 class PointsHandler(BaseHandler):
@@ -60,13 +63,13 @@ class PointsHandler(BaseHandler):
         key = (chat_id, user_id)
         now = dt.datetime.now(dt.UTC)
         # 驱逐超过 10 分钟的旧条目，防止内存泄漏
-        if len(cache) > 1000:
+        if len(cache) > _SHOULD_SEND_LEVEL_BLOCK_NOTICE_THRESHOLD_1000:
             cutoff = now - dt.timedelta(minutes=10)
             stale = [k for k, v in cache.items() if isinstance(v, dt.datetime) and v < cutoff]
             for k in stale:
                 cache.pop(k, None)
         last_sent = cache.get(key)
-        if isinstance(last_sent, dt.datetime) and (now - last_sent).total_seconds() < 60:
+        if isinstance(last_sent, dt.datetime) and (now - last_sent).total_seconds() < _SHOULD_SEND_LEVEL_BLOCK_NOTICE_THRESHOLD_60:
             return False
         cache[key] = now
         return True

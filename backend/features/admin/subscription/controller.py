@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from backend.features.admin.support import *
+_HANDLE_RENEWAL_THRESHOLD_3 = 3
+
 
 
 class SubscriptionAdminControllerMixin:
@@ -12,7 +14,7 @@ class SubscriptionAdminControllerMixin:
         *, callback_data: CallbackParser,
     ) -> None:
         """处理续费入口操作"""
-        sub_action = callback_data.get(2) if callback_data.length() >= 3 else "page"
+        sub_action = callback_data.get(2) if callback_data.length() >= _HANDLE_RENEWAL_THRESHOLD_3 else "page"
         if sub_action == "input":
             from backend.features.subscription.renewal_handler import start_renewal_card_input
 

@@ -16,6 +16,8 @@ from backend.platform.db.schema.models.enums import InviteLinkStatus
 from backend.platform.telegram.errors import answer_callback_query_safely, mark_callback_query_answered
 from backend.shared.callback_parser import CallbackParser
 from backend.shared.chat_context import PrivateChatContext
+_PARSE_LINK_ID_THRESHOLD_3 = 3
+
 
 
 async def _resolve_invite_link_target_chat_id(
@@ -142,7 +144,7 @@ async def invite_link_delete_callback(update: Update, context: ContextTypes.DEFA
 
 
 def _parse_link_id(cb: CallbackParser) -> int | None:
-    if cb.length() < 3:
+    if cb.length() < _PARSE_LINK_ID_THRESHOLD_3:
         return None
     link_id = cb.get_int(2)
     return link_id or None

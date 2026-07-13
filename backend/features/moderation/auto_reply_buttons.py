@@ -7,6 +7,8 @@ from backend.features.automation.services.scheduled_message_service_validation i
 )
 from backend.shared.services.base import ValidationError
 from backend.shared.ui.button_input import DEFAULT_MAX_BUTTON_COLS, split_button_rows
+_SANITIZE_TEXT_TRIGGER_PAYLOAD_THRESHOLD_128 = 128
+
 
 AUTO_REPLY_TEXT_TRIGGER = "text_trigger"
 
@@ -15,7 +17,7 @@ def sanitize_text_trigger_payload(value: str) -> str:
     payload = str(value or "").strip()
     if not payload:
         raise ValidationError("触发文字不能为空。")
-    if len(payload) > 128:
+    if len(payload) > _SANITIZE_TEXT_TRIGGER_PAYLOAD_THRESHOLD_128:
         raise ValidationError("触发文字过长，请控制在 128 个字符以内。")
     return payload
 

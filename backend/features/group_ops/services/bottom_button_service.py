@@ -21,6 +21,9 @@ from backend.features.group_ops.services.bottom_button_events import (
     get_event_label,
     resolve_event_trigger_text,
 )
+_SANITIZE_BUTTON_TEXT_THRESHOLD_16 = 16
+_SANITIZE_PAYLOAD_TEXT_THRESHOLD_128 = 128
+
 
 
 MAX_BUTTON_COLS = 4
@@ -39,7 +42,7 @@ def sanitize_button_text(value: str) -> str:
     text = re.sub(r"[\x00-\x1f\x7f]", "", value.strip())
     if not text:
         raise ValidationError("按钮文案不能为空。")
-    if len(text) > 16:
+    if len(text) > _SANITIZE_BUTTON_TEXT_THRESHOLD_16:
         raise ValidationError("按钮文案过长，请控制在 16 个字符以内。")
     return text
 
@@ -48,7 +51,7 @@ def sanitize_payload_text(value: str) -> str:
     text = re.sub(r"[\x00-\x08\x0b-\x1f\x7f]", "", value.strip())
     if not text:
         raise ValidationError("按钮内容不能为空。")
-    if len(text) > 128:
+    if len(text) > _SANITIZE_PAYLOAD_TEXT_THRESHOLD_128:
         raise ValidationError("按钮内容过长，请控制在 128 个字符以内。")
     return text
 

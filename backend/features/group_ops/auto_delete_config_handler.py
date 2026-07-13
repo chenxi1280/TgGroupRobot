@@ -12,6 +12,8 @@ from backend.shared.services.module_settings_service import ModuleSettingsServic
 from backend.shared.services.permission_service import PermissionPolicyService
 from backend.platform.telegram.errors import build_public_error_text
 from backend.shared.callback_parser import CallbackParser
+_AUTO_DELETE_CONFIG_CALLBACK_THRESHOLD_4 = 4
+
 
 log = structlog.get_logger(__name__)
 
@@ -98,7 +100,7 @@ async def auto_delete_config_callback(update: Update, context: ContextTypes.DEFA
     data = q.data or ""
     cb = CallbackParser.parse(data)
 
-    if cb.length() < 4:
+    if cb.length() < _AUTO_DELETE_CONFIG_CALLBACK_THRESHOLD_4:
         await _safe_edit_message(q, "参数错误")
         return
 

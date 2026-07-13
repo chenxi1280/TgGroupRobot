@@ -7,6 +7,9 @@ from collections.abc import Callable
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from backend.shared.time_helper import LOCAL_TIMEZONE
+_FORMAT_INTERVAL_MINUTES_LABEL_THRESHOLD_1440 = 1440
+_FORMAT_INTERVAL_MINUTES_LABEL_THRESHOLD_60 = 60
+
 
 
 def next_top_of_hour(now: dt.datetime | None = None, *, days_offset: int = 0) -> dt.datetime:
@@ -141,13 +144,13 @@ def build_numeric_duration_prompt_text(
 
 
 def format_interval_minutes_label(minutes: int) -> str:
-    if minutes < 60:
+    if minutes < _FORMAT_INTERVAL_MINUTES_LABEL_THRESHOLD_60:
         return f"{minutes}分钟"
-    if minutes == 60:
+    if minutes == _FORMAT_INTERVAL_MINUTES_LABEL_THRESHOLD_60:
         return "1小时"
-    if minutes < 1440:
+    if minutes < _FORMAT_INTERVAL_MINUTES_LABEL_THRESHOLD_1440:
         return f"{minutes // 60}小时"
-    if minutes == 1440:
+    if minutes == _FORMAT_INTERVAL_MINUTES_LABEL_THRESHOLD_1440:
         return "1天"
     return f"{minutes // 1440}天"
 

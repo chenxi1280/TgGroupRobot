@@ -15,6 +15,8 @@ from backend.shared.services.chat_service import get_chat_settings
 from backend.platform.state.conversation_state_service import ConversationStateService
 from backend.shared.callback_parser import CallbackParser
 from backend.platform.telegram.errors import answer_callback_query_safely, mark_callback_query_answered
+_ANTI_FLOOD_CONFIG_CALLBACK_THRESHOLD_4 = 4
+
 
 
 log = structlog.get_logger(__name__)
@@ -88,7 +90,7 @@ async def anti_flood_config_callback(update: Update, context: ContextTypes.DEFAU
         return
 
     cb = CallbackParser.parse(q.data or "")
-    if cb.length() < 4:
+    if cb.length() < _ANTI_FLOOD_CONFIG_CALLBACK_THRESHOLD_4:
         return
 
     op = cb.get(1)

@@ -15,6 +15,10 @@ from backend.features.moderation.services.garbage_guard_rules import (
     get_global_whitelist_user_ids,
     get_rule_config,
 )
+_SECONDS_LABEL_THRESHOLD_3600 = 3600
+_SECONDS_LABEL_THRESHOLD_60 = 60
+_SECONDS_LABEL_THRESHOLD_86400 = 86400
+
 
 
 def _status(enabled: bool) -> str:
@@ -27,11 +31,11 @@ def _short_status(enabled: bool) -> str:
 
 def _seconds_label(seconds: int) -> str:
     seconds = int(seconds or 0)
-    if seconds >= 86400 and seconds % 86400 == 0:
+    if seconds >= _SECONDS_LABEL_THRESHOLD_86400 and seconds % 86400 == 0:
         return f"{seconds // 86400}天"
-    if seconds >= 3600 and seconds % 3600 == 0:
+    if seconds >= _SECONDS_LABEL_THRESHOLD_3600 and seconds % 3600 == 0:
         return f"{seconds // 3600}小时"
-    if seconds >= 60 and seconds % 60 == 0:
+    if seconds >= _SECONDS_LABEL_THRESHOLD_60 and seconds % 60 == 0:
         return f"{seconds // 60}分钟"
     return f"{seconds}秒"
 

@@ -4,6 +4,9 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from backend.platform.db.runtime.session import Database
+_AUTO_REPLY_DELETE_CONFIRM_ACTION_THRESHOLD_5 = 5
+_AUTO_REPLY_DELETE_DO_ACTION_THRESHOLD_5 = 5
+
 
 
 async def auto_reply_delete_confirm_action(
@@ -23,7 +26,7 @@ async def auto_reply_delete_confirm_action(
         return
 
     parts = (q.data or "").split(":")
-    if len(parts) < 5:
+    if len(parts) < _AUTO_REPLY_DELETE_CONFIRM_ACTION_THRESHOLD_5:
         await q.edit_message_text("删除失败")
         await q.answer()
         return
@@ -79,7 +82,7 @@ async def auto_reply_delete_do_action(
         return
 
     parts = (q.data or "").split(":")
-    if len(parts) < 5:
+    if len(parts) < _AUTO_REPLY_DELETE_DO_ACTION_THRESHOLD_5:
         await q.edit_message_text("删除失败")
         await q.answer()
         return

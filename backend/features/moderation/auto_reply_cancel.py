@@ -6,6 +6,8 @@ import structlog
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
+_AUTO_REPLY_CANCEL_CALLBACK_THRESHOLD_3 = 3
+
 
 
 log = structlog.get_logger(__name__)
@@ -44,7 +46,7 @@ async def auto_reply_cancel_callback(update: Update, context: ContextTypes.DEFAU
 
     data = q.data or ""
     parts = data.split(":")
-    if len(parts) < 3:
+    if len(parts) < _AUTO_REPLY_CANCEL_CALLBACK_THRESHOLD_3:
         await q.edit_message_text("❌ 无法获取群组信息")
         return
 

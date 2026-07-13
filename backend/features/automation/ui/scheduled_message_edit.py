@@ -4,6 +4,9 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from backend.shared.time_ui import build_interval_keyboard
 from backend.shared.ui.common.keyboard import back_button, confirm_delete_keyboard, noop_button
+_SM_DAY_PERIOD_END_KEYBOARD_THRESHOLD_4 = 4
+_SM_DAY_PERIOD_START_KEYBOARD_THRESHOLD_4 = 4
+
 
 
 def sm_repeat_keyboard(chat_id: int, task_id: str, current_repeat_min: int) -> InlineKeyboardMarkup:
@@ -24,7 +27,7 @@ def sm_day_period_start_keyboard(chat_id: int, task_id: str) -> InlineKeyboardMa
     row = []
     for hour in range(24):
         row.append(InlineKeyboardButton(f"{hour:02d}:00", callback_data=f"sm:set:{chat_id}:{task_id}:day_start:{hour}"))
-        if len(row) == 4:
+        if len(row) == _SM_DAY_PERIOD_START_KEYBOARD_THRESHOLD_4:
             buttons.append(row)
             row = []
     if row:
@@ -38,7 +41,7 @@ def sm_day_period_end_keyboard(chat_id: int, task_id: str, start_hour: int) -> I
     row = []
     for hour in range(24):
         row.append(InlineKeyboardButton(f"{hour:02d}:00", callback_data=f"sm:set:{chat_id}:{task_id}:day_end:{hour}"))
-        if len(row) == 4:
+        if len(row) == _SM_DAY_PERIOD_END_KEYBOARD_THRESHOLD_4:
             buttons.append(row)
             row = []
     if row:

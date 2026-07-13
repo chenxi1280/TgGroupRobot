@@ -19,6 +19,8 @@ from backend.shared.callback_parser import CallbackParser
 from backend.shared.services.base import ValidationError
 from backend.shared.services.permission_service import PermissionPolicyService
 from backend.shared.ui.button_input import is_clear_button_input
+_SANITIZE_BUTTON_TEXT_THRESHOLD_16 = 16
+
 
 MAX_BUTTON_COLS = 4
 TEXT_INPUT_STATE = "button_editor_text_input"
@@ -44,7 +46,7 @@ class ButtonLayoutEditorService:
         text = str(value or "").strip()
         if not text:
             raise ValidationError("按钮文字不能为空。")
-        if len(text) > 16:
+        if len(text) > _SANITIZE_BUTTON_TEXT_THRESHOLD_16:
             raise ValidationError("按钮文字过长，请控制在 16 个字符以内。")
         return text
 

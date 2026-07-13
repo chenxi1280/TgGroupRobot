@@ -5,6 +5,8 @@
 from __future__ import annotations
 
 from backend.platform.db.schema.models.core import Solitaire
+_FORMAT_CREATE_PROMPT_THRESHOLD_2 = 2
+
 
 
 class SolitaireResponse:
@@ -183,7 +185,7 @@ class SolitaireResponse:
         """
         if step == 1:
             return "➕ 创建接龙 ( /cancel 取消)\n\n请输入接龙标题"
-        elif step == 2:
+        elif step == _FORMAT_CREATE_PROMPT_THRESHOLD_2:
             return "请输入接龙描述（可选）\n\n输入 /skip 跳过"
         return "请输入接龙信息"
 

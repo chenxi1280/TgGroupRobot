@@ -10,6 +10,9 @@ from backend.platform.db.schema.models.enums import PointsTxnType
 from backend.platform.db.runtime.session import Database
 from backend.shared.services.formatters import format_user_display_name
 from backend.shared.services.permission_service import PermissionPolicyService
+_PARSE_ADMIN_ADJUSTMENT_THRESHOLD_2 = 2
+_PARSE_ADMIN_ADJUSTMENT_THRESHOLD_3 = 3
+
 
 
 _ADMIN_ADD_COMMANDS = {"加积分", "加分"}
@@ -56,7 +59,7 @@ def _parse_admin_adjustment(text: str) -> tuple[int, str, str] | None:
     command = parts[0]
     if command not in _ADMIN_ADD_COMMANDS and command not in _ADMIN_DEDUCT_COMMANDS:
         return None
-    if len(parts) < 2:
+    if len(parts) < _PARSE_ADMIN_ADJUSTMENT_THRESHOLD_2:
         return 0, "", command
     try:
         amount = int(parts[1])
@@ -67,7 +70,7 @@ def _parse_admin_adjustment(text: str) -> tuple[int, str, str] | None:
     if command in _ADMIN_DEDUCT_COMMANDS:
         amount = -amount
     default_reason = "管理员增加积分" if amount > 0 else "管理员扣除积分"
-    reason = parts[2].strip() if len(parts) >= 3 and parts[2].strip() else default_reason
+    reason = parts[2].strip() if len(parts) >= _PARSE_ADMIN_ADJUSTMENT_THRESHOLD_3 and parts[2].strip() else default_reason
     return amount, reason[:255], command
 
 

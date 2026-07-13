@@ -6,6 +6,8 @@ from collections import defaultdict, deque
 from difflib import SequenceMatcher
 
 from backend.features.moderation.services.anti_spam_types import SpamMessageRecord
+_CHECK_REPEAT_THRESHOLD_0_POINT_92 = 0.92
+
 
 
 class AntiSpamTracker:
@@ -44,7 +46,7 @@ class AntiSpamTracker:
                 if item.text_norm == text_norm:
                     similar.append(item)
                     continue
-                if SequenceMatcher(None, item.text_norm, text_norm).ratio() >= 0.92:
+                if SequenceMatcher(None, item.text_norm, text_norm).ratio() >= _CHECK_REPEAT_THRESHOLD_0_POINT_92:
                     similar.append(item)
 
             if len(similar) >= max(max_messages, 2):

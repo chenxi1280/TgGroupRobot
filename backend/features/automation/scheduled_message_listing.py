@@ -18,6 +18,8 @@ from backend.shared.ui.message_config_panel import (
     media_status,
     summarize_text,
 )
+_FORMAT_TASK_DETAIL_THRESHOLD_23 = 23
+
 
 
 class ScheduledMessageListMixin:
@@ -142,7 +144,7 @@ class ScheduledMessageListMixin:
         has_text = bool(str(task.text or "").strip())
         start_text = format_timestamp(task.start_at) if task.start_at else WAITING_VALUE
         end_text = format_timestamp(task.end_at) if task.end_at else WAITING_VALUE
-        period_text = "全天" if task.day_start_hour == 0 and task.day_end_hour == 23 else (
+        period_text = "全天" if task.day_start_hour == 0 and task.day_end_hour == _FORMAT_TASK_DETAIL_THRESHOLD_23 else (
             f"{task.day_start_hour:02d}:00-{task.day_end_hour:02d}:00"
         )
         footer = [

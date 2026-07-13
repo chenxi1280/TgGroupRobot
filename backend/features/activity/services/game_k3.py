@@ -16,6 +16,10 @@ from backend.features.points.services.points_service import change_points
 from backend.platform.db.schema.models.enums import PointsTxnType
 from backend.platform.db.schema.models.expansion import GameParticipant, GameRound
 from backend.shared.services.base import ValidationError
+_CLASSIFY_K3_RESULT_THRESHOLD_11 = 11
+_CLASSIFY_K3_RESULT_THRESHOLD_2 = 2
+_CLASSIFY_K3_RESULT_THRESHOLD_3 = 3
+
 
 K3_ROUND_SECONDS = 60
 
@@ -77,18 +81,18 @@ def classify_k3_result(dice: list[int]) -> dict:
     total = sum(dice)
     unique_values = sorted(set(dice))
     is_triple = len(unique_values) == 1
-    is_pair = len(unique_values) == 2
-    is_straight = len(unique_values) == 3 and unique_values[-1] - unique_values[0] == 2
+    is_pair = len(unique_values) == _CLASSIFY_K3_RESULT_THRESHOLD_2
+    is_straight = len(unique_values) == _CLASSIFY_K3_RESULT_THRESHOLD_3 and unique_values[-1] - unique_values[0] == _CLASSIFY_K3_RESULT_THRESHOLD_2
     has_adjacent = any(
         unique_values[idx + 1] - unique_values[idx] == 1
         for idx in range(max(0, len(unique_values) - 1))
     )
-    is_half_straight = len(unique_values) == 3 and has_adjacent and not is_straight
-    is_misc_six = len(unique_values) == 3 and not has_adjacent
+    is_half_straight = len(unique_values) == _CLASSIFY_K3_RESULT_THRESHOLD_3 and has_adjacent and not is_straight
+    is_misc_six = len(unique_values) == _CLASSIFY_K3_RESULT_THRESHOLD_3 and not has_adjacent
 
     winning_keys: list[str] = []
     if not is_triple:
-        winning_keys.append("big" if total >= 11 else "small")
+        winning_keys.append("big" if total >= _CLASSIFY_K3_RESULT_THRESHOLD_11 else "small")
         winning_keys.append("even" if total % 2 == 0 else "odd")
     if is_triple:
         winning_keys.append("triple")

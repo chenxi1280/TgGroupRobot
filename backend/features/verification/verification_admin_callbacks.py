@@ -17,6 +17,9 @@ from backend.platform.telegram.errors import answer_callback_query_safely, build
 from backend.shared.callback_parser import CallbackParser
 from backend.shared.services.chat_service import get_chat_settings
 from backend.shared.services.permission_service import PermissionPolicyService
+_ADMIN_VERIFY_CALLBACK_IMPL_THRESHOLD_4 = 4
+_VERIFICATION_TIMEOUT_HELP_CALLBACK_IMPL_THRESHOLD_3 = 3
+
 
 log = structlog.get_logger(__name__)
 
@@ -26,7 +29,7 @@ async def admin_verify_callback_impl(update: Update, context: ContextTypes.DEFAU
         return
     query = update.callback_query
     parts = CallbackParser.parse(query.data or "")
-    if parts.action != "adm_vfy" or parts.length() < 4:
+    if parts.action != "adm_vfy" or parts.length() < _ADMIN_VERIFY_CALLBACK_IMPL_THRESHOLD_4:
         await answer_callback_query_safely(update, "验证回调无效", show_alert=True)
         return
     try:
@@ -97,7 +100,7 @@ async def verification_timeout_help_callback_impl(update: Update, context: Conte
         return
     query = update.callback_query
     parts = CallbackParser.parse(query.data or "")
-    if parts.action != "vfy_help" or parts.length() < 3:
+    if parts.action != "vfy_help" or parts.length() < _VERIFICATION_TIMEOUT_HELP_CALLBACK_IMPL_THRESHOLD_3:
         await answer_callback_query_safely(update, "操作无效", show_alert=True)
         return
     action = parts.get(1)

@@ -9,6 +9,8 @@ from telegram.ext import ContextTypes
 
 from backend.shared.services.action_executor import ActionExecutor
 from backend.shared.services.permission_service import get_bot_admin_ids
+_RESOLVE_ADMIN_TARGETS_THRESHOLD_5 = 5
+
 
 log = structlog.get_logger(__name__)
 
@@ -72,7 +74,7 @@ async def _resolve_admin_targets(context: ContextTypes.DEFAULT_TYPE, chat_id: in
         user_id = getattr(user, "id", None)
         if isinstance(user_id, int) and user_id not in resolved:
             resolved.append(user_id)
-        if len(resolved) >= 5:
+        if len(resolved) >= _RESOLVE_ADMIN_TARGETS_THRESHOLD_5:
             break
     return resolved
 

@@ -14,6 +14,8 @@ from backend.shared.callback_parser import CallbackParser
 from backend.shared.services.chat_service import get_chat_settings
 from backend.shared.services.module_settings_service import ModuleSettingsService
 from backend.shared.services.permission_service import PermissionPolicyService
+_VERIFICATION_CANCEL_CALLBACK_IMPL_THRESHOLD_3 = 3
+
 
 log = structlog.get_logger(__name__)
 
@@ -180,7 +182,7 @@ async def verification_cancel_callback_impl(update: Update, context: ContextType
         return
     query = update.callback_query
     parts = CallbackParser.parse(query.data or "")
-    if parts.action != "verification" or parts.length() < 3:
+    if parts.action != "verification" or parts.length() < _VERIFICATION_CANCEL_CALLBACK_IMPL_THRESHOLD_3:
         await answer_callback_query_safely(update, "无法获取群组信息", show_alert=True)
         return
     try:

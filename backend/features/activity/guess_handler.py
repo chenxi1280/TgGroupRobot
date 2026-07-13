@@ -18,6 +18,8 @@ from backend.features.group_ops.text_trigger_runtime import (
 from backend.shared.services.base import ValidationError
 from backend.shared.services.publish_service import PublishService
 from backend.shared.services.user_service import ensure_user
+_GUESS_MESSAGE_HANDLER_THRESHOLD_3 = 3
+
 
 log = structlog.get_logger(__name__)
 
@@ -74,7 +76,7 @@ async def guess_message_handler(update: Update, context: ContextTypes.DEFAULT_TY
             )
             await _delete_source_if_needed(context, chat_id, message_id, delete_mode=setting.delete_message_mode)
             return True
-        if len(parts) < 3:
+        if len(parts) < _GUESS_MESSAGE_HANDLER_THRESHOLD_3:
             await session.commit()
             await PublishService.reply(
                 context,

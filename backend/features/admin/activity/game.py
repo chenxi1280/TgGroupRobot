@@ -3,6 +3,8 @@ from __future__ import annotations
 from backend.features.activity.game_panels import show_blackjack_panel, show_k3_panel
 from backend.features.admin.support import *
 from backend.shared.time_ui import build_copy_time_keyboard, build_hhmm_prompt_text, next_top_of_hour_hhmm
+_SHOW_GAME_POINTS_MENU_THRESHOLD_2 = 2
+
 
 class GameAdminControllerMixin:
     async def _sync_game_panel_after_toggle(
@@ -131,7 +133,7 @@ class GameAdminControllerMixin:
                 "如果小群/内部群/工兵群需要使用大群积分进行游戏，请选择主群分。",
             ]
         )
-        if len(rows) == 2:
+        if len(rows) == _SHOW_GAME_POINTS_MENU_THRESHOLD_2:
             text += "\n\n暂无可关联的其他管理群。"
         await self.message_helper.safe_edit(update, text, reply_markup=InlineKeyboardMarkup(rows))
 

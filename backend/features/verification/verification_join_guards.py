@@ -13,6 +13,9 @@ from backend.features.moderation.services.user_action_runtime import execute_use
 from backend.platform.db.schema.models.core import ChatMember
 from backend.platform.db.schema.models.enums import MemberRole
 from backend.shared.async_tasks import spawn_background_task
+_COLLECT_JOIN_SPAM_SIGNALS_THRESHOLD_18 = 18
+_COLLECT_JOIN_SPAM_SIGNALS_THRESHOLD_5 = 5
+
 
 log = structlog.get_logger(__name__)
 
@@ -43,9 +46,9 @@ def collect_join_spam_signals(user) -> list[str]:
     signals: list[str] = []
     if not username:
         signals.append("no_username")
-    if len(full_name) >= 18:
+    if len(full_name) >= _COLLECT_JOIN_SPAM_SIGNALS_THRESHOLD_18:
         signals.append("long_name")
-    if sum(char.isdigit() for char in haystack) >= 5:
+    if sum(char.isdigit() for char in haystack) >= _COLLECT_JOIN_SPAM_SIGNALS_THRESHOLD_5:
         signals.append("many_digits")
     if re.search(r"(.)\1{4,}", haystack):
         signals.append("repeated_chars")

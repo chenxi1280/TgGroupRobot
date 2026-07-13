@@ -8,6 +8,8 @@ from backend.features.moderation.banned_word_message import safe_edit_banned_wor
 from backend.platform.db.runtime.session import Database
 from backend.platform.state.state_service import clear_user_state
 from backend.platform.telegram.errors import mark_callback_query_answered
+_BANNED_WORD_CANCEL_CALLBACK_THRESHOLD_3 = 3
+
 
 log = structlog.get_logger(__name__)
 
@@ -20,7 +22,7 @@ async def banned_word_cancel_callback(update: Update, context: ContextTypes.DEFA
 
     data = q.data or ""
     parts = data.split(":")
-    if len(parts) < 3:
+    if len(parts) < _BANNED_WORD_CANCEL_CALLBACK_THRESHOLD_3:
         await safe_edit_banned_word_message(q, "❌ 无法获取群组信息")
         return
 

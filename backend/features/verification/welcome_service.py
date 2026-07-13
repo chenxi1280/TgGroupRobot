@@ -19,6 +19,8 @@ from backend.features.verification.welcome_delivery import (
     send_rendered_payload,
 )
 from backend.features.verification.welcome_templates import render_welcome_template
+_NORMALIZE_BUTTONS_THRESHOLD_3 = 3
+
 
 
 @dataclass(slots=True)
@@ -81,7 +83,7 @@ class WelcomeService:
     def normalize_buttons(buttons: list) -> list[list[dict[str, str]]]:
         normalized = ScheduledMessageService.normalize_buttons_config(buttons)
         for row in normalized:
-            if len(row) > 3:
+            if len(row) > _NORMALIZE_BUTTONS_THRESHOLD_3:
                 raise ValidationError("每行最多 3 个按钮")
         return normalized
 

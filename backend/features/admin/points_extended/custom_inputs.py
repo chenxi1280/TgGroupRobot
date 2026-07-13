@@ -11,6 +11,10 @@ from backend.features.admin.points_extended.runtime import (
     parse_state_int,
 )
 from backend.shared.services.formatters import format_user_display_name
+_HANDLE_CUSTOM_POINTS_INPUT_THRESHOLD_2 = 2
+_PROMPT_CUSTOM_POINTS_AMOUNT_THRESHOLD_2 = 2
+_PROMPT_CUSTOM_POINTS_AMOUNT_THRESHOLD_3 = 3
+
 
 
 def _forwarded_user(message):
@@ -85,7 +89,7 @@ async def _prompt_custom_points_amount(
         return
 
     target_user_id, target_label, from_forward = resolved
-    if not from_forward and len(parts) >= 2 and re.fullmatch(r"\d+", parts[1]):
+    if not from_forward and len(parts) >= _PROMPT_CUSTOM_POINTS_AMOUNT_THRESHOLD_2 and re.fullmatch(r"\d+", parts[1]):
         await _apply_custom_points_adjustment(
             module,
             session,
@@ -98,7 +102,7 @@ async def _prompt_custom_points_amount(
             target_label=target_label,
             mode=mode,
             amount_text=parts[1],
-            reason_note=parts[2].strip() if len(parts) >= 3 else None,
+            reason_note=parts[2].strip() if len(parts) >= _PROMPT_CUSTOM_POINTS_AMOUNT_THRESHOLD_3 else None,
         )
         return
 
@@ -291,7 +295,7 @@ async def handle_custom_points_input(
             target_label=str(state.state_data.get("target_label") or target_user_id),
             mode=mode,
             amount_text=parts[0],
-            reason_note=parts[1].strip() if len(parts) >= 2 else None,
+            reason_note=parts[1].strip() if len(parts) >= _HANDLE_CUSTOM_POINTS_INPUT_THRESHOLD_2 else None,
         )
         return True
 

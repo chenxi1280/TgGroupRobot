@@ -6,6 +6,8 @@ import structlog
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
+_FORMAT_MENU_TEXT_THRESHOLD_10 = 10
+
 
 
 log = structlog.get_logger(__name__)
@@ -120,7 +122,7 @@ class AutoReplyMenuHandler(BaseHandler):
         if rules:
             for rule in rules[:10]:
                 text += self._format_rule_item(rule)
-            if len(rules) > 10:
+            if len(rules) > _FORMAT_MENU_TEXT_THRESHOLD_10:
                 text += f"\n... 还有 {len(rules) - 10} 条规则"
         else:
             text += "暂无自动回复规则"

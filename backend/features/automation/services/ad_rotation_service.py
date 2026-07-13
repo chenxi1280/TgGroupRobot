@@ -14,6 +14,9 @@ from backend.shared.services.base import ValidationError
 from backend.shared.services.publish_service import PublishService
 from backend.shared.time_helper import LOCAL_TIMEZONE, parse_date_time_string
 from backend.shared.ui.button_input import parse_button_rows
+_FORMAT_INTERVAL_SECONDS_LABEL_THRESHOLD_1440 = 1440
+_FORMAT_INTERVAL_SECONDS_LABEL_THRESHOLD_60 = 60
+
 
 DEFAULT_ROTATION_INTERVAL_SECONDS = 2 * 3600
 DEFAULT_DELETE_DELAY_SECONDS = 60
@@ -68,14 +71,14 @@ def parse_interval_minutes_text(value: str) -> int:
 def format_interval_seconds_label(interval_seconds: int | None) -> str:
     seconds = max(int(interval_seconds or DEFAULT_ROTATION_INTERVAL_SECONDS), MIN_ROTATION_INTERVAL_SECONDS)
     minutes = seconds // 60
-    if minutes < 60:
+    if minutes < _FORMAT_INTERVAL_SECONDS_LABEL_THRESHOLD_60:
         return f"{minutes}分钟"
-    if minutes == 60:
+    if minutes == _FORMAT_INTERVAL_SECONDS_LABEL_THRESHOLD_60:
         return "1小时"
-    if minutes < 1440:
+    if minutes < _FORMAT_INTERVAL_SECONDS_LABEL_THRESHOLD_1440:
         hours = minutes // 60
         return f"{hours}小时"
-    if minutes == 1440:
+    if minutes == _FORMAT_INTERVAL_SECONDS_LABEL_THRESHOLD_1440:
         return "1天"
     days = minutes // 1440
     return f"{days}天"

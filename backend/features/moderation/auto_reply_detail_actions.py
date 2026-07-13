@@ -4,6 +4,9 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from backend.platform.db.runtime.session import Database
+_AUTO_REPLY_DETAIL_ACTION_THRESHOLD_4 = 4
+_AUTO_REPLY_PREVIEW_ACTION_THRESHOLD_4 = 4
+
 
 
 async def auto_reply_detail_action(
@@ -23,7 +26,7 @@ async def auto_reply_detail_action(
         return
 
     parts = (q.data or "").split(":")
-    if len(parts) < 4:
+    if len(parts) < _AUTO_REPLY_DETAIL_ACTION_THRESHOLD_4:
         await q.edit_message_text("规则不存在")
         await q.answer()
         return
@@ -56,7 +59,7 @@ async def auto_reply_preview_action(
         return
 
     parts = (q.data or "").split(":")
-    if len(parts) < 4:
+    if len(parts) < _AUTO_REPLY_PREVIEW_ACTION_THRESHOLD_4:
         await q.edit_message_text("规则不存在")
         await q.answer()
         return

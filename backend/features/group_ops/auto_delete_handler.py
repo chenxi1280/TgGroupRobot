@@ -10,6 +10,9 @@ from telegram.ext import ContextTypes
 from backend.platform.db.runtime.session import Database
 from backend.features.group_ops.services.group_daily_stats import record_group_leave_event
 from backend.shared.services.module_settings_service import ModuleSettingsService
+_IS_GROUP_ANONYMOUS_ADMIN_MESSAGE_THRESHOLD_1087968824 = 1087968824
+_SHOULD_SEND_FAILURE_ALERT_THRESHOLD_1000 = 1000
+
 
 log = structlog.get_logger(__name__)
 
@@ -113,7 +116,7 @@ def _is_group_anonymous_admin_message(update: Update, message) -> bool:
         update.effective_chat is not None
         and update.effective_chat.type == "supergroup"
         and from_user is not None
-        and from_user.id == 1087968824
+        and from_user.id == _IS_GROUP_ANONYMOUS_ADMIN_MESSAGE_THRESHOLD_1087968824
     )
 
 
@@ -159,7 +162,7 @@ def _should_send_failure_alert(context: ContextTypes.DEFAULT_TYPE, chat_id: int,
     key = (chat_id, message_type)
     now = time.monotonic()
     # 驱逐超过 TTL 的旧条目，防止内存泄漏
-    if len(cache) > 1000:
+    if len(cache) > _SHOULD_SEND_FAILURE_ALERT_THRESHOLD_1000:
         stale = [k for k, v in cache.items() if now - float(v) > AUTO_DELETE_FAILURE_ALERT_TTL_SECONDS]
         for k in stale:
             cache.pop(k, None)

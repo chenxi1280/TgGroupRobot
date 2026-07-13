@@ -17,6 +17,8 @@ from backend.shared.ui.message_config_panel import (
     media_status,
     summarize_text,
 )
+_EXTRACT_AUTO_REPLY_LIST_PAGE_THRESHOLD_4 = 4
+
 
 
 def _format_keywords(keywords: list[str] | None) -> str:
@@ -96,7 +98,7 @@ def extract_auto_reply_list_page(callback_data: str | None) -> int:
     if not callback_data or not callback_data.startswith("auto_reply:list"):
         return 0
     parts = callback_data.split(":")
-    if len(parts) < 4:
+    if len(parts) < _EXTRACT_AUTO_REPLY_LIST_PAGE_THRESHOLD_4:
         return 0
     try:
         return max(int(parts[3]), 0)

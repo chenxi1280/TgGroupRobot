@@ -6,6 +6,9 @@ from telegram.ext import ContextTypes
 
 from backend.platform.db.runtime.session import Database
 from backend.shared.services.command_config_service import is_group_text_command_enabled
+_TRY_ENGAGEMENT_REWARD_TRIGGER_THRESHOLD_32 = 32
+_TRY_GUESS_TRIGGER_THRESHOLD_32 = 32
+
 
 log = structlog.get_logger(__name__)
 
@@ -289,7 +292,7 @@ async def _try_game_trigger(update: Update, context: ContextTypes.DEFAULT_TYPE, 
 async def _try_guess_trigger(update: Update, context: ContextTypes.DEFAULT_TYPE, payload: str) -> bool:
     if getattr(update, "effective_chat", None) is None or getattr(update, "effective_message", None) is None:
         return False
-    if not payload or len(payload) > 32 or " " in payload:
+    if not payload or len(payload) > _TRY_GUESS_TRIGGER_THRESHOLD_32 or " " in payload:
         return False
     from backend.features.activity.guess_handler import guess_message_handler
 
@@ -308,7 +311,7 @@ async def _try_engagement_reward_trigger(
         or getattr(update, "effective_message", None) is None
     ):
         return False
-    if update.effective_chat.id != chat_id or not payload or len(payload) > 32:
+    if update.effective_chat.id != chat_id or not payload or len(payload) > _TRY_ENGAGEMENT_REWARD_TRIGGER_THRESHOLD_32:
         return False
 
     from backend.features.activity.engagement_handler import engagement_message_handler

@@ -11,6 +11,8 @@ from backend.platform.db.runtime.session import Database
 from backend.platform.db.schema.models.core import PointsAccount, PointsTransaction, SignInLog, UserDailyStats
 from backend.platform.db.schema.models.enums import PointsTxnType
 from backend.shared.services.chat_service import get_chat_settings
+_HANDLE_POINTS_CONFIG_MESSAGE_THRESHOLD_2 = 2
+
 
 
 async def handle_points_config_message(update, context: ContextTypes.DEFAULT_TYPE) -> int | None:
@@ -36,7 +38,7 @@ async def handle_points_config_message(update, context: ContextTypes.DEFAULT_TYP
 
             if field == "transfer":
                 parts = text.strip().split(maxsplit=2)
-                if len(parts) < 2:
+                if len(parts) < _HANDLE_POINTS_CONFIG_MESSAGE_THRESHOLD_2:
                     await update.effective_message.reply_text("格式错误，请输入：目标用户 金额 原因(可选)")
                     return WAIT_VALUE
                 target_user = await resolve_points_target_user(session, parts[0])
@@ -50,7 +52,7 @@ async def handle_points_config_message(update, context: ContextTypes.DEFAULT_TYP
                 if target_user.id == update.effective_user.id:
                     await update.effective_message.reply_text("不能给自己转让积分")
                     return WAIT_VALUE
-                reason = parts[2] if len(parts) > 2 else "管理员面板转让积分"
+                reason = parts[2] if len(parts) > _HANDLE_POINTS_CONFIG_MESSAGE_THRESHOLD_2 else "管理员面板转让积分"
                 ok, _ = await change_points(
                     session,
                     chat_id,
@@ -72,7 +74,7 @@ async def handle_points_config_message(update, context: ContextTypes.DEFAULT_TYP
                 )
             elif field in {"admin_add", "admin_deduct"}:
                 parts = text.strip().split(maxsplit=2)
-                if len(parts) < 2:
+                if len(parts) < _HANDLE_POINTS_CONFIG_MESSAGE_THRESHOLD_2:
                     await update.effective_message.reply_text("格式错误，请输入：目标用户 金额 原因(可选)")
                     return WAIT_VALUE
                 target_user = await resolve_points_target_user(session, parts[0])
@@ -85,7 +87,7 @@ async def handle_points_config_message(update, context: ContextTypes.DEFAULT_TYP
                     return WAIT_VALUE
                 signed_amount = amount if field == "admin_add" else -amount
                 reason_prefix = "管理员增加积分" if field == "admin_add" else "管理员扣除积分"
-                reason = parts[2] if len(parts) > 2 else reason_prefix
+                reason = parts[2] if len(parts) > _HANDLE_POINTS_CONFIG_MESSAGE_THRESHOLD_2 else reason_prefix
                 ok, _ = await change_points(
                     session,
                     chat_id,
@@ -107,7 +109,7 @@ async def handle_points_config_message(update, context: ContextTypes.DEFAULT_TYP
                 await session.execute(delete(SignInLog).where(SignInLog.chat_id == chat_id))
             elif field == "sign_consecutive":
                 parts = text.split(",")
-                if len(parts) != 2:
+                if len(parts) != _HANDLE_POINTS_CONFIG_MESSAGE_THRESHOLD_2:
                     await update.effective_message.reply_text("格式错误，请输入：天数,积分（例如 7,10）")
                     return WAIT_VALUE
                 settings.sign_consecutive_days = int(parts[0].strip())

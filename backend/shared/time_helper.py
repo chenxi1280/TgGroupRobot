@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import datetime as dt
 from typing import TYPE_CHECKING
+_GET_INTERVAL_DESCRIPTION_THRESHOLD_1440 = 1440
+_GET_INTERVAL_DESCRIPTION_THRESHOLD_60 = 60
+_IS_TIME_IN_WINDOW_THRESHOLD_23 = 23
+
 
 if TYPE_CHECKING:
     from backend.platform.db.schema.models.scheduled_message import ScheduledMessageTask
@@ -26,7 +30,7 @@ def is_time_in_window(timestamp: int, day_start_hour: int, day_end_hour: int) ->
     current_hour = local_time.hour
 
     # 0-23 在界面中表示全天
-    if day_start_hour == 0 and day_end_hour == 23:
+    if day_start_hour == 0 and day_end_hour == _IS_TIME_IN_WINDOW_THRESHOLD_23:
         return True
 
     # 处理跨天时段
@@ -175,14 +179,14 @@ def get_interval_description(minutes: int) -> str:
     Returns:
         友好的时间描述
     """
-    if minutes < 60:
+    if minutes < _GET_INTERVAL_DESCRIPTION_THRESHOLD_60:
         return f"每 {minutes} 分钟"
-    elif minutes == 60:
+    elif minutes == _GET_INTERVAL_DESCRIPTION_THRESHOLD_60:
         return "每小时"
-    elif minutes < 1440:
+    elif minutes < _GET_INTERVAL_DESCRIPTION_THRESHOLD_1440:
         hours = minutes // 60
         return f"每 {hours} 小时"
-    elif minutes == 1440:
+    elif minutes == _GET_INTERVAL_DESCRIPTION_THRESHOLD_1440:
         return "每天"
     else:
         days = minutes // 1440

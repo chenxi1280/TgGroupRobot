@@ -14,6 +14,9 @@ from backend.platform.db.schema.models.enums import AutoReplyMatchType, Conversa
 from backend.platform.state.state_service import clear_user_state, get_user_state
 from backend.shared.async_tasks import spawn_background_task
 from backend.shared.ui.button_input import is_clear_button_input
+_BUILD_CREATE_SUCCESS_TEXT_THRESHOLD_50 = 50
+_PARSE_AUTO_REPLY_CONFIG_TEXT_THRESHOLD_4 = 4
+
 
 log = structlog.get_logger(__name__)
 
@@ -170,7 +173,7 @@ async def _parse_auto_reply_config(update: Update, session, state: object, *, te
 
 def _parse_auto_reply_config_text(text: str) -> dict:
     lines = text.strip().split("\n")
-    if len(lines) < 4:
+    if len(lines) < _PARSE_AUTO_REPLY_CONFIG_TEXT_THRESHOLD_4:
         raise ValueError("配置格式不完整")
 
     keywords = [item.strip() for item in lines[0].strip().split(",") if item.strip()]
@@ -238,7 +241,7 @@ def _build_create_success_text(config: dict, result) -> str:
             if delete_reply_delay_seconds
             else "⏱️ 延迟删除: 不删除\n"
         )
-        + f"💬 回复: {reply_content[:50]}{'...' if len(reply_content) > 50 else ''}\n"
+        + f"💬 回复: {reply_content[:50]}{'...' if len(reply_content) > _BUILD_CREATE_SUCCESS_TEXT_THRESHOLD_50 else ''}\n"
         + f"\n规则ID: {result.entity.id}\n\n可继续进入详情页补充封面和按钮。"
     )
 

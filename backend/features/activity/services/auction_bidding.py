@@ -10,6 +10,8 @@ from backend.features.activity.services.auction_time import as_utc, now_utc
 from backend.features.points.services.points_service import get_balance
 from backend.platform.db.schema.models.expansion import AuctionBid, AuctionItem
 from backend.shared.services.base import ValidationError
+_PLACE_BID_THRESHOLD_60 = 60
+
 
 
 async def place_bid(
@@ -45,7 +47,7 @@ async def place_bid(
     item.current_price = amount
     if setting.auto_extend_enabled and item.end_at is not None:
         remain_seconds = int((as_utc(item.end_at) - now_utc()).total_seconds())
-        if remain_seconds <= 60:
+        if remain_seconds <= _PLACE_BID_THRESHOLD_60:
             item.end_at = as_utc(item.end_at) + dt.timedelta(seconds=60)
 
     bid = AuctionBid(

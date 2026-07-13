@@ -8,6 +8,8 @@ from telegram.ext import ContextTypes
 
 from backend.platform.db.runtime.session import Database
 from backend.shared.services.publish_service import PublishService
+_ADS_CREATE_CONFIG_MESSAGE_ACTION_THRESHOLD_100 = 100
+
 
 
 async def ads_create_start_action(
@@ -207,7 +209,7 @@ async def ads_create_config_message_action(
                 success_msg += f"推送次数: {ad.max_send_count}次\n"
             if ad.has_image:
                 success_msg += "图片: 已配置（file_id）\n"
-            success_msg += f"\n{ad.content[:100]}{'...' if len(ad.content) > 100 else ''}"
+            success_msg += f"\n{ad.content[:100]}{'...' if len(ad.content) > _ADS_CREATE_CONFIG_MESSAGE_ACTION_THRESHOLD_100 else ''}"
             success_msg += f"\n\n任务ID: {ad.id}"
 
             await conversation_state_service.clear(session, state_chat_id, user.id)

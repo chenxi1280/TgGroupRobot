@@ -12,6 +12,11 @@ from backend.features.admin.garage.input_runtime import (
     clear_admin_input_state,
 )
 from backend.shared.services.base import ValidationError
+_COORDINATE_PAIR_THRESHOLD_180 = 180
+_COORDINATE_PAIR_THRESHOLD_90 = 90
+_COORDINATE_PAIR_THRESHOLD_NEGATIVE_180 = -180
+_COORDINATE_PAIR_THRESHOLD_NEGATIVE_90 = -90
+
 
 CLEAR_VALUES = {"清空", "无"}
 DELEGATE_TARGET_STATE = "teacher_delegate_target_input"
@@ -52,7 +57,7 @@ def _coordinate_pair(latitude_raw: str, longitude_raw: str) -> tuple[float, floa
         longitude = float(longitude_raw)
     except (TypeError, ValueError):
         return None
-    if not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
+    if not (_COORDINATE_PAIR_THRESHOLD_NEGATIVE_90 <= latitude <= _COORDINATE_PAIR_THRESHOLD_90 and _COORDINATE_PAIR_THRESHOLD_NEGATIVE_180 <= longitude <= _COORDINATE_PAIR_THRESHOLD_180):
         return None
     return latitude, longitude
 

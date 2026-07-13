@@ -19,6 +19,8 @@ from backend.platform.db.schema.models.garage_features import (
 )
 from backend.shared.services.chat_service import get_chat_settings
 from backend.shared.time_helper import LOCAL_TIMEZONE
+_BUILD_TEACHER_SUMMARY_THRESHOLD_4 = 4
+
 
 
 @dataclass(frozen=True)
@@ -370,7 +372,7 @@ class GarageAuthService:
         )
         rows = []
         for row in result.all():
-            if len(row) >= 4:
+            if len(row) >= _BUILD_TEACHER_SUMMARY_THRESHOLD_4:
                 rows.append(row)
             else:
                 teacher, profile, user = row

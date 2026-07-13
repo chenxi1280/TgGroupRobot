@@ -13,6 +13,8 @@ from backend.platform.db.schema.models.core import NearbyProfile, TgUser
 from backend.shared.services.chat_service import ensure_chat
 from backend.shared.services.formatters import format_user_display_name
 from backend.shared.services.user_service import ensure_user
+_FORMAT_DISTANCE_THRESHOLD_5 = 5
+
 
 EARTH_RADIUS_KM = 6371.0088
 
@@ -66,7 +68,7 @@ def format_distance(distance_km: float, fuzzy: bool = False) -> str:
 
     if distance_km < 1:
         value = round(distance_km, 1)
-    elif distance_km < 5:
+    elif distance_km < _FORMAT_DISTANCE_THRESHOLD_5:
         value = round(distance_km * 2) / 2
     else:
         value = round(distance_km)

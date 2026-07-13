@@ -14,6 +14,8 @@ from backend.features.activity.services.lottery_service_parsing import (
 from backend.platform.db.runtime.session import Database
 from backend.shared.services.command_config_service import is_group_text_command_enabled
 from backend.shared.handlers.base.state_helper import StateHelper
+_LOTTERY_CANCEL_CALLBACK_IMPL_THRESHOLD_3 = 3
+
 
 log = structlog.get_logger(__name__)
 
@@ -178,7 +180,7 @@ async def lottery_cancel_callback_impl(update: Update, context: ContextTypes.DEF
     q = update.callback_query
     await q.answer()
     parts = (q.data or "").split(":")
-    if len(parts) < 3:
+    if len(parts) < _LOTTERY_CANCEL_CALLBACK_IMPL_THRESHOLD_3:
         await q.edit_message_text("❌ 无法获取群组信息")
         return
     try:

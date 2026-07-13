@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from telegram import Bot, ChatPermissions
+_CHECK_FLOOD_THRESHOLD_2 = 2
+
 
 
 log = structlog.get_logger(__name__)
@@ -102,7 +104,7 @@ class AntiFloodTracker:
 
             if message_count >= max_messages:
                 # 计算时间跨度
-                if len(record.timestamps) >= 2:
+                if len(record.timestamps) >= _CHECK_FLOOD_THRESHOLD_2:
                     time_span = (record.timestamps[-1] - record.timestamps[0]).total_seconds()
                 else:
                     time_span = 0.0

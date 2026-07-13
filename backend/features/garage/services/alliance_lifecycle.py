@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.features.garage.services.garage_auth_service import GarageAuthService
 from backend.platform.db.schema.models.alliance import GroupAlliance, GroupAllianceMember
 from backend.shared.services.base import NotFoundError, ValidationError
+_JOIN_ALLIANCE_THRESHOLD_50 = 50
+
 
 
 class AllianceLifecycleMixin:
@@ -113,7 +115,7 @@ class AllianceLifecycleMixin:
                 GroupAllianceMember.status == "active",
             )
         )
-        if int(count_result.scalar_one() or 0) >= 50:
+        if int(count_result.scalar_one() or 0) >= _JOIN_ALLIANCE_THRESHOLD_50:
             raise ValidationError("联盟成员数量已达上限。")
 
         await GarageAuthService.merge_local_certified_teachers_into_pool(

@@ -13,6 +13,11 @@ from backend.platform.db.schema.models.core import TgUser
 from backend.platform.db.schema.models.garage_features import MemberLocation, TeacherDailyAttendance, TeacherProfile, TeacherSearchSetting
 from backend.shared.services.base import ValidationError
 from backend.shared.time_helper import LOCAL_TIMEZONE
+_CLEAN_REQUIRED_KEYWORD_THRESHOLD_16 = 16
+_CLEAN_TEACHER_PROFILE_LABELS_THRESHOLD_10 = 10
+_CLEAN_TEACHER_PROFILE_LABELS_THRESHOLD_16 = 16
+_UPDATE_FOOTER_BUTTON_TEXT_THRESHOLD_16 = 16
+
 
 
 @dataclass(frozen=True)
@@ -36,7 +41,7 @@ def _clean_required_keyword(value: str, *, label: str) -> str:
     cleaned = _clean_optional_value(value)
     if cleaned is None:
         raise ValidationError(f"{label}不能为空。")
-    if len(cleaned) > 16:
+    if len(cleaned) > _CLEAN_REQUIRED_KEYWORD_THRESHOLD_16:
         raise ValidationError(f"{label}过长，请控制在 16 个字符以内。")
     return cleaned
 
@@ -67,11 +72,11 @@ def _clean_teacher_profile_labels(value: str | list[str] | None) -> list[str]:
         cleaned = _clean_optional_value(raw)
         if cleaned is None:
             continue
-        if len(cleaned) > 16:
+        if len(cleaned) > _CLEAN_TEACHER_PROFILE_LABELS_THRESHOLD_16:
             raise ValidationError("服务标签过长，请控制在 16 个字符以内。")
         if cleaned in seen:
             continue
-        if len(labels) >= 10:
+        if len(labels) >= _CLEAN_TEACHER_PROFILE_LABELS_THRESHOLD_10:
             raise ValidationError("服务标签最多可设置 10 个。")
         seen.add(cleaned)
         labels.append(cleaned)
@@ -143,7 +148,7 @@ class TeacherSearchSettingsMixin:
         button_text: str | None,
     ) -> TeacherSearchFooterButtonConfig:
         label = _clean_optional_value(button_text)
-        if label is not None and len(label) > 16:
+        if label is not None and len(label) > _UPDATE_FOOTER_BUTTON_TEXT_THRESHOLD_16:
             raise ValidationError("底部按钮名称过长，请控制在 16 个字符以内。")
         setting = await TeacherSearchSettingsMixin.update_setting(session, chat_id, footer_button_label=label)
         return _footer_config_from_setting(setting)

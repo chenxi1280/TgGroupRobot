@@ -5,6 +5,12 @@ from __future__ import annotations
 import datetime as dt
 import html
 from typing import TYPE_CHECKING, Protocol
+_FORMAT_NUMBER_THRESHOLD_1000 = 1000
+_FORMAT_NUMBER_THRESHOLD_1000000 = 1000000
+_FORMAT_TIMEDELTA_THRESHOLD_3600 = 3600
+_FORMAT_TIMEDELTA_THRESHOLD_60 = 60
+_FORMAT_TIMEDELTA_THRESHOLD_86400 = 86400
+
 
 if TYPE_CHECKING:
     from backend.platform.db.schema.models.core import TgUser
@@ -103,12 +109,12 @@ def format_timedelta(delta: dt.timedelta) -> str:
         return "未知"
 
     total_seconds = int(delta.total_seconds())
-    if total_seconds < 60:
+    if total_seconds < _FORMAT_TIMEDELTA_THRESHOLD_60:
         return f"{total_seconds}秒"
-    elif total_seconds < 3600:
+    elif total_seconds < _FORMAT_TIMEDELTA_THRESHOLD_3600:
         minutes = total_seconds // 60
         return f"{minutes}分钟"
-    elif total_seconds < 86400:
+    elif total_seconds < _FORMAT_TIMEDELTA_THRESHOLD_86400:
         hours = total_seconds // 3600
         minutes = (total_seconds % 3600) // 60
         if minutes > 0:
@@ -133,9 +139,9 @@ def format_number(number: int, use_emoji: bool = False) -> str:
     Returns:
         格式化后的数字字符串
     """
-    if use_emoji and number >= 1000:
+    if use_emoji and number >= _FORMAT_NUMBER_THRESHOLD_1000:
         # 使用表情符号格式化
-        if number >= 1000000:
+        if number >= _FORMAT_NUMBER_THRESHOLD_1000000:
             return f"{number / 1000000:.1f}M"
         return f"{number / 1000:.1f}k"
     else:

@@ -14,6 +14,8 @@ from backend.platform.db.schema.models.expansion import (
 )
 from backend.shared.services.base import ValidationError
 from backend.shared.services.module_settings_service import ModuleSettingsService
+_PARSE_REWARD_PLAN_THRESHOLD_7 = 7
+
 
 
 DEFAULT_CHAT_REWARD_PLAN = [30, 50, 70, 90, 110, 130, 150]
@@ -70,7 +72,7 @@ async def get_or_create_chat_stat(session: AsyncSession, chat_id: int, user_id: 
 
 def parse_reward_plan(raw: str) -> list[int]:
     parts = [item for item in re.split(r"[\s,，]+", raw.strip()) if item]
-    if len(parts) != 7:
+    if len(parts) != _PARSE_REWARD_PLAN_THRESHOLD_7:
         raise ValidationError("奖励数组必须正好包含 7 个数字，使用空格分隔。")
     numbers: list[int] = []
     for item in parts:

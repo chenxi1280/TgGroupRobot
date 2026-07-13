@@ -15,6 +15,8 @@ from backend.features.moderation.services.anti_spam_rules import (
 from backend.features.moderation.services.anti_spam_tracker import AntiSpamTracker
 from backend.features.moderation.services.anti_spam_types import SpamViolation
 from backend.platform.db.schema.models.core import ChatSettings
+_LOOKS_LIKE_TEXT_SPAM_THRESHOLD_3 = 3
+
 
 
 def _normalize_text(text: str) -> str:
@@ -40,7 +42,7 @@ def _looks_like_text_spam(text_norm: str) -> bool:
         score += 1
     if any(x in text_norm for x in ["稳赚", "秒到", "返佣", "高收益", "免费领取"]):
         score += 1
-    return score >= 3
+    return score >= _LOOKS_LIKE_TEXT_SPAM_THRESHOLD_3
 
 
 def _message_has_media(message: Message) -> bool:

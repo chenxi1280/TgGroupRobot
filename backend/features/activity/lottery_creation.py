@@ -21,14 +21,16 @@ from backend.features.activity.services.lottery_service import (
     parse_lottery_config_text,
 )
 from backend.features.activity.services.lottery_service_parsing import (
-    _split_preset_assignment_value,
-    collect_winner_reference_values,
     encode_lottery_type,
     encode_selection_mode,
-    extract_winner_usernames,
     lottery_draw_trigger_label,
-    parse_direct_winner_ids,
+)
+from backend.features.activity.services.lottery_winner_parsing import (
     RANDOM_WINNER_MARKERS,
+    _split_preset_assignment_value,
+    collect_winner_reference_values,
+    extract_winner_usernames,
+    parse_direct_winner_ids,
     validate_preset_winner_assignments,
     validate_unique_prize_names,
 )
@@ -38,6 +40,9 @@ from backend.features.activity.services.lottery_subscription import (
     validate_lottery_subscribe_targets,
 )
 from backend.shared.ui.message_config_panel import format_completion_lines
+_HANDLE_LOTTERY_WIZARD_CALLBACK_THRESHOLD_4 = 4
+_HANDLE_LOTTERY_WIZARD_CALLBACK_THRESHOLD_5 = 5
+
 
 log = structlog.get_logger(__name__)
 
@@ -1226,7 +1231,7 @@ async def parse_lottery_config_message(update: Update, context: ContextTypes.DEF
             config.preset_winner_assignments = resolved_preset_assignments
 
         target_chat_id = state.state_data.get("target_chat_id") or update.effective_chat.id
-        lottery = await _create_and_publish_lottery(
+        await _create_and_publish_lottery(
             update,
             context,
             session,
@@ -1286,7 +1291,7 @@ async def handle_lottery_wizard_callback(update: Update, context: ContextTypes.D
     q = update.callback_query
     await q.answer()
     data_parts = (q.data or "").split(":")
-    if len(data_parts) < 4:
+    if len(data_parts) < _HANDLE_LOTTERY_WIZARD_CALLBACK_THRESHOLD_4:
         return
     try:
         target_chat_id = int(data_parts[2])
@@ -1329,7 +1334,7 @@ async def handle_lottery_wizard_callback(update: Update, context: ContextTypes.D
                 await session.commit()
                 return
             if action == "pt":
-                if len(data_parts) < 5:
+                if len(data_parts) < _HANDLE_LOTTERY_WIZARD_CALLBACK_THRESHOLD_5:
                     await q.answer("积分类型参数无效", show_alert=True)
                     await session.commit()
                     return
@@ -1395,7 +1400,7 @@ async def handle_lottery_wizard_callback(update: Update, context: ContextTypes.D
                 )
                 return
             if action == "prize":
-                if len(data_parts) < 5:
+                if len(data_parts) < _HANDLE_LOTTERY_WIZARD_CALLBACK_THRESHOLD_5:
                     await q.answer("奖品操作参数无效", show_alert=True)
                     await session.commit()
                     return

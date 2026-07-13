@@ -9,6 +9,9 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from backend.features.automation.services.scheduled_message_service import ScheduledMessageService
 from backend.platform.db.schema.models.alliance import GarageForwardSetting, GarageForwardSource
 from backend.shared.services.base import ValidationError
+_NORMALIZE_BUTTON_TEMPLATE_THRESHOLD_4 = 4
+_NORMALIZE_BUTTON_TEMPLATE_THRESHOLD_6 = 6
+
 
 
 class GarageForwardConfigMixin:
@@ -144,9 +147,9 @@ class GarageForwardConfigMixin:
             return []
         normalized = ScheduledMessageService.normalize_buttons_config(raw_buttons)
         for row in normalized:
-            if len(row) > 4:
+            if len(row) > _NORMALIZE_BUTTON_TEMPLATE_THRESHOLD_4:
                 raise ValidationError("按钮模板每行最多 4 个按钮")
-        if len(normalized) > 6:
+        if len(normalized) > _NORMALIZE_BUTTON_TEMPLATE_THRESHOLD_6:
             raise ValidationError("按钮模板最多支持 6 行")
         return normalized
 

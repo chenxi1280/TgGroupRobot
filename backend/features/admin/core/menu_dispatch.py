@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from backend.features.admin.support import *
+_HANDLE_TOGGLE_THRESHOLD_4 = 4
+
 
 
 ADMIN_MENU_HANDLERS = {
@@ -135,7 +137,7 @@ class CoreMenuDispatchMixin:
         *, callback_data: CallbackParser,
     ) -> None:
         """处理开关切换操作"""
-        field = callback_data.get(3) if callback_data.length() >= 4 else callback_data.get(2)
+        field = callback_data.get(3) if callback_data.length() >= _HANDLE_TOGGLE_THRESHOLD_4 else callback_data.get(2)
 
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:

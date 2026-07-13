@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 from backend.features.admin.support import *
+_DURATION_LABEL_THRESHOLD_3600 = 3600
+_DURATION_LABEL_THRESHOLD_60 = 60
+_DURATION_LABEL_THRESHOLD_86400 = 86400
+
 
 
 VERIFICATION_RULES = [
@@ -18,11 +22,11 @@ def _duration_label(seconds: int) -> str:
     seconds = int(seconds or 0)
     if seconds <= 0:
         return "永久"
-    if seconds < 60:
+    if seconds < _DURATION_LABEL_THRESHOLD_60:
         return f"{seconds}秒"
-    if seconds < 3600:
+    if seconds < _DURATION_LABEL_THRESHOLD_3600:
         return f"{seconds // 60}分钟"
-    if seconds < 86400:
+    if seconds < _DURATION_LABEL_THRESHOLD_86400:
         return f"{seconds // 3600}小时"
     if seconds % 86400 == 0:
         return f"{seconds // 86400}天"

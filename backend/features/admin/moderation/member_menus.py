@@ -11,6 +11,8 @@ from backend.shared.ui.message_config_panel import (
     media_status,
     summarize_text,
 )
+_SHOW_FORCE_SUBSCRIBE_MENU_THRESHOLD_60 = 60
+
 
 
 class ModerationMemberMenusMixin:
@@ -119,7 +121,7 @@ class ModerationMemberMenusMixin:
             [
                 InlineKeyboardButton("⚙️ 删除提示消息：", callback_data=f"adm:menu:forcesub:{chat_id}"),
                 InlineKeyboardButton(
-                    mark_configured(f"{delete_after}秒后删除", delete_after != 60),
+                    mark_configured(f"{delete_after}秒后删除", delete_after != _SHOW_FORCE_SUBSCRIBE_MENU_THRESHOLD_60),
                     callback_data=f"adm:fs:{chat_id}:delete_after",
                 ),
             ],

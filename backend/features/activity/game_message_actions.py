@@ -35,6 +35,9 @@ from backend.platform.db.schema.models.expansion import GameParticipant, GameRou
 from backend.shared.services.base import ValidationError
 from backend.shared.services.publish_service import PublishService
 from backend.shared.services.user_service import ensure_user
+_HANDLE_GAME_MESSAGE_THRESHOLD_2 = 2
+_HANDLE_GAME_MESSAGE_THRESHOLD_21 = 21
+
 
 log = structlog.get_logger(__name__)
 
@@ -339,9 +342,9 @@ async def handle_game_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                 await PublishService.reply(context, chat_id=chat.id, text=f"⚠️ {exc}", reply_to_message_id=update.effective_message.message_id)
                 return True
             outcome = None
-            if len((participant.choice_data or {}).get("player_cards") or []) == 2:
+            if len((participant.choice_data or {}).get("player_cards") or []) == _HANDLE_GAME_MESSAGE_THRESHOLD_2:
                 from backend.features.activity.services.game_service import blackjack_total
-                if blackjack_total(participant.choice_data["player_cards"]) == 21:
+                if blackjack_total(participant.choice_data["player_cards"]) == _HANDLE_GAME_MESSAGE_THRESHOLD_21:
                     outcome = await finalize_blackjack_round(session, round_obj, participant, mode="stand")
             await session.commit()
         round_text = format_blackjack_round_text(participant, reveal_dealer=bool(outcome), outcome=outcome)

@@ -7,6 +7,8 @@ from telegram.ext import ContextTypes
 
 from backend.features.admin.garage.input_runtime import admin_handler_instance, clear_admin_input_state
 from backend.shared.services.base import ValidationError
+_HANDLE_CAR_REVIEW_FEATURE_INPUT_THRESHOLD_2 = 2
+
 
 
 async def handle_car_review_feature_input(
@@ -66,7 +68,7 @@ async def handle_car_review_feature_input(
 
     if state_type == "car_review_field_add_input":
         parts = text_value.split(maxsplit=1)
-        if len(parts) != 2:
+        if len(parts) != _HANDLE_CAR_REVIEW_FEATURE_INPUT_THRESHOLD_2:
             await update.effective_message.reply_text("请输入“字段键 字段名称”，例如：safe_score 安全感。")
             return True
         try:

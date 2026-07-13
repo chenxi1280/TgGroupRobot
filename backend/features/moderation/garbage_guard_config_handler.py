@@ -34,6 +34,9 @@ from backend.shared.callback_parser import CallbackParser
 from backend.shared.services.chat_service import get_chat_settings
 from backend.shared.services.module_settings_service import ModuleSettingsService
 from backend.shared.services.permission_service import PermissionPolicyService
+_GARBAGE_GUARD_CONFIG_CALLBACK_THRESHOLD_3 = 3
+_GARBAGE_GUARD_CONFIG_CALLBACK_THRESHOLD_5 = 5
+
 
 
 _INT_RE = re.compile(r"-?\d+")
@@ -106,7 +109,7 @@ async def garbage_guard_config_callback(update: Update, context: ContextTypes.DE
 
     q = update.callback_query
     cb = CallbackParser.parse(q.data or "")
-    if cb.length() < 3:
+    if cb.length() < _GARBAGE_GUARD_CONFIG_CALLBACK_THRESHOLD_3:
         return
 
     op = cb.get(1)
@@ -121,7 +124,7 @@ async def garbage_guard_config_callback(update: Update, context: ContextTypes.DE
     elif op == "input":
         chat_id = cb.get_int_optional(4) if cb.get(2) == "quick_reply_actions" else cb.get_int_optional(3)
     else:
-        chat_id = cb.get_int_optional(4) if cb.length() >= 5 else cb.get_int_optional(3)
+        chat_id = cb.get_int_optional(4) if cb.length() >= _GARBAGE_GUARD_CONFIG_CALLBACK_THRESHOLD_5 else cb.get_int_optional(3)
 
     if chat_id is None or chat_id == 0:
         await answer_callback_query_safely(update, "无效的群组 ID", show_alert=True)

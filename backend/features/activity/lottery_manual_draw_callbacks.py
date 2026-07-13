@@ -19,6 +19,10 @@ from backend.features.activity.ui.lottery import (
 from backend.platform.db.runtime.session import Database
 from backend.platform.db.schema.models.core import TgUser
 from backend.shared.callback_parser import CallbackParser
+_MANUAL_DRAW_SELECT_PRIZE_CALLBACK_IMPL_THRESHOLD_6 = 6
+_MANUAL_DRAW_SELECT_WINNER_CALLBACK_IMPL_THRESHOLD_7 = 7
+_MANUAL_DRAW_WINNER_PAGE_CALLBACK_IMPL_THRESHOLD_6 = 6
+
 
 
 async def manual_draw_select_prize_callback_impl(
@@ -36,7 +40,7 @@ async def manual_draw_select_prize_callback_impl(
     await q.answer()
     user = update.effective_user
     cb = CallbackParser.parse(q.data or "")
-    if cb.length() < 6:
+    if cb.length() < _MANUAL_DRAW_SELECT_PRIZE_CALLBACK_IMPL_THRESHOLD_6:
         return
     target_chat_id = cb.get_int(2)
     lottery_id = cb.get_int(3)
@@ -94,7 +98,7 @@ async def manual_draw_select_winner_callback_impl(
     chat = update.effective_chat
     user = update.effective_user
     cb = CallbackParser.parse(q.data or "")
-    if cb.length() < 7:
+    if cb.length() < _MANUAL_DRAW_SELECT_WINNER_CALLBACK_IMPL_THRESHOLD_7:
         return
     target_chat_id = cb.get_int(2)
     lottery_id = cb.get_int(3)
@@ -251,7 +255,7 @@ async def manual_draw_winner_page_callback_impl(
     await q.answer()
     user = update.effective_user
     cb = CallbackParser.parse(q.data or "")
-    if cb.length() < 6:
+    if cb.length() < _MANUAL_DRAW_WINNER_PAGE_CALLBACK_IMPL_THRESHOLD_6:
         return
     target_chat_id = cb.get_int(2)
     lottery_id = cb.get_int(3)

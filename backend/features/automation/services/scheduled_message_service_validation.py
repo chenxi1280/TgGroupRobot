@@ -5,6 +5,8 @@ from urllib.parse import urlparse
 
 from backend.shared.services.base import ValidationError
 from backend.shared.time_helper import parse_date_time_string
+_VALIDATE_DAY_PERIOD_THRESHOLD_23 = 23
+
 
 
 class ScheduledMessageValidationMixin:
@@ -137,7 +139,7 @@ class ScheduledMessageValidationMixin:
 
     @staticmethod
     def validate_day_period(day_start_hour: int, day_end_hour: int) -> None:
-        if not (0 <= day_start_hour <= 23 and 0 <= day_end_hour <= 23):
+        if not (0 <= day_start_hour <= _VALIDATE_DAY_PERIOD_THRESHOLD_23 and 0 <= day_end_hour <= _VALIDATE_DAY_PERIOD_THRESHOLD_23):
             raise ValidationError("时段小时必须在 0-23 之间")
 
     @staticmethod

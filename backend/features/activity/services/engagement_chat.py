@@ -17,6 +17,8 @@ from backend.platform.db.schema.models.enums import PointsTxnType
 from backend.platform.db.schema.models.expansion import EngagementChatReward, EngagementChatStat
 from backend.shared.services.base import ValidationError
 from backend.shared.services.user_service import ensure_user
+_TRY_CLAIM_CHAT_REWARD_THRESHOLD_7 = 7
+
 
 
 async def update_chat_reward(session: AsyncSession, chat_id: int, **updates) -> EngagementChatReward:
@@ -142,7 +144,7 @@ async def try_claim_chat_reward(session: AsyncSession, chat_id: int, user_id: in
     prev = await get_or_create_chat_stat(session, chat_id, user_id, biz_date=yesterday)
     previous_streak = prev.streak_days if prev.reward_claimed else 0
     streak = previous_streak + 1
-    if reward.after_7d_mode == "reset" and streak > 7:
+    if reward.after_7d_mode == "reset" and streak > _TRY_CLAIM_CHAT_REWARD_THRESHOLD_7:
         streak = 1
     stat.streak_days = streak
     plan = reward.reward_points_plan or DEFAULT_CHAT_REWARD_PLAN

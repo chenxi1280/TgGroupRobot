@@ -5,6 +5,9 @@ from telegram.ext import ContextTypes
 
 from backend.platform.db.runtime.session import Database
 from backend.platform.db.schema.models.enums import AutoReplyMatchType, ConversationStateType
+_AUTO_REPLY_EDIT_ACTION_THRESHOLD_5 = 5
+_AUTO_REPLY_RULE_CONFIG_ACTION_THRESHOLD_5 = 5
+
 
 
 async def auto_reply_edit_action(
@@ -25,7 +28,7 @@ async def auto_reply_edit_action(
         return
 
     parts = (q.data or "").split(":")
-    if len(parts) < 5:
+    if len(parts) < _AUTO_REPLY_EDIT_ACTION_THRESHOLD_5:
         await q.edit_message_text("规则不存在")
         await q.answer()
         return
@@ -99,7 +102,7 @@ async def auto_reply_rule_config_action(
         return
 
     parts = (q.data or "").split(":")
-    if len(parts) < 5:
+    if len(parts) < _AUTO_REPLY_RULE_CONFIG_ACTION_THRESHOLD_5:
         await q.answer("规则不存在", show_alert=True)
         return
     action = parts[1]

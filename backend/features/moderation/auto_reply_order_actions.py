@@ -4,6 +4,8 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from backend.platform.db.runtime.session import Database
+_AUTO_REPLY_MOVE_ACTION_THRESHOLD_5 = 5
+
 
 
 async def auto_reply_move_action(
@@ -24,7 +26,7 @@ async def auto_reply_move_action(
         return
 
     parts = (q.data or "").split(":")
-    if len(parts) < 5:
+    if len(parts) < _AUTO_REPLY_MOVE_ACTION_THRESHOLD_5:
         await q.answer("移动失败", show_alert=True)
         return
     try:

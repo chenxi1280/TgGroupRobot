@@ -7,6 +7,9 @@ from telegram.ext import ContextTypes
 from backend.platform.db.runtime.session import Database
 from backend.platform.telegram.errors import answer_callback_query_safely, mark_callback_query_answered
 from backend.shared.services.publish_service import PublishService
+_HANDLE_MALL_CALLBACK_ACTION_THRESHOLD_3 = 3
+_HANDLE_MALL_CALLBACK_ACTION_THRESHOLD_4 = 4
+
 
 log = structlog.get_logger(__name__)
 
@@ -92,7 +95,7 @@ async def handle_mall_callback_action(
 
     data = update.callback_query.data or ""
     parts = data.split(":")
-    if len(parts) < 3:
+    if len(parts) < _HANDLE_MALL_CALLBACK_ACTION_THRESHOLD_3:
         await answer_callback_query_safely(update, "无效操作", show_alert=True)
         return
     try:
@@ -110,7 +113,7 @@ async def handle_mall_callback_action(
         return
 
     if action == "redeem":
-        if len(parts) < 4:
+        if len(parts) < _HANDLE_MALL_CALLBACK_ACTION_THRESHOLD_4:
             await answer_callback_query_safely(update, "无效商品", show_alert=True)
             return
         try:

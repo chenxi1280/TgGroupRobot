@@ -12,6 +12,8 @@ from backend.shared.ui.message_config_panel import (
     media_status,
     summarize_text,
 )
+_SHOW_WELCOME_DETAIL_MENU_THRESHOLD_15 = 15
+
 
 
 def format_welcome_text_input_prompt(current_text: str | None) -> str:
@@ -144,7 +146,7 @@ class WelcomeAdminControllerMixin:
             ],
             [
                 InlineKeyboardButton("🏖️ 预览效果", callback_data=f"adm:wel:{chat_id}:preview:{welcome_id}"),
-                InlineKeyboardButton(mark_configured("🕘 延迟删除", item.delete_mode != WelcomeDeleteMode.seconds.value or int(item.delete_delay_seconds or 15) != 15), callback_data=f"adm:wel:{chat_id}:cycle_delete:{welcome_id}"),
+                InlineKeyboardButton(mark_configured("🕘 延迟删除", item.delete_mode != WelcomeDeleteMode.seconds.value or int(item.delete_delay_seconds or 15) != _SHOW_WELCOME_DETAIL_MENU_THRESHOLD_15), callback_data=f"adm:wel:{chat_id}:cycle_delete:{welcome_id}"),
             ],
             [
                 InlineKeyboardButton("❌ 删除配置", callback_data=f"adm:wel:{chat_id}:delete:{welcome_id}"),

@@ -10,6 +10,8 @@ from backend.features.garage.services.garage_features_shared import _resolve_use
 from backend.platform.db.schema.models.core import TgUser
 from backend.platform.db.schema.models.garage_features import CarReviewCustomField, CarReviewSetting
 from backend.shared.services.base import ValidationError
+_NORMALIZE_CUSTOM_FIELD_LABEL_THRESHOLD_32 = 32
+
 
 
 class CarReviewSettingsMixin:
@@ -164,6 +166,6 @@ def _normalize_custom_field_label(value: str) -> str:
     cleaned = re.sub(r"[\x00-\x1f\x7f]", "", value or "").strip()
     if not cleaned:
         raise ValidationError("字段名称不能为空。")
-    if len(cleaned) > 32:
+    if len(cleaned) > _NORMALIZE_CUSTOM_FIELD_LABEL_THRESHOLD_32:
         raise ValidationError("字段名称过长，请控制在 32 个字符以内。")
     return cleaned

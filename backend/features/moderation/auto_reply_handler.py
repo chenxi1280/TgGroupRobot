@@ -42,6 +42,11 @@ from backend.features.moderation.services.auto_reply_service import (
     update_auto_reply_rule,
 )
 from backend.platform.state.state_service import set_user_state
+_AUTO_REPLY_DELAY_CALLBACK_THRESHOLD_4 = 4
+_AUTO_REPLY_DELAY_SET_CALLBACK_THRESHOLD_6 = 6
+_AUTO_REPLY_SET_CALLBACK_THRESHOLD_6 = 6
+_AUTO_REPLY_TOGGLE_CALLBACK_THRESHOLD_4 = 4
+
 
 async def auto_reply_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """自动回复菜单回调（适配器函数）"""
@@ -125,7 +130,7 @@ async def auto_reply_set_callback(update: Update, context: ContextTypes.DEFAULT_
         return
 
     parts = (q.data or "").split(":")
-    if len(parts) < 6:
+    if len(parts) < _AUTO_REPLY_SET_CALLBACK_THRESHOLD_6:
         await q.answer("无效配置项", show_alert=True)
         return
     try:
@@ -196,7 +201,7 @@ async def auto_reply_delay_callback(update: Update, context: ContextTypes.DEFAUL
         return
 
     parts = (q.data or "").split(":")
-    if len(parts) < 4:
+    if len(parts) < _AUTO_REPLY_DELAY_CALLBACK_THRESHOLD_4:
         await q.answer("规则不存在", show_alert=True)
         return
     try:
@@ -219,7 +224,7 @@ async def auto_reply_delay_set_callback(update: Update, context: ContextTypes.DE
         return
 
     parts = (q.data or "").split(":")
-    if len(parts) < 6:
+    if len(parts) < _AUTO_REPLY_DELAY_SET_CALLBACK_THRESHOLD_6:
         await q.answer("延迟删除配置无效", show_alert=True)
         return
     try:
@@ -297,7 +302,7 @@ async def auto_reply_toggle_callback(update: Update, context: ContextTypes.DEFAU
         if target_chat_id is None:
             return
         parts = data.split(":")
-        if len(parts) < 4:
+        if len(parts) < _AUTO_REPLY_TOGGLE_CALLBACK_THRESHOLD_4:
             await q.answer("规则不存在", show_alert=True)
             return
         try:

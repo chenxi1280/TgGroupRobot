@@ -19,6 +19,8 @@ from backend.shared.services.publish_service import PublishService
 from backend.shared.time_helper import LOCAL_TIMEZONE
 
 from .common import _extract_car_review_media_file_ids, _reply_garage_feedback
+_PARSE_SCORE_VALUE_THRESHOLD_100 = 100
+
 
 log = structlog.get_logger(__name__)
 
@@ -503,7 +505,7 @@ def _parse_score_value(raw_value: str) -> float | None:
     if match is None:
         return None
     value = float(match.group(0))
-    if value < 0 or value > 100:
+    if value < 0 or value > _PARSE_SCORE_VALUE_THRESHOLD_100:
         return None
     return value
 

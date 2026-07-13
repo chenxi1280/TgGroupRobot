@@ -33,6 +33,9 @@ from backend.platform.telegram.errors import answer_callback_query_safely
 from backend.shared.callback_parser import CallbackParser
 from backend.shared.services.base import ValidationError
 from backend.shared.services.user_service import ensure_user
+_HANDLE_GAME_RUNTIME_CALLBACK_THRESHOLD_2 = 2
+_HANDLE_GAME_RUNTIME_CALLBACK_THRESHOLD_21 = 21
+
 
 log = structlog.get_logger(__name__)
 
@@ -168,9 +171,9 @@ async def handle_game_runtime_callback(update: Update, context: ContextTypes.DEF
                 await answer_callback_query_safely(update, str(exc), show_alert=True)
                 return
             outcome = None
-            if len((participant.choice_data or {}).get("player_cards") or []) == 2:
+            if len((participant.choice_data or {}).get("player_cards") or []) == _HANDLE_GAME_RUNTIME_CALLBACK_THRESHOLD_2:
                 from backend.features.activity.services.game_service import blackjack_total
-                if blackjack_total(participant.choice_data["player_cards"]) == 21:
+                if blackjack_total(participant.choice_data["player_cards"]) == _HANDLE_GAME_RUNTIME_CALLBACK_THRESHOLD_21:
                     outcome = await finalize_blackjack_round(session, round_obj, participant, mode="stand")
             await session.commit()
         sent = await context.bot.send_message(

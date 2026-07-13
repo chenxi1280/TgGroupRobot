@@ -6,6 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.platform.db.schema.models.core import AdCampaign
 from backend.shared.services.base import ServiceBase
+_SHOULD_SEND_AD_THRESHOLD_30 = 30
+_SHOULD_SEND_AD_THRESHOLD_7 = 7
+
 
 
 def is_rotation_ad(ad: AdCampaign) -> bool:
@@ -78,11 +81,11 @@ def should_send_ad(ad: AdCampaign) -> bool:
         return True
     if ad.frequency == "weekly":
         if ad.last_sent_at:
-            return (now - ad.last_sent_at).days >= 7
+            return (now - ad.last_sent_at).days >= _SHOULD_SEND_AD_THRESHOLD_7
         return True
     if ad.frequency == "monthly":
         if ad.last_sent_at:
-            return (now - ad.last_sent_at).days >= 30
+            return (now - ad.last_sent_at).days >= _SHOULD_SEND_AD_THRESHOLD_30
         return True
 
     return ad.last_sent_at is None

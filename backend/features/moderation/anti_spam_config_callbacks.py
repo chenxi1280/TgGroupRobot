@@ -23,6 +23,8 @@ from backend.shared.callback_parser import CallbackParser
 from backend.shared.services.chat_service import get_chat_settings
 from backend.shared.services.module_settings_service import ModuleSettingsService
 from backend.shared.services.permission_service import PermissionPolicyService
+_ANTI_SPAM_CONFIG_CALLBACK_THRESHOLD_4 = 4
+
 
 
 async def anti_spam_config_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -36,7 +38,7 @@ async def anti_spam_config_callback(update: Update, context: ContextTypes.DEFAUL
         return
 
     cb = CallbackParser.parse(q.data or "")
-    if cb.length() < 4:
+    if cb.length() < _ANTI_SPAM_CONFIG_CALLBACK_THRESHOLD_4:
         return
 
     op = cb.get(1)

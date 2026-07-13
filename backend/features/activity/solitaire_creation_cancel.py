@@ -6,6 +6,8 @@ from telegram.ext import ContextTypes, ConversationHandler
 from backend.features.activity.ui.solitaire import solitaire_menu_keyboard
 from backend.platform.db.runtime.session import Database
 from backend.platform.state.state_service import clear_user_state
+_SOLITAIRE_CANCEL_CALLBACK_THRESHOLD_3 = 3
+
 
 
 async def solitaire_cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int | None:
@@ -17,7 +19,7 @@ async def solitaire_cancel_callback(update: Update, context: ContextTypes.DEFAUL
     chat = update.effective_chat
     user = update.effective_user
     parts = (q.data or "").split(":")
-    if len(parts) >= 3:
+    if len(parts) >= _SOLITAIRE_CANCEL_CALLBACK_THRESHOLD_3:
         try:
             target_chat_id = int(parts[2])
         except ValueError:

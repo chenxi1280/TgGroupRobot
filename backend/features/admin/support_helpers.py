@@ -5,6 +5,10 @@ from typing import TypeVar
 from telegram.ext import ContextTypes
 
 from backend.shared.callback_parser import CallbackParser
+_RESOLVE_PRIVATE_ADMIN_TARGET_CHAT_ID_THRESHOLD_3 = 3
+_RESOLVE_PRIVATE_ADMIN_TARGET_CHAT_ID_THRESHOLD_4 = 4
+_RESOLVE_PRIVATE_SCOPED_TARGET_CHAT_ID_THRESHOLD_4 = 4
+
 
 T = TypeVar("T")
 
@@ -30,7 +34,7 @@ def _resolve_private_admin_target_chat_id(cb: CallbackParser) -> int | None:
         return 0
 
     if action == "menu":
-        if cb.length() >= 4:
+        if cb.length() >= _RESOLVE_PRIVATE_ADMIN_TARGET_CHAT_ID_THRESHOLD_4:
             chat_first = _parse_int_silent(cb.get(2))
             if chat_first is not None:
                 return chat_first
@@ -38,13 +42,13 @@ def _resolve_private_admin_target_chat_id(cb: CallbackParser) -> int | None:
         return None
 
     if action == "renewal":
-        if cb.length() >= 4:
+        if cb.length() >= _RESOLVE_PRIVATE_ADMIN_TARGET_CHAT_ID_THRESHOLD_4:
             return cb.get_int_optional(3)
-        if cb.length() >= 3:
+        if cb.length() >= _RESOLVE_PRIVATE_ADMIN_TARGET_CHAT_ID_THRESHOLD_3:
             return cb.get_int_optional(2)
         return None
 
-    if cb.length() >= 3:
+    if cb.length() >= _RESOLVE_PRIVATE_ADMIN_TARGET_CHAT_ID_THRESHOLD_3:
         return cb.get_int_optional(2)
     return None
 
@@ -57,7 +61,7 @@ def _resolve_private_scoped_target_chat_id(cb: CallbackParser) -> int | None:
     if prefix == "ali":
         action = cb.get(1)
         if action in {"members", "invite"}:
-            return cb.get_int_optional(3) if cb.length() >= 4 else cb.get_int_optional(2)
+            return cb.get_int_optional(3) if cb.length() >= _RESOLVE_PRIVATE_SCOPED_TARGET_CHAT_ID_THRESHOLD_4 else cb.get_int_optional(2)
         if action in {"jointban", "leave"}:
             return cb.get_int_optional(3) if cb.get(2) == "toggle" else cb.get_int_optional(2)
         if action in {"create", "join"}:
@@ -79,7 +83,7 @@ def _resolve_private_scoped_target_chat_id(cb: CallbackParser) -> int | None:
         if action in {"home", "toggle", "badge"}:
             return cb.get_int_optional(2)
         if action == "summary":
-            return cb.get_int_optional(3) if cb.length() >= 4 else cb.get_int_optional(2)
+            return cb.get_int_optional(3) if cb.length() >= _RESOLVE_PRIVATE_SCOPED_TARGET_CHAT_ID_THRESHOLD_4 else cb.get_int_optional(2)
         if action in {"teacher", "wl"}:
             return cb.get_int_optional(3)
         if action == "limit":
@@ -115,7 +119,7 @@ def _resolve_private_scoped_target_chat_id(cb: CallbackParser) -> int | None:
         if action == "home":
             return cb.get_int_optional(2)
         if action in {"submit_cmd", "rank_cmd", "approver", "template"}:
-            return cb.get_int_optional(3) if cb.length() >= 4 else cb.get_int_optional(2)
+            return cb.get_int_optional(3) if cb.length() >= _RESOLVE_PRIVATE_SCOPED_TARGET_CHAT_ID_THRESHOLD_4 else cb.get_int_optional(2)
         if action in {
             "toggle",
             "mode",

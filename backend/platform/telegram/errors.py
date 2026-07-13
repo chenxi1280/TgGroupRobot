@@ -4,6 +4,9 @@ from collections import deque
 
 import structlog
 from telegram import Update
+_ANSWER_CALLBACK_QUERY_SAFELY_THRESHOLD_180 = 180
+_BUILD_PUBLIC_ERROR_TEXT_THRESHOLD_120 = 120
+
 
 _ANSWERED_CACHE_LIMIT = 2048
 _ANSWERED_CALLBACK_IDS: set[str] = set()
@@ -55,7 +58,7 @@ def build_public_error_text(error: Exception | None, fallback: str = "操作失�
     if not first_line:
         return fallback
 
-    if len(first_line) > 120:
+    if len(first_line) > _BUILD_PUBLIC_ERROR_TEXT_THRESHOLD_120:
         return fallback
     return first_line
 
@@ -74,7 +77,7 @@ async def answer_callback_query_safely(
         return
 
     safe_text = text.strip() or fallback_text
-    if len(safe_text) > 180:
+    if len(safe_text) > _ANSWER_CALLBACK_QUERY_SAFELY_THRESHOLD_180:
         safe_text = fallback_text
 
     try:
