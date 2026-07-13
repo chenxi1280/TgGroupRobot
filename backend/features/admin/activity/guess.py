@@ -9,89 +9,39 @@ DEFAULT_GUESS_COMMAND = "竞猜"
 
 
 def _guess_title_prompt() -> str:
-    return (
-        "⚽ 竞猜 | 活动名字\n\n"
-        "本步只输入活动名字。\n"
-        "格式：活动名字\n"
-        "完整示例：世界杯决赛胜负"
-    )
+    return "⚽ 竞猜 | 活动名字\n\n本步只输入活动名字。\n格式：活动名字\n完整示例：世界杯决赛胜负"
 
 
 def _guess_cover_prompt() -> str:
-    return (
-        "⚽ 竞猜 | 活动封面\n\n"
-        "本步只发送图片，或发送“清空”移除封面。\n"
-        "格式：图片消息 或 清空\n"
-        "完整示例：直接发送一张比赛海报图片"
-    )
+    return "⚽ 竞猜 | 活动封面\n\n本步只发送图片，或发送“清空”移除封面。\n格式：图片消息 或 清空\n完整示例：直接发送一张比赛海报图片"
 
 
 def _guess_description_prompt() -> str:
-    return (
-        "⚽ 竞猜 | 活动说明\n\n"
-        "本步只输入活动说明。\n"
-        "格式：说明文本\n"
-        "完整示例：90 分钟常规时间结果，不含加时。"
-    )
+    return "⚽ 竞猜 | 活动说明\n\n本步只输入活动说明。\n格式：说明文本\n完整示例：90 分钟常规时间结果，不含加时。"
 
 
 def _guess_banker_prompt() -> str:
-    return (
-        "⚽ 竞猜 | 本局庄家\n\n"
-        "本步只输入庄家用户，或发送“清空”切回无庄模式。\n"
-        "格式：用户ID 或 @用户名 或 清空\n"
-        "完整示例：123456789"
-    )
+    return "⚽ 竞猜 | 本局庄家\n\n本步只输入庄家用户，或发送“清空”切回无庄模式。\n格式：用户ID 或 @用户名 或 清空\n完整示例：123456789"
 
 
 def _guess_pool_prompt() -> str:
-    return (
-        "⚽ 竞猜 | 公共奖池\n\n"
-        "本步只输入公共奖池积分，不要带单位。\n"
-        "格式：非负整数\n"
-        "完整示例：1000\n"
-        "不需要奖池可填 0。"
-    )
+    return "⚽ 竞猜 | 公共奖池\n\n本步只输入公共奖池积分，不要带单位。\n格式：非负整数\n完整示例：1000\n不需要奖池可填 0。"
 
 
 def _guess_options_prompt() -> str:
-    return (
-        "⚽ 竞猜 | 竞猜选项\n\n"
-        "本步只输入竞猜选项，每行一个选项。\n"
-        "格式：编号:文案；也支持每行只写文案。\n"
-        "完整示例：\n"
-        "A:主胜\n"
-        "B:平局\n"
-        "C:客胜"
-    )
+    return "⚽ 竞猜 | 竞猜选项\n\n本步只输入竞猜选项，每行一个选项。\n格式：编号:文案；也支持每行只写文案。\n完整示例：\nA:主胜\nB:平局\nC:客胜"
 
 
 def _guess_command_prompt() -> str:
-    return (
-        "⚽ 竞猜 | 群内指令\n\n"
-        "本步只输入群内参与指令，不要带斜杠。\n"
-        "格式：指令文字\n"
-        "完整示例：竞猜"
-    )
+    return "⚽ 竞猜 | 群内指令\n\n本步只输入群内参与指令，不要带斜杠。\n格式：指令文字\n完整示例：竞猜"
 
 
 def _guess_rake_ratio_prompt() -> str:
-    return (
-        "⚽ 竞猜 | 抽水比例\n\n"
-        "本步只输入 0 到 1 之间的小数。\n"
-        "格式：小数\n"
-        "完整示例：0.1\n"
-        "0.1 表示抽水 10%。"
-    )
+    return "⚽ 竞猜 | 抽水比例\n\n本步只输入 0 到 1 之间的小数。\n格式：小数\n完整示例：0.1\n0.1 表示抽水 10%。"
 
 
 def _guess_rake_owner_prompt() -> str:
-    return (
-        "⚽ 竞猜 | 抽水归属\n\n"
-        "本步只输入抽水归属用户，或发送“清空”清除。\n"
-        "格式：用户ID 或 @用户名 或 清空\n"
-        "完整示例：123456789"
-    )
+    return "⚽ 竞猜 | 抽水归属\n\n本步只输入抽水归属用户，或发送“清空”清除。\n格式：用户ID 或 @用户名 或 清空\n完整示例：123456789"
 
 
 def _guess_draft_with_defaults(draft: dict | None) -> dict:
@@ -284,163 +234,249 @@ class GuessAdminControllerMixin:
         keyboard_rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"guess:list:{chat_id}:{event.status}")])
         await self.message_helper.safe_edit(update, format_event_runtime(event), parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard_rows))
 
+    async def _begin_guess_input(
+        self, update, session, *, chat_id: int, sub: str, draft: dict
+    ) -> bool:
+        state_map = {
+            "title": "guess_wait_title", "cover": "guess_wait_cover",
+            "description": "guess_wait_description", "banker": "guess_wait_banker",
+            "pool": "guess_wait_pool", "options": "guess_wait_options",
+            "command": "guess_wait_command", "deadline": "guess_wait_deadline",
+        }
+        prompt_map = {
+            "title": _guess_title_prompt, "cover": _guess_cover_prompt,
+            "description": _guess_description_prompt, "banker": _guess_banker_prompt,
+            "pool": _guess_pool_prompt, "options": _guess_options_prompt,
+            "command": _guess_command_prompt,
+        }
+        state_type = state_map.get(sub)
+        if state_type is None:
+            return False
+        await _start_guess_input_state(
+            session, user_id=update.effective_user.id, chat_id=chat_id,
+            state_type=state_type, draft=draft,
+        )
+        await session.commit()
+        if sub == "deadline":
+            sample_dt = next_top_of_hour(days_offset=1)
+            sample_text = sample_dt.astimezone(LOCAL_TIMEZONE).strftime("%Y-%m-%d %H:%M")
+            text = build_datetime_prompt_text(
+                title="⚽ 竞猜 | 截止时间", sample_time_text=sample_text,
+                sample_time_unix=int(sample_dt.timestamp()), input_hint="👉 请输入截止时间：",
+                extra_tips=["本步只输入截止时间。"],
+            )
+            keyboard = build_copy_time_keyboard(f"guess:create:{chat_id}:preview", sample_text)
+            await self.message_helper.safe_edit(
+                update, text, parse_mode="HTML", reply_markup=keyboard
+            )
+            return True
+        keyboard = InlineKeyboardMarkup(
+            [[InlineKeyboardButton("🔙 返回", callback_data=f"guess:create:{chat_id}:preview")]]
+        )
+        await self.message_helper.safe_edit(update, prompt_map[sub](), reply_markup=keyboard)
+        return True
+
+    async def _handle_guess_draft_action(
+        self, update, context, session, *, chat_id: int, sub: str, draft: dict
+    ) -> bool:
+        if sub == "repeat":
+            next_draft = {**draft, "allow_repeat_bet": not bool(draft.get("allow_repeat_bet", False))}
+        elif sub == "clear":
+            await clear_private_admin_state(
+                session, target_chat_id=chat_id, user_id=update.effective_user.id
+            )
+            next_draft = _guess_draft_with_defaults({})
+        elif sub == "preview":
+            await session.commit()
+            await self._show_guess_create_menu(update, context, chat_id, draft=draft)
+            return True
+        else:
+            return False
+        await _start_guess_input_state(
+            session, user_id=update.effective_user.id, chat_id=chat_id,
+            state_type="guess_wait_title", draft=next_draft,
+        )
+        await session.commit()
+        await self._show_guess_create_menu(update, context, chat_id, draft=next_draft)
+        return True
+
+    async def _publish_guess_draft(
+        self, update, context, session, *, chat_id: int, draft: dict
+    ) -> None:
+        draft = _guess_draft_with_defaults(draft)
+        required = {"title", "options", "deadline_at"}
+        if not required.issubset(draft):
+            await session.commit()
+            await answer_callback_query_safely(
+                update, "❌ 请先补齐活动名字、竞猜选项和截止时间。", show_alert=True
+            )
+            await self._show_guess_create_menu(
+                update, context, chat_id, draft=draft,
+                toast="❌ 发布失败：请先补齐活动名字、竞猜选项和截止时间。下面可以直接继续修改。",
+            )
+            return
+        try:
+            event = await create_guess_event(
+                session, chat_id, update.effective_user.id, draft
+            )
+            sent = await context.bot.send_message(
+                chat_id=chat_id, text=format_event_runtime(event), parse_mode="Markdown"
+            )
+        except ValidationError as exc:
+            await session.rollback()
+            await answer_callback_query_safely(update, f"❌ {exc}", show_alert=True)
+            return
+        except TelegramError as exc:
+            await session.rollback()
+            await answer_callback_query_safely(
+                update, f"❌ 发布到群里失败：{exc}", show_alert=True
+            )
+            return
+        event.announcement_message_id = sent.message_id
+        await clear_private_admin_state(
+            session, target_chat_id=chat_id, user_id=update.effective_user.id
+        )
+        await session.commit()
+        await self._show_guess_event_detail(
+            update, context, chat_id, event_id=event.id
+        )
+
+    async def _handle_guess_create(
+        self, update, context, session, *, chat_id: int, callback_data
+    ) -> None:
+        sub = callback_data.get(3)
+        state = await _get_guess_draft_state(session, update.effective_user.id, chat_id)
+        draft = dict(state.state_data or {}) if state else {}
+        if sub == "start":
+            draft = _guess_draft_with_defaults({})
+            await _start_guess_input_state(
+                session, user_id=update.effective_user.id, chat_id=chat_id,
+                state_type="guess_wait_title", draft=draft,
+            )
+            await session.commit()
+            keyboard = InlineKeyboardMarkup(
+                [[InlineKeyboardButton("🔙 返回", callback_data=f"guess:home:{chat_id}")]]
+            )
+            await self.message_helper.safe_edit(
+                update, _guess_title_prompt(), reply_markup=keyboard
+            )
+            return
+        if await self._begin_guess_input(
+            update, session, chat_id=chat_id, sub=sub, draft=draft
+        ):
+            return
+        if await self._handle_guess_draft_action(
+            update, context, session, chat_id=chat_id, sub=sub, draft=draft
+        ):
+            return
+        if sub == "publish":
+            await self._publish_guess_draft(
+                update, context, session, chat_id=chat_id, draft=draft
+            )
+
+    async def _handle_guess_settings(
+        self, update, context, session, *, chat_id: int, callback_data
+    ) -> None:
+        sub = callback_data.get(3)
+        if sub == "home":
+            await session.commit()
+            await self._show_guess_settings(update, context, chat_id)
+            return
+        prompts = {
+            "rake_ratio": ("guess_wait_rake_ratio", _guess_rake_ratio_prompt()),
+            "rake_owner": ("guess_wait_rake_owner", _guess_rake_owner_prompt()),
+        }
+        config = prompts.get(sub)
+        if config:
+            await _start_guess_input_state(
+                session, user_id=update.effective_user.id, chat_id=chat_id,
+                state_type=config[0], draft={},
+            )
+            await session.commit()
+            keyboard = InlineKeyboardMarkup(
+                [[InlineKeyboardButton("🔙 返回", callback_data=f"guess:settings:{chat_id}:home")]]
+            )
+            await self.message_helper.safe_edit(update, config[1], reply_markup=keyboard)
+            return
+        if sub == "delete_mode":
+            await update_guess_setting(
+                session, chat_id, delete_message_mode=callback_data.get(4)
+            )
+            await session.commit()
+            await self._show_guess_settings(update, context, chat_id)
+
+    async def _load_guess_action_event(
+        self, update, session, *, chat_id: int, event_id: int
+    ):
+        event = await get_guess_event(session, chat_id, event_id)
+        if event is not None:
+            return event
+        await session.commit()
+        await answer_callback_query_safely(update, "❌ 活动不存在", show_alert=True)
+        return None
+
+    async def _handle_guess_event_action(
+        self, update, context, session, *, chat_id: int, action: str, callback_data
+    ) -> None:
+        if action == "list":
+            await session.commit()
+            await self._show_guess_event_list(
+                update, context, chat_id, status=callback_data.get(3)
+            )
+            return
+        if action == "detail":
+            await session.commit()
+            await self._show_guess_event_detail(
+                update, context, chat_id, event_id=callback_data.get_int(3)
+            )
+            return
+        if action not in {"open", "cancel"}:
+            return
+        event = await self._load_guess_action_event(
+            update, session, chat_id=chat_id, event_id=callback_data.get_int(3)
+        )
+        if event is None:
+            return
+        if action == "open":
+            note = await settle_guess_event(
+                session, event=event, winner_option=callback_data.get(4)
+            )
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=f"{format_event_runtime(event)}\n\n{note}", parse_mode="Markdown",
+            )
+        else:
+            await cancel_guess_event(session, event=event)
+        await session.commit()
+        await self._show_guess_event_detail(update, context, chat_id, event_id=event.id)
+
     async def _handle_guess(
         self,
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        *, callback_data: CallbackParser,
+        *,
+        callback_data: CallbackParser,
     ) -> None:
         action = callback_data.get(1)
-        db: Database = context.application.bot_data["db"]
         if action == "home":
             await self._show_guess_home(update, context, chat_id)
             return
+        db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
             if action == "create":
-                sub = callback_data.get(3)
-                state = await _get_guess_draft_state(session, update.effective_user.id, chat_id)
-                draft = dict(state.state_data or {}) if state else {}
-                if sub == "start":
-                    await _start_guess_input_state(session, user_id=update.effective_user.id, chat_id=chat_id, state_type="guess_wait_title", draft=_guess_draft_with_defaults({}))
-                    await session.commit()
-                    await self.message_helper.safe_edit(update, _guess_title_prompt(), reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"guess:home:{chat_id}")]]))
-                    return
-                if sub in {"title", "cover", "description", "banker", "pool", "options", "command", "deadline"}:
-                    state_map = {
-                        "title": "guess_wait_title",
-                        "cover": "guess_wait_cover",
-                        "description": "guess_wait_description",
-                        "banker": "guess_wait_banker",
-                        "pool": "guess_wait_pool",
-                        "options": "guess_wait_options",
-                        "command": "guess_wait_command",
-                        "deadline": "guess_wait_deadline",
-                    }
-                    prompt_map = {
-                        "title": _guess_title_prompt(),
-                        "cover": _guess_cover_prompt(),
-                        "description": _guess_description_prompt(),
-                        "banker": _guess_banker_prompt(),
-                        "pool": _guess_pool_prompt(),
-                        "options": _guess_options_prompt(),
-                        "command": _guess_command_prompt(),
-                    }
-                    await _start_guess_input_state(session, user_id=update.effective_user.id, chat_id=chat_id, state_type=state_map[sub], draft=draft)
-                    await session.commit()
-                    if sub == "deadline":
-                        sample_dt = next_top_of_hour(days_offset=1)
-                        sample_text = sample_dt.astimezone(LOCAL_TIMEZONE).strftime("%Y-%m-%d %H:%M")
-                        await self.message_helper.safe_edit(
-                            update,
-                            build_datetime_prompt_text(
-                                title="⚽ 竞猜 | 截止时间",
-                                sample_time_text=sample_text,
-                                sample_time_unix=int(sample_dt.timestamp()),
-                                input_hint="👉 请输入截止时间：",
-                                extra_tips=["本步只输入截止时间。"],
-                            ),
-                            parse_mode="HTML",
-                            reply_markup=build_copy_time_keyboard(f"guess:create:{chat_id}:preview", sample_text),
-                        )
-                        return
-                    await self.message_helper.safe_edit(update, prompt_map[sub], reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"guess:create:{chat_id}:preview")]]))
-                    return
-                if sub == "repeat":
-                    draft["allow_repeat_bet"] = not bool(draft.get("allow_repeat_bet", False))
-                    await _start_guess_input_state(session, user_id=update.effective_user.id, chat_id=chat_id, state_type="guess_wait_title", draft=draft)
-                    await session.commit()
-                    await self._show_guess_create_menu(update, context, chat_id, draft=draft)
-                    return
-                if sub == "clear":
-                    await clear_private_admin_state(session, target_chat_id=chat_id, user_id=update.effective_user.id)
-                    draft = _guess_draft_with_defaults({})
-                    await _start_guess_input_state(session, user_id=update.effective_user.id, chat_id=chat_id, state_type="guess_wait_title", draft=draft)
-                    await session.commit()
-                    await self._show_guess_create_menu(update, context, chat_id, draft=draft)
-                    return
-                if sub == "preview":
-                    await session.commit()
-                    await self._show_guess_create_menu(update, context, chat_id, draft=draft)
-                    return
-                if sub == "publish":
-                    draft = _guess_draft_with_defaults(draft)
-                    required = {"title", "options", "deadline_at"}
-                    if not required.issubset(set(draft.keys())):
-                        await session.commit()
-                        await answer_callback_query_safely(update, "❌ 请先补齐活动名字、竞猜选项和截止时间。", show_alert=True)
-                        await self._show_guess_create_menu(
-                            update,
-                            context,
-                            chat_id,
-                            draft=draft,
-                            toast="❌ 发布失败：请先补齐活动名字、竞猜选项和截止时间。下面可以直接继续修改。",
-                        )
-                        return
-                    try:
-                        event = await create_guess_event(session, chat_id, update.effective_user.id, draft)
-                    except ValidationError as exc:
-                        await session.rollback()
-                        await answer_callback_query_safely(update, f"❌ {exc}", show_alert=True)
-                        return
-                    try:
-                        sent = await context.bot.send_message(chat_id=chat_id, text=format_event_runtime(event), parse_mode="Markdown")
-                    except TelegramError as exc:
-                        await session.rollback()
-                        await answer_callback_query_safely(update, f"❌ 发布到群里失败：{exc}", show_alert=True)
-                        return
-                    event.announcement_message_id = sent.message_id
-                    await clear_private_admin_state(session, target_chat_id=chat_id, user_id=update.effective_user.id)
-                    await session.commit()
-                    await self._show_guess_event_detail(update, context, chat_id, event_id=event.id)
-                    return
+                await self._handle_guess_create(
+                    update, context, session, chat_id=chat_id,
+                    callback_data=callback_data,
+                )
+                return
             if action == "settings":
-                sub = callback_data.get(3)
-                if sub == "home":
-                    await session.commit()
-                    await self._show_guess_settings(update, context, chat_id)
-                    return
-                if sub == "rake_ratio":
-                    await _start_guess_input_state(session, user_id=update.effective_user.id, chat_id=chat_id, state_type="guess_wait_rake_ratio", draft={})
-                    await session.commit()
-                    await self.message_helper.safe_edit(update, _guess_rake_ratio_prompt(), reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"guess:settings:{chat_id}:home")]]))
-                    return
-                if sub == "rake_owner":
-                    await _start_guess_input_state(session, user_id=update.effective_user.id, chat_id=chat_id, state_type="guess_wait_rake_owner", draft={})
-                    await session.commit()
-                    await self.message_helper.safe_edit(update, _guess_rake_owner_prompt(), reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"guess:settings:{chat_id}:home")]]))
-                    return
-                if sub == "delete_mode":
-                    await update_guess_setting(session, chat_id, delete_message_mode=callback_data.get(4))
-                    await session.commit()
-                    await self._show_guess_settings(update, context, chat_id)
-                    return
-            if action == "list":
-                await session.commit()
-                await self._show_guess_event_list(update, context, chat_id, status=callback_data.get(3))
+                await self._handle_guess_settings(
+                    update, context, session, chat_id=chat_id,
+                    callback_data=callback_data,
+                )
                 return
-            if action == "detail":
-                await session.commit()
-                await self._show_guess_event_detail(update, context, chat_id, event_id=callback_data.get_int(3))
-                return
-            if action == "open":
-                event = await get_guess_event(session, chat_id, callback_data.get_int(3))
-                if event is None:
-                    await session.commit()
-                    await answer_callback_query_safely(update, "❌ 活动不存在", show_alert=True)
-                    return
-                note = await settle_guess_event(session, event=event, winner_option=callback_data.get(4))
-                await context.bot.send_message(chat_id=chat_id, text=f"{format_event_runtime(event)}\n\n{note}", parse_mode="Markdown")
-                await session.commit()
-                await self._show_guess_event_detail(update, context, chat_id, event_id=event.id)
-                return
-            if action == "cancel":
-                event = await get_guess_event(session, chat_id, callback_data.get_int(3))
-                if event is None:
-                    await session.commit()
-                    await answer_callback_query_safely(update, "❌ 活动不存在", show_alert=True)
-                    return
-                await cancel_guess_event(session, event=event)
-                await session.commit()
-                await self._show_guess_event_detail(update, context, chat_id, event_id=event.id)
-                return
+            await self._handle_guess_event_action(
+                update, context, session, chat_id=chat_id,
+                action=action, callback_data=callback_data,
+            )
