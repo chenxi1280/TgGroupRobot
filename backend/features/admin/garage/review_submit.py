@@ -123,36 +123,99 @@ async def _handle_teacher_input(update: Update, context: ContextTypes.DEFAULT_TY
     )
 
 
-async def _handle_body_input(update: Update, context: ContextTypes.DEFAULT_TYPE, session, *, state, message_text: str) -> None:
+async def _resolve_review_body_context(update, session, *, state):
     data = state.state_data if isinstance(state.state_data, dict) else {}
     target_chat_id = data.get("target_chat_id")
     teacher_user_id = data.get("teacher_user_id")
     if not isinstance(target_chat_id, int) or not isinstance(teacher_user_id, int):
-        await clear_user_state(session, chat_id=state.chat_id, user_id=update.effective_user.id)
-        await update.effective_message.reply_text("车评提交入口参数异常，请回群重新点击“提交车评”。")
-        return
-
+        await clear_user_state(
+            session, chat_id=state.chat_id, user_id=update.effective_user.id
+        )
+        await update.effective_message.reply_text(
+            "车评提交入口参数异常，请回群重新点击“提交车评”。"
+        )
+        return None
     setting = await CarReviewService.get_setting(session, target_chat_id)
-    if not getattr(setting, "approver_user_id", None):
-        await clear_user_state(session, chat_id=state.chat_id, user_id=update.effective_user.id)
-        await update.effective_message.reply_text("车评系统还没有配置审核人，请先联系管理员配置后再提交。")
-        return
-
-    fields = [item for item in await CarReviewService.list_custom_fields(session, target_chat_id) if getattr(item, "enabled", False)]
-    parsed = _parse_review_body(
-        message_text or "",
-        fields,
-        require_fields=(getattr(setting, "review_mode", "default") == "default"),
+    if getattr(setting, "approver_user_id", None):
+        return target_chat_id, teacher_user_id, setting
+    await clear_user_state(
+        session, chat_id=state.chat_id, user_id=update.effective_user.id
     )
-    if parsed.invalid_labels or parsed.missing_labels:
-        parts: list[str] = []
-        if parsed.missing_labels:
-            parts.append("缺少：" + "、".join(parsed.missing_labels))
-        if parsed.invalid_labels:
-            parts.append("分数格式不正确：" + "、".join(parsed.invalid_labels))
-        await update.effective_message.reply_text("默认车评模式需要按模板填写完整项目。\n" + "\n".join(parts))
-        return
+    await update.effective_message.reply_text(
+        "车评系统还没有配置审核人，请先联系管理员配置后再提交。"
+    )
+    return None
 
+
+async def _parse_review_submission(update, session, *, target_chat_id: int, setting, message_text: str):
+    fields = [
+        item for item in await CarReviewService.list_custom_fields(session, target_chat_id)
+        if getattr(item, "enabled", False)
+    ]
+    parsed = _parse_review_body(
+        message_text or "", fields,
+        require_fields=getattr(setting, "review_mode", "default") == "default",
+    )
+    if not parsed.invalid_labels and not parsed.missing_labels:
+        return parsed
+    problems: list[str] = []
+    if parsed.missing_labels:
+        problems.append("缺少：" + "、".join(parsed.missing_labels))
+    if parsed.invalid_labels:
+        problems.append("分数格式不正确：" + "、".join(parsed.invalid_labels))
+    await update.effective_message.reply_text(
+        "默认车评模式需要按模板填写完整项目。\n" + "\n".join(problems)
+    )
+    return None
+
+
+async def _notify_review_approver(
+    update, context, *, target_chat_id: int, teacher_user_id: int,
+    report_id: int, approver_user_id: int, teacher_user, target_chat,
+) -> None:
+    text = (
+        "收到新的车评待审核\n"
+        f"群：{target_chat.title if target_chat and target_chat.title else target_chat_id}\n"
+        f"老师：{format_user_display_name(teacher_user, teacher_user_id)}\n"
+        f"提交人：{format_user_display_name(update.effective_user, update.effective_user.id)}\n"
+        f"报告ID：{report_id}"
+    )
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton(
+            "查看报告", callback_data=f"crv:report:{target_chat_id}:detail:{report_id}:p"
+        )],
+        [
+            InlineKeyboardButton(
+                "通过", callback_data=f"crv:report:{target_chat_id}:approve:{report_id}:p"
+            ),
+            InlineKeyboardButton(
+                "驳回", callback_data=f"crv:report:{target_chat_id}:reject:{report_id}:p"
+            ),
+        ],
+    ])
+    try:
+        await PublishService.send(
+            context, chat_id=approver_user_id, text=text, reply_markup=keyboard
+        )
+    except Exception as exc:
+        log.warning(
+            "car_review_private_submit_notify_approver_failed",
+            chat_id=target_chat_id, report_id=report_id,
+            approver_user_id=approver_user_id, error=str(exc),
+        )
+
+
+async def _handle_body_input(update: Update, context: ContextTypes.DEFAULT_TYPE, session, *, state, message_text: str) -> None:
+    resolved = await _resolve_review_body_context(update, session, state=state)
+    if resolved is None:
+        return
+    target_chat_id, teacher_user_id, setting = resolved
+    parsed = await _parse_review_submission(
+        update, session, target_chat_id=target_chat_id,
+        setting=setting, message_text=message_text,
+    )
+    if parsed is None:
+        return
     report = await CarReviewService.create_report(
         session,
         chat_id=target_chat_id,
@@ -172,31 +235,9 @@ async def _handle_body_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
     await session.commit()
 
     await update.effective_message.reply_text(f"车评已提交，等待审核。报告ID：{report_id}")
-
-    try:
-        await PublishService.send(
-            context,
-            chat_id=approver_user_id,
-            text=(
-                "收到新的车评待审核\n"
-                f"群：{target_chat.title if target_chat and target_chat.title else target_chat_id}\n"
-                f"老师：{format_user_display_name(teacher_user, teacher_user_id)}\n"
-                f"提交人：{format_user_display_name(update.effective_user, update.effective_user.id)}\n"
-                f"报告ID：{report_id}"
-            ),
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("查看报告", callback_data=f"crv:report:{target_chat_id}:detail:{report_id}:p")],
-                [
-                    InlineKeyboardButton("通过", callback_data=f"crv:report:{target_chat_id}:approve:{report_id}:p"),
-                    InlineKeyboardButton("驳回", callback_data=f"crv:report:{target_chat_id}:reject:{report_id}:p"),
-                ],
-            ]),
-        )
-    except Exception as exc:
-        log.warning(
-            "car_review_private_submit_notify_approver_failed",
-            chat_id=target_chat_id,
-            report_id=report_id,
-            approver_user_id=approver_user_id,
-            error=str(exc),
-        )
+    await _notify_review_approver(
+        update, context, target_chat_id=target_chat_id,
+        teacher_user_id=teacher_user_id, report_id=report_id,
+        approver_user_id=approver_user_id, teacher_user=teacher_user,
+        target_chat=target_chat,
+    )
