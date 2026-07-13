@@ -1,15 +1,18 @@
 from __future__ import annotations
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from dataclasses import dataclass
+from typing import Awaitable, Callable
+
 from telegram.ext import ContextTypes
 
 from backend.features.garage.services.garage_features_service import TeacherSearchService
-from backend.features.garage.services.teacher_search_queries import (
-    teacher_attendance_status_label,
-)
-from backend.features.group_ops.group_hooks.teacher_search_format import (
-    build_teacher_keyword_search_markup,
-    format_teacher_keyword_search,
+from backend.features.group_ops.group_hooks.teacher_search_queries import (
+    _format_teacher_keyword_search as _format_teacher_keyword_search_impl,
+    build_private_teacher_location_markup as _build_private_teacher_location_markup,
+    reply_nearby_teachers as _reply_nearby_teachers,
+    reply_open_course_teachers as _reply_open_course_teachers,
+    reply_teacher_keyword_search as _reply_teacher_keyword_search,
+    try_reply_bare_keyword_search as _try_reply_bare_keyword_search,
 )
 from backend.features.group_ops.text_trigger_runtime import is_reserved_group_text_command_for_chat
 from backend.shared.services.command_config_service import is_command_enabled
@@ -25,18 +28,27 @@ TEACHER_SEARCH_HELP_TEXT = (
     "发送“开课老师”，查看今天已开课打卡的老师。"
 )
 
-LOCATION_UPDATE_PROMPT = (
-    "还没有你的定位。\n"
-    "为了保护隐私，请点下面按钮到私聊更新定位。\n"
-    "更新后回到本群发送“附近”，就能查询附近老师。"
-)
+@dataclass(frozen=True, slots=True)
+class _TeacherSearchRequest:
+    context: ContextTypes.DEFAULT_TYPE
+    session: object
+    chat: object
+    user: object
+    message: object
+    text: str
+    teacher_setting: object
+    chat_settings: object | None
+    is_teacher: bool
+    is_attendance_teacher: bool
+    is_admin: bool
+    is_whitelisted: bool
+
+    @property
+    def delete_mode(self) -> str:
+        return getattr(self.teacher_setting, "delete_mode", "none")
 
 
-async def _get_auth_badge(session, chat_id: int) -> str:
-    from backend.features.garage.services.garage_features_service import GarageAuthService
-
-    settings = await GarageAuthService.get_settings(session, chat_id)
-    return getattr(settings, "garage_auth_badge", "🤝") or "🤝"
+TeacherSearchAction = Callable[[_TeacherSearchRequest], Awaitable[bool]]
 
 
 def _parse_nearby_condition(text: str) -> str | None:
@@ -65,182 +77,230 @@ async def _process_teacher_search_features(
     is_admin: bool,
     is_whitelisted: bool,
 ) -> bool:
-    attendance_is_teacher = is_teacher if is_attendance_teacher is None else is_attendance_teacher
-    attendance_mode = getattr(teacher_setting, "attendance_mode", "message") or "message"
-    keyword_status = _resolve_attendance_keyword_status(text, teacher_setting)
-    if text == "开课打卡" and attendance_mode != "external":
-        keyword_status = "open"
-
-    location_recording_enabled = teacher_setting.nearby_search_enabled or (
-        teacher_setting.force_location_enabled and is_teacher
-    )
-    location_pair = await _extract_location_pair(message, text) if location_recording_enabled else None
-    if location_pair is not None and location_recording_enabled:
-        await _record_teacher_location(
-            context,
-            session,
-            chat,
-            user=user,
-            message=message,
-            latitude=location_pair[0],
-            longitude=location_pair[1],
-            is_teacher=is_teacher,
-        )
-        return True
-
-    delete_mode = getattr(teacher_setting, "delete_mode", "none")
-
-    if keyword_status is not None and attendance_mode != "external":
-        await _reply_attendance_checkin(
-            context,
-            session,
-            chat,
-            user=user,
-            message=message,
-            teacher_setting=teacher_setting,
-            is_teacher=attendance_is_teacher,
-            status=keyword_status,
-        )
-        return True
-
-    if await _block_teacher_without_location(
-        context,
-        session,
-        chat,
+    request = _TeacherSearchRequest(
+        context=context,
+        session=session,
+        chat=chat,
         user=user,
         message=message,
         text=text,
         teacher_setting=teacher_setting,
+        chat_settings=chat_settings,
         is_teacher=is_teacher,
+        is_attendance_teacher=is_teacher if is_attendance_teacher is None else is_attendance_teacher,
         is_admin=is_admin,
         is_whitelisted=is_whitelisted,
-    ):
-        return True
-
-    if (
-        teacher_setting.attendance_enabled
-        and attendance_mode == "message"
-        and attendance_is_teacher
-        and text
-        and not text.startswith("/")
-    ):
-        await TeacherSearchService.mark_attendance(
-            session,
-            chat_id=chat.id,
-            user_id=user.id,
-            source_message_id=message.message_id,
-        )
-
-    if text == "开课老师":
-        if chat_settings is not None and not is_command_enabled(chat_settings, "open_teachers"):
-            await message.reply_text("该指令已关闭。")
+    )
+    actions: tuple[TeacherSearchAction, ...] = (
+        _handle_location_update,
+        _handle_attendance_keyword,
+        _handle_missing_teacher_location,
+        _record_message_attendance,
+        _handle_open_course_search,
+        _handle_nearby_search,
+        _handle_explicit_teacher_search,
+        _handle_teacher_search_entry,
+        _handle_bare_teacher_search,
+    )
+    for action in actions:
+        if await action(request):
             return True
-        await _reply_open_course_teachers(context, session, chat, message=message, delete_mode=delete_mode)
-        return True
-
-    nearby_condition = _parse_nearby_condition(text)
-    if nearby_condition is not None:
-        if chat_settings is not None and not is_command_enabled(chat_settings, "nearby"):
-            await message.reply_text("该指令已关闭。")
-            return True
-        await _reply_nearby_teachers(
-            context,
-            session,
-            chat,
-            user=user,
-            message=message,
-            teacher_setting=teacher_setting,
-            keyword=nearby_condition or None,
-            delete_mode=delete_mode,
-        )
-        return True
-
-    if text.startswith("老师搜索 "):
-        if chat_settings is not None and not is_command_enabled(chat_settings, "teacher_search"):
-            await message.reply_text("该指令已关闭。")
-            return True
-        keyword = text.split(" ", 1)[1].strip()
-        nearby_keyword = _parse_nearby_condition(keyword)
-        if nearby_keyword is not None:
-            await _reply_nearby_teachers(
-                context,
-                session,
-                chat,
-                user=user,
-                message=message,
-                teacher_setting=teacher_setting,
-                keyword=nearby_keyword or None,
-                delete_mode=delete_mode,
-            )
-        elif keyword in {"开课", "开课老师"}:
-            await _reply_open_course_teachers(context, session, chat, message=message, delete_mode=delete_mode)
-        else:
-            await _reply_teacher_keyword_search(
-                context,
-                session,
-                chat,
-                message=message,
-                teacher_setting=teacher_setting,
-                keyword=keyword,
-                delete_mode=delete_mode,
-            )
-        return True
-
-    footer_label = (teacher_setting.footer_button_label or "").strip()
-    is_teacher_search_entry = text == "老师搜索" or (footer_label and text == footer_label)
-    if (
-        is_teacher_search_entry
-        and not await is_reserved_group_text_command_for_chat(session, chat.id, text)
-    ):
-        if chat_settings is not None and not is_command_enabled(chat_settings, "teacher_search"):
-            await message.reply_text("该指令已关闭。")
-            return True
-        await session.commit()
-        await _reply_garage_feedback(
-            context,
-            chat_id=chat.id,
-            message_id=message.message_id,
-            text=TEACHER_SEARCH_HELP_TEXT,
-            delete_mode=delete_mode,
-        )
-        return True
-
-    if await _try_reply_bare_keyword_search(
-        context,
-        session,
-        chat,
-        message=message,
-        keyword=text,
-        teacher_setting=teacher_setting,
-        chat_settings=chat_settings,
-        delete_mode=delete_mode,
-    ):
-        return True
-
     return False
 
 
-def _build_private_location_markup(context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> InlineKeyboardMarkup | None:
-    bot = getattr(context, "bot", None)
-    bot_username = getattr(bot, "username", None)
-    if not bot_username:
-        return None
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("私聊更新定位", url=f"https://t.me/{bot_username}?start=tloc_{chat_id}")],
-    ])
+async def _handle_location_update(request: _TeacherSearchRequest) -> bool:
+    setting = request.teacher_setting
+    enabled = setting.nearby_search_enabled or (setting.force_location_enabled and request.is_teacher)
+    if not enabled:
+        return False
+    location = await _extract_location_pair(request.message, request.text)
+    if location is None:
+        return False
+    await _record_teacher_location(
+        request.context,
+        request.session,
+        request.chat,
+        user=request.user,
+        message=request.message,
+        latitude=location[0],
+        longitude=location[1],
+        is_teacher=request.is_teacher,
+    )
+    return True
 
 
-def _build_private_teacher_location_markup(
-    context: ContextTypes.DEFAULT_TYPE,
-    chat_id: int,
-) -> InlineKeyboardMarkup | None:
-    bot = getattr(context, "bot", None)
-    bot_username = getattr(bot, "username", None)
-    if not bot_username:
-        return None
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("私聊更新定位", url=f"https://t.me/{bot_username}?start=tselfloc_{chat_id}")],
-    ])
+async def _handle_attendance_keyword(request: _TeacherSearchRequest) -> bool:
+    mode = getattr(request.teacher_setting, "attendance_mode", "message") or "message"
+    status = _resolve_attendance_keyword_status(request.text, request.teacher_setting)
+    if request.text == "开课打卡" and mode != "external":
+        status = "open"
+    if status is None or mode == "external":
+        return False
+    await _reply_attendance_checkin(
+        request.context,
+        request.session,
+        request.chat,
+        user=request.user,
+        message=request.message,
+        teacher_setting=request.teacher_setting,
+        is_teacher=request.is_attendance_teacher,
+        status=status,
+    )
+    return True
+
+
+async def _handle_missing_teacher_location(request: _TeacherSearchRequest) -> bool:
+    return await _block_teacher_without_location(
+        request.context,
+        request.session,
+        request.chat,
+        user=request.user,
+        message=request.message,
+        text=request.text,
+        teacher_setting=request.teacher_setting,
+        is_teacher=request.is_teacher,
+        is_admin=request.is_admin,
+        is_whitelisted=request.is_whitelisted,
+    )
+
+
+async def _record_message_attendance(request: _TeacherSearchRequest) -> bool:
+    setting = request.teacher_setting
+    mode = getattr(setting, "attendance_mode", "message") or "message"
+    should_record = (
+        setting.attendance_enabled
+        and mode == "message"
+        and request.is_attendance_teacher
+        and request.text
+        and not request.text.startswith("/")
+    )
+    if should_record:
+        await TeacherSearchService.mark_attendance(
+            request.session,
+            chat_id=request.chat.id,
+            user_id=request.user.id,
+            source_message_id=request.message.message_id,
+        )
+    return False
+
+
+def _command_disabled(request: _TeacherSearchRequest, command: str) -> bool:
+    return request.chat_settings is not None and not is_command_enabled(request.chat_settings, command)
+
+
+async def _handle_open_course_search(request: _TeacherSearchRequest) -> bool:
+    if request.text != "开课老师":
+        return False
+    if _command_disabled(request, "open_teachers"):
+        await request.message.reply_text("该指令已关闭。")
+        return True
+    await _reply_open_course_teachers(
+        request.context,
+        request.session,
+        request.chat,
+        message=request.message,
+        delete_mode=request.delete_mode,
+    )
+    return True
+
+
+async def _handle_nearby_search(request: _TeacherSearchRequest) -> bool:
+    condition = _parse_nearby_condition(request.text)
+    if condition is None:
+        return False
+    if _command_disabled(request, "nearby"):
+        await request.message.reply_text("该指令已关闭。")
+        return True
+    await _reply_nearby_teachers(
+        request.context,
+        request.session,
+        request.chat,
+        user=request.user,
+        message=request.message,
+        teacher_setting=request.teacher_setting,
+        keyword=condition or None,
+        delete_mode=request.delete_mode,
+    )
+    return True
+
+
+async def _handle_explicit_teacher_search(request: _TeacherSearchRequest) -> bool:
+    if not request.text.startswith("老师搜索 "):
+        return False
+    if _command_disabled(request, "teacher_search"):
+        await request.message.reply_text("该指令已关闭。")
+        return True
+    keyword = request.text.split(" ", 1)[1].strip()
+    await _reply_explicit_teacher_search(request, keyword)
+    return True
+
+
+async def _reply_explicit_teacher_search(request: _TeacherSearchRequest, keyword: str) -> None:
+    nearby_keyword = _parse_nearby_condition(keyword)
+    if nearby_keyword is not None:
+        await _reply_nearby_teachers(
+            request.context,
+            request.session,
+            request.chat,
+            user=request.user,
+            message=request.message,
+            teacher_setting=request.teacher_setting,
+            keyword=nearby_keyword or None,
+            delete_mode=request.delete_mode,
+        )
+        return
+    if keyword in {"开课", "开课老师"}:
+        await _reply_open_course_teachers(
+            request.context,
+            request.session,
+            request.chat,
+            message=request.message,
+            delete_mode=request.delete_mode,
+        )
+        return
+    await _reply_teacher_keyword_search(
+        request.context,
+        request.session,
+        request.chat,
+        message=request.message,
+        teacher_setting=request.teacher_setting,
+        keyword=keyword,
+        delete_mode=request.delete_mode,
+    )
+
+
+async def _handle_teacher_search_entry(request: _TeacherSearchRequest) -> bool:
+    footer_label = (request.teacher_setting.footer_button_label or "").strip()
+    is_entry = request.text == "老师搜索" or bool(footer_label and request.text == footer_label)
+    if not is_entry:
+        return False
+    if await is_reserved_group_text_command_for_chat(request.session, request.chat.id, request.text):
+        return False
+    if _command_disabled(request, "teacher_search"):
+        await request.message.reply_text("该指令已关闭。")
+        return True
+    await request.session.commit()
+    await _reply_garage_feedback(
+        request.context,
+        chat_id=request.chat.id,
+        message_id=request.message.message_id,
+        text=TEACHER_SEARCH_HELP_TEXT,
+        delete_mode=request.delete_mode,
+    )
+    return True
+
+
+async def _handle_bare_teacher_search(request: _TeacherSearchRequest) -> bool:
+    return await _try_reply_bare_keyword_search(
+        request.context,
+        request.session,
+        request.chat,
+        message=request.message,
+        keyword=request.text,
+        teacher_setting=request.teacher_setting,
+        chat_settings=request.chat_settings,
+        delete_mode=request.delete_mode,
+    )
 
 
 def _resolve_attendance_keyword_status(text: str, teacher_setting) -> str | None:
@@ -399,225 +459,10 @@ async def _record_teacher_location(
     )
 
 
-async def _reply_open_course_teachers(
-    context: ContextTypes.DEFAULT_TYPE,
-    session,
-    chat,
-    *, message,
-
-    delete_mode: str,
-) -> None:
-    rows = await TeacherSearchService.list_open_course_teachers(session, chat.id)
-    badge = await _get_auth_badge(session, chat.id)
-    await session.commit()
-    if not rows:
-        await _reply_garage_feedback(
-            context,
-            chat_id=chat.id,
-            message_id=message.message_id,
-            text="今天还没有开课老师。",
-            delete_mode=delete_mode,
-        )
-        return
-    lines = ["今日开课老师："]
-    for idx, (profile, tg_user) in enumerate(rows[:10], start=1):
-        name = f"@{tg_user.username}" if tg_user and tg_user.username else (
-            tg_user.first_name if tg_user and tg_user.first_name else f"用户{profile.user_id}"
-        )
-        extra = " / ".join(part for part in [profile.region_text, profile.price_text] if part)
-        status = teacher_attendance_status_label(profile)
-        lines.append(f"{idx}. {badge} {name} · {status}" + (f" · {extra}" if extra else ""))
-    await _reply_garage_feedback(
-        context,
-        chat_id=chat.id,
-        message_id=message.message_id,
-        text="\n".join(lines),
-        delete_mode=delete_mode,
-    )
-
-
-async def _reply_nearby_teachers(
-    context: ContextTypes.DEFAULT_TYPE,
-    session,
-    chat,
-    *, user,
-    message,
-    teacher_setting,
-
-    keyword: str | None = None,
-    delete_mode: str,
-) -> None:
-    if not teacher_setting.nearby_search_enabled:
-        await session.commit()
-        await _reply_garage_feedback(
-            context,
-            chat_id=chat.id,
-            message_id=message.message_id,
-            text="附近搜索已关闭。",
-            delete_mode=delete_mode,
-        )
-        return
-    location = await TeacherSearchService.get_member_location(session, chat.id, user.id)
-    if location is None:
-        await session.commit()
-        await _reply_garage_feedback(
-            context,
-            chat_id=chat.id,
-            message_id=message.message_id,
-            text=LOCATION_UPDATE_PROMPT,
-            reply_markup=_build_private_location_markup(context, chat.id),
-            delete_mode=delete_mode,
-        )
-        return
-
-    nearby = await TeacherSearchService.list_nearby_teachers(
-        session,
-        chat.id,
-        float(location.latitude),
-        longitude=float(location.longitude),
-        only_open_course=getattr(teacher_setting, "only_open_course_enabled", True),
-        keyword=keyword,
-        limit=10,
-    )
-    badge = await _get_auth_badge(session, chat.id)
-    await session.commit()
-    if not nearby:
-        if keyword:
-            empty_text = (
-                "附近暂无符合条件的开课老师。"
-                if getattr(teacher_setting, "only_open_course_enabled", True)
-                else "附近暂无符合条件的老师。"
-            )
-        else:
-            empty_text = (
-                "附近暂无开课老师。"
-                if getattr(teacher_setting, "only_open_course_enabled", True)
-                else "附近暂无老师。"
-            )
-        await _reply_garage_feedback(
-            context,
-            chat_id=chat.id,
-            message_id=message.message_id,
-            text=empty_text,
-            delete_mode=delete_mode,
-        )
-        return
-    lines = [f"附近老师：{keyword}" if keyword else "附近老师："]
-    for idx, item in enumerate(nearby, start=1):
-        profile = item["profile"]
-        extra = " / ".join(part for part in [profile.region_text, profile.price_text] if part)
-        status = teacher_attendance_status_label(profile)
-        lines.append(
-            f"{idx}. {badge} {item['display_name']} · {status} · {item['distance_text']}"
-            + (f" · {extra}" if extra else "")
-        )
-    await _reply_garage_feedback(
-        context,
-        chat_id=chat.id,
-        message_id=message.message_id,
-        text="\n".join(lines),
-        delete_mode=delete_mode,
-    )
-
-
-async def _reply_teacher_keyword_search(
-    context: ContextTypes.DEFAULT_TYPE,
-    session,
-    chat,
-    *, message,
-    teacher_setting,
-    keyword: str,
-
-    delete_mode: str,
-) -> None:
-    if not teacher_setting.tag_search_enabled:
-        await session.commit()
-        await _reply_garage_feedback(
-            context,
-            chat_id=chat.id,
-            message_id=message.message_id,
-            text="标签搜索已关闭。",
-            delete_mode=delete_mode,
-        )
-        return
-    rows, fallback_note = await _search_teacher_keyword_rows(session, chat.id, keyword, teacher_setting=teacher_setting)
-    badge = await _get_auth_badge(session, chat.id)
-    await session.commit()
-    if not rows:
-        await _reply_garage_feedback(
-            context,
-            chat_id=chat.id,
-            message_id=message.message_id,
-            text="没有找到匹配的老师。",
-            delete_mode=delete_mode,
-        )
-        return
-    text = _format_teacher_keyword_search(keyword, rows, badge=badge, fallback_note=fallback_note)
-    await _reply_garage_feedback(
-        context,
-        chat_id=chat.id,
-        message_id=message.message_id,
-        text=text,
-        reply_markup=build_teacher_keyword_search_markup(rows),
-        delete_mode=delete_mode,
-    )
-
-
-async def _try_reply_bare_keyword_search(
-    context: ContextTypes.DEFAULT_TYPE,
-    session,
-    chat,
-    *, message,
-    keyword: str,
-    teacher_setting,
-    chat_settings,
-
-    delete_mode: str,
-) -> bool:
-    if not keyword or keyword.startswith("/") or not getattr(teacher_setting, "tag_search_enabled", False):
-        return False
-    if chat_settings is not None and not is_command_enabled(chat_settings, "teacher_search"):
-        return False
-    if await is_reserved_group_text_command_for_chat(session, chat.id, keyword):
-        return False
-    rows, fallback_note = await _search_teacher_keyword_rows(session, chat.id, keyword, teacher_setting=teacher_setting)
-    if not rows:
-        return False
-    badge = await _get_auth_badge(session, chat.id)
-    await session.commit()
-    await _reply_garage_feedback(
-        context,
-        chat_id=chat.id,
-        message_id=message.message_id,
-        text=_format_teacher_keyword_search(keyword, rows, badge=badge, fallback_note=fallback_note),
-        reply_markup=build_teacher_keyword_search_markup(rows),
-        delete_mode=delete_mode,
-    )
-    return True
-
-
-async def _search_teacher_keyword_rows(session, chat_id: int, keyword: str, *, teacher_setting):
-    only_open_course = getattr(teacher_setting, "only_open_course_enabled", True)
-    rows = await TeacherSearchService.search_teachers_by_keyword(
-        session,
-        chat_id,
-        keyword,
-        only_open_course=only_open_course,
-        limit=10,
-    )
-    fallback_note = ""
-    if not rows and only_open_course:
-        rows = await TeacherSearchService.search_teachers_by_keyword(
-            session,
-            chat_id,
-            keyword,
-            only_open_course=False,
-            limit=10,
-        )
-        if rows:
-            fallback_note = "未找到今日开课匹配老师，已显示全部认证老师。"
-    return rows, fallback_note
-
-
 def _format_teacher_keyword_search(keyword: str, rows, *, badge: str, fallback_note: str = "") -> str:
-    return format_teacher_keyword_search(keyword, rows, badge=badge, fallback_note=fallback_note)
+    return _format_teacher_keyword_search_impl(
+        keyword,
+        rows,
+        badge=badge,
+        fallback_note=fallback_note,
+    )
