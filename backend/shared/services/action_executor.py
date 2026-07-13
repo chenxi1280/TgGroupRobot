@@ -51,24 +51,71 @@ class ActionExecutor:
 
         if normalized in {"none", "noop", ""}:
             return ActionExecutionResult(action=normalized or "none", applied=False, detail="skipped")
-
         if normalized == "delete":
-            if message_id is None:
-                return ActionExecutionResult(action="delete", applied=False, detail="missing_message_id")
-            await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
-            return ActionExecutionResult(action="delete", applied=True, detail=detail)
-
+            return await ActionExecutor._delete_message(
+                context, chat_id, message_id=message_id, detail=detail
+            )
         if sender_chat_id is not None and normalized in {"mute", "ban", "kick"}:
-            if message_id is None:
-                return ActionExecutionResult(
-                    action=normalized,
-                    applied=False,
-                    detail="sender_chat_requires_delete_message_id",
-                )
-            await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
-            return ActionExecutionResult(action="delete", applied=True, detail="sender_chat_fallback_delete")
+            return await ActionExecutor._delete_sender_chat_message(
+                context,
+                normalized,
+                chat_id=chat_id,
+                message_id=message_id,
+            )
+        return await ActionExecutor._execute_member_action(
+            context,
+            normalized,
+            chat_id=chat_id,
+            user_id=user_id,
+            mute_seconds=mute_seconds,
+            detail=detail,
+        )
 
-        if normalized == "mute":
+    @staticmethod
+    async def _delete_message(
+        context: ContextTypes.DEFAULT_TYPE,
+        chat_id: int,
+        *,
+        message_id: int | None,
+        detail: str,
+    ) -> ActionExecutionResult:
+        if message_id is None:
+            return ActionExecutionResult(
+                action="delete", applied=False, detail="missing_message_id"
+            )
+        await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
+        return ActionExecutionResult(action="delete", applied=True, detail=detail)
+
+    @staticmethod
+    async def _delete_sender_chat_message(
+        context: ContextTypes.DEFAULT_TYPE,
+        action: str,
+        *,
+        chat_id: int,
+        message_id: int | None,
+    ) -> ActionExecutionResult:
+        if message_id is None:
+            return ActionExecutionResult(
+                action=action,
+                applied=False,
+                detail="sender_chat_requires_delete_message_id",
+            )
+        await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
+        return ActionExecutionResult(
+            action="delete", applied=True, detail="sender_chat_fallback_delete"
+        )
+
+    @staticmethod
+    async def _execute_member_action(
+        context: ContextTypes.DEFAULT_TYPE,
+        action: str,
+        *,
+        chat_id: int,
+        user_id: int,
+        mute_seconds: int | None,
+        detail: str,
+    ) -> ActionExecutionResult:
+        if action == "mute":
             until_date = None
             if mute_seconds and mute_seconds > 0:
                 until_date = dt.datetime.now(dt.UTC) + dt.timedelta(seconds=mute_seconds)
@@ -78,18 +125,15 @@ class ActionExecutor:
                 permissions=ChatPermissions(can_send_messages=False),
                 until_date=until_date,
             )
-            return ActionExecutionResult(action="mute", applied=True, detail=detail)
-
-        if normalized == "kick":
+        elif action in {"kick", "ban"}:
             await context.bot.ban_chat_member(chat_id=chat_id, user_id=user_id)
-            await context.bot.unban_chat_member(chat_id=chat_id, user_id=user_id, only_if_banned=True)
-            return ActionExecutionResult(action="kick", applied=True, detail=detail)
-
-        if normalized == "ban":
-            await context.bot.ban_chat_member(chat_id=chat_id, user_id=user_id)
-            return ActionExecutionResult(action=normalized, applied=True, detail=detail)
-
-        raise ValueError(f"unsupported action: {action}")
+            if action == "kick":
+                await context.bot.unban_chat_member(
+                    chat_id=chat_id, user_id=user_id, only_if_banned=True
+                )
+        else:
+            raise ValueError(f"unsupported action: {action}")
+        return ActionExecutionResult(action=action, applied=True, detail=detail)
 
     @staticmethod
     async def delete_many(
@@ -99,17 +143,19 @@ class ActionExecutor:
         message_ids: Iterable[int],
     ) -> ActionExecutionResult:
         deleted = 0
+        failed = 0
         for message_id in message_ids:
             if not message_id:
                 continue
             try:
                 await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
                 deleted += 1
-            except Exception as exc:  # pragma: no cover - defensive guard
+            except Exception as exc:
+                failed += 1
                 log.warning("action_executor_delete_many_failed", chat_id=chat_id, message_id=message_id, error=str(exc))
 
         return ActionExecutionResult(
             action="delete_many",
             applied=deleted > 0,
-            detail=f"deleted={deleted}",
+            detail=f"deleted={deleted},failed={failed}",
         )

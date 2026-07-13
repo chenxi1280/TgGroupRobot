@@ -101,6 +101,24 @@ async def test_action_executor_kick_unbans_after_ban() -> None:
 
 
 @pytest.mark.asyncio
+async def test_action_executor_delete_many_reports_partial_failures() -> None:
+    class PartialBot(FakeBot):
+        async def delete_message(self, **kwargs):
+            if kwargs["message_id"] == 2:
+                raise RuntimeError("delete denied")
+            await super().delete_message(**kwargs)
+
+    result = await ActionExecutor.delete_many(
+        _context(PartialBot()),
+        chat_id=-1001,
+        message_ids=[1, 2, 3],
+    )
+
+    assert result.applied is True
+    assert result.detail == "deleted=2,failed=1"
+
+
+@pytest.mark.asyncio
 async def test_publish_service_send_edit_pin_delete() -> None:
     bot = FakeBot()
     context = _context(bot)
