@@ -40,8 +40,6 @@ class Settings(BaseSettings):
         alias="DATABASE_URL",
     )
     database_connect_timeout_seconds: int = Field(default=10, alias="DATABASE_CONNECT_TIMEOUT_SECONDS")
-    startup_schema_migrations_enabled: bool = Field(default=True, alias="STARTUP_SCHEMA_MIGRATIONS_ENABLED")
-
     # 代理设置（用于连接 Telegram API）
     proxy_url: str | None = Field(default=None, alias="PROXY_URL")
 

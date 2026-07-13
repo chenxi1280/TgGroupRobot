@@ -1,3 +1,14 @@
+"""启动期严格 schema 校验层（schema gate）。
+
+本模块在 Alembic upgrade 之后执行，对库结构做严格校验：
+- schema ``bot`` 必须存在
+- ``Base.metadata`` 中所有 ``schema="bot"`` 的表必须存在
+- 字段类型、可空性和模型声明的 server default 必须一致
+- 外键目标与删除策略必须一致
+- ``REQUIRED_INDEXES`` 中声明的索引/唯一约束必须存在
+
+所有差异汇总后抛出 ``SchemaValidationError``，无配置或环境变量绕过路径。
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -6,6 +17,7 @@ from sqlalchemy import inspect
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from backend.platform.db.runtime.base import Base
+from backend.platform.db.runtime.schema_contract import collect_table_contract_issues
 
 
 @dataclass(frozen=True)
@@ -267,10 +279,6 @@ def _format_missing_items(items: list[str]) -> str:
     return "\n".join(f"- {item}" for item in items)
 
 
-def _normalize_columns(columns: list[dict]) -> set[str]:
-    return {col["name"] for col in columns}
-
-
 def _collect_index_keys(indexes: list[dict], uniques: list[dict]) -> set[tuple[str, tuple[str, ...], bool]]:
     keys: set[tuple[str, tuple[str, ...], bool]] = set()
     for idx in indexes:
@@ -292,56 +300,45 @@ def _collect_index_keys(indexes: list[dict], uniques: list[dict]) -> set[tuple[s
     return keys
 
 
-def _is_optional_column(column) -> bool:
-    return bool(getattr(column, "info", {}).get("schema_gate_optional", False))
+def _collect_index_issues(inspector) -> list[str]:
+    issues: list[str] = []
+    for required in REQUIRED_INDEXES:
+        if not inspector.has_table(required.table_name, schema="bot"):
+            continue
+        indexes = inspector.get_indexes(required.table_name, schema="bot")
+        uniques = inspector.get_unique_constraints(required.table_name, schema="bot")
+        expected = (required.index_name, required.columns, required.unique)
+        if expected not in _collect_index_keys(indexes, uniques):
+            issues.append(
+                "缺少索引: "
+                f"bot.{required.table_name}.{required.index_name}"
+                f" columns={required.columns} unique={required.unique}"
+            )
+    return issues
+
+
+def _inspect_database_schema(sync_conn) -> list[str]:
+    inspector = inspect(sync_conn)
+    if "bot" not in set(inspector.get_schema_names()):
+        return ["缺少 schema: bot"]
+
+    issues: list[str] = []
+    for table in Base.metadata.sorted_tables:
+        if table.schema != "bot":
+            continue
+        if not inspector.has_table(table.name, schema=table.schema):
+            issues.append(f"缺少数据表: {table.fullname}")
+            continue
+        issues.extend(collect_table_contract_issues(inspector, table))
+    issues.extend(_collect_index_issues(inspector))
+    return issues
 
 
 async def validate_database_schema(engine: AsyncEngine) -> None:
     """启动前执行 schema gate，发现结构漂移则拒绝启动。"""
     _load_model_metadata()
-    issues: list[str] = []
-
     async with engine.begin() as conn:
-        def _inspect(sync_conn) -> None:
-            inspector = inspect(sync_conn)
-            schemas = set(inspector.get_schema_names())
-            if "bot" not in schemas:
-                issues.append("缺少 schema: bot")
-                return
-
-            for table in Base.metadata.sorted_tables:
-                if table.schema != "bot":
-                    continue
-
-                if not inspector.has_table(table.name, schema=table.schema):
-                    issues.append(f"缺少数据表: {table.schema}.{table.name}")
-                    continue
-
-                db_columns = _normalize_columns(inspector.get_columns(table.name, schema=table.schema))
-                model_columns = {
-                    column.name
-                    for column in table.columns
-                    if not _is_optional_column(column)
-                }
-                for column_name in sorted(model_columns - db_columns):
-                    issues.append(f"缺少字段: {table.schema}.{table.name}.{column_name}")
-
-            for required in REQUIRED_INDEXES:
-                if not inspector.has_table(required.table_name, schema="bot"):
-                    continue
-
-                indexes = inspector.get_indexes(required.table_name, schema="bot")
-                uniques = inspector.get_unique_constraints(required.table_name, schema="bot")
-                keys = _collect_index_keys(indexes, uniques)
-                expected = (required.index_name, required.columns, required.unique)
-                if expected not in keys:
-                    issues.append(
-                        "缺少索引: "
-                        f"bot.{required.table_name}.{required.index_name}"
-                        f" columns={required.columns} unique={required.unique}"
-                    )
-
-        await conn.run_sync(_inspect)
+        issues = await conn.run_sync(_inspect_database_schema)
 
     if issues:
         raise SchemaValidationError(

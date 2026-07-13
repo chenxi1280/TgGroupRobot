@@ -1,3 +1,17 @@
+"""未纳管历史库的一次性 schema 引导层。
+
+本模块仅在数据库没有 ``alembic_version`` 时执行一次，负责把历史库结构
+对齐到 legacy baseline：
+1. ``CREATE SCHEMA IF NOT EXISTS bot``
+2. ``Base.metadata.create_all(checkfirst=True)`` — 建表（已存在则跳过）
+3. ``COMPATIBILITY_MIGRATIONS`` — 逐表 ``ADD COLUMN IF NOT EXISTS`` 等幂等补丁
+4. ``REQUIRED_INDEXES`` — ``CREATE INDEX IF NOT EXISTS`` 补齐索引
+
+所有语句必须幂等（可重复执行不报错），不允许在此处 ``DROP`` 或 ``ALTER``
+破坏性变更。结构性校验由 ``schema_gate.validate_database_schema`` 负责。
+
+版本表建立后，后续启动只执行 Alembic revision，不再调用本模块。
+"""
 from __future__ import annotations
 
 from collections.abc import Iterable
@@ -335,9 +349,9 @@ def _required_index_sql(table_name: str, index_name: str, columns: Iterable[str]
     return f"CREATE {unique_sql}INDEX IF NOT EXISTS {index_name} ON bot.{table_name}({column_sql})"
 
 
-async def run_startup_schema_migrations(engine: AsyncEngine) -> None:
-    """在 schema gate 前执行幂等补丁，兼容历史库结构。"""
-    log.info("startup_schema_migrations_started")
+async def run_legacy_schema_bootstrap(engine: AsyncEngine) -> None:
+    """将未纳管历史库显式对齐到 Alembic legacy baseline。"""
+    log.info("legacy_schema_bootstrap_started")
     _load_model_metadata()
 
     async with engine.begin() as conn:
@@ -375,4 +389,4 @@ async def run_startup_schema_migrations(engine: AsyncEngine) -> None:
             )
             executed += 1
 
-    log.info("startup_schema_migrations_finished", statements_executed=executed)
+    log.info("legacy_schema_bootstrap_finished", statements_executed=executed)

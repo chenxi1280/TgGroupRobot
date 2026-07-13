@@ -73,7 +73,12 @@ async def _delete_message_later(message, seconds: int) -> None:
     try:
         await message.delete()
     except Exception as exc:
-        log.warning("group_hook_message_delete_failed", chat_id=chat_id, message_id=message.message_id, error=str(exc))
+        log.warning(
+            "group_hook_message_delete_failed",
+            chat_id=getattr(message, "chat_id", None),
+            message_id=getattr(message, "message_id", None),
+            error=str(exc),
+        )
         return
 
 

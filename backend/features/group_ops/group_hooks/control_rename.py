@@ -32,7 +32,12 @@ async def _process_rename_monitor(
     template = getattr(settings, "name_change_monitor_template_text", None) or (
         "检测到用户{userId}修改{changeType}\n原{changeType}: {oldContent}\n新{changeType}: {newContent}"
     )
-    delete_after = int(getattr(settings, "name_change_monitor_delete_after_seconds", 60) or 60)
+    configured_delete_after = getattr(
+        settings,
+        "name_change_monitor_delete_after_seconds",
+        60,
+    )
+    delete_after = int(60 if configured_delete_after is None else configured_delete_after)
 
     for change_type, old_content, new_content in changes:
         text = (

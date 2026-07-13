@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 import backend.app.bootstrap as app_main
-from backend.platform.db.runtime.startup_migrations import run_startup_schema_migrations
+from backend.platform.db.runtime.startup_migrations import run_legacy_schema_bootstrap
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -47,7 +47,7 @@ class FakeEngine:
 
 
 @pytest.mark.asyncio
-async def test_run_startup_schema_migrations_executes_known_compat_patches(monkeypatch) -> None:
+async def test_run_legacy_schema_bootstrap_executes_known_compat_patches(monkeypatch) -> None:
     inspector = FakeInspector(tables={
         "chat_settings",
         "garage_forward_settings",
@@ -68,7 +68,7 @@ async def test_run_startup_schema_migrations_executes_known_compat_patches(monke
     monkeypatch.setattr("backend.platform.db.runtime.startup_migrations.inspect", lambda _: inspector)
     monkeypatch.setattr("backend.platform.db.runtime.startup_migrations.Base.metadata.create_all", lambda sync_conn, checkfirst=True: None)
 
-    await run_startup_schema_migrations(engine)  # type: ignore[arg-type]
+    await run_legacy_schema_bootstrap(engine)  # type: ignore[arg-type]
 
     executed_sql = engine.context.executed_sql
 
@@ -108,18 +108,18 @@ async def test_run_startup_schema_migrations_executes_known_compat_patches(monke
 
 
 @pytest.mark.asyncio
-async def test_validate_schema_or_exit_runs_migrations_before_schema_gate(monkeypatch) -> None:
+async def test_validate_schema_or_exit_runs_versioned_migrations_before_schema_gate(monkeypatch) -> None:
     calls: list[tuple[str, object]] = []
     engine = object()
     app = type("App", (), {"bot_data": {"db": type("DB", (), {"engine": engine})()}})()
 
-    async def fake_run_startup_schema_migrations(arg) -> None:
+    async def fake_migrate_database(arg) -> None:
         calls.append(("migrate", arg))
 
     async def fake_validate_database_schema(arg) -> None:
         calls.append(("validate", arg))
 
-    monkeypatch.setattr(app_main, "run_startup_schema_migrations", fake_run_startup_schema_migrations)
+    monkeypatch.setattr(app_main, "migrate_database", fake_migrate_database)
     monkeypatch.setattr(app_main, "validate_database_schema", fake_validate_database_schema)
 
     await app_main._validate_schema_or_exit(app)

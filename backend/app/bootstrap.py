@@ -5,17 +5,15 @@ import atexit
 import os
 import sys
 import tempfile
-import warnings
 
 import structlog
 from telegram import Update
-from telegram.warnings import PTBUserWarning
 from telegram.ext import Application, CallbackQueryHandler, ChatMemberHandler, ContextTypes, MessageHandler, TypeHandler, filters
 from telegram.request import HTTPXRequest
 
 from backend.platform.config.core.settings import get_settings
-from backend.platform.db.runtime.schema_gate import SchemaValidationError, validate_database_schema
-from backend.platform.db.runtime.startup_migrations import run_startup_schema_migrations
+from backend.platform.db.runtime.database_migrations import migrate_database
+from backend.platform.db.runtime.schema_gate import validate_database_schema
 from backend.platform.db.runtime.session import create_database, Database
 from backend.features.moderation.anti_flood_handler import anti_flood_message_handler
 from backend.features.moderation.anti_flood_config_handler import anti_flood_config_callback
@@ -68,24 +66,10 @@ async def _raw_update_probe(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     )
 
 
-def _configure_ptb_runtime() -> None:
-    """配置 PTB 运行时行为与已知可接受的告警过滤。"""
-    # 这几个会话流程是“按钮进入 + 文本输入”的混合模式。
-    # 对这类配置，PTB 会提示 per_message=False 时 CallbackQueryHandler 不会按消息粒度追踪。
-    # 当前设计本来就按 chat/user 维度管理会话，不依赖按消息粒度追踪，因此仅精确过滤该提示。
-    warnings.filterwarnings(
-        "ignore",
-        message=r"If 'per_message=False', 'CallbackQueryHandler' will not be tracked for every message\..*",
-        category=PTBUserWarning,
-    )
-
-
 def build_application() -> Application:
     """构建并配置 Telegram Bot 应用"""
     settings = get_settings()
     configure_logging(settings.log_level, getattr(settings, "log_format", "console"))
-    _configure_ptb_runtime()
-
     log.debug("bot_application_building")
 
     db = create_database(
@@ -240,25 +224,12 @@ async def _on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def _validate_schema_or_exit(app: Application) -> None:
-    """启动前执行严格 schema gate。"""
+    """启动前无条件完成版本迁移和严格 schema gate。"""
     db: Database = app.bot_data["db"]
-    allow_compat = os.getenv("BOT_ALLOW_SCHEMA_COMPAT", "").strip() == "1"
-
-    try:
-        log.info("schema_gate_started")
-        settings = app.bot_data.get("settings")
-        if getattr(settings, "startup_schema_migrations_enabled", True):
-            await run_startup_schema_migrations(db.engine)
-        else:
-            log.warning("startup_schema_migrations_skipped_by_config")
-        await validate_database_schema(db.engine)
-        log.info("schema_gate_passed")
-    except SchemaValidationError:
-        if allow_compat:
-            log.warning("schema_gate_bypassed_by_env", env_var="BOT_ALLOW_SCHEMA_COMPAT")
-            return
-        log.exception("schema_gate_failed")
-        raise
+    log.info("database_readiness_started")
+    await migrate_database(db.engine)
+    await validate_database_schema(db.engine)
+    log.info("database_readiness_passed")
 
 
 # PID 文件路径（跨平台兼容：使用系统临时目录）

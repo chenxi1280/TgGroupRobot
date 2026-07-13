@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import pytest
+from sqlalchemy.dialects import postgresql
 
 import backend.platform.db.schema.models.alliance  # noqa: F401
 import backend.platform.db.schema.models.core  # noqa: F401
@@ -24,13 +25,49 @@ class FakeInspector:
         return table_name in self.tables
 
     def get_columns(self, table_name: str, schema: str | None = None) -> list[dict]:
-        return [{"name": name} for name in self.tables[table_name]["columns"]]
+        model_table = _model_table(table_name)
+        overrides = self.tables[table_name].get("column_details", {})
+        columns = []
+        for name in self.tables[table_name]["columns"]:
+            model_column = model_table.columns[name]
+            default = model_column.server_default
+            details = {
+                "name": name,
+                "type": model_column.type,
+                "nullable": model_column.nullable,
+                "default": default.arg if default is not None else None,
+            }
+            details.update(overrides.get(name, {}))
+            columns.append(details)
+        return columns
 
     def get_indexes(self, table_name: str, schema: str | None = None) -> list[dict]:
         return self.tables[table_name].get("indexes", [])
 
     def get_unique_constraints(self, table_name: str, schema: str | None = None) -> list[dict]:
         return self.tables[table_name].get("uniques", [])
+
+    def get_foreign_keys(self, table_name: str, schema: str | None = None) -> list[dict]:
+        configured = self.tables[table_name].get("foreign_keys")
+        if configured is not None:
+            return configured
+        result = []
+        for constraint in _model_table(table_name).foreign_key_constraints:
+            element = next(iter(constraint.elements))
+            result.append({
+                "constrained_columns": [column.name for column in constraint.columns],
+                "referred_schema": element.target_fullname.split(".")[0],
+                "referred_table": element.target_fullname.split(".")[1],
+                "referred_columns": [element.target_fullname.split(".")[2]],
+                "options": {"ondelete": element.ondelete},
+            })
+        return result
+
+
+def _model_table(table_name: str):
+    from backend.platform.db.runtime.base import Base
+
+    return Base.metadata.tables[f"bot.{table_name}"]
 
 
 class FakeBeginContext:
@@ -693,3 +730,29 @@ async def test_schema_gate_fails_when_garage_retry_event_unique_missing(monkeypa
 
     with pytest.raises(SchemaValidationError, match="uq_garage_forward_retry_event"):
         await validate_database_schema(FakeEngine(inspector))  # type: ignore[arg-type]
+
+
+@pytest.mark.asyncio
+async def test_schema_gate_reports_all_column_and_foreign_key_differences(monkeypatch) -> None:
+    tables = _full_tables()
+    tables["verification_challenges"]["column_details"] = {
+        "timeout_status": {
+            "type": postgresql.VARCHAR(99),
+            "nullable": True,
+            "default": "'broken'::character varying",
+        },
+    }
+    tables["scheduled_message_logs"]["foreign_keys"] = []
+    tables["scheduled_message_tasks"]["indexes"] = []
+    inspector = FakeInspector(schemas=["bot"], tables=tables)
+    monkeypatch.setattr("backend.platform.db.runtime.schema_gate.inspect", lambda _: inspector)
+
+    with pytest.raises(SchemaValidationError) as error:
+        await validate_database_schema(FakeEngine(inspector))  # type: ignore[arg-type]
+
+    message = str(error.value)
+    assert "字段类型不匹配: bot.verification_challenges.timeout_status" in message
+    assert "字段可空性不匹配: bot.verification_challenges.timeout_status" in message
+    assert "字段默认值不匹配: bot.verification_challenges.timeout_status" in message
+    assert "缺少外键: bot.scheduled_message_logs" in message
+    assert "缺少索引: bot.scheduled_message_tasks.uq_smt_short_id" in message
