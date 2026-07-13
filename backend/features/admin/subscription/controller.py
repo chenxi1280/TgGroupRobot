@@ -4,6 +4,82 @@ from backend.features.admin.support import *
 _HANDLE_RENEWAL_THRESHOLD_3 = 3
 
 
+def _health_feature_lines(settings, tasks, *, chat_title: str, permission: str, garbage_enabled: bool) -> list[str]:
+    auto_delete_fields = (
+        "auto_delete_join", "auto_delete_left", "auto_delete_pinned",
+        "auto_delete_avatar", "auto_delete_title", "auto_delete_anonymous",
+    )
+    auto_delete_count = sum(bool(getattr(settings, field, False)) for field in auto_delete_fields)
+    enabled_tasks = sum(bool(getattr(task, "enabled", False)) for task in tasks)
+    night_enabled = any(bool(getattr(settings, field, False)) for field in (
+        "night_mode_enabled", "group_lock_phrase_enabled", "group_lock_schedule_enabled"
+    ))
+    member_limit = bool(getattr(settings, "new_member_limit_enabled", False))
+    member_window = int(getattr(settings, "new_member_limit_window_seconds", 3600) or 3600)
+    return [
+        f"🩺 [{chat_title}] 群组健康检查", "", permission, "", "关键功能",
+        f"• 新人验证：{'✅ 开启' if settings.verification_enabled else '❌ 关闭'}（{settings.verification_mode} / {settings.verification_timeout_seconds}秒）",
+        f"• 新成员限制：{'✅ 开启' if member_limit else '❌ 关闭'}（{_format_duration_label(member_window)}）",
+        f"• 强制关注：{'✅ 开启' if getattr(settings, 'force_subscribe_enabled', False) else '❌ 关闭'}",
+        f"• 垃圾防护：{'✅ 开启' if garbage_enabled else '❌ 关闭'}",
+        f"• 夜间管控：{'✅ 开启' if night_enabled else '❌ 关闭'}",
+        f"• 自动删除：{auto_delete_count}/6 项",
+        f"• 定时消息：{len(tasks)} 条（启用 {enabled_tasks} 条）", "", "风险提示",
+    ]
+
+
+def _force_subscribe_warnings(settings) -> list[str]:
+    warnings = []
+    force_subscribe = bool(getattr(settings, "force_subscribe_enabled", False))
+    if force_subscribe:
+        channels = (
+            getattr(settings, "force_subscribe_bound_channel_1", None),
+            getattr(settings, "force_subscribe_bound_channel_2", None),
+        )
+        if not any(channels):
+            warnings.append("⚠️ 强制关注已开启但尚未绑定频道/群组")
+    if force_subscribe and not settings.verification_enabled:
+        warnings.append("ℹ️ 当前会先检查关注状态，建议同时开启新人验证以减少误伤")
+    return warnings
+
+
+def _schedule_health_warnings(settings) -> list[str]:
+    if getattr(settings, "group_lock_schedule_enabled", False):
+        open_time = getattr(settings, "night_mode_end_time", None) or getattr(settings, "group_lock_open_time", None)
+        close_time = getattr(settings, "night_mode_start_time", None) or getattr(settings, "group_lock_close_time", None)
+        if not open_time or not close_time:
+            return ["⚠️ 夜间全员禁言已开启但管控开始/结束时间未完整配置"]
+    return []
+
+
+def _health_warnings(settings, *, garbage_enabled: bool) -> list[str]:
+    warnings = [*_force_subscribe_warnings(settings), *_schedule_health_warnings(settings)]
+    member_limit = bool(getattr(settings, "new_member_limit_enabled", False))
+    if not settings.verification_enabled and not garbage_enabled and not member_limit:
+        warnings.append("⚠️ 当前验证、垃圾防护均关闭，新成员保护较弱")
+    return warnings or ["✅ 未发现明显配置冲突"]
+
+
+def _health_keyboard(chat_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("🛡️ 新人验证", callback_data=f"adm:menu:verification:{chat_id}"),
+            InlineKeyboardButton("☂️ 垃圾防护", callback_data=f"adm:menu:antispam:{chat_id}"),
+        ],
+        [InlineKeyboardButton("🧑‍🍼 新成员限制", callback_data=f"adm:menu:newmem:{chat_id}")],
+        [
+            InlineKeyboardButton("📣 强制关注", callback_data=f"adm:menu:forcesub:{chat_id}"),
+            InlineKeyboardButton("🌙 夜间管控", callback_data=f"adm:menu:night:{chat_id}"),
+            InlineKeyboardButton("⏰ 定时消息", callback_data=f"sm:list:{chat_id}:0"),
+        ],
+        [
+            InlineKeyboardButton("🧹 自动删除", callback_data=f"adm:menu:autodel:{chat_id}"),
+            InlineKeyboardButton("⚙️ 控制权限", callback_data=f"adm:menu:control:{chat_id}"),
+        ],
+        [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
+    ])
+
+
 
 class SubscriptionAdminControllerMixin:
     async def _handle_renewal(
@@ -68,90 +144,17 @@ class SubscriptionAdminControllerMixin:
         chat_title = await self._get_chat_title(db, chat_id)
         permission_summary = await self._inspect_bot_admin_health(context, chat_id)
 
-        auto_delete_flags = [
-            bool(getattr(settings, "auto_delete_join", False)),
-            bool(getattr(settings, "auto_delete_left", False)),
-            bool(getattr(settings, "auto_delete_pinned", False)),
-            bool(getattr(settings, "auto_delete_avatar", False)),
-            bool(getattr(settings, "auto_delete_title", False)),
-            bool(getattr(settings, "auto_delete_anonymous", False)),
-        ]
-        auto_delete_count = sum(auto_delete_flags)
-        enabled_tasks = sum(1 for task in tasks if bool(getattr(task, "enabled", False)))
-        night_control_enabled = bool(
-            getattr(settings, "night_mode_enabled", False)
-            or getattr(settings, "group_lock_phrase_enabled", False)
-            or getattr(settings, "group_lock_schedule_enabled", False)
-        )
-        new_member_limit_enabled = bool(getattr(settings, "new_member_limit_enabled", False))
-        new_member_limit_window = int(getattr(settings, "new_member_limit_window_seconds", 3600) or 3600)
         from backend.features.moderation.services.garbage_guard_rules import any_garbage_rule_enabled
 
         garbage_guard_enabled = any_garbage_rule_enabled(settings)
-
-        lines = [
-            f"🩺 [{chat_title}] 群组健康检查",
-            "",
-            permission_summary,
-            "",
-            "关键功能",
-            f"• 新人验证：{'✅ 开启' if settings.verification_enabled else '❌ 关闭'}（{settings.verification_mode} / {settings.verification_timeout_seconds}秒）",
-            f"• 新成员限制：{'✅ 开启' if new_member_limit_enabled else '❌ 关闭'}（{_format_duration_label(new_member_limit_window)}）",
-            f"• 强制关注：{'✅ 开启' if getattr(settings, 'force_subscribe_enabled', False) else '❌ 关闭'}",
-            f"• 垃圾防护：{'✅ 开启' if garbage_guard_enabled else '❌ 关闭'}",
-            f"• 夜间管控：{'✅ 开启' if night_control_enabled else '❌ 关闭'}",
-            f"• 自动删除：{auto_delete_count}/6 项",
-            f"• 定时消息：{len(tasks)} 条（启用 {enabled_tasks} 条）",
-            "",
-            "风险提示",
-        ]
-
-        warnings: list[str] = []
-        if getattr(settings, "force_subscribe_enabled", False):
-            ch1 = getattr(settings, "force_subscribe_bound_channel_1", None)
-            ch2 = getattr(settings, "force_subscribe_bound_channel_2", None)
-            if not ch1 and not ch2:
-                warnings.append("⚠️ 强制关注已开启但尚未绑定频道/群组")
-        if getattr(settings, "group_lock_schedule_enabled", False):
-            open_time = getattr(settings, "night_mode_end_time", None) or getattr(settings, "group_lock_open_time", None)
-            close_time = getattr(settings, "night_mode_start_time", None) or getattr(settings, "group_lock_close_time", None)
-            if not open_time or not close_time:
-                warnings.append("⚠️ 夜间全员禁言已开启但管控开始/结束时间未完整配置")
-        if (
-            not settings.verification_enabled
-            and not garbage_guard_enabled
-            and not new_member_limit_enabled
-        ):
-            warnings.append("⚠️ 当前验证、垃圾防护均关闭，新成员保护较弱")
-        if getattr(settings, "force_subscribe_enabled", False) and not settings.verification_enabled:
-            warnings.append("ℹ️ 当前会先检查关注状态，建议同时开启新人验证以减少误伤")
-
-        if warnings:
-            lines.extend(warnings)
-        else:
-            lines.append("✅ 未发现明显配置冲突")
-
-        keyboard = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("🛡️ 新人验证", callback_data=f"adm:menu:verification:{chat_id}"),
-                InlineKeyboardButton("☂️ 垃圾防护", callback_data=f"adm:menu:antispam:{chat_id}"),
-            ],
-            [
-                InlineKeyboardButton("🧑‍🍼 新成员限制", callback_data=f"adm:menu:newmem:{chat_id}"),
-            ],
-            [
-                InlineKeyboardButton("📣 强制关注", callback_data=f"adm:menu:forcesub:{chat_id}"),
-                InlineKeyboardButton("🌙 夜间管控", callback_data=f"adm:menu:night:{chat_id}"),
-                InlineKeyboardButton("⏰ 定时消息", callback_data=f"sm:list:{chat_id}:0"),
-            ],
-            [
-                InlineKeyboardButton("🧹 自动删除", callback_data=f"adm:menu:autodel:{chat_id}"),
-                InlineKeyboardButton("⚙️ 控制权限", callback_data=f"adm:menu:control:{chat_id}"),
-            ],
-            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
-        ])
-
-        await self.message_helper.safe_edit(update, text="\n".join(lines), reply_markup=keyboard)
+        lines = _health_feature_lines(
+            settings, tasks, chat_title=chat_title,
+            permission=permission_summary, garbage_enabled=garbage_guard_enabled,
+        )
+        lines.extend(_health_warnings(settings, garbage_enabled=garbage_guard_enabled))
+        await self.message_helper.safe_edit(
+            update, text="\n".join(lines), reply_markup=_health_keyboard(chat_id)
+        )
 
     async def _show_renewal_menu(
         self,
