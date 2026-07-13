@@ -148,6 +148,28 @@ def _parse_template_chat_id(raw: str | None) -> int | None:
     return int(match.group(0)) if match else None
 
 
+def _parse_clue_rows(mapping: dict[str, str]) -> tuple[list[str], list[int], list[str]]:
+    clues: list[str] = []
+    rewards: list[int] = []
+    times: list[str] = []
+    for idx in range(1, 5):
+        clue_key = f"线索{idx}"
+        reward_key = f"奖励{idx}"
+        time_key = f"时间{idx}"
+        if clue_key not in mapping or reward_key not in mapping or time_key not in mapping:
+            raise ValidationError(
+                f"彩蛋模板缺少 `{clue_key}` / `{reward_key}` / `{time_key}`，"
+                f"也支持 `【线索{idx}】` / `【线索{idx}奖励】` / `【线索{idx}时间】`。"
+            )
+        clue_text = mapping[clue_key].strip()
+        if not clue_text:
+            raise ValidationError(f"{clue_key} 不能为空。")
+        clues.append(clue_text)
+        rewards.append(_parse_reward_points(mapping[reward_key], reward_key))
+        times.append(_parse_clue_time(mapping[time_key], time_key))
+    return clues, rewards, times
+
+
 def parse_egg_template(raw: str) -> dict:
     mapping: dict[str, str] = {}
     for line in [item.strip() for item in raw.splitlines() if item.strip()]:
@@ -158,23 +180,7 @@ def parse_egg_template(raw: str) -> dict:
         mapping[key] = value
     if "答案" not in mapping:
         raise ValidationError("彩蛋模板缺少 `答案=` 或 `【答案】`。")
-    clues: list[str] = []
-    rewards: list[int] = []
-    times: list[str] = []
-    for idx in range(1, 5):
-        clue_key = f"线索{idx}"
-        reward_key = f"奖励{idx}"
-        time_key = f"时间{idx}"
-        if clue_key not in mapping or reward_key not in mapping or time_key not in mapping:
-            raise ValidationError(
-                f"彩蛋模板缺少 `{clue_key}` / `{reward_key}` / `{time_key}`，也支持 `【线索{idx}】` / `【线索{idx}奖励】` / `【线索{idx}时间】`。"
-            )
-        clue_text = mapping[clue_key].strip()
-        if not clue_text:
-            raise ValidationError(f"{clue_key} 不能为空。")
-        clues.append(clue_text)
-        rewards.append(_parse_reward_points(mapping[reward_key], reward_key))
-        times.append(_parse_clue_time(mapping[time_key], time_key))
+    clues, rewards, times = _parse_clue_rows(mapping)
     answer = mapping["答案"].strip()
     if not answer:
         raise ValidationError("彩蛋答案不能为空。")

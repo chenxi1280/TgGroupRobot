@@ -119,22 +119,25 @@ async def apply_auto_schedule(session: AsyncSession, now_local: dt.datetime) -> 
     changed: list[int] = []
     hhmm = now_local.strftime("%H:%M")
     for setting in settings:
-        touched = False
-        if setting.auto_start_time and setting.auto_start_time == hhmm:
-            if not setting.k3_enabled or not setting.blackjack_enabled:
-                setting.k3_enabled = True
-                setting.blackjack_enabled = True
-                touched = True
-        if setting.auto_stop_time and setting.auto_stop_time == hhmm:
-            if setting.k3_enabled or setting.blackjack_enabled:
-                setting.k3_enabled = False
-                setting.blackjack_enabled = False
-                touched = True
-        if touched:
+        if _apply_schedule_to_setting(setting, hhmm):
             setting.updated_at = now_utc()
             changed.append(setting.chat_id)
     await session.flush()
     return changed
+
+
+def _apply_schedule_to_setting(setting: GameSetting, hhmm: str) -> bool:
+    should_start = setting.auto_start_time == hhmm
+    should_stop = setting.auto_stop_time == hhmm
+    if should_start and (not setting.k3_enabled or not setting.blackjack_enabled):
+        setting.k3_enabled = True
+        setting.blackjack_enabled = True
+        return True
+    if should_stop and (setting.k3_enabled or setting.blackjack_enabled):
+        setting.k3_enabled = False
+        setting.blackjack_enabled = False
+        return True
+    return False
 
 
 def format_game_menu_text(

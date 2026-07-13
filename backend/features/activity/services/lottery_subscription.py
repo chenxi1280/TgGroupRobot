@@ -125,37 +125,48 @@ async def validate_lottery_subscribe_targets(
     if bot is None or not hasattr(bot, "get_chat"):
         raise ValueError("无法校验关注目标：Bot 不可用。")
 
-    validated: list[dict] = []
-    for item in targets:
-        target = _normalize_force_subscribe_target(item.get("target"))
-        if target is None:
-            raise ValueError(f"关注目标格式无法识别：{item.get('target')}")
-        try:
-            target_chat = await bot.get_chat(chat_id=target)
-        except Exception as exc:
-            raise ValueError(f"Bot 无法访问关注目标 {target}，请确认已加入该频道/群组并有权限查询成员。") from exc
+    return [await _validate_subscribe_target(bot, item) for item in targets]
 
-        chat_type = str(target_chat.type or "").lower()
-        if chat_type and chat_type not in {"channel", "group", "supergroup"}:
-            raise ValueError(f"关注目标 {target} 不是频道或群组。")
 
-        bot_id = getattr(bot, "id", None)
-        if bot_id is not None and hasattr(bot, "get_chat_member"):
-            try:
-                bot_member = await bot.get_chat_member(chat_id=target, user_id=bot_id)
-            except Exception as exc:
-                raise ValueError(f"Bot 无法在关注目标 {target} 查询成员状态，请先把 Bot 加为管理员。") from exc
-            bot_status = getattr(bot_member, "status", None)
-            if bot_status not in {"administrator", "creator"}:
-                raise ValueError(f"Bot 需要是关注目标 {target} 的管理员，才能校验成员关注状态。")
+async def _validate_subscribe_target(bot, item: dict) -> dict:
+    target = _normalize_force_subscribe_target(item.get("target"))
+    if target is None:
+        raise ValueError(f"关注目标格式无法识别：{item.get('target')}")
+    try:
+        target_chat = await bot.get_chat(chat_id=target)
+    except Exception as exc:
+        raise ValueError(
+            f"Bot 无法访问关注目标 {target}，请确认已加入该频道/群组并有权限查询成员。"
+        ) from exc
+    chat_type = str(target_chat.type or "").lower()
+    if chat_type and chat_type not in {"channel", "group", "supergroup"}:
+        raise ValueError(f"关注目标 {target} 不是频道或群组。")
+    await _validate_bot_target_admin(bot, target)
+    fallback = str(item.get("label") or _force_subscribe_target_fallback_label(target)).strip()
+    label = _force_subscribe_label_from_chat(target_chat, fallback)
+    url = _valid_click_url(item.get("url")) or _force_subscribe_target_url(
+        target, target_chat=target_chat
+    )
+    if not url:
+        raise ValueError(
+            f"关注目标 {label} 无法生成关注按钮；"
+            "私有群/频道请使用 -100...|https://t.me/+invite 格式。"
+        )
+    return {"target": target, "label": label, "url": url}
 
-        fallback = str(item.get("label") or _force_subscribe_target_fallback_label(target)).strip()
-        label = _force_subscribe_label_from_chat(target_chat, fallback)
-        url = _valid_click_url(item.get("url")) or _force_subscribe_target_url(target, target_chat=target_chat)
-        if not url:
-            raise ValueError(f"关注目标 {label} 无法生成关注按钮；私有群/频道请使用 -100...|https://t.me/+invite 格式。")
-        validated.append({"target": target, "label": label, "url": url})
-    return validated
+
+async def _validate_bot_target_admin(bot, target) -> None:
+    bot_id = getattr(bot, "id", None)
+    if bot_id is None or not hasattr(bot, "get_chat_member"):
+        return
+    try:
+        bot_member = await bot.get_chat_member(chat_id=target, user_id=bot_id)
+    except Exception as exc:
+        raise ValueError(
+            f"Bot 无法在关注目标 {target} 查询成员状态，请先把 Bot 加为管理员。"
+        ) from exc
+    if getattr(bot_member, "status", None) not in {"administrator", "creator"}:
+        raise ValueError(f"Bot 需要是关注目标 {target} 的管理员，才能校验成员关注状态。")
 
 
 async def check_lottery_subscribe_membership(
