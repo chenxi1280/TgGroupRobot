@@ -18,6 +18,49 @@ from backend.shared.services.publish_service import PublishService
 log = structlog.get_logger(__name__)
 
 
+async def _pin_result(context, *, item_id: int, chat_id: int, message_id: int) -> None:
+    try:
+        await PublishService.pin(
+            context,
+            chat_id=chat_id,
+            message_id=message_id,
+            disable_notification=True,
+        )
+    except Exception as exc:
+        log.warning("auction_result_pin_failed", item_id=item_id, message_id=message_id, error=str(exc))
+
+
+async def _settle_and_announce(db, app, item_id: int) -> None:
+    async with db.session_factory() as session:
+        result = await settle_due_auction(session, item_id)
+        if result is None:
+            await session.commit()
+            return
+        try:
+            setting = await get_or_create_setting(session, result.item.chat_id)
+            text = format_auction_announcement(result.item, is_final=True, settlement_note=result.note)
+            context = SimpleNamespace(bot=app.bot, application=app)
+            sent = await PublishService.send(
+                context,
+                chat_id=result.item.chat_id,
+                text=text,
+                parse_mode="Markdown",
+            )
+            result.item.last_announce_message_id = sent.message_id
+            if setting.pin_message_enabled:
+                await _pin_result(
+                    context,
+                    item_id=item_id,
+                    chat_id=int(result.item.chat_id),
+                    message_id=int(sent.message_id),
+                )
+        except Exception as exc:
+            await session.rollback()
+            log.error("auction_result_announcement_failed", item_id=item_id, error=str(exc))
+            return
+        await session.commit()
+
+
 class AuctionTask(ScheduledTask):
     def __init__(self) -> None:
         config = TASK_CONFIG["auction"]
@@ -34,41 +77,4 @@ class AuctionTask(ScheduledTask):
             item_ids = await list_due_auction_ids(session)
             await session.commit()
         for item_id in item_ids:
-            async with db.session_factory() as session:
-                result = await settle_due_auction(session, item_id)
-                if result is None:
-                    await session.commit()
-                    continue
-                try:
-                    setting = await get_or_create_setting(session, result.item.chat_id)
-                    text = format_auction_announcement(
-                        result.item,
-                        is_final=True,
-                        settlement_note=result.note,
-                    )
-                    context = SimpleNamespace(bot=app.bot, application=app)
-                    sent = await PublishService.send(
-                        context,
-                        chat_id=result.item.chat_id,
-                        text=text,
-                        parse_mode="Markdown",
-                    )
-                    result.item.last_announce_message_id = sent.message_id
-                    chat_id = int(result.item.chat_id)
-                    message_id = int(sent.message_id)
-                    if setting.pin_message_enabled:
-                        try:
-                            await PublishService.pin(
-                                context,
-                                chat_id=chat_id,
-                                message_id=message_id,
-                                disable_notification=True,
-                            )
-                        except Exception as exc:
-                            log.warning("auction_result_pin_failed", item_id=item_id, message_id=message_id, error=str(exc))
-                except Exception as exc:
-                    await session.rollback()
-                    log.error("auction_result_announcement_failed", item_id=item_id, error=str(exc))
-                    continue
-                await session.commit()
-            await session.commit()
+            await _settle_and_announce(db, app, item_id)

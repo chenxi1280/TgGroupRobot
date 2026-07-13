@@ -13,6 +13,54 @@ from backend.shared.services.publish_service import PublishService
 log = structlog.get_logger(__name__)
 
 
+async def _publish_closed_event(context, event, *, event_id: int, text: str) -> bool:
+    if not event.announcement_message_id:
+        msg = await PublishService.send(context, chat_id=event.chat_id, text=text, parse_mode="Markdown")
+        event.announcement_message_id = msg.message_id
+        return True
+    try:
+        await PublishService.edit(
+            context,
+            chat_id=event.chat_id,
+            message_id=event.announcement_message_id,
+            text=text,
+            parse_mode="Markdown",
+        )
+        return True
+    except Exception as exc:
+        log.warning(
+            "guess_deadline_notice_edit_failed",
+            event_id=event_id,
+            chat_id=event.chat_id,
+            message_id=event.announcement_message_id,
+            error=str(exc),
+        )
+    msg = await PublishService.send(context, chat_id=event.chat_id, text=text, parse_mode="Markdown")
+    event.announcement_message_id = msg.message_id
+    return True
+
+
+async def _close_and_publish(db, app, event_id: int) -> None:
+    async with db.session_factory() as session:
+        event = await close_due_event(session, event_id)
+        if event is None:
+            await session.commit()
+            return
+        context = SimpleNamespace(bot=app.bot, application=app)
+        try:
+            await _publish_closed_event(
+                context,
+                event,
+                event_id=event_id,
+                text=format_event_runtime(event),
+            )
+        except Exception as exc:
+            await session.rollback()
+            log.error("guess_deadline_notice_failed", event_id=event_id, error=str(exc))
+            return
+        await session.commit()
+
+
 class GuessTask(ScheduledTask):
     def __init__(self) -> None:
         config = TASK_CONFIG["guess"]
@@ -29,38 +77,4 @@ class GuessTask(ScheduledTask):
             event_ids = await list_due_event_ids(session)
             await session.commit()
         for event_id in event_ids:
-            async with db.session_factory() as session:
-                event = await close_due_event(session, event_id)
-                if event is None:
-                    await session.commit()
-                    continue
-                text = format_event_runtime(event)
-                context = SimpleNamespace(bot=app.bot, application=app)
-                if event.announcement_message_id:
-                    try:
-                        await PublishService.edit(
-                            context,
-                            chat_id=event.chat_id,
-                            message_id=event.announcement_message_id,
-                            text=text,
-                            parse_mode="Markdown",
-                        )
-                    except Exception as exc:
-                        log.warning(
-                            "guess_deadline_notice_edit_failed",
-                            event_id=event_id,
-                            chat_id=event.chat_id,
-                            message_id=event.announcement_message_id,
-                            error=str(exc),
-                        )
-                        try:
-                            msg = await PublishService.send(context, chat_id=event.chat_id, text=text, parse_mode="Markdown")
-                            event.announcement_message_id = msg.message_id
-                        except Exception as exc:
-                            await session.rollback()
-                            log.error("guess_deadline_notice_failed", event_id=event_id, error=str(exc))
-                            continue
-                else:
-                    msg = await PublishService.send(context, chat_id=event.chat_id, text=text, parse_mode="Markdown")
-                    event.announcement_message_id = msg.message_id
-                await session.commit()
+            await _close_and_publish(db, app, event_id)

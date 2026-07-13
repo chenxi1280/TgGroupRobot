@@ -80,6 +80,25 @@ async def _check_member_profile(
     return changed
 
 
+async def _scan_chat_members(app, session, settings: ChatSettings, *, limit: int, pause_seconds: float) -> tuple[int, int]:
+    member_result = await session.execute(
+        select(ChatMember, TgUser)
+        .join(TgUser, TgUser.id == ChatMember.user_id)
+        .where(ChatMember.chat_id == settings.chat_id, ChatMember.joined_at.is_not(None))
+        .order_by(ChatMember.updated_at.asc())
+        .limit(limit)
+    )
+    checked = 0
+    changed = 0
+    for member, stored_user in member_result.all():
+        checked += 1
+        if await _check_member_profile(app, session, settings, member=member, stored_user=stored_user):
+            changed += 1
+        if pause_seconds > 0:
+            await asyncio.sleep(pause_seconds)
+    return checked, changed
+
+
 class RenameMonitorTask(ScheduledTask):
     """Poll known group members so rename monitoring can work without a new message."""
 
@@ -112,7 +131,7 @@ class RenameMonitorTask(ScheduledTask):
 
         async with db.session_factory() as session:
             result = await session.execute(
-                select(ChatSettings).where(ChatSettings.name_change_monitor_enabled == True)
+                select(ChatSettings).where(ChatSettings.name_change_monitor_enabled.is_(True))
             )
             settings_list = list(result.scalars().all())
 
@@ -120,28 +139,18 @@ class RenameMonitorTask(ScheduledTask):
                 remaining = self.max_members_per_run - checked
                 if remaining <= 0:
                     break
-
                 limit = max(0, min(self.max_members_per_chat, remaining))
                 if limit <= 0:
                     break
-
-                member_result = await session.execute(
-                    select(ChatMember, TgUser)
-                    .join(TgUser, TgUser.id == ChatMember.user_id)
-                    .where(
-                        ChatMember.chat_id == settings.chat_id,
-                        ChatMember.joined_at.is_not(None),
-                    )
-                    .order_by(ChatMember.updated_at.asc())
-                    .limit(limit)
+                chat_checked, chat_changed = await _scan_chat_members(
+                    app,
+                    session,
+                    settings,
+                    limit=limit,
+                    pause_seconds=self.request_pause_seconds,
                 )
-
-                for member, stored_user in member_result.all():
-                    checked += 1
-                    if await _check_member_profile(app, session, settings, member=member, stored_user=stored_user):
-                        changed += 1
-                    if self.request_pause_seconds > 0:
-                        await asyncio.sleep(self.request_pause_seconds)
+                checked += chat_checked
+                changed += chat_changed
 
             await session.commit()
 
