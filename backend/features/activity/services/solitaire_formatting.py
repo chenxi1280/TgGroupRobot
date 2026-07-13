@@ -42,6 +42,36 @@ def format_solitaire_stats_message(stats: dict[str, int]) -> str:
     )
 
 
+def _format_solitaire_header(solitaire: Solitaire) -> list[str]:
+    active = solitaire.status == SolitaireStatus.active.value
+    status_emoji = "🟢" if active else "🔴"
+    status_text = "进行中" if active else "已结束"
+    entries_count = len(solitaire.entries_rel)
+    count_text = (
+        f"{entries_count}/{solitaire.max_participants}人"
+        if solitaire.max_participants
+        else f"{entries_count}人"
+    )
+    lines = [f"{status_emoji} {solitaire.title}", f"状态: {status_text} ({count_text})"]
+    if solitaire.points_required:
+        lines.append(f"💎 需积分: {solitaire.points_required}")
+    if solitaire.deadline:
+        lines.append(f"⏰ 截止: {solitaire.deadline.strftime('%Y-%m-%d %H:%M')}")
+    if solitaire.description:
+        lines.extend(["", solitaire.description])
+    return lines
+
+
+def _format_solitaire_entries(solitaire: Solitaire) -> list[str]:
+    if not solitaire.entries_rel:
+        return ["", "暂无人参与，快来接龙吧！"]
+    lines = ["", "参与列表:"]
+    for index, entry in enumerate(solitaire.entries_rel, 1):
+        username = entry.username or f"用户{entry.user_id}"
+        lines.append(f"{index}. {username}: {entry.content}")
+    return lines
+
+
 def format_solitaire_message(solitaire: Solitaire, show_closed: bool = True) -> str:
     """
     格式化接龙消息
@@ -53,42 +83,8 @@ def format_solitaire_message(solitaire: Solitaire, show_closed: bool = True) -> 
     Returns:
         格式化后的接龙消息文本
     """
-    status_emoji = "🟢" if solitaire.status == SolitaireStatus.active.value else "🔴"
-    status_text = "进行中" if solitaire.status == SolitaireStatus.active.value else "已结束"
-
-    text = f"{status_emoji} {solitaire.title}\n"
-    text += f"状态: {status_text}"
-
-    # 使用 entries_rel 获取参与记录
-    entries_count = len(solitaire.entries_rel)
-    if solitaire.max_participants:
-        text += f" ({entries_count}/{solitaire.max_participants}人)"
-    else:
-        text += f" ({entries_count}人)"
-    text += "\n"
-
-    # 积分限制
-    if solitaire.points_required:
-        text += f"💎 需积分: {solitaire.points_required}\n"
-
-    # 截止时间
-    if solitaire.deadline:
-        deadline_str = solitaire.deadline.strftime("%Y-%m-%d %H:%M")
-        text += f"⏰ 截止: {deadline_str}\n"
-
-    if solitaire.description:
-        text += f"\n{solitaire.description}\n"
-
-    # 使用 entries_rel 关系显示参与列表
-    if solitaire.entries_rel:
-        text += "\n参与列表:\n"
-        for i, entry in enumerate(solitaire.entries_rel, 1):
-            username = entry.username or f"用户{entry.user_id}"
-            text += f"{i}. {username}: {entry.content}\n"
-    else:
-        text += "\n暂无人参与，快来接龙吧！\n"
-
+    lines = _format_solitaire_header(solitaire)
+    lines.extend(_format_solitaire_entries(solitaire))
     if solitaire.status == SolitaireStatus.active.value and show_closed:
-        text += "\n💡 回复接龙消息即可参与"
-
-    return text
+        lines.extend(["", "💡 回复接龙消息即可参与"])
+    return "\n".join(lines)

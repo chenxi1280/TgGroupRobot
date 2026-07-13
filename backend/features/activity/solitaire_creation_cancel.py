@@ -6,7 +6,7 @@ from telegram.ext import ContextTypes, ConversationHandler
 from backend.features.activity.ui.solitaire import solitaire_menu_keyboard
 from backend.platform.db.runtime.session import Database
 from backend.platform.state.state_service import clear_user_state
-_SOLITAIRE_CANCEL_CALLBACK_THRESHOLD_3 = 3
+MIN_SCOPED_CALLBACK_PARTS = 3
 
 
 
@@ -18,23 +18,7 @@ async def solitaire_cancel_callback(update: Update, context: ContextTypes.DEFAUL
 
     chat = update.effective_chat
     user = update.effective_user
-    parts = (q.data or "").split(":")
-    if len(parts) >= _SOLITAIRE_CANCEL_CALLBACK_THRESHOLD_3:
-        try:
-            target_chat_id = int(parts[2])
-        except ValueError:
-            target_chat_id = None
-    else:
-        target_chat_id = None
-
-    if target_chat_id is None:
-        if chat.type == "private":
-            from backend.shared.handlers.base.chat_resolver import ChatResolver
-
-            db: Database = context.application.bot_data["db"]
-            target_chat_id = await ChatResolver.get_current_chat(db, user.id)
-        else:
-            target_chat_id = chat.id
+    target_chat_id = await _resolve_cancel_chat_id(update, context)
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
@@ -47,3 +31,22 @@ async def solitaire_cancel_callback(update: Update, context: ContextTypes.DEFAUL
         reply_markup=solitaire_menu_keyboard(target_chat_id if chat.type == "private" else None),
     )
     return ConversationHandler.END
+def _parse_cancel_chat_id(data: str) -> int | None:
+    parts = data.split(":")
+    if len(parts) < MIN_SCOPED_CALLBACK_PARTS:
+        return None
+    try:
+        return int(parts[2])
+    except ValueError:
+        return None
+
+
+async def _resolve_cancel_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int | None:
+    chat = update.effective_chat
+    parsed_chat_id = _parse_cancel_chat_id(update.callback_query.data or "")
+    if parsed_chat_id is not None or chat.type != "private":
+        return parsed_chat_id if parsed_chat_id is not None else chat.id
+    from backend.shared.handlers.base.chat_resolver import ChatResolver
+
+    db: Database = context.application.bot_data["db"]
+    return await ChatResolver.get_current_chat(db, update.effective_user.id)
