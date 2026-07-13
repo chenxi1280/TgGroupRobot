@@ -27,6 +27,30 @@ def parse_auto_reply_buttons_input(raw_text: str) -> list[list[dict[str, str]]]:
         raise ValueError(str(exc)) from exc
 
 
+def _auto_reply_button(item, rule, *, row_index: int, col_index: int) -> InlineKeyboardButton | None:
+    text = str(item.get("text") or "").strip()
+    if not text:
+        return None
+    url = str(item.get("url") or "").strip()
+    if url:
+        return InlineKeyboardButton(text, url=url)
+    rule_id = getattr(rule, "id", None)
+    chat_id = getattr(rule, "chat_id", None)
+    if item.get("action_type") == AUTO_REPLY_TEXT_TRIGGER and rule_id is not None and chat_id is not None:
+        callback = f"arbtn:text:{chat_id}:{rule_id}:{row_index}:{col_index}"
+        return InlineKeyboardButton(text, callback_data=callback)
+    callback_data = str(item.get("callback_data") or "").strip()
+    return InlineKeyboardButton(text, callback_data=callback_data) if callback_data else None
+
+
+def _auto_reply_button_row(row, rule, row_index: int) -> list[InlineKeyboardButton]:
+    buttons = [
+        _auto_reply_button(item, rule, row_index=row_index, col_index=col_index)
+        for col_index, item in enumerate(row)
+    ]
+    return [button for button in buttons if button is not None]
+
+
 def build_auto_reply_markup(rule) -> InlineKeyboardMarkup | None:
     raw_buttons = getattr(rule, "buttons", None) or []
     if not raw_buttons:
@@ -38,30 +62,8 @@ def build_auto_reply_markup(rule) -> InlineKeyboardMarkup | None:
         return None
 
     keyboard_rows: list[list[InlineKeyboardButton]] = []
-    rule_id = getattr(rule, "id", None)
-    chat_id = getattr(rule, "chat_id", None)
     for row_index, row in enumerate(normalized):
-        button_row: list[InlineKeyboardButton] = []
-        for col_index, item in enumerate(row):
-            text = str(item.get("text") or "").strip()
-            url = str(item.get("url") or "").strip()
-            callback_data = str(item.get("callback_data") or "").strip()
-            if text and url:
-                button_row.append(InlineKeyboardButton(text, url=url))
-            elif (
-                text
-                and item.get("action_type") == AUTO_REPLY_TEXT_TRIGGER
-                and rule_id is not None
-                and chat_id is not None
-            ):
-                button_row.append(
-                    InlineKeyboardButton(
-                        text,
-                        callback_data=f"arbtn:text:{chat_id}:{rule_id}:{row_index}:{col_index}",
-                    )
-                )
-            elif text and callback_data:
-                button_row.append(InlineKeyboardButton(text, callback_data=callback_data))
+        button_row = _auto_reply_button_row(row, rule, row_index)
         if button_row:
             keyboard_rows.append(button_row)
     return InlineKeyboardMarkup(keyboard_rows) if keyboard_rows else None
@@ -83,6 +85,42 @@ async def _send_auto_reply_text(context: ContextTypes.DEFAULT_TYPE, kwargs: dict
         return await context.bot.send_message(**retry_kwargs)
 
 
+def _auto_reply_send_kwargs(chat_id: int, text: str, *, reply_markup, reply_to_message_id, message_thread_id) -> dict:
+    kwargs = {
+        "chat_id": chat_id,
+        "text": text,
+        "reply_markup": reply_markup,
+        "reply_to_message_id": reply_to_message_id,
+        "allow_sending_without_reply": True,
+    }
+    if message_thread_id is not None:
+        kwargs["message_thread_id"] = message_thread_id
+    return kwargs
+
+
+def _auto_reply_media_kwargs(fallback_kwargs: dict, cover_type: str, cover_file_id: str) -> dict:
+    kwargs = dict(fallback_kwargs)
+    kwargs.pop("text")
+    kwargs[cover_type] = cover_file_id
+    kwargs["caption"] = fallback_kwargs["text"]
+    return kwargs
+
+
+async def _send_auto_reply_media(context, fallback_kwargs: dict, *, cover_type: str, cover_file_id: str):
+    kwargs = _auto_reply_media_kwargs(fallback_kwargs, cover_type, cover_file_id)
+    sender = context.bot.send_photo if cover_type == "photo" else context.bot.send_video
+    try:
+        return await sender(**kwargs)
+    except TelegramError as exc:
+        log.warning(
+            "auto_reply_cover_send_failed_fallback_text",
+            chat_id=fallback_kwargs["chat_id"],
+            cover_type=cover_type,
+            error=str(exc),
+        )
+        return await _send_auto_reply_text(context, fallback_kwargs)
+
+
 async def send_auto_reply_payload(
     context: ContextTypes.DEFAULT_TYPE,
     *,
@@ -95,15 +133,13 @@ async def send_auto_reply_payload(
     reply_markup = build_auto_reply_markup(rule)
     cover_type = getattr(rule, "cover_media_type", None)
     cover_file_id = getattr(rule, "cover_media_file_id", None)
-    fallback_kwargs = {
-        "chat_id": chat_id,
-        "text": text,
-        "reply_markup": reply_markup,
-        "reply_to_message_id": reply_to_message_id,
-        "allow_sending_without_reply": True,
-    }
-    if message_thread_id is not None:
-        fallback_kwargs["message_thread_id"] = message_thread_id
+    fallback_kwargs = _auto_reply_send_kwargs(
+        chat_id,
+        text,
+        reply_markup=reply_markup,
+        reply_to_message_id=reply_to_message_id,
+        message_thread_id=message_thread_id,
+    )
     log.info(
         "auto_reply_payload_send_attempt",
         chat_id=chat_id,
@@ -112,46 +148,11 @@ async def send_auto_reply_payload(
         reply_to_message_id=reply_to_message_id,
         message_thread_id=message_thread_id,
     )
-    if cover_type == "photo" and cover_file_id:
-        try:
-            kwargs = {
-                "chat_id": chat_id,
-                "photo": cover_file_id,
-                "caption": text,
-                "reply_markup": reply_markup,
-                "reply_to_message_id": reply_to_message_id,
-                "allow_sending_without_reply": True,
-            }
-            if message_thread_id is not None:
-                kwargs["message_thread_id"] = message_thread_id
-            return await context.bot.send_photo(**kwargs)
-        except TelegramError as exc:
-            log.warning(
-                "auto_reply_cover_send_failed_fallback_text",
-                chat_id=chat_id,
-                cover_type=cover_type,
-                error=str(exc),
-            )
-            return await _send_auto_reply_text(context, fallback_kwargs)
-    if cover_type == "video" and cover_file_id:
-        try:
-            kwargs = {
-                "chat_id": chat_id,
-                "video": cover_file_id,
-                "caption": text,
-                "reply_markup": reply_markup,
-                "reply_to_message_id": reply_to_message_id,
-                "allow_sending_without_reply": True,
-            }
-            if message_thread_id is not None:
-                kwargs["message_thread_id"] = message_thread_id
-            return await context.bot.send_video(**kwargs)
-        except TelegramError as exc:
-            log.warning(
-                "auto_reply_cover_send_failed_fallback_text",
-                chat_id=chat_id,
-                cover_type=cover_type,
-                error=str(exc),
-            )
-            return await _send_auto_reply_text(context, fallback_kwargs)
+    if cover_type in {"photo", "video"} and cover_file_id:
+        return await _send_auto_reply_media(
+            context,
+            fallback_kwargs,
+            cover_type=cover_type,
+            cover_file_id=cover_file_id,
+        )
     return await _send_auto_reply_text(context, fallback_kwargs)
