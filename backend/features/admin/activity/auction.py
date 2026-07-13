@@ -2,6 +2,39 @@ from __future__ import annotations
 
 from backend.features.admin.support import *
 
+
+def _auction_menu_text(chat_title: str, setting, auctions) -> str:
+    lines = [format_auction_settings_text(chat_title, setting), "", "📋 最近拍卖："]
+    if not auctions:
+        lines.append("暂无拍卖记录")
+    for item in auctions:
+        lines.append(f"#{item.id} {item.title or '未命名'}｜{item.status}｜当前价 {item.current_price}")
+    return "\n".join(lines)
+
+
+def _auction_menu_keyboard(setting, chat_id: int) -> InlineKeyboardMarkup:
+    rows = [
+        [InlineKeyboardButton("⚙️ 状态：", callback_data=f"auc:home:{chat_id}"), InlineKeyboardButton("✅ 启动" if setting.enabled else "启动", callback_data=f"auc:toggle:{chat_id}:enabled:1"), InlineKeyboardButton("✅ 关闭" if not setting.enabled else "关闭", callback_data=f"auc:toggle:{chat_id}:enabled:0")],
+        [InlineKeyboardButton("📌 消息置顶：", callback_data=f"auc:home:{chat_id}"), InlineKeyboardButton("✅ 启动" if setting.pin_message_enabled else "启动", callback_data=f"auc:toggle:{chat_id}:pin:1"), InlineKeyboardButton("✅ 关闭" if not setting.pin_message_enabled else "关闭", callback_data=f"auc:toggle:{chat_id}:pin:0")],
+        [InlineKeyboardButton("⏱ 自动延时：", callback_data=f"auc:home:{chat_id}"), InlineKeyboardButton("✅ 启动" if setting.auto_extend_enabled else "启动", callback_data=f"auc:toggle:{chat_id}:auto_extend:1"), InlineKeyboardButton("✅ 关闭" if not setting.auto_extend_enabled else "关闭", callback_data=f"auc:toggle:{chat_id}:auto_extend:0")],
+        [InlineKeyboardButton("🚫 不关联" + (" ✅" if setting.points_mode == "none" else ""), callback_data=f"auc:points_mode:{chat_id}:none"), InlineKeyboardButton("🌑 主积分" + (" ✅" if setting.points_mode == "group_points" else ""), callback_data=f"auc:points_mode:{chat_id}:group_points")],
+        [InlineKeyboardButton("📋 活动列表", callback_data=f"auc:list:{chat_id}:0")],
+        [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
+    ]
+    return InlineKeyboardMarkup(rows)
+
+
+def _auction_setting_updates(action: str, callback_data) -> dict | None:
+    if action == "toggle":
+        fields = {"enabled": "enabled", "pin": "pin_message_enabled", "auto_extend": "auto_extend_enabled"}
+        field = fields.get(callback_data.get(3))
+        return {field: callback_data.get(4) == "1"} if field else None
+    if action == "perm":
+        return {"create_permission": callback_data.get(3)}
+    if action == "points_mode":
+        return {"points_mode": callback_data.get(3)}
+    return None
+
 class AuctionAdminControllerMixin:
     async def _show_auction_menu(
         self,
@@ -16,36 +49,10 @@ class AuctionAdminControllerMixin:
             auctions = await list_recent_auctions(session, chat_id, limit=5)
             await session.commit()
         chat_title = await self._get_chat_title(db, chat_id)
-        lines = [format_auction_settings_text(chat_title, setting), "", "📋 最近拍卖："]
-        if auctions:
-            for item in auctions:
-                lines.append(f"#{item.id} {item.title or '未命名'}｜{item.status}｜当前价 {item.current_price}")
-        else:
-            lines.append("暂无拍卖记录")
-        keyboard = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("⚙️ 状态：", callback_data=f"auc:home:{chat_id}"),
-                InlineKeyboardButton("✅ 启动" if setting.enabled else "启动", callback_data=f"auc:toggle:{chat_id}:enabled:1"),
-                InlineKeyboardButton("✅ 关闭" if not setting.enabled else "关闭", callback_data=f"auc:toggle:{chat_id}:enabled:0"),
-            ],
-            [
-                InlineKeyboardButton("📌 消息置顶：", callback_data=f"auc:home:{chat_id}"),
-                InlineKeyboardButton("✅ 启动" if setting.pin_message_enabled else "启动", callback_data=f"auc:toggle:{chat_id}:pin:1"),
-                InlineKeyboardButton("✅ 关闭" if not setting.pin_message_enabled else "关闭", callback_data=f"auc:toggle:{chat_id}:pin:0"),
-            ],
-            [
-                InlineKeyboardButton("⏱ 自动延时：", callback_data=f"auc:home:{chat_id}"),
-                InlineKeyboardButton("✅ 启动" if setting.auto_extend_enabled else "启动", callback_data=f"auc:toggle:{chat_id}:auto_extend:1"),
-                InlineKeyboardButton("✅ 关闭" if not setting.auto_extend_enabled else "关闭", callback_data=f"auc:toggle:{chat_id}:auto_extend:0"),
-            ],
-            [
-                InlineKeyboardButton("🚫 不关联" + (" ✅" if setting.points_mode == "none" else ""), callback_data=f"auc:points_mode:{chat_id}:none"),
-                InlineKeyboardButton("🌑 主积分" + (" ✅" if setting.points_mode == "group_points" else ""), callback_data=f"auc:points_mode:{chat_id}:group_points"),
-            ],
-            [InlineKeyboardButton("📋 活动列表", callback_data=f"auc:list:{chat_id}:0")],
-            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
-        ])
-        await self.message_helper.safe_edit(update, text="\n".join(lines), reply_markup=keyboard)
+        text = _auction_menu_text(chat_title, setting, auctions)
+        await self.message_helper.safe_edit(
+            update, text=text, reply_markup=_auction_menu_keyboard(setting, chat_id)
+        )
 
     async def _show_auction_list(
         self,
@@ -152,25 +159,9 @@ class AuctionAdminControllerMixin:
             await self._show_auction_detail(update, context, chat_id, auction_id=callback_data.get_int(3))
             return
 
+        updates = _auction_setting_updates(action, callback_data)
         async with db.session_factory() as session:
-            if action == "toggle":
-                field = callback_data.get(3)
-                enabled = callback_data.get(4) == "1"
-                updates = {
-                    "enabled": enabled,
-                    "pin_message_enabled": enabled if field == "pin" else None,
-                    "auto_extend_enabled": enabled if field == "auto_extend" else None,
-                }
-                if field == "enabled":
-                    updates = {"enabled": enabled}
-                elif field == "pin":
-                    updates = {"pin_message_enabled": enabled}
-                elif field == "auto_extend":
-                    updates = {"auto_extend_enabled": enabled}
+            if updates is not None:
                 await update_auction_setting(session, chat_id, **updates)
-            elif action == "perm":
-                await update_auction_setting(session, chat_id, create_permission=callback_data.get(3))
-            elif action == "points_mode":
-                await update_auction_setting(session, chat_id, points_mode=callback_data.get(3))
             await session.commit()
         await self._show_auction_menu(update, context, chat_id)
