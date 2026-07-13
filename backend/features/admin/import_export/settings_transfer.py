@@ -56,6 +56,100 @@ class SettingsTransferAdminMixin:
         ])
         await self.message_helper.safe_edit(update, text="\n".join(lines), reply_markup=keyboard)
 
+    async def _show_transfer_menu(self, update, context, chat_id: int, *, mode: str) -> None:
+        if mode == "import":
+            await self._show_import_settings_menu(update, context, chat_id)
+            return
+        await self._show_clone_settings_menu(update, context, chat_id)
+
+    async def _show_transfer_module_picker(self, update, chat_id: int, modules: set, *, mode: str) -> None:
+        rows = []
+        for item in list_import_modules():
+            selected = "✅" if item["key"] in modules else "❌"
+            callback = f"adm:{mode}:{chat_id}:module:{item['key']}"
+            rows.append([InlineKeyboardButton(f"{selected} {item['label']}", callback_data=callback)])
+        rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:{mode}:{chat_id}")])
+        action_name = "导入" if mode == "import" else "克隆"
+        await self.message_helper.safe_edit(update, f"选择要{action_name}的模块：", reply_markup=InlineKeyboardMarkup(rows))
+
+    async def _set_transfer_chat(self, update, context, chat_id: int, *, callback_data, state, mode: str) -> None:
+        selected_chat_id = callback_data.get_int_optional(4)
+        label = "来源群" if mode == "import" else "目标群"
+        if selected_chat_id is None or selected_chat_id == chat_id:
+            await answer_callback_query_safely(update, f"{label}无效", show_alert=True)
+            return
+        state["source_chat_id" if mode == "import" else "target_chat_id"] = selected_chat_id
+        await self._show_transfer_menu(update, context, chat_id, mode=mode)
+
+    async def _toggle_transfer_module(self, update, chat_id: int, *, callback_data, state, modules: set, mode: str) -> None:
+        key = callback_data.get(4)
+        if key not in {item["key"] for item in list_import_modules()}:
+            await answer_callback_query_safely(update, "未识别的模块", show_alert=True)
+            return
+        modules = modules - {key} if key in modules else modules | {key}
+        state["modules"] = list(modules)
+        await self._show_transfer_module_picker(update, chat_id, modules, mode=mode)
+
+    async def _apply_settings_transfer(self, update, context, chat_id: int, *, state, modules: set, mode: str) -> None:
+        peer_key = "source_chat_id" if mode == "import" else "target_chat_id"
+        peer_chat_id = state.get(peer_key)
+        peer_label = "来源群" if mode == "import" else "目标群"
+        if not peer_chat_id:
+            await answer_callback_query_safely(update, f"请先选择{peer_label}", show_alert=True)
+            return
+        if not modules:
+            await answer_callback_query_safely(update, "请至少选择一个模块", show_alert=True)
+            return
+        source_chat_id, target_chat_id = (peer_chat_id, chat_id) if mode == "import" else (chat_id, peer_chat_id)
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            await apply_import(session, source_chat_id=source_chat_id, target_chat_id=target_chat_id, modules=list(modules))
+            await session.commit()
+        state["modules"] = []
+        result_label = "导入" if mode == "import" else "克隆"
+        markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:{mode}:{chat_id}")]])
+        await self.message_helper.safe_edit(update, f"✅ {result_label}完成", reply_markup=markup)
+
+    async def _handle_transfer_mutation(self, update, context, chat_id: int, *, op: str, state, modules: set, mode: str) -> bool:
+        if op == "select_all":
+            state["modules"] = [item["key"] for item in list_import_modules()]
+            await self._show_transfer_menu(update, context, chat_id, mode=mode)
+            return True
+        if op == "clear":
+            state["modules"] = []
+            state["source_chat_id" if mode == "import" else "target_chat_id"] = None
+            await self._show_transfer_menu(update, context, chat_id, mode=mode)
+            return True
+        if op == "apply":
+            await self._apply_settings_transfer(update, context, chat_id, state=state, modules=modules, mode=mode)
+            return True
+        return False
+
+    async def _handle_settings_transfer(self, update, context, chat_id: int, *, callback_data, mode: str) -> None:
+        op = callback_data.get(3)
+        state = _get_import_state(context, update.effective_user.id, chat_id, mode=mode)
+        modules = set(state.get("modules", []))
+        pick_operation = "pick_source" if mode == "import" else "pick_target"
+        select_operation = "source" if mode == "import" else "target"
+        if op == pick_operation:
+            keyboard = await self._build_import_source_keyboard(update, context, target_chat_id=chat_id, mode=mode)
+            await self.message_helper.safe_edit(update, "请选择来源群：" if mode == "import" else "请选择目标群：", reply_markup=keyboard)
+            return
+        if op == select_operation:
+            await self._set_transfer_chat(update, context, chat_id, callback_data=callback_data, state=state, mode=mode)
+            return
+        if op == "pick_modules":
+            await self._show_transfer_module_picker(update, chat_id, modules, mode=mode)
+            return
+        if op == "module":
+            await self._toggle_transfer_module(update, chat_id, callback_data=callback_data, state=state, modules=modules, mode=mode)
+            return
+        if await self._handle_transfer_mutation(
+            update, context, chat_id, op=op, state=state, modules=modules, mode=mode
+        ):
+            return
+        await self._show_transfer_menu(update, context, chat_id, mode=mode)
+
     async def _show_clone_settings_menu(
         self,
         update: Update,
@@ -114,85 +208,9 @@ class SettingsTransferAdminMixin:
         chat_id: int,
         *, callback_data: CallbackParser,
     ) -> None:
-        op = callback_data.get(3)
-        state = _get_import_state(context, update.effective_user.id, chat_id, mode="import")
-        modules = set(state.get("modules", []))
-
-        if op == "pick_source":
-            keyboard = await self._build_import_source_keyboard(update, context, target_chat_id=chat_id, mode="import")
-            await self.message_helper.safe_edit(update, "请选择来源群：", reply_markup=keyboard)
-            return
-
-        if op == "source":
-            source_chat_id = callback_data.get_int_optional(4)
-            if source_chat_id is None or source_chat_id == chat_id:
-                await answer_callback_query_safely(update, "来源群无效", show_alert=True)
-                return
-            state["source_chat_id"] = source_chat_id
-            await self._show_import_settings_menu(update, context, chat_id)
-            return
-
-        if op == "pick_modules":
-            rows: list[list[InlineKeyboardButton]] = []
-            for item in list_import_modules():
-                key = item["key"]
-                selected = "✅" if key in modules else "❌"
-                rows.append([InlineKeyboardButton(f"{selected} {item['label']}", callback_data=f"adm:import:{chat_id}:module:{key}")])
-            rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:import:{chat_id}")])
-            await self.message_helper.safe_edit(update, "选择要导入的模块：", reply_markup=InlineKeyboardMarkup(rows))
-            return
-
-        if op == "module":
-            key = callback_data.get(4)
-            keys = {item["key"] for item in list_import_modules()}
-            if key not in keys:
-                await answer_callback_query_safely(update, "未识别的模块", show_alert=True)
-                return
-            if key in modules:
-                modules.remove(key)
-            else:
-                modules.add(key)
-            state["modules"] = list(modules)
-            await self._handle_import_settings(update, context, chat_id, callback_data=CallbackParser.parse(f"adm:import:{chat_id}:pick_modules"))
-            return
-
-        if op == "select_all":
-            state["modules"] = [item["key"] for item in list_import_modules()]
-            await self._show_import_settings_menu(update, context, chat_id)
-            return
-
-        if op == "clear":
-            state["modules"] = []
-            state["source_chat_id"] = None
-            await self._show_import_settings_menu(update, context, chat_id)
-            return
-
-        if op == "apply":
-            source_chat_id = state.get("source_chat_id")
-            if not source_chat_id:
-                await answer_callback_query_safely(update, "请先选择来源群", show_alert=True)
-                return
-            if not modules:
-                await answer_callback_query_safely(update, "请至少选择一个模块", show_alert=True)
-                return
-            db: Database = context.application.bot_data["db"]
-            async with db.session_factory() as session:
-                await apply_import(
-                    session,
-                    source_chat_id=source_chat_id,
-                    target_chat_id=chat_id,
-                    modules=list(modules),
-                )
-                await session.commit()
-            state["modules"] = []
-            await self.message_helper.safe_edit(
-                update,
-                "✅ 导入完成",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:import:{chat_id}")]]),
-            )
-            return
-
-        await self._show_import_settings_menu(update, context, chat_id)
+        await self._handle_settings_transfer(
+            update, context, chat_id, callback_data=callback_data, mode="import"
+        )
 
     async def _handle_clone_settings(
         self,
@@ -201,82 +219,6 @@ class SettingsTransferAdminMixin:
         chat_id: int,
         *, callback_data: CallbackParser,
     ) -> None:
-        op = callback_data.get(3)
-        state = _get_import_state(context, update.effective_user.id, chat_id, mode="clone")
-        modules = set(state.get("modules", []))
-
-        if op == "pick_target":
-            keyboard = await self._build_import_source_keyboard(update, context, target_chat_id=chat_id, mode="clone")
-            await self.message_helper.safe_edit(update, "请选择目标群：", reply_markup=keyboard)
-            return
-
-        if op == "target":
-            target_chat_id = callback_data.get_int_optional(4)
-            if target_chat_id is None or target_chat_id == chat_id:
-                await answer_callback_query_safely(update, "目标群无效", show_alert=True)
-                return
-            state["target_chat_id"] = target_chat_id
-            await self._show_clone_settings_menu(update, context, chat_id)
-            return
-
-        if op == "pick_modules":
-            rows: list[list[InlineKeyboardButton]] = []
-            for item in list_import_modules():
-                key = item["key"]
-                selected = "✅" if key in modules else "❌"
-                rows.append([InlineKeyboardButton(f"{selected} {item['label']}", callback_data=f"adm:clone:{chat_id}:module:{key}")])
-            rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:clone:{chat_id}")])
-            await self.message_helper.safe_edit(update, "选择要克隆的模块：", reply_markup=InlineKeyboardMarkup(rows))
-            return
-
-        if op == "module":
-            key = callback_data.get(4)
-            keys = {item["key"] for item in list_import_modules()}
-            if key not in keys:
-                await answer_callback_query_safely(update, "未识别的模块", show_alert=True)
-                return
-            if key in modules:
-                modules.remove(key)
-            else:
-                modules.add(key)
-            state["modules"] = list(modules)
-            await self._handle_clone_settings(update, context, chat_id, callback_data=CallbackParser.parse(f"adm:clone:{chat_id}:pick_modules"))
-            return
-
-        if op == "select_all":
-            state["modules"] = [item["key"] for item in list_import_modules()]
-            await self._show_clone_settings_menu(update, context, chat_id)
-            return
-
-        if op == "clear":
-            state["modules"] = []
-            state["target_chat_id"] = None
-            await self._show_clone_settings_menu(update, context, chat_id)
-            return
-
-        if op == "apply":
-            target_chat_id = state.get("target_chat_id")
-            if not target_chat_id:
-                await answer_callback_query_safely(update, "请先选择目标群", show_alert=True)
-                return
-            if not modules:
-                await answer_callback_query_safely(update, "请至少选择一个模块", show_alert=True)
-                return
-            db: Database = context.application.bot_data["db"]
-            async with db.session_factory() as session:
-                await apply_import(
-                    session,
-                    source_chat_id=chat_id,
-                    target_chat_id=target_chat_id,
-                    modules=list(modules),
-                )
-                await session.commit()
-            state["modules"] = []
-            await self.message_helper.safe_edit(
-                update,
-                "✅ 克隆完成",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:clone:{chat_id}")]]),
-            )
-            return
-
-        await self._show_clone_settings_menu(update, context, chat_id)
+        await self._handle_settings_transfer(
+            update, context, chat_id, callback_data=callback_data, mode="clone"
+        )
