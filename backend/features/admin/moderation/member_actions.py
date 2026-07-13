@@ -28,6 +28,17 @@ def _build_force_subscribe_delete_after_keyboard(chat_id: int, current_seconds: 
     return InlineKeyboardMarkup(rows)
 
 
+def _force_subscribe_action_options() -> list[str]:
+    from backend.platform.db.schema.models.enums import ForceSubscribeAction
+
+    return [
+        ForceSubscribeAction.delete_and_warn.value,
+        ForceSubscribeAction.delete_only.value,
+        ForceSubscribeAction.warn_only.value,
+        ForceSubscribeAction.mute.value,
+    ]
+
+
 class ModerationMemberActionsMixin:
     async def _handle_force_subscribe(
         self,
@@ -36,7 +47,7 @@ class ModerationMemberActionsMixin:
         chat_id: int,
         *, callback_data: CallbackParser,
     ) -> None:
-        from backend.platform.db.schema.models.enums import ConversationStateType, ForceSubscribeAction
+        from backend.platform.db.schema.models.enums import ConversationStateType
 
         op = callback_data.get(3)
         arg = callback_data.get(4)
@@ -45,7 +56,13 @@ class ModerationMemberActionsMixin:
             await self._toggle_member_setting(update, context, chat_id, field=field, menu="force_subscribe")
             return
         if op == "input":
-            await self._start_force_subscribe_input(update, context, chat_id, option=arg, state_enum=ConversationStateType)
+            await self._start_member_force_subscribe_input(
+                update,
+                context,
+                chat_id,
+                option=arg,
+                state_enum=ConversationStateType,
+            )
             return
         if op == "preview":
             await self._show_member_force_subscribe_preview(update, context, chat_id)
@@ -62,18 +79,12 @@ class ModerationMemberActionsMixin:
             await self._cycle_force_subscribe_value(update, context, chat_id, field="force_subscribe_check_mode", options=["all", "any"])
             return
         if op == "cycle_action":
-            options = [
-                ForceSubscribeAction.delete_and_warn.value,
-                ForceSubscribeAction.delete_only.value,
-                ForceSubscribeAction.warn_only.value,
-                ForceSubscribeAction.mute.value,
-            ]
             await self._cycle_force_subscribe_value(
                 update,
                 context,
                 chat_id,
                 field="force_subscribe_not_subscribed_action",
-                options=options,
+                options=_force_subscribe_action_options(),
             )
             return
         if op == "clear_cover":
@@ -94,7 +105,7 @@ class ModerationMemberActionsMixin:
         }[menu]
         await menu_handler(update, context, chat_id)
 
-    async def _start_force_subscribe_input(self, update, context, chat_id: int, *, option: str, state_enum) -> None:
+    async def _start_member_force_subscribe_input(self, update, context, chat_id: int, *, option: str, state_enum) -> None:
         state_map = {
             "channel1": state_enum.force_subscribe_channel_1_input.value,
             "channel2": state_enum.force_subscribe_channel_2_input.value,
@@ -113,12 +124,12 @@ class ModerationMemberActionsMixin:
             state_type=state_type,
             payload={"target_chat_id": chat_id},
         )
-        prompt = self._force_subscribe_prompt(option)
+        prompt = self._member_force_subscribe_prompt(option)
         markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:forcesub:{chat_id}")]])
         await self.message_helper.safe_edit(update, prompt, reply_markup=markup)
 
     @staticmethod
-    def _force_subscribe_prompt(option: str) -> str:
+    def _member_force_subscribe_prompt(option: str) -> str:
         prompts = {
             "channel1": "👉 请回复需要绑定的频道1（频道id、用户名或链接）：",
             "channel2": "👉 请回复需要绑定的频道2（频道id、用户名或链接）：",
