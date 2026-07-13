@@ -4,15 +4,10 @@
 """
 from __future__ import annotations
 
-import structlog
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from backend.shared.i18n.strings import t
 from backend.shared.services.permission_service import is_user_admin
-
-log = structlog.get_logger(__name__)
-
 
 class PermissionHelper:
     """权限检查工具类
@@ -42,26 +37,11 @@ class PermissionHelper:
         Returns:
             bool: 用户是否有管理员权限
         """
-        if not await is_user_admin(context, chat_id, update.effective_user.id):
-            if error_message is None:
-                error_message = "需要管理员权限。"
-
-            if update.callback_query:
-                if show_alert:
-                    await update.callback_query.answer(error_message, show_alert=True)
-                else:
-                    try:
-                        await update.callback_query.edit_message_text(error_message)
-                    except Exception as e:
-                        log.warning("edit_message_failed", error=str(e))
-            elif update.effective_message:
-                try:
-                    await update.effective_message.reply_text(error_message)
-                except Exception as e:
-                    log.warning("reply_message_failed", error=str(e))
-
-            return False
-        return True
+        if await is_user_admin(context, chat_id, update.effective_user.id):
+            return True
+        message = error_message or "需要管理员权限。"
+        await PermissionHelper._send_denied_message(update, message, show_alert=show_alert)
+        return False
 
     @staticmethod
     async def require_admin_in_chat(
@@ -91,3 +71,18 @@ class PermissionHelper:
             chat.id,
             error_message=error_message,
         )
+    @staticmethod
+    async def _send_denied_message(
+        update: Update,
+        message: str,
+        *,
+        show_alert: bool,
+    ) -> None:
+        if update.callback_query is not None:
+            if show_alert:
+                await update.callback_query.answer(message, show_alert=True)
+                return
+            await update.callback_query.edit_message_text(message)
+            return
+        if update.effective_message is not None:
+            await update.effective_message.reply_text(message)

@@ -107,22 +107,9 @@ class KeyValueConfigParser(BaseConfigParser):
             ParseResult: 解析结果
         """
         try:
-            lines = text.strip().split("\n")
-            result = {}
-
-            for line in lines:
-                line = line.strip() if self.trim_whitespace else line
-                if not line or line.startswith("#"):  # 跳过空行和注释
-                    continue
-
-                if ":" not in line:
-                    return ParseResult.fail(f"配置行格式错误，缺少冒号: {line}")
-
-                key, value = line.split(":", 1)
-                key = key.strip() if self.trim_whitespace else key
-                value = value.strip() if self.trim_whitespace else value
-
-                result[key] = value
+            result = self._parse_lines(text)
+            if isinstance(result, ParseResult):
+                return result
 
             # 验证必需的键
             missing_keys = [k for k in self.required_keys if k not in result]
@@ -134,6 +121,20 @@ class KeyValueConfigParser(BaseConfigParser):
         except Exception as e:
             log.exception("config_parse_error")
             return ParseResult.fail(f"解析失败: {str(e)}")
+
+    def _parse_lines(self, text: str) -> dict[str, str] | ParseResult:
+        result: dict[str, str] = {}
+        for raw_line in text.strip().splitlines():
+            line = raw_line.strip() if self.trim_whitespace else raw_line
+            if not line or line.startswith("#"):
+                continue
+            if ":" not in line:
+                return ParseResult.fail(f"配置行格式错误，缺少冒号: {line}")
+            key, value = line.split(":", 1)
+            if self.trim_whitespace:
+                key, value = key.strip(), value.strip()
+            result[key] = value
+        return result
 
 
 class MultiLineConfigParser(BaseConfigParser):
@@ -171,36 +172,24 @@ class MultiLineConfigParser(BaseConfigParser):
             ParseResult: 解析结果
         """
         try:
-            lines = text.strip().split("\n")
-            content_lines = []
-            config = {}
-
-            i = 0
-            while i < len(lines):
-                line = lines[i].strip()
-                if self.config_marker in line:
-                    # 开始解析配置项
-                    key, value = line.split(self.config_marker, 1)
-                    config[key.strip()] = value.strip()
-                    i += 1
-                elif self.content_first:
-                    # 内容在配置之前
-                    content_lines.append(line)
-                    i += 1
-                else:
-                    # 跳过无法识别的行
-                    i += 1
-
-            result = {
-                "content": "\n".join(content_lines).strip(),
-                "config": config,
-            }
-
-            return ParseResult.ok(result)
+            return ParseResult.ok(self._parse_lines(text))
 
         except Exception as e:
             log.exception("multiline_config_parse_error")
             return ParseResult.fail(f"解析失败: {str(e)}")
+
+    def _parse_lines(self, text: str) -> dict[str, object]:
+        content_lines: list[str] = []
+        config: dict[str, str] = {}
+        for raw_line in text.strip().splitlines():
+            line = raw_line.strip()
+            if self.config_marker not in line:
+                if self.content_first:
+                    content_lines.append(line)
+                continue
+            key, value = line.split(self.config_marker, 1)
+            config[key.strip()] = value.strip()
+        return {"content": "\n".join(content_lines).strip(), "config": config}
 
 
 class DateTimeParser:

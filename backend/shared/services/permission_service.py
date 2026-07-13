@@ -165,21 +165,17 @@ class PermissionPolicyService:
         if context is None:
             return PermissionDecision(False, "context_required")
 
-        try:
-            if not hasattr(context, "bot") or context.bot is None:
-                return PermissionDecision(False, "bot_unavailable")
+        if not hasattr(context, "bot") or context.bot is None:
+            return PermissionDecision(False, "bot_unavailable")
 
-            member = await context.bot.get_chat_member(chat_id=chat_id, user_id=user_id)
-            if member.status not in ("administrator", "creator"):
-                return PermissionDecision(False, "group_admin_required")
-
-            policy = await cls._resolve_chat_policy(context, chat_id)
-            if cls._get_member_policy_allowed(member, policy):
-                return PermissionDecision(True, "group_admin")
+        member = await context.bot.get_chat_member(chat_id=chat_id, user_id=user_id)
+        if member.status not in ("administrator", "creator"):
             return PermissionDecision(False, "group_admin_required")
-        except Exception as exc:  # pragma: no cover - defensive guard
-            log.warning("permission_policy_check_failed", chat_id=chat_id, user_id=user_id, error=str(exc))
-            return PermissionDecision(False, "permission_check_failed")
+
+        policy = await cls._resolve_chat_policy(context, chat_id)
+        allowed = cls._get_member_policy_allowed(member, policy)
+        reason = "group_admin" if allowed else "group_admin_required"
+        return PermissionDecision(allowed, reason)
 
     @classmethod
     async def require_manage(

@@ -66,6 +66,15 @@ def action_button(label: str, callback_data: str, *, configured: bool = False) -
     return InlineKeyboardButton(mark_configured(label, configured), callback_data=callback_data)
 
 
+def _progress_lines(items: list[tuple[str, bool]]) -> list[str]:
+    if not items:
+        return []
+    done_count = sum(1 for _, done in items if done)
+    lines = [f"必填完成: {done_count}/{len(items)}"]
+    lines.extend(f"{'✅' if done else '❌'} {label}" for label, done in items)
+    return lines
+
+
 def format_completion_lines(
     required_items: Iterable[tuple[str, bool]],
     *,
@@ -78,11 +87,7 @@ def format_completion_lines(
         return []
 
     lines = ["", "配置进度:"]
-    if items:
-        done_count = sum(1 for _, done in items if done)
-        lines.append(f"必填完成: {done_count}/{len(items)}")
-        for label, done in items:
-            lines.append(f"{'✅' if done else '❌'} {label}")
+    lines.extend(_progress_lines(items))
     if next_step:
         lines.append(f"下一步: {next_step}")
     if test_step:

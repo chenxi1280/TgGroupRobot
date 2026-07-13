@@ -23,31 +23,33 @@ class UserDisplaySource(Protocol):
     last_name: str | None
 
 
+def _fallback_display_name(user_id: int | None, default: str) -> str:
+    return f"用户{user_id}" if user_id is not None else default
+
+
+def _real_name_parts(user: UserDisplaySource) -> list[str]:
+    values = (user.first_name, user.last_name)
+    return [value.strip() for value in values if isinstance(value, str) and value.strip()]
+
+
 def format_user_display_name(
     user: UserDisplaySource | None,
     fallback_user_id: int | None = None,
     default: str = "用户",
 ) -> str:
     if user is None:
-        return f"用户{fallback_user_id}" if fallback_user_id is not None else default
+        return _fallback_display_name(fallback_user_id, default)
 
     username = str(user.username or "").strip()
     if username:
         return f"@{username.lstrip('@')}"
 
-    parts = [
-        str(part).strip()
-        for part in (
-            user.first_name,
-            user.last_name,
-        )
-        if isinstance(part, str) and part.strip()
-    ]
+    parts = _real_name_parts(user)
     if parts:
         return " ".join(parts)
 
-    user_id = fallback_user_id if fallback_user_id is not None else user.id
-    return f"用户{user_id}" if user_id is not None else default
+    user_id = user.id if fallback_user_id is None else fallback_user_id
+    return _fallback_display_name(user_id, default)
 
 
 def format_user_mention(user: "TgUser", use_html: bool = False) -> str:
@@ -111,21 +113,20 @@ def format_timedelta(delta: dt.timedelta) -> str:
     total_seconds = int(delta.total_seconds())
     if total_seconds < _FORMAT_TIMEDELTA_THRESHOLD_60:
         return f"{total_seconds}秒"
-    elif total_seconds < _FORMAT_TIMEDELTA_THRESHOLD_3600:
+    if total_seconds < _FORMAT_TIMEDELTA_THRESHOLD_3600:
         minutes = total_seconds // 60
         return f"{minutes}分钟"
-    elif total_seconds < _FORMAT_TIMEDELTA_THRESHOLD_86400:
+    if total_seconds < _FORMAT_TIMEDELTA_THRESHOLD_86400:
         hours = total_seconds // 3600
         minutes = (total_seconds % 3600) // 60
         if minutes > 0:
             return f"{hours}小时{minutes}分钟"
         return f"{hours}小时"
-    else:
-        days = total_seconds // 86400
-        hours = (total_seconds % 86400) // 3600
-        if hours > 0:
-            return f"{days}天{hours}小时"
-        return f"{days}天"
+    days = total_seconds // 86400
+    hours = (total_seconds % 86400) // 3600
+    if hours > 0:
+        return f"{days}天{hours}小时"
+    return f"{days}天"
 
 
 def format_number(number: int, use_emoji: bool = False) -> str:

@@ -181,13 +181,12 @@ def get_interval_description(minutes: int) -> str:
     """
     if minutes < _GET_INTERVAL_DESCRIPTION_THRESHOLD_60:
         return f"每 {minutes} 分钟"
-    elif minutes == _GET_INTERVAL_DESCRIPTION_THRESHOLD_60:
+    if minutes == _GET_INTERVAL_DESCRIPTION_THRESHOLD_60:
         return "每小时"
-    elif minutes < _GET_INTERVAL_DESCRIPTION_THRESHOLD_1440:
+    if minutes < _GET_INTERVAL_DESCRIPTION_THRESHOLD_1440:
         hours = minutes // 60
         return f"每 {hours} 小时"
-    elif minutes == _GET_INTERVAL_DESCRIPTION_THRESHOLD_1440:
+    if minutes == _GET_INTERVAL_DESCRIPTION_THRESHOLD_1440:
         return "每天"
-    else:
-        days = minutes // 1440
-        return f"每 {days} 天"
+    days = minutes // 1440
+    return f"每 {days} 天"
