@@ -8,6 +8,34 @@ from backend.shared.time_helper import parse_date_time_string
 _VALIDATE_DAY_PERIOD_THRESHOLD_23 = 23
 
 
+def _expand_button_url(url: str) -> str:
+    if url.startswith("@"):
+        return f"https://t.me/{url[1:]}"
+    if url.startswith("t.me/") or url.startswith("www."):
+        return f"https://{url}"
+    if "://" not in url and not url.startswith("tg://"):
+        return f"https://{url}"
+    return url
+
+
+def _validate_web_button_url(parsed) -> None:
+    if not parsed.netloc:
+        raise ValidationError("按钮 URL 格式无效")
+    if not parsed.hostname:
+        raise ValidationError("按钮 URL 主机名无效")
+    try:
+        _ = parsed.port
+    except ValueError as exc:
+        raise ValidationError("按钮 URL 端口格式无效") from exc
+
+
+def _button_rows(buttons: list) -> list:
+    if all(isinstance(item, dict) for item in buttons):
+        return [buttons]
+    if all(isinstance(item, list) for item in buttons):
+        return buttons
+    raise ValidationError("按钮格式必须是 [{text,url}] 或 [[{text,url}]]")
+
 
 class ScheduledMessageValidationMixin:
     """定时消息服务的输入校验与格式标准化。"""
@@ -56,30 +84,12 @@ class ScheduledMessageValidationMixin:
         if lowered.startswith(blocked_schemes):
             raise ValidationError("按钮 URL 协议不安全")
 
-        if normalized.startswith("@"):
-            normalized = f"https://t.me/{normalized[1:]}"
-        elif normalized.startswith("t.me/"):
-            normalized = f"https://{normalized}"
-        elif normalized.startswith("www."):
-            normalized = f"https://{normalized}"
-        elif "://" not in normalized and not normalized.startswith("tg://"):
-            normalized = f"https://{normalized}"
-
+        normalized = _expand_button_url(normalized)
         parsed = urlparse(normalized)
         if parsed.scheme not in {"http", "https", "tg"}:
             raise ValidationError("按钮 URL 协议仅支持 http/https/tg")
-
-        if parsed.scheme in {"http", "https"} and not parsed.netloc:
-            raise ValidationError("按钮 URL 格式无效")
-
         if parsed.scheme in {"http", "https"}:
-            if not parsed.hostname:
-                raise ValidationError("按钮 URL 主机名无效")
-            try:
-                _ = parsed.port
-            except ValueError as exc:
-                raise ValidationError("按钮 URL 端口格式无效") from exc
-
+            _validate_web_button_url(parsed)
         if parsed.scheme == "tg" and not (parsed.netloc or parsed.path):
             raise ValidationError("按钮 tg:// 链接格式无效")
 
@@ -94,41 +104,30 @@ class ScheduledMessageValidationMixin:
         if not buttons:
             return []
 
-        if all(isinstance(item, dict) for item in buttons):
-            rows = [buttons]
-        elif all(isinstance(item, list) for item in buttons):
-            rows = buttons
-        else:
-            raise ValidationError("按钮格式必须是 [{text,url}] 或 [[{text,url}]]")
-
+        rows = _button_rows(buttons)
         normalized_rows: list[list[dict[str, str]]] = []
         for row_index, row in enumerate(rows, start=1):
-            if not isinstance(row, list):
-                raise ValidationError(f"第 {row_index} 行按钮格式错误")
-
-            normalized_row: list[dict[str, str]] = []
-            for col_index, button in enumerate(row, start=1):
-                if not isinstance(button, dict):
-                    raise ValidationError(f"第 {row_index} 行第 {col_index} 个按钮必须是对象")
-
-                text = str(button.get("text", "")).strip()
-                raw_url = button.get("url", button.get("link", ""))
-                url = str(raw_url).strip()
-
-                if not text:
-                    raise ValidationError(f"第 {row_index} 行第 {col_index} 个按钮 text 不能为空")
-                if not url:
-                    raise ValidationError(f"第 {row_index} 行第 {col_index} 个按钮 url 不能为空")
-
-                normalized_row.append({
-                    "text": text,
-                    "url": cls._normalize_button_url(url),
-                })
-
+            normalized_row = cls._normalize_button_row(row, row_index=row_index)
             if normalized_row:
                 normalized_rows.append(normalized_row)
-
         return normalized_rows
+
+    @classmethod
+    def _normalize_button_row(cls, row, *, row_index: int) -> list[dict[str, str]]:
+        if not isinstance(row, list):
+            raise ValidationError(f"第 {row_index} 行按钮格式错误")
+        normalized: list[dict[str, str]] = []
+        for col_index, button in enumerate(row, start=1):
+            if not isinstance(button, dict):
+                raise ValidationError(f"第 {row_index} 行第 {col_index} 个按钮必须是对象")
+            text = str(button.get("text", "")).strip()
+            url = str(button.get("url", button.get("link", ""))).strip()
+            if not text:
+                raise ValidationError(f"第 {row_index} 行第 {col_index} 个按钮 text 不能为空")
+            if not url:
+                raise ValidationError(f"第 {row_index} 行第 {col_index} 个按钮 url 不能为空")
+            normalized.append({"text": text, "url": cls._normalize_button_url(url)})
+        return normalized
 
     @classmethod
     def validate_repeat_interval(cls, repeat_interval_min: int) -> None:
