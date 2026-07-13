@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 import html
+from dataclasses import dataclass, replace
 
 import structlog
 from telegram import Update
@@ -86,6 +87,297 @@ def _format_full_draw_no_eligible_announcement(lottery, *, participant_count: in
     )
 
 
+@dataclass(frozen=True)
+class _JoinFlow:
+    controller: object
+    update: Update
+    context: ContextTypes.DEFAULT_TYPE
+    session: object
+    lottery_id: int
+    chat: object
+    user: object
+    query: object
+
+
+@dataclass(frozen=True)
+class _JoinOutcome:
+    error_msg: str | None = None
+    participant_count: int = 0
+    joined_lottery: object | None = None
+    draw_announcement: str | None = None
+    result_pin_enabled: bool = False
+    result_chat_id: int | None = None
+    result_message_id: int | None = None
+    subscribe_notice_text: str | None = None
+    subscribe_notice_markup: object | None = None
+
+
+async def _check_join_subscription(flow: _JoinFlow, lottery, rules: dict) -> _JoinOutcome | None:
+    if not requires_lottery_subscribe(lottery):
+        return None
+    targets = get_lottery_subscribe_targets(rules)
+    allowed, reason = await check_lottery_subscribe_membership(
+        flow.context, targets, flow.user.id,
+        check_mode=rules.get("subscribe_check_mode") or "all",
+    )
+    if allowed:
+        return None
+    error = reason or "请先关注指定频道/群组后再参与抽奖。"
+    return _JoinOutcome(
+        error_msg=error, subscribe_notice_text=error,
+        subscribe_notice_markup=build_lottery_subscribe_markup(targets),
+    )
+
+
+async def _join_points_and_member(flow: _JoinFlow, rules: dict):
+    point_type_id = rules.get("point_type_id")
+    if point_type_id:
+        points = await PointsExtendedService.get_custom_point_balance(
+            flow.session, chat_id=flow.chat.id,
+            type_id=int(point_type_id), user_id=flow.user.id,
+        )
+        point_type_name = rules.get("point_type_name") or "积分"
+    else:
+        points = await get_balance(flow.session, flow.chat.id, flow.user.id)
+        point_type_name = "积分"
+    stmt = select(ChatMember).where(
+        ChatMember.chat_id == flow.chat.id, ChatMember.user_id == flow.user.id
+    )
+    member = (await flow.session.execute(stmt)).scalar_one_or_none()
+    return point_type_id, point_type_name, points, member.joined_at if member else None
+
+
+async def _charge_join_cost(flow: _JoinFlow, lottery, point_type_id) -> str | None:
+    if lottery.participation_cost <= 0:
+        return None
+    if point_type_id:
+        balance = await PointsExtendedService.get_custom_point_balance(
+            flow.session, chat_id=flow.chat.id,
+            type_id=int(point_type_id), user_id=flow.user.id,
+        )
+        if balance < lottery.participation_cost:
+            return "积分不足，无法参与"
+        await PointsExtendedService.adjust_custom_points(
+            flow.session, chat_id=flow.chat.id, type_id=int(point_type_id),
+            user_id=flow.user.id, delta=-lottery.participation_cost,
+            operator_user_id=None, reason_note=f"参与抽奖: {lottery.title}",
+        )
+        return None
+    success, _ = await change_points(
+        flow.session, chat_id=flow.chat.id, user_id=flow.user.id,
+        amount=-lottery.participation_cost,
+        txn_type=PointsTxnType.lottery_join.value, reason=f"参与抽奖: {lottery.title}",
+    )
+    return None if success else "积分不足，无法参与"
+
+
+async def _join_lottery_user(flow: _JoinFlow, lottery) -> _JoinOutcome:
+    rules = lottery.qualification_rules or {}
+    subscription_error = await _check_join_subscription(flow, lottery, rules)
+    if subscription_error:
+        return subscription_error
+    point_type_id, point_name, points, joined_at = await _join_points_and_member(flow, rules)
+    result = await join_lottery(
+        flow.session, lottery_id=flow.lottery_id, user_id=flow.user.id,
+        points_balance=points, member_joined_at=joined_at,
+    )
+    if not result.success:
+        return _JoinOutcome(
+            error_msg=_join_error_message(result.reason, lottery=lottery, point_type_name=point_name)
+        )
+    cost_error = await _charge_join_cost(flow, lottery, point_type_id)
+    if cost_error:
+        error = cost_error if not point_type_id else f"{point_name}不足，无法参与"
+        return _JoinOutcome(error_msg=error)
+    count = await get_lottery_participant_count(flow.session, flow.lottery_id)
+    return _JoinOutcome(participant_count=count, joined_lottery=lottery)
+
+
+def _full_draw_due(lottery, participant_count: int) -> bool:
+    rules = lottery.qualification_rules or {}
+    return (
+        rules.get("draw_trigger") == "full_participants"
+        and lottery.max_participants > 0
+        and participant_count >= lottery.max_participants
+    )
+
+
+def _preset_draw_ids(rules: dict) -> list[int]:
+    raw_ids = rules.get("preset_winner_ids") or rules.get("fixed_winner_ids") or []
+    return [int(user_id) for user_id in raw_ids if str(user_id).isdigit()]
+
+
+async def _full_draw_eligible_ids(flow: _JoinFlow, lottery, rules: dict):
+    if not requires_lottery_subscribe(lottery):
+        return None
+    participants = await get_lottery_participants(flow.session, flow.lottery_id)
+    candidate_ids = {int(item.user_id) for item in participants}
+    candidate_ids.update(_preset_draw_ids(rules))
+    return await filter_lottery_subscribed_user_ids(
+        flow.context, get_lottery_subscribe_targets(rules), candidate_ids,
+        check_mode=rules.get("subscribe_check_mode") or "all",
+    )
+
+
+async def _send_full_draw_announcement(flow: _JoinFlow, lottery, announcement: str, *, log_event: str):
+    try:
+        sent = await flow.context.bot.send_message(
+            chat_id=lottery.chat_id, text=announcement, parse_mode="HTML"
+        )
+        return sent.message_id
+    except Exception as exc:
+        log.error(log_event, lottery_id=flow.lottery_id, error=str(exc))
+        return None
+
+
+async def _build_full_draw_announcement(
+    flow: _JoinFlow, lottery, winners, *, eligible_ids, participant_count: int
+):
+    from backend.features.activity.services.lottery_service import (
+        distribute_lottery_rewards,
+        generate_lottery_announcement,
+    )
+
+    if winners:
+        result = await flow.session.execute(
+            select(TgUser).where(TgUser.id.in_([item.user_id for item in winners]))
+        )
+        users = {user.id: user for user in result.scalars().all()}
+        await distribute_lottery_rewards(flow.session, lottery, winners)
+        return (
+            generate_lottery_announcement(lottery, winners, users),
+            "full_participant_lottery_announcement_failed",
+        )
+    if requires_lottery_subscribe(lottery) and eligible_ids is not None:
+        return (
+            _format_full_draw_no_eligible_announcement(
+                lottery, participant_count=participant_count
+            ),
+            "full_participant_lottery_no_eligible_announcement_failed",
+        )
+    return None
+
+
+async def _complete_full_draw(flow: _JoinFlow, outcome: _JoinOutcome) -> _JoinOutcome:
+    lottery = outcome.joined_lottery
+    if lottery is None or not _full_draw_due(lottery, outcome.participant_count):
+        return outcome
+    from backend.features.activity.services.lottery_service import (
+        get_or_create_lottery_setting,
+        perform_random_draw,
+    )
+    rules = lottery.qualification_rules or {}
+    eligible_ids = await _full_draw_eligible_ids(flow, lottery, rules)
+    kwargs = {} if eligible_ids is None else {"eligible_user_ids": eligible_ids}
+    winners = await perform_random_draw(flow.session, lottery, **kwargs)
+    announcement_result = await _build_full_draw_announcement(
+        flow, lottery, winners,
+        eligible_ids=eligible_ids, participant_count=outcome.participant_count,
+    )
+    if announcement_result is None:
+        return outcome
+    announcement, log_event = announcement_result
+    setting = await get_or_create_lottery_setting(flow.session, lottery.chat_id)
+    message_id = await _send_full_draw_announcement(
+        flow, lottery, announcement, log_event=log_event
+    )
+    if message_id is None:
+        return replace(outcome, error_msg="已满员，但开奖结果公告发送失败，请稍后重试")
+    lottery.status = "completed"
+    lottery.drawn_at = dt.datetime.now(dt.UTC)
+    return replace(
+        outcome, draw_announcement=announcement,
+        result_pin_enabled=setting.result_pin_enabled,
+        result_chat_id=lottery.chat_id, result_message_id=message_id,
+    )
+
+
+async def _send_subscribe_notice(flow: _JoinFlow, outcome: _JoinOutcome) -> None:
+    if not outcome.subscribe_notice_text or outcome.subscribe_notice_markup is None:
+        return
+    try:
+        notice = await flow.context.bot.send_message(
+            chat_id=flow.chat.id, text=outcome.subscribe_notice_text,
+            reply_markup=outcome.subscribe_notice_markup,
+            reply_to_message_id=getattr(flow.query.message, "message_id", None),
+            allow_sending_without_reply=True,
+        )
+        _schedule_message_delete(
+            flow.context, notice, LOTTERY_SUBSCRIBE_NOTICE_DELETE_SECONDS,
+            name="activity.lottery_subscribe_notice_delete",
+        )
+    except Exception as exc:
+        log.warning(
+            "lottery_force_subscribe_notice_failed",
+            lottery_id=flow.lottery_id, error=str(exc),
+        )
+
+
+async def _pin_join_result(flow: _JoinFlow, outcome: _JoinOutcome) -> None:
+    if not outcome.result_pin_enabled or outcome.result_message_id is None:
+        return
+    try:
+        await flow.context.bot.pin_chat_message(
+            chat_id=outcome.result_chat_id, message_id=outcome.result_message_id
+        )
+    except Exception as exc:
+        log.warning(
+            "lottery_result_pin_failed", lottery_id=flow.lottery_id,
+            chat_id=outcome.result_chat_id,
+            message_id=outcome.result_message_id, error=str(exc),
+        )
+
+
+async def _send_join_success(flow: _JoinFlow, outcome: _JoinOutcome) -> None:
+    if outcome.joined_lottery is None:
+        return
+    full_draw = bool(outcome.draw_announcement and outcome.result_chat_id is not None)
+    try:
+        await flow.context.bot.send_message(
+            chat_id=flow.chat.id,
+            text=_format_join_success_message(
+                user=flow.user, lottery=outcome.joined_lottery,
+                participant_count=outcome.participant_count,
+                full_draw_completed=full_draw,
+            ),
+            parse_mode="HTML",
+            reply_to_message_id=getattr(flow.query.message, "message_id", None),
+            allow_sending_without_reply=True,
+        )
+    except Exception as exc:
+        log.error(
+            "lottery_join_success_message_failed",
+            lottery_id=flow.lottery_id, error=str(exc),
+        )
+
+
+async def _respond_join(flow: _JoinFlow, outcome: _JoinOutcome) -> None:
+    if outcome.error_msg:
+        await flow.query.answer(outcome.error_msg, show_alert=True)
+        await _send_subscribe_notice(flow, outcome)
+        return
+    full_draw = bool(outcome.draw_announcement and outcome.result_chat_id is not None)
+    if full_draw:
+        await _pin_join_result(flow, outcome)
+        text = f"🎉 参与成功！当前人数: {outcome.participant_count}，已满员开奖！"
+    else:
+        text = f"🎉 参与成功！当前人数: {outcome.participant_count}"
+    await flow.query.answer(text, show_alert=True)
+    await _send_join_success(flow, outcome)
+
+
+async def _process_join(flow: _JoinFlow) -> _JoinOutcome:
+    lottery = await get_lottery(flow.session, flow.lottery_id)
+    if lottery is None:
+        return _JoinOutcome(error_msg="抽奖不存在。")
+    if lottery.chat_id != flow.chat.id:
+        return _JoinOutcome(error_msg="此抽奖不属于当前群组。")
+    outcome = await _join_lottery_user(flow, lottery)
+    if outcome.error_msg:
+        return outcome
+    return await _complete_full_draw(flow, outcome)
+
+
 class LotteryParticipationMixin:
     async def handle_join(
         self,
@@ -93,242 +385,21 @@ class LotteryParticipationMixin:
         context: ContextTypes.DEFAULT_TYPE,
         lottery_id: int,
     ) -> None:
-        q = update.callback_query
+        query = update.callback_query
         chat = update.effective_chat
         user = update.effective_user
-
         if chat.type == "private":
             await self.message_helper.safe_edit(update, "请在群里使用。")
             return
-
         db: Database = context.application.bot_data["db"]
-        participant_count = 0
-        error_msg = None
-        draw_announcement = None
-        result_pin_enabled = False
-        result_chat_id = None
-        result_message_id = None
-        joined_lottery = None
-        force_subscribe_notice_markup = None
-        force_subscribe_notice_text = None
-
         async with db.session_factory() as session:
-            lottery = await get_lottery(session, lottery_id)
-            if not lottery:
-                error_msg = "抽奖不存在。"
-            elif lottery.chat_id != chat.id:
-                error_msg = "此抽奖不属于当前群组。"
+            flow = _JoinFlow(
+                controller=self, update=update, context=context, session=session,
+                lottery_id=lottery_id, chat=chat, user=user, query=query,
+            )
+            outcome = await _process_join(flow)
+            if outcome.error_msg:
+                await session.rollback()
             else:
-                rules = lottery.qualification_rules or {}
-                point_type_id = rules.get("point_type_id")
-                point_type_name = rules.get("point_type_name") or "积分"
-                if requires_lottery_subscribe(lottery):
-                    subscribe_targets = get_lottery_subscribe_targets(rules)
-                    allowed, reason = await check_lottery_subscribe_membership(
-                        context,
-                        subscribe_targets,
-                        user.id,
-                        check_mode=rules.get("subscribe_check_mode") or "all",
-                    )
-                    if not allowed:
-                        error_msg = reason or "请先关注指定频道/群组后再参与抽奖。"
-                        force_subscribe_notice_text = error_msg
-                        force_subscribe_notice_markup = build_lottery_subscribe_markup(subscribe_targets)
-
-                if not error_msg:
-                    if point_type_id:
-                        user_points = await PointsExtendedService.get_custom_point_balance(
-                            session,
-                            chat_id=chat.id,
-                            type_id=int(point_type_id),
-                            user_id=user.id,
-                        )
-                    else:
-                        user_points = await get_balance(session, chat.id, user.id)
-                        point_type_name = "积分"
-                    stmt = select(ChatMember).where(ChatMember.chat_id == chat.id, ChatMember.user_id == user.id)
-                    result = await session.execute(stmt)
-                    member = result.scalar_one_or_none()
-                    member_joined_at = member.joined_at if member else None
-
-                    result = await join_lottery(
-                        session,
-                        lottery_id=lottery_id,
-                        user_id=user.id,
-                        points_balance=user_points,
-                        member_joined_at=member_joined_at,
-                    )
-                    if not result.success:
-                        error_msg = _join_error_message(result.reason, lottery=lottery, point_type_name=point_type_name)
-                    else:
-                        if lottery.participation_cost > 0:
-                            if point_type_id:
-                                current_balance = await PointsExtendedService.get_custom_point_balance(
-                                    session,
-                                    chat_id=chat.id,
-                                    type_id=int(point_type_id),
-                                    user_id=user.id,
-                                )
-                                if current_balance < lottery.participation_cost:
-                                    error_msg = f"{point_type_name}不足，无法参与"
-                                else:
-                                    await PointsExtendedService.adjust_custom_points(
-                                        session,
-                                        chat_id=chat.id,
-                                        type_id=int(point_type_id),
-                                        user_id=user.id,
-                                        delta=-lottery.participation_cost,
-                                        operator_user_id=None,
-                                        reason_note=f"参与抽奖: {lottery.title}",
-                                    )
-                            else:
-                                success, _ = await change_points(
-                                    session,
-                                    chat_id=chat.id,
-                                    user_id=user.id,
-                                    amount=-lottery.participation_cost,
-                                    txn_type=PointsTxnType.lottery_join.value,
-                                    reason=f"参与抽奖: {lottery.title}",
-                                )
-                                if not success:
-                                    error_msg = "积分不足，无法参与"
-
-                if not error_msg:
-                    joined_lottery = lottery
-                    participant_count = await get_lottery_participant_count(session, lottery_id)
-                    rules = lottery.qualification_rules or {}
-                    if (
-                        rules.get("draw_trigger") == "full_participants"
-                        and lottery.max_participants > 0
-                        and participant_count >= lottery.max_participants
-                    ):
-                        from backend.features.activity.services.lottery_service import (
-                            distribute_lottery_rewards,
-                            generate_lottery_announcement,
-                            get_or_create_lottery_setting,
-                            perform_random_draw,
-                        )
-
-                        eligible_user_ids = None
-                        if requires_lottery_subscribe(lottery):
-                            participants = await get_lottery_participants(session, lottery_id)
-                            preset_ids = [
-                                int(user_id)
-                                for user_id in (rules.get("preset_winner_ids") or rules.get("fixed_winner_ids") or [])
-                                if str(user_id).isdigit()
-                            ]
-                            candidate_ids = {int(participant.user_id) for participant in participants} | set(preset_ids)
-                            subscribe_targets = get_lottery_subscribe_targets(rules)
-                            eligible_user_ids = await filter_lottery_subscribed_user_ids(
-                                context,
-                                subscribe_targets,
-                                candidate_ids,
-                                check_mode=rules.get("subscribe_check_mode") or "all",
-                            )
-                        if eligible_user_ids is None:
-                            winners = await perform_random_draw(session, lottery)
-                        else:
-                            winners = await perform_random_draw(session, lottery, eligible_user_ids=eligible_user_ids)
-                        if winners:
-                            user_ids = [winner.user_id for winner in winners]
-                            user_stmt = select(TgUser).where(TgUser.id.in_(user_ids))
-                            user_result = await session.execute(user_stmt)
-                            users = {user.id: user for user in user_result.scalars().all()}
-                            await distribute_lottery_rewards(session, lottery, winners)
-                            setting = await get_or_create_lottery_setting(session, lottery.chat_id)
-                            draw_announcement = generate_lottery_announcement(lottery, winners, users)
-                            result_pin_enabled = setting.result_pin_enabled
-                            result_chat_id = lottery.chat_id
-                            try:
-                                sent = await context.bot.send_message(
-                                    chat_id=result_chat_id,
-                                    text=draw_announcement,
-                                    parse_mode="HTML",
-                                )
-                                result_message_id = sent.message_id
-                            except Exception as exc:
-                                log.error("full_participant_lottery_announcement_failed", lottery_id=lottery_id, error=str(exc))
-                                error_msg = "已满员，但开奖结果公告发送失败，请稍后重试"
-                                await session.rollback()
-                            else:
-                                lottery.status = "completed"
-                                lottery.drawn_at = dt.datetime.now(dt.UTC)
-                        elif requires_lottery_subscribe(lottery) and eligible_user_ids is not None:
-                            setting = await get_or_create_lottery_setting(session, lottery.chat_id)
-                            draw_announcement = _format_full_draw_no_eligible_announcement(
-                                lottery,
-                                participant_count=participant_count,
-                            )
-                            result_pin_enabled = setting.result_pin_enabled
-                            result_chat_id = lottery.chat_id
-                            try:
-                                sent = await context.bot.send_message(
-                                    chat_id=result_chat_id,
-                                    text=draw_announcement,
-                                    parse_mode="HTML",
-                                )
-                                result_message_id = sent.message_id
-                            except Exception as exc:
-                                log.error("full_participant_lottery_no_eligible_announcement_failed", lottery_id=lottery_id, error=str(exc))
-                                error_msg = "已满员，但开奖结果公告发送失败，请稍后重试"
-                                await session.rollback()
-                            else:
-                                lottery.status = "completed"
-                                lottery.drawn_at = dt.datetime.now(dt.UTC)
-                if error_msg:
-                    await session.rollback()
-                else:
-                    await session.commit()
-
-        if error_msg:
-            await q.answer(error_msg, show_alert=True)
-            if force_subscribe_notice_text and force_subscribe_notice_markup is not None:
-                try:
-                    sent_notice = await context.bot.send_message(
-                        chat_id=chat.id,
-                        text=force_subscribe_notice_text,
-                        reply_markup=force_subscribe_notice_markup,
-                        reply_to_message_id=getattr(q.message, "message_id", None),
-                        allow_sending_without_reply=True,
-                    )
-                    _schedule_message_delete(
-                        context,
-                        sent_notice,
-                        LOTTERY_SUBSCRIBE_NOTICE_DELETE_SECONDS,
-                        name="activity.lottery_subscribe_notice_delete",
-                    )
-                except Exception as exc:
-                    log.warning("lottery_force_subscribe_notice_failed", lottery_id=lottery_id, error=str(exc))
-        else:
-            full_draw_completed = bool(draw_announcement and result_chat_id is not None)
-            if draw_announcement and result_chat_id is not None:
-                if result_pin_enabled and result_message_id is not None:
-                    try:
-                        await context.bot.pin_chat_message(chat_id=result_chat_id, message_id=result_message_id)
-                    except Exception as exc:
-                        log.warning(
-                            "lottery_result_pin_failed",
-                            lottery_id=lottery_id,
-                            chat_id=result_chat_id,
-                            message_id=result_message_id,
-                            error=str(exc),
-                        )
-                await q.answer(f"🎉 参与成功！当前人数: {participant_count}，已满员开奖！", show_alert=True)
-            else:
-                await q.answer(f"🎉 参与成功！当前人数: {participant_count}", show_alert=True)
-            if joined_lottery is not None:
-                try:
-                    await context.bot.send_message(
-                        chat_id=chat.id,
-                        text=_format_join_success_message(
-                            user=user,
-                            lottery=joined_lottery,
-                            participant_count=participant_count,
-                            full_draw_completed=full_draw_completed,
-                        ),
-                        parse_mode="HTML",
-                        reply_to_message_id=getattr(q.message, "message_id", None),
-                        allow_sending_without_reply=True,
-                    )
-                except Exception as exc:
-                    log.error("lottery_join_success_message_failed", lottery_id=lottery_id, error=str(exc))
+                await session.commit()
+        await _respond_join(flow, outcome)
