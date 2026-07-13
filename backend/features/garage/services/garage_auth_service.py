@@ -1,25 +1,19 @@
 from __future__ import annotations
 
 import datetime as dt
-from collections import OrderedDict
 from dataclasses import dataclass
 
-from sqlalchemy import and_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.features.garage.services.garage_features_shared import _resolve_user
-from backend.features.nearby.services.nearby_profile_service import build_user_display_name
 from backend.platform.db.schema.models.core import ChatSettings, TgChat, TgUser
 from backend.platform.db.schema.models.garage_features import (
     GarageCertifiedTeacher,
     GarageSpeechWhitelist,
-    TeacherDailyAttendance,
     TeacherProfile,
-    TeacherSearchSetting,
 )
 from backend.shared.services.chat_service import get_chat_settings
-from backend.shared.time_helper import LOCAL_TIMEZONE
-_BUILD_TEACHER_SUMMARY_THRESHOLD_4 = 4
 
 
 
@@ -35,14 +29,6 @@ class TeacherPoolInfo:
         if self.shared_via_alliance:
             return f"联盟共享认证池（来自：{self.pool_title}）"
         return "本群认证池"
-
-
-def _teacher_attendance_status_label(status: str | None) -> str:
-    return {
-        "open": "开课中",
-        "full": "满课",
-        "rest": "休息",
-    }.get(status, "未开课")
 
 
 class GarageAuthService:
@@ -333,124 +319,13 @@ class GarageAuthService:
 
     @staticmethod
     async def build_teacher_summary(session: AsyncSession, chat_id: int) -> str:
-        settings = await GarageAuthService.get_settings(session, chat_id)
-        pool_chat_id = await GarageAuthService._get_teacher_pool_chat_id(session, chat_id)
-        attendance_chat_id = chat_id
-        teacher_search_setting = await session.get(TeacherSearchSetting, chat_id)
-        if (
-            teacher_search_setting is not None
-            and teacher_search_setting.attendance_mode == "external"
-            and teacher_search_setting.attendance_source_chat_id is not None
-        ):
-            attendance_chat_id = int(teacher_search_setting.attendance_source_chat_id)
-        today = dt.datetime.now(dt.UTC).astimezone(LOCAL_TIMEZONE).date()
-        result = await session.execute(
-            select(GarageCertifiedTeacher, TeacherProfile, TgUser, TeacherDailyAttendance)
-            .join(
-                TeacherProfile,
-                and_(
-                    TeacherProfile.chat_id == chat_id,
-                    TeacherProfile.user_id == GarageCertifiedTeacher.user_id,
-                ),
-                isouter=True,
-            )
-            .join(TgUser, TgUser.id == GarageCertifiedTeacher.user_id, isouter=True)
-            .join(
-                TeacherDailyAttendance,
-                and_(
-                    TeacherDailyAttendance.chat_id == attendance_chat_id,
-                    TeacherDailyAttendance.user_id == GarageCertifiedTeacher.user_id,
-                    TeacherDailyAttendance.biz_date == today,
-                ),
-                isouter=True,
-            )
-            .where(
-                GarageCertifiedTeacher.chat_id == pool_chat_id,
-                GarageCertifiedTeacher.enabled.is_(True),
-            )
-            .order_by(GarageCertifiedTeacher.created_at.asc(), GarageCertifiedTeacher.id.asc())
+        from backend.features.garage.services.garage_teacher_summary import (
+            build_teacher_summary,
         )
-        rows = []
-        for row in result.all():
-            if len(row) >= _BUILD_TEACHER_SUMMARY_THRESHOLD_4:
-                rows.append(row)
-            else:
-                teacher, profile, user = row
-                rows.append((teacher, profile, user, None))
 
-        if settings.garage_summary_only_open_course:
-            rows = [
-                row
-                for row in rows
-                if row[3] is not None and row[3].status in {"open", "full"}
-            ]
-
-        if not rows:
-            return (
-                "🧾 老师汇总信息\n\n"
-                "当前没有符合条件的认证老师。\n"
-                "你可以先添加认证老师，或关闭“只显开课”后再试。"
-            )
-
-        partition_by = settings.garage_summary_partition_by or "region"
-        badge = getattr(settings, "garage_auth_badge", "🤝") or "🤝"
-        groups: OrderedDict[str, list[str]] = OrderedDict()
-        total_count = 0
-
-        for teacher, profile, user, attendance in rows:
-            if partition_by == "price":
-                key = (profile.price_text if profile else None) or "未分价位"
-            else:
-                key = (profile.region_text if profile else None) or "未分地区"
-
-            display_name = (
-                build_user_display_name(user, teacher.user_id) if user else f"用户{teacher.user_id}"
-            )
-            labels = " / ".join((profile.labels or [])[:3]) if profile and profile.labels else ""
-            extras: list[str] = []
-            if partition_by != "price" and profile and profile.price_text:
-                extras.append(profile.price_text)
-            if partition_by != "region" and profile and profile.region_text:
-                extras.append(profile.region_text)
-            if labels:
-                extras.append(labels)
-            status = getattr(attendance, "status", None)
-            extras.append(_teacher_attendance_status_label(status))
-            if profile is None or not (
-                (profile.region_text or "").strip()
-                or (profile.price_text or "").strip()
-                or (profile.labels or [])
-            ):
-                extras.append("资料待完善")
-            if (
-                profile is None
-                or getattr(profile, "latitude", None) is None
-                or getattr(profile, "longitude", None) is None
-            ):
-                extras.append("未定位")
-
-            line = f"{badge} {display_name}"
-            if extras:
-                line += f"（{' | '.join(extras)}）"
-
-            groups.setdefault(key, []).append(line)
-            total_count += 1
-
-        partition_label = "价格" if partition_by == "price" else "地区"
-        lines = [
-            "🧾 老师汇总信息",
-            "",
-            f"分区方式：按{partition_label}",
-            f"只显开课：{'是' if settings.garage_summary_only_open_course else '否'}",
-            f"老师数量：{total_count}",
-        ]
-
-        for key, members in groups.items():
-            lines.append("")
-            lines.append(f"【{key}】({len(members)}人)")
-            lines.extend(f"{idx}. {member}" for idx, member in enumerate(members, start=1))
-
-        return "\n".join(lines)
+        return await build_teacher_summary(
+            session, chat_id, service=GarageAuthService
+        )
 
     @staticmethod
     async def list_teacher_self_service_chats(
