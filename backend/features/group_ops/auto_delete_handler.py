@@ -121,18 +121,16 @@ def _is_group_anonymous_admin_message(update: Update, message) -> bool:
 
 
 def should_auto_delete_message(settings, update: Update, message) -> bool:
-    if bool(getattr(settings, "auto_delete_join", False)) and bool(getattr(message, "new_chat_members", None)):
-        return True
-    if bool(getattr(settings, "auto_delete_left", False)) and bool(getattr(message, "left_chat_member", None)):
-        return True
-    if bool(getattr(settings, "auto_delete_pinned", False)) and bool(getattr(message, "pinned_message", None)):
-        return True
-    if bool(getattr(settings, "auto_delete_title", False)) and bool(getattr(message, "new_chat_title", None)):
-        return True
-    if bool(getattr(settings, "auto_delete_avatar", False)) and (
-        bool(getattr(message, "new_chat_photo", None)) or bool(getattr(message, "delete_chat_photo", None))
-    ):
-        return True
+    switch_fields = {
+        "auto_delete_join": ("new_chat_members",),
+        "auto_delete_left": ("left_chat_member",),
+        "auto_delete_pinned": ("pinned_message",),
+        "auto_delete_title": ("new_chat_title",),
+        "auto_delete_avatar": ("new_chat_photo", "delete_chat_photo"),
+    }
+    for switch, fields in switch_fields.items():
+        if getattr(settings, switch, False) and any(getattr(message, field, None) for field in fields):
+            return True
     if bool(getattr(settings, "auto_delete_anonymous", False)) and _is_group_anonymous_admin_message(update, message):
         return True
 

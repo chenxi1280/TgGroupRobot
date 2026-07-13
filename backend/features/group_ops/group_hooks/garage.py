@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import structlog
+from dataclasses import dataclass
 from telegram.ext import ContextTypes
 
 from backend.features.garage.services.garage_features_service import (
@@ -15,6 +16,48 @@ from .garage_limit import _garage_limit_hits_message, _process_garage_limit
 from .teacher_search import _process_teacher_search_features
 
 log = structlog.get_logger(__name__)
+
+
+@dataclass(frozen=True)
+class _GarageRuntime:
+    teacher_setting: object
+    car_review_setting: object
+    is_teacher: bool
+    is_attendance_teacher: bool
+    is_whitelisted: bool
+
+
+async def _load_garage_runtime(session, chat_id: int, user_id: int) -> _GarageRuntime:
+    teacher_setting = await TeacherSearchService.get_setting(session, chat_id)
+    car_review_setting = await CarReviewService.get_setting(session, chat_id)
+    is_teacher = await GarageAuthService.is_certified_teacher(session, chat_id, user_id)
+    attendance_teacher = is_teacher
+    if not attendance_teacher and getattr(teacher_setting, "attendance_enabled", False):
+        attendance_teacher = await TeacherSearchService.is_certified_teacher_for_attendance_source(
+            session, chat_id, user_id,
+        )
+    is_whitelisted = await GarageAuthService.is_whitelisted(session, chat_id, user_id)
+    return _GarageRuntime(teacher_setting, car_review_setting, is_teacher, attendance_teacher, is_whitelisted)
+
+
+async def _process_garage_handlers(context, session, chat, *, user, message, text: str, settings, is_admin: bool, runtime: _GarageRuntime) -> bool:
+    if await _process_garage_limit(
+        context, session, chat, user=user, message=message, message_text=text,
+        settings=settings, is_admin=is_admin, is_teacher=runtime.is_teacher,
+        is_whitelisted=runtime.is_whitelisted,
+    ):
+        return True
+    if await _process_teacher_search_features(
+        context, session, chat, user=user, message=message, text=text,
+        teacher_setting=runtime.teacher_setting, chat_settings=settings,
+        is_teacher=runtime.is_teacher, is_attendance_teacher=runtime.is_attendance_teacher,
+        is_admin=is_admin, is_whitelisted=runtime.is_whitelisted,
+    ):
+        return True
+    return await _process_car_review_features(
+        context, session, chat, user=user, message=message, text=text,
+        car_review_setting=runtime.car_review_setting, chat_settings=settings,
+    )
 
 
 async def _react_to_certified_teacher_message(context: ContextTypes.DEFAULT_TYPE, chat, message) -> None:
@@ -51,63 +94,16 @@ async def _process_garage_features(
 ) -> bool:
     text = (message_text or "").strip()
     async with db.session_factory() as session:
-        teacher_setting = await TeacherSearchService.get_setting(session, chat.id)
-        car_review_setting = await CarReviewService.get_setting(session, chat.id)
-        is_teacher = await GarageAuthService.is_certified_teacher(session, chat.id, user.id)
-        is_attendance_teacher = is_teacher
-        if not is_attendance_teacher and getattr(teacher_setting, "attendance_enabled", False):
-            is_attendance_teacher = await TeacherSearchService.is_certified_teacher_for_attendance_source(
-                session,
-                chat.id,
-                user.id,
-            )
-        is_whitelisted = await GarageAuthService.is_whitelisted(session, chat.id, user.id)
-
-        if await _process_garage_limit(
-            context,
-            session,
-            chat,
-            user=user,
-            message=message,
-            message_text=text,
-            settings=settings,
-            is_admin=is_admin,
-            is_teacher=is_teacher,
-            is_whitelisted=is_whitelisted,
-        ):
-            return True
-
-        if await _process_teacher_search_features(
-            context,
-            session,
-            chat,
-            user=user,
-            message=message,
-            text=text,
-            teacher_setting=teacher_setting,
-            chat_settings=settings,
-            is_teacher=is_teacher,
-            is_attendance_teacher=is_attendance_teacher,
-            is_admin=is_admin,
-            is_whitelisted=is_whitelisted,
-        ):
-            return True
-
-        if await _process_car_review_features(
-            context,
-            session,
-            chat,
-            user=user,
-            message=message,
-            text=text,
-            car_review_setting=car_review_setting,
-            chat_settings=settings,
+        runtime = await _load_garage_runtime(session, chat.id, user.id)
+        if await _process_garage_handlers(
+            context, session, chat, user=user, message=message, text=text,
+            settings=settings, is_admin=is_admin, runtime=runtime,
         ):
             return True
 
         if (
             getattr(settings, "garage_auth_enabled", False)
-            and is_teacher
+            and runtime.is_teacher
             and _should_react_to_certified_teacher_message(message, text)
         ):
             await session.commit()

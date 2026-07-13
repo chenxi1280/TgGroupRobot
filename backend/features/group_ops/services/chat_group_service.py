@@ -1,11 +1,55 @@
 from __future__ import annotations
 
 from telegram import Bot
+from telegram import ChatMemberAdministrator, ChatMemberOwner
 from telegram.error import TelegramError
+from sqlalchemy import select
+import structlog
 
 from backend.platform.db.runtime.session import Database
-from backend.platform.db.schema.models.core import TgChat
+from backend.platform.db.schema.models.core import ConversationState, TgChat
 from backend.shared.services.user_service import ensure_user
+
+log = structlog.get_logger(__name__)
+
+
+async def _load_group_chats(db: Database) -> list[TgChat]:
+    async with db.session_factory() as session:
+        result = await session.execute(select(TgChat).where(TgChat.type.in_(["group", "supergroup"])))
+        return list(result.scalars().all())
+
+
+async def _managed_chat_entry(bot: Bot, chat: TgChat, user_id: int) -> tuple[int, str, bool] | None:
+    try:
+        member = await bot.get_chat_member(chat.id, user_id)
+    except TelegramError as exc:
+        log.warning("failed_to_check_chat_membership", user_id=user_id, chat_id=chat.id, error=str(exc))
+        return None
+    if not isinstance(member, (ChatMemberAdministrator, ChatMemberOwner)):
+        return None
+    return chat.id, chat.title or f"群组{chat.id}", True
+
+
+async def _ensure_private_chat(session, user_id: int) -> None:
+    if await session.get(TgChat, user_id) is not None:
+        return
+    session.add(TgChat(id=user_id, type="private", title=None))
+    await session.flush()
+
+
+async def _set_selected_chat_state(session, user_id: int, chat_id: int) -> None:
+    result = await session.execute(select(ConversationState).where(
+        ConversationState.user_id == user_id,
+        ConversationState.chat_id == user_id,
+    ))
+    state = result.scalar_one_or_none()
+    if state is None:
+        session.add(ConversationState(
+            chat_id=user_id, user_id=user_id, state_type="selected_chat",
+            state_data={"managed_chat_id": chat_id},
+        ))
+        return
+    state.state_data = {"managed_chat_id": chat_id}
 
 
 # ==================== 格式化函数 ====================
@@ -106,55 +150,11 @@ async def get_user_managed_chats(
 
     返回: [(chat_id, title, is_admin), ...]
     """
-    import structlog
-    log = structlog.get_logger(__name__)
-
-    result = []
-
     log.info("get_user_managed_chats_start", user_id=user_id)
-
-    try:
-        # 从数据库获取所有 bot 所在的群组
-        async with db.session_factory() as session:
-            from sqlalchemy import select
-
-            stmt = select(TgChat).where(
-                TgChat.type.in_(["group", "supergroup"])
-            )
-            log.info("get_user_managed_chats_executing_query", user_id=user_id)
-            db_result = await session.execute(stmt)
-            chats = list(db_result.scalars().all())
-
-            log.info("get_user_managed_chats_found_chats", user_id=user_id, chat_count=len(chats))
-
-            for chat in chats:
-                try:
-                    log.info("checking_chat_membership", user_id=user_id, chat_id=chat.id)
-                    # 检查用户是否是该群组的管理员
-                    chat_member = await bot.get_chat_member(chat.id, user_id)
-
-                    from telegram import ChatMemberAdministrator, ChatMemberOwner
-
-                    is_admin = isinstance(chat_member, (ChatMemberAdministrator, ChatMemberOwner))
-
-                    log.info("chat_membership_checked", user_id=user_id, chat_id=chat.id, is_admin=is_admin)
-
-                    if is_admin:
-                        title = chat.title or f"群组{chat.id}"
-                        result.append((chat.id, title, True))
-                    else:
-                        # 用户是群组成员但不是管理员（可选显示）
-                        pass
-
-                except TelegramError as e:
-                    # bot 不在该群组或无法获取信息，跳过
-                    log.warning("failed_to_check_chat_membership", user_id=user_id, chat_id=chat.id, error=str(e))
-
-        log.info("get_user_managed_chats_complete", user_id=user_id, result_count=len(result))
-    except Exception as e:
-        log.exception("get_user_managed_chats_error", user_id=user_id, error=str(e))
-        return []
-
+    chats = await _load_group_chats(db)
+    entries = [await _managed_chat_entry(bot, chat, user_id) for chat in chats]
+    result = [entry for entry in entries if entry is not None]
+    log.info("get_user_managed_chats_complete", user_id=user_id, result_count=len(result))
     return result
 
 
@@ -165,10 +165,6 @@ async def set_user_current_chat(
 ) -> bool:
     """设置用户当前管理的群组"""
     async with db.session_factory() as session:
-        from backend.platform.db.schema.models.core import ConversationState, TgChat
-        from sqlalchemy import select
-
-        # 确保用户存在（conversation_states.user_id 外键依赖 tg_users）
         await ensure_user(
             session,
             user_id=user_id,
@@ -178,42 +174,8 @@ async def set_user_current_chat(
             language_code=None,
         )
 
-        # 先确保私聊记录存在于 tg_chats 中
-        private_chat_stmt = select(TgChat).where(TgChat.id == user_id)
-        private_chat_result = await session.execute(private_chat_stmt)
-        private_chat = private_chat_result.scalar_one_or_none()
-
-        if private_chat is None:
-            # 创建私聊记录
-            private_chat = TgChat(
-                id=user_id,
-                type="private",
-                title=None,  # 私聊没有 title
-            )
-            session.add(private_chat)
-            await session.flush()
-
-        # 查找或创建私聊状态（保留它，不删除）
-        private_state_stmt = select(ConversationState).where(
-            ConversationState.user_id == user_id,
-            ConversationState.chat_id == user_id,
-        )
-        private_state_result = await session.execute(private_state_stmt)
-        private_state = private_state_result.scalar_one_or_none()
-
-        if private_state is None:
-            # 创建私聊状态，保存 managed_chat_id
-            private_state = ConversationState(
-                chat_id=user_id,  # 保持为私聊ID
-                user_id=user_id,
-                state_type="selected_chat",
-                state_data={"managed_chat_id": chat_id},
-            )
-            session.add(private_state)
-        else:
-            # 更新现有私聊状态的 managed_chat_id
-            private_state.state_data = {"managed_chat_id": chat_id}
-
+        await _ensure_private_chat(session, user_id)
+        await _set_selected_chat_state(session, user_id, chat_id)
         await session.commit()
         return True
 

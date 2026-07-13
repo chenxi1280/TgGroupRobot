@@ -23,6 +23,21 @@ def _garage_limit_hits_message(message, message_text: str, mode: str) -> bool:
     return False
 
 
+def _garage_limit_applies(settings, *, is_admin: bool, is_teacher: bool, is_whitelisted: bool) -> bool:
+    return bool(getattr(settings, "garage_limit_enabled", False) and not is_admin and is_teacher and not is_whitelisted)
+
+
+def _record_garage_message(context, chat_id: int, user_id: int, *, settings) -> bool:
+    tracker = context.application.bot_data.setdefault("garage_limit_tracker", {})
+    key = (chat_id, user_id)
+    now_ts = dt.datetime.now(dt.UTC).timestamp()
+    interval = max(int(getattr(settings, "garage_limit_interval_sec", 3600) or 3600), 1)
+    max_count = max(int(getattr(settings, "garage_limit_max_count", 1) or 1), 1)
+    history = [ts for ts in tracker.get(key, []) if now_ts - ts < interval]
+    tracker[key] = [*history, now_ts]
+    return len(history) >= max_count
+
+
 async def _process_garage_limit(
     context: ContextTypes.DEFAULT_TYPE,
     session,
@@ -36,22 +51,19 @@ async def _process_garage_limit(
     is_teacher: bool,
     is_whitelisted: bool,
 ) -> bool:
-    if not getattr(settings, "garage_limit_enabled", False) or is_admin or not is_teacher or is_whitelisted:
+    if not _garage_limit_applies(
+        settings,
+        is_admin=is_admin,
+        is_teacher=is_teacher,
+        is_whitelisted=is_whitelisted,
+    ):
         return False
 
     mode = getattr(settings, "garage_limit_mode", "none")
     if not _garage_limit_hits_message(message, message_text, mode):
         return False
 
-    tracker = context.application.bot_data.setdefault("garage_limit_tracker", {})
-    key = (chat.id, user.id)
-    now_ts = dt.datetime.now(dt.UTC).timestamp()
-    interval = max(int(getattr(settings, "garage_limit_interval_sec", 3600) or 3600), 1)
-    max_count = max(int(getattr(settings, "garage_limit_max_count", 1) or 1), 1)
-    history = [ts for ts in tracker.get(key, []) if now_ts - ts < interval]
-    history.append(now_ts)
-    tracker[key] = history
-    if len(history) <= max_count:
+    if not _record_garage_message(context, chat.id, user.id, settings=settings):
         return False
 
     await session.commit()

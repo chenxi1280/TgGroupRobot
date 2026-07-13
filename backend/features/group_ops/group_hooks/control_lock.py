@@ -64,6 +64,38 @@ async def _apply_group_lock_permissions(context: ContextTypes.DEFAULT_TYPE, chat
         raise RuntimeError("; ".join(result.failures))
 
 
+async def _sync_scheduled_lock(context, chat_id: int, settings, *, lock_cache: dict[int, bool]) -> None:
+    desired_closed = _is_closed_by_schedule(settings)
+    if desired_closed is None or lock_cache.get(chat_id) == desired_closed:
+        return
+    await _apply_group_lock_permissions(context, chat_id, desired_closed)
+    lock_cache[chat_id] = desired_closed
+
+
+async def _can_use_lock_phrase(context, chat_id: int, user_id: int) -> bool:
+    member = await context.bot.get_chat_member(chat_id=chat_id, user_id=user_id)
+    return member.status == "creator" or bool(getattr(member, "can_promote_members", False))
+
+
+def _phrase_lock_state(settings, message_text: str) -> bool | None:
+    open_phrase = (getattr(settings, "group_lock_open_phrase", None) or "").strip()
+    close_phrase = (getattr(settings, "group_lock_close_phrase", None) or "").strip()
+    normalized = message_text.strip()
+    if not normalized or normalized not in {open_phrase, close_phrase}:
+        return None
+    return normalized == close_phrase
+
+
+async def _apply_phrase_lock(context, chat_id: int, user_id: int, *, closed: bool, lock_cache: dict[int, bool]) -> bool:
+    try:
+        await _apply_group_lock_permissions(context, chat_id, closed)
+    except Exception as exc:
+        log.warning("group_lock_phrase_apply_failed", chat_id=chat_id, user_id=user_id, error=str(exc))
+        return False
+    lock_cache[chat_id] = closed
+    return True
+
+
 async def _process_group_lock_controls(
     context: ContextTypes.DEFAULT_TYPE,
     chat,
@@ -74,41 +106,26 @@ async def _process_group_lock_controls(
     message_text: str,
 ) -> bool:
     lock_cache: dict[int, bool] = context.application.bot_data.setdefault("group_lock_state", {})
-    desired_closed = _is_closed_by_schedule(settings)
-    current_closed = lock_cache.get(chat.id)
-    if desired_closed is not None and (current_closed is None or current_closed != desired_closed):
-        try:
-            await _apply_group_lock_permissions(context, chat.id, desired_closed)
-            lock_cache[chat.id] = desired_closed
-        except Exception as exc:
-            log.warning("group_lock_schedule_apply_failed", chat_id=chat.id, error=str(exc))
+    try:
+        await _sync_scheduled_lock(context, chat.id, settings, lock_cache=lock_cache)
+    except Exception as exc:
+        log.warning("group_lock_schedule_apply_failed", chat_id=chat.id, error=str(exc))
 
     if not is_admin or not bool(getattr(settings, "group_lock_phrase_enabled", False)):
         return False
 
-    try:
-        member = await context.bot.get_chat_member(chat_id=chat.id, user_id=user.id)
-    except Exception as exc:
-        log.warning("group_lock_phrase_member_lookup_failed", chat_id=chat.id, user_id=user.id, error=str(exc))
+    if not await _can_use_lock_phrase(context, chat.id, user.id):
         return False
-
-    if member.status != "creator" and not bool(getattr(member, "can_promote_members", False)):
+    close_now = _phrase_lock_state(settings, message_text)
+    if close_now is None:
         return False
-
-    open_phrase = (getattr(settings, "group_lock_open_phrase", None) or "").strip()
-    close_phrase = (getattr(settings, "group_lock_close_phrase", None) or "").strip()
-    normalized = message_text.strip()
-    if not normalized or normalized not in {open_phrase, close_phrase}:
-        return False
-
-    close_now = normalized == close_phrase
-    applied = False
-    try:
-        await _apply_group_lock_permissions(context, chat.id, close_now)
-        lock_cache[chat.id] = close_now
-        applied = True
-    except Exception as exc:
-        log.warning("group_lock_phrase_apply_failed", chat_id=chat.id, user_id=user.id, error=str(exc))
+    applied = await _apply_phrase_lock(
+        context,
+        chat.id,
+        user.id,
+        closed=close_now,
+        lock_cache=lock_cache,
+    )
     if applied and getattr(settings, "group_lock_delete_notice_mode", "keep") == "delete":
         await delete_message_safely(
             context,

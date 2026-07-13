@@ -55,29 +55,58 @@ def _is_reserved_activity_trigger(message_text: str) -> bool:
     return normalized == "拍卖"
 
 
-def _resolve_runtime(update: Update) -> _GroupMessageRuntime | None:
+def _resolve_actor(update: Update, message, sender_chat):
+    if sender_chat is not None and message is not None:
+        return build_sender_chat_actor(message)
+    return resolve_message_actor(update)
+
+
+def _old_user_identity(old_user) -> tuple[str | None, str]:
+    if old_user is None:
+        return None, ""
+    parts = [part for part in (old_user.first_name, old_user.last_name) if part]
+    return old_user.username, " ".join(parts)
+
+
+def _runtime_user_profile(runtime: _GroupMessageRuntime) -> dict[str, object | None]:
+    if runtime.real_user_id is None:
+        return {"username": None, "first_name": None, "last_name": None, "language_code": None}
+    return {
+        "username": runtime.user.username,
+        "first_name": runtime.user.first_name,
+        "last_name": runtime.user.last_name,
+        "language_code": runtime.user.language_code,
+    }
+
+
+def _runtime_inputs(update: Update):
     chat = update.effective_chat
     message = update.effective_message
-    sender_chat = getattr(message, "sender_chat", None) if message is not None else None
-    user = (
-        build_sender_chat_actor(message)
-        if sender_chat is not None and message is not None
-        else resolve_message_actor(update)
-    )
-    message_text = (message.text or message.caption or "") if message else ""
+    if chat is None or message is None or chat.type == "private":
+        return None
+    sender_chat = getattr(message, "sender_chat", None)
+    user = _resolve_actor(update, message, sender_chat)
+    if user is None:
+        return None
+    message_text = message.text or message.caption or ""
+    return chat, message, sender_chat, user, message_text
+
+
+def _resolve_runtime(update: Update) -> _GroupMessageRuntime | None:
+    inputs = _runtime_inputs(update)
+    if inputs is None:
+        return None
+    chat, message, sender_chat, user, message_text = inputs
     sender_chat_id = getattr(sender_chat, "id", None)
     log.warning(
         "=== UNIFIED_GROUP_MESSAGE_HANDLER ENTRY ===",
-        chat_id=chat.id if chat else None,
-        user_id=user.id if user else None,
+        chat_id=chat.id,
+        user_id=user.id,
         sender_chat_id=sender_chat_id,
         message_text=message_text[:50],
     )
-    if chat is None or message is None or user is None:
-        return None
-    if chat.type == "private":
-        return None
     sender_chat_actor = is_sender_chat_actor(user)
+    real_user_id = None if sender_chat_actor or user.id <= 0 else user.id
     return _GroupMessageRuntime(
         chat=chat,
         message=message,
@@ -86,7 +115,7 @@ def _resolve_runtime(update: Update) -> _GroupMessageRuntime | None:
         sender_chat=sender_chat,
         sender_chat_id=sender_chat_id,
         sender_chat_actor=sender_chat_actor,
-        real_user_id=None if sender_chat_actor or user.id <= 0 else user.id,
+        real_user_id=real_user_id,
     )
 
 
@@ -114,22 +143,15 @@ async def _load_chat_settings(context: ContextTypes.DEFAULT_TYPE, runtime: _Grou
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
         old_user = await session.get(TgUser, runtime.real_user_id) if runtime.real_user_id is not None else None
-        old_username = old_user.username if old_user else None
-        old_name = " ".join(
-            part
-            for part in [old_user.first_name if old_user else None, old_user.last_name if old_user else None]
-            if part
-        ) if old_user else ""
+        old_username, old_name = _old_user_identity(old_user)
+        profile = _runtime_user_profile(runtime)
         settings = await ModuleSettingsService.ensure(
             session,
             runtime.chat.id,
             chat_type=runtime.chat.type,
             title=runtime.chat.title,
             user_id=runtime.real_user_id,
-            username=runtime.user.username if runtime.real_user_id is not None else None,
-            first_name=runtime.user.first_name if runtime.real_user_id is not None else None,
-            last_name=runtime.user.last_name if runtime.real_user_id is not None else None,
-            language_code=runtime.user.language_code if runtime.real_user_id is not None else None,
+            **profile,
         )
         await session.commit()
     return db, settings, old_username, old_name

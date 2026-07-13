@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import structlog
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -10,7 +9,33 @@ from backend.features.group_ops.text_trigger_runtime import try_group_text_trigg
 from backend.shared.callback_parser import CallbackParser
 from backend.platform.telegram.errors import answer_callback_query_safely
 
-log = structlog.get_logger(__name__)
+async def _load_button_payload(db: Database, chat_id: int, layout_id: int):
+    async with db.session_factory() as session:
+        layout = await get_layout(session, chat_id, layout_id)
+        payload = await resolve_layout_trigger_text(session, chat_id, layout) if layout is not None else None
+        await session.commit()
+    return layout, payload
+
+
+async def _execute_button_payload(update, context, *, chat_id: int, layout, payload: str) -> None:
+    try:
+        handled = await try_group_text_trigger(update, context, chat_id, payload=payload)
+    except Exception:
+        await answer_callback_query_safely(update, "触发失败，请重试", show_alert=True)
+        raise
+    if handled:
+        await answer_callback_query_safely(update, f"已触发：{layout.button_text}")
+        return
+    await answer_callback_query_safely(update, f"已发送：{layout.button_text}")
+    await context.bot.send_message(chat_id=chat_id, text=payload)
+
+
+async def _accept_send_action(update, action: str | None) -> bool:
+    if action == "send":
+        return True
+    message = "暂无可用按钮" if action == "noop" else "暂不支持该操作"
+    await answer_callback_query_safely(update, message)
+    return False
 
 
 async def bottom_button_runtime_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -19,11 +44,7 @@ async def bottom_button_runtime_callback(update: Update, context: ContextTypes.D
     query = update.callback_query
     data = CallbackParser.parse(query.data or "")
     action = data.get(1)
-    if action == "noop":
-        await answer_callback_query_safely(update, "暂无可用按钮")
-        return
-    if action != "send":
-        await answer_callback_query_safely(update, "暂不支持该操作")
+    if not await _accept_send_action(update, action):
         return
 
     chat_id = data.get_int_optional(2)
@@ -33,10 +54,7 @@ async def bottom_button_runtime_callback(update: Update, context: ContextTypes.D
         return
 
     db: Database = context.application.bot_data["db"]
-    async with db.session_factory() as session:
-        layout = await get_layout(session, chat_id, layout_id)
-        payload = await resolve_layout_trigger_text(session, chat_id, layout) if layout is not None else None
-        await session.commit()
+    layout, payload = await _load_button_payload(db, chat_id, layout_id)
     if layout is None:
         await answer_callback_query_safely(update, "按钮已失效", show_alert=True)
         return
@@ -45,25 +63,10 @@ async def bottom_button_runtime_callback(update: Update, context: ContextTypes.D
         await answer_callback_query_safely(update, "按钮事件未配置", show_alert=True)
         return
 
-    try:
-        handled = await try_group_text_trigger(update, context, chat_id, payload=payload)
-    except Exception as exc:
-        log.warning(
-            "bottom_button_text_trigger_failed",
-            chat_id=chat_id,
-            layout_id=layout_id,
-            payload_preview=payload[:50],
-            error=str(exc),
-        )
-        await answer_callback_query_safely(update, "触发失败，请重试", show_alert=True)
-        return
-
-    if handled:
-        await answer_callback_query_safely(update, f"已触发：{layout.button_text}")
-        return
-
-    await answer_callback_query_safely(update, f"已发送：{layout.button_text}")
-    try:
-        await context.bot.send_message(chat_id=chat_id, text=payload)
-    except Exception as exc:
-        log.warning("bottom_button_send_message_failed", chat_id=chat_id, layout_id=layout_id, error=str(exc))
+    await _execute_button_payload(
+        update,
+        context,
+        chat_id=chat_id,
+        layout=layout,
+        payload=payload,
+    )

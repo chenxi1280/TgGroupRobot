@@ -11,6 +11,23 @@ from backend.features.moderation.services.user_action_runtime import execute_use
 log = structlog.get_logger(__name__)
 
 
+def _is_night_whitelisted(settings, user_id: int) -> bool:
+    whitelist = getattr(settings, "night_mode_whitelist_user_ids", None) or []
+    return user_id in {int(item) for item in whitelist if isinstance(item, (int, str))}
+
+
+async def _send_night_warning(context, chat, message, *, settings) -> None:
+    warn_text = getattr(settings, "night_mode_warn_text", None) or "🌙 夜间管控生效中，请稍后再试。"
+    sent = await context.bot.send_message(
+        chat.id,
+        warn_text,
+        reply_to_message_id=getattr(message, "message_id", None),
+    )
+    delete_after = int(getattr(settings, "night_mode_warn_delete_after_seconds", 60) or 60)
+    if delete_after > 0:
+        _schedule_message_delete(context, sent, delete_after, name="group_hooks.night_mode_warn_delete")
+
+
 def _is_night_time(settings) -> bool:
     if not bool(getattr(settings, "night_mode_enabled", False)):
         return False
@@ -48,8 +65,7 @@ async def _process_night_mode(
         return False
     if is_admin and bool(getattr(settings, "night_mode_exempt_admin", True)):
         return False
-    whitelist = getattr(settings, "night_mode_whitelist_user_ids", None) or []
-    if user.id in set(int(item) for item in whitelist if isinstance(item, (int, str))):
+    if _is_night_whitelisted(settings, user.id):
         return False
 
     if bool(getattr(settings, "night_mode_delete_message", True)):
@@ -65,16 +81,8 @@ async def _process_night_mode(
         )
 
     if bool(getattr(settings, "night_mode_warn_enabled", True)):
-        warn_text = getattr(settings, "night_mode_warn_text", None) or "🌙 夜间管控生效中，请稍后再试。"
         try:
-            sent = await context.bot.send_message(
-                chat.id,
-                warn_text,
-                reply_to_message_id=getattr(message, "message_id", None),
-            )
-            delete_after = int(getattr(settings, "night_mode_warn_delete_after_seconds", 60) or 60)
-            if delete_after > 0:
-                _schedule_message_delete(context, sent, delete_after, name="group_hooks.night_mode_warn_delete")
+            await _send_night_warning(context, chat, message, settings=settings)
         except Exception as exc:
             log.warning("night_mode_warn_failed", chat_id=chat.id, user_id=user.id, error=str(exc))
     return True
