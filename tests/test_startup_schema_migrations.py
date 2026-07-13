@@ -55,6 +55,7 @@ async def test_run_startup_schema_migrations_executes_known_compat_patches(monke
         "garage_forward_retry_queue",
         "teacher_search_settings",
         "scheduled_message_tasks",
+        "scheduled_message_logs",
         "ad_campaigns",
         "game_settings",
         "verification_challenges",
@@ -86,6 +87,8 @@ async def test_run_startup_schema_migrations_executes_known_compat_patches(monke
     assert any("ALTER TABLE bot.teacher_profiles ADD COLUMN IF NOT EXISTS open_course_status" in sql for sql in executed_sql)
     assert any("ALTER TABLE bot.teacher_daily_attendance ADD COLUMN IF NOT EXISTS status" in sql for sql in executed_sql)
     assert any("CREATE UNIQUE INDEX IF NOT EXISTS uq_smt_short_id ON bot.scheduled_message_tasks(short_id)" in sql for sql in executed_sql)
+    assert any("CREATE UNIQUE INDEX IF NOT EXISTS uq_sml_run_key ON bot.scheduled_message_logs(run_key)" in sql for sql in executed_sql)
+    assert any("ALTER TABLE bot.scheduled_message_logs ALTER COLUMN sent_at DROP NOT NULL" in sql for sql in executed_sql)
     assert any("ALTER TABLE bot.ad_campaigns ADD COLUMN IF NOT EXISTS sort_order" in sql for sql in executed_sql)
     assert any("ALTER TABLE bot.game_settings ADD COLUMN IF NOT EXISTS points_source_chat_id" in sql for sql in executed_sql)
     assert any("ALTER TABLE bot.verification_challenges ADD COLUMN IF NOT EXISTS timeout_status" in sql for sql in executed_sql)
@@ -163,3 +166,12 @@ def test_init_sql_contains_durable_garage_forward_retry_state() -> None:
     assert "status VARCHAR(32) NOT NULL DEFAULT 'pending'" in init_sql
     assert "CONSTRAINT uq_garage_forward_retry_event" in init_sql
     assert "CREATE INDEX IF NOT EXISTS ix_garage_forward_retry_due" in init_sql
+
+
+def test_init_sql_contains_scheduled_occurrence_state() -> None:
+    init_sql = (PROJECT_ROOT / "sql" / "init.sql").read_text(encoding="utf-8")
+
+    assert "run_key VARCHAR(128) NOT NULL" in init_sql
+    assert "content_snapshot JSONB NOT NULL" in init_sql
+    assert "CREATE UNIQUE INDEX IF NOT EXISTS uq_sml_run_key" in init_sql
+    assert "CREATE INDEX IF NOT EXISTS ix_sml_due" in init_sql

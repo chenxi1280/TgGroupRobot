@@ -330,7 +330,15 @@ def _full_tables() -> dict[str, dict]:
             "indexes": [{"name": "uq_smt_short_id", "column_names": ["short_id"], "unique": True}],
         },
         "scheduled_message_logs": {
-            "columns": {"id", "task_id", "chat_id", "message_id", "sent_at", "success", "error_message"},
+            "columns": {
+                "id", "task_id", "chat_id", "run_key", "scheduled_for", "content_snapshot",
+                "status", "attempt_count", "next_retry_at", "lease_until", "send_started_at",
+                "completed_at", "error_code", "message_id", "sent_at", "success", "error_message",
+            },
+            "indexes": [
+                {"name": "uq_sml_run_key", "column_names": ["run_key"], "unique": True},
+                {"name": "ix_sml_due", "column_names": ["status", "next_retry_at", "lease_until"], "unique": False},
+            ],
         },
         "welcome_messages": {
             "columns": {

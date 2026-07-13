@@ -28,6 +28,17 @@ REQUIRED_INDEXES: tuple[RequiredIndex, ...] = (
         unique=True,
     ),
     RequiredIndex(
+        table_name="scheduled_message_logs",
+        index_name="uq_sml_run_key",
+        columns=("run_key",),
+        unique=True,
+    ),
+    RequiredIndex(
+        table_name="scheduled_message_logs",
+        index_name="ix_sml_due",
+        columns=("status", "next_retry_at", "lease_until"),
+    ),
+    RequiredIndex(
         table_name="custom_point_types",
         index_name="uq_custom_point_type_chat_no",
         columns=("chat_id", "type_no"),

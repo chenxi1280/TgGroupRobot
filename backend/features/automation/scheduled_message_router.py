@@ -31,6 +31,12 @@ class ScheduledMessageRouter(BaseRouter):
         app.add_handler(CallbackQueryHandler(sm_callback_handler, pattern=r"^sm:set:"))
         app.add_handler(CallbackQueryHandler(sm_callback_handler, pattern=r"^sm:edit:"))
         app.add_handler(CallbackQueryHandler(sm_callback_handler, pattern=r"^sm:preview:"))
+        app.add_handler(
+            CallbackQueryHandler(
+                sm_callback_handler,
+                pattern=r"^sm:(history|occ_retry|occ_cancel|occ_replay_confirm|occ_replay_do):",
+            )
+        )
         app.add_handler(CallbackQueryHandler(sm_callback_handler, pattern=r"^sm:del_confirm:"))
         app.add_handler(CallbackQueryHandler(sm_callback_handler, pattern=r"^sm:del_do:"))
         app.add_handler(CallbackQueryHandler(sm_callback_handler, pattern=r"^sm:del_cancel:"))

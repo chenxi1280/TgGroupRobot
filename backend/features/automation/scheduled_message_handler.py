@@ -15,6 +15,7 @@ from backend.features.automation.scheduled_message_helpers import (
 from backend.features.automation.scheduled_message_inputs import ScheduledMessageInputMixin
 from backend.features.automation.scheduled_message_listing import ScheduledMessageListMixin
 from backend.features.automation.scheduled_message_mutations import ScheduledMessageMutationMixin
+from backend.features.automation.scheduled_message_operations import ScheduledMessageOperationsMixin
 from backend.platform.state.conversation_state_service import ConversationStateService
 from backend.platform.telegram.errors import answer_callback_query_safely, build_public_error_text
 from backend.shared.callback_parser import CallbackParser
@@ -28,6 +29,7 @@ class ScheduledMessageHandler(
     ScheduledMessageListMixin,
     ScheduledMessageMutationMixin,
     ScheduledMessageInputMixin,
+    ScheduledMessageOperationsMixin,
     BaseHandler,
 ):
     """定时消息任务 Handler"""
@@ -105,6 +107,24 @@ async def sm_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             )
         elif action == "preview":
             await _scheduled_message_handler.preview_task(update, context, target_chat_id, parser.get(3))
+        elif action == "history":
+            await _scheduled_message_handler.show_occurrence_history(update, context, target_chat_id, parser.get(3))
+        elif action == "occ_retry":
+            await _scheduled_message_handler.operate_occurrence(
+                update, context, chat_id=target_chat_id, occurrence_id=parser.get_int(3), action="retry"
+            )
+        elif action == "occ_cancel":
+            await _scheduled_message_handler.operate_occurrence(
+                update, context, chat_id=target_chat_id, occurrence_id=parser.get_int(3), action="cancel"
+            )
+        elif action == "occ_replay_confirm":
+            await _scheduled_message_handler.confirm_uncertain_replay(
+                update, context, chat_id=target_chat_id, occurrence_id=parser.get_int(3)
+            )
+        elif action == "occ_replay_do":
+            await _scheduled_message_handler.operate_occurrence(
+                update, context, chat_id=target_chat_id, occurrence_id=parser.get_int(3), action="replay"
+            )
         elif action == "del_confirm":
             await _scheduled_message_handler.confirm_delete(update, context, target_chat_id, parser.get(3))
         elif action == "del_do":

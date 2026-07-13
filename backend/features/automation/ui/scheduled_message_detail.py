@@ -45,6 +45,9 @@ def sm_detail_keyboard(task, chat_id: int) -> InlineKeyboardMarkup:
             InlineKeyboardButton("❌ 删除配置", callback_data=f"sm:del_confirm:{chat_id}:{task.short_id}"),
         ],
         [
+            InlineKeyboardButton("📜 执行历史", callback_data=f"sm:history:{chat_id}:{task.short_id}"),
+        ],
+        [
             InlineKeyboardButton("🔙 返回", callback_data=f"sm:list:{chat_id}:0"),
         ],
     ])

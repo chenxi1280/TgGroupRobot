@@ -1,240 +1,222 @@
 from __future__ import annotations
 
+import datetime as dt
 from types import SimpleNamespace
 
 import pytest
+from telegram.error import NetworkError, RetryAfter
 
-from backend.features.automation.services.scheduled_message_service import ScheduledMessageService
-from backend.platform.scheduler.tasks.scheduled_message_task import ScheduledMessageTaskRunner
-from backend.shared.services.base import ValidationError
+from backend.features.automation.scheduled_delivery_executor import (
+    ScheduledDeliveryPlan,
+    TelegramScheduledDeliveryExecutor,
+)
+from backend.features.automation.scheduled_delivery_worker import (
+    ScheduledDeliveryBatchError,
+    ScheduledDeliveryWorker,
+    ScheduledWorkerDependencies,
+)
+from backend.features.automation.scheduled_occurrence_repository import (
+    finalize_occurrence,
+    recover_expired_occurrence,
+    snapshot_task,
+)
+from backend.platform.db.schema.models.scheduled_message import ScheduledMessageLog
+from backend.platform.delivery import DeliveryOutcome, DeliveryStatus, RetryPolicy
 
-
-class _Session:
-    def __init__(self) -> None:
-        self.commits = 0
-        self.rollbacks = 0
-        self.active = False
-        self.active_events: list[bool] = []
-
-    async def commit(self) -> None:
-        self.commits += 1
-
-    async def rollback(self) -> None:
-        self.rollbacks += 1
-
-
-class _SessionContext:
-    def __init__(self, session: _Session) -> None:
-        self.session = session
-
-    async def __aenter__(self):
-        self.session.active = True
-        return self.session
-
-    async def __aexit__(self, exc_type, exc, tb):
-        self.session.active = False
-        return False
+NOW = dt.datetime(2026, 7, 13, tzinfo=dt.UTC)
 
 
-class _Db:
-    def __init__(self, session: _Session) -> None:
-        self.session = session
-
-    def session_factory(self):
-        return _SessionContext(self.session)
-
-
-class _Bot:
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, tuple, dict]] = []
-        self.next_message_id = 100
-
-    def _message(self):
-        self.next_message_id += 1
-        return SimpleNamespace(message_id=self.next_message_id)
-
-    async def delete_message(self, *args, **kwargs):
-        self.calls.append(("delete_message", args, kwargs))
-        return True
-
-    async def pin_chat_message(self, *args, **kwargs):
-        self.calls.append(("pin_chat_message", args, kwargs))
-        return True
-
-    async def send_message(self, *args, **kwargs):
-        if hasattr(self, "session"):
-            self.session.active_events.append(self.session.active)
-        self.calls.append(("send_message", args, kwargs))
-        return self._message()
-
-    async def send_photo(self, *args, **kwargs):
-        self.calls.append(("send_photo", args, kwargs))
-        return self._message()
-
-    async def send_video(self, *args, **kwargs):
-        self.calls.append(("send_video", args, kwargs))
-        return self._message()
-
-    async def send_document(self, *args, **kwargs):
-        self.calls.append(("send_document", args, kwargs))
-        return self._message()
-
-    async def send_sticker(self, *args, **kwargs):
-        self.calls.append(("send_sticker", args, kwargs))
-        return self._message()
-
-    async def send_animation(self, *args, **kwargs):
-        self.calls.append(("send_animation", args, kwargs))
-        return self._message()
-
-
-def _task(**kwargs):
-    defaults = {
-        "task_id": "task-1",
+def _snapshot(**changes):
+    value = {
         "title": "测试任务",
         "chat_id": -1001,
-        "enabled": True,
-        "repeat_interval_min": 60,
-        "start_at": None,
-        "end_at": None,
-        "day_start_hour": 0,
-        "day_end_hour": 23,
         "delete_previous": False,
         "last_sent_message_id": None,
         "pin_message": False,
-        "text": None,
+        "text": "你好",
         "parse_mode": "HTML",
         "media_type": "none",
         "media_file_id": None,
         "buttons": [],
     }
-    defaults.update(kwargs)
-    return SimpleNamespace(**defaults)
+    value.update(changes)
+    return value
+
+
+def _plan(**changes):
+    value = {
+        "occurrence_id": 11,
+        "task_id": "8d886979-b6b6-4c9c-9077-66f96ee87e39",
+        "chat_id": -1001,
+        "snapshot": _snapshot(),
+    }
+    value.update(changes)
+    return ScheduledDeliveryPlan(**value)
+
+
+class _Bot:
+    def __init__(self, error: Exception | None = None) -> None:
+        self.error = error
+        self.calls = []
+
+    async def send_message(self, **kwargs):
+        self.calls.append(("send", kwargs))
+        if self.error:
+            raise self.error
+        return SimpleNamespace(message_id=123)
+
+    async def delete_message(self, **kwargs):
+        self.calls.append(("delete", kwargs))
+
+    async def pin_chat_message(self, **kwargs):
+        self.calls.append(("pin", kwargs))
 
 
 @pytest.mark.asyncio
-async def test_execute_disables_empty_task_without_sending_or_deleting(monkeypatch):
-    session = _Session()
+async def test_executor_sends_snapshot_and_returns_message_id() -> None:
     bot = _Bot()
-    task = _task(delete_previous=True, last_sent_message_id=88, pin_message=True)
-    marked_sent: list[tuple[str, int]] = []
+    executor = TelegramScheduledDeliveryExecutor(SimpleNamespace(bot=bot))
 
-    async def fake_get_due_tasks(session_obj, limit: int = 100):
-        return [task]
+    outcome = await executor.execute(_plan())
 
-    async def fake_mark_sent(session_obj, task_id: str, message_id: int):
-        marked_sent.append((task_id, message_id))
-        return task
-
-    monkeypatch.setattr(ScheduledMessageService, "get_due_tasks", staticmethod(fake_get_due_tasks))
-    monkeypatch.setattr(ScheduledMessageService, "mark_task_sent", staticmethod(fake_mark_sent))
-
-    app = SimpleNamespace(bot=bot, bot_data={"db": _Db(session)})
-
-    await ScheduledMessageTaskRunner().execute(app)
-
-    assert bot.calls == []
-    assert task.enabled is False
-    assert marked_sent == []
-    assert session.commits == 1
+    assert outcome == DeliveryOutcome.success(message_id=123)
+    assert bot.calls[0][1]["text"] == "你好"
 
 
 @pytest.mark.asyncio
-async def test_send_message_returns_none_for_empty_task_without_placeholder():
-    bot = _Bot()
-    app = SimpleNamespace(bot=bot)
+async def test_executor_classifies_retry_after_and_network_unknown() -> None:
+    retry = await TelegramScheduledDeliveryExecutor(
+        SimpleNamespace(bot=_Bot(RetryAfter(3)))
+    ).execute(_plan())
+    unknown = await TelegramScheduledDeliveryExecutor(
+        SimpleNamespace(bot=_Bot(NetworkError("lost")))
+    ).execute(_plan())
 
-    result = await ScheduledMessageTaskRunner()._send_message(app, _task())
+    assert retry.status is DeliveryStatus.retryable_failed
+    assert unknown.status is DeliveryStatus.uncertain
 
-    assert result is None
-    assert bot.calls == []
+
+class _Store:
+    def __init__(self) -> None:
+        self.finalized = []
+        self.started = []
+        self.uncertain = []
+
+    async def create_due_occurrences(self, now):
+        return 1
+
+    async def recover_expired_leases(self, now):
+        return 0
+
+    async def claim_due(self, now, lease_until, *, limit):
+        return (_plan(),)
+
+    async def mark_send_started(self, plan, now):
+        self.started.append(plan.occurrence_id)
+
+    async def finalize(self, plan, outcome, *, now):
+        self.finalized.append(outcome)
+
+    async def mark_finalize_uncertain(self, plan, error, *, now):
+        self.uncertain.append(str(error))
+
+
+class _Executor:
+    def __init__(self, outcome: DeliveryOutcome) -> None:
+        self.outcome = outcome
+
+    async def execute(self, plan):
+        return self.outcome
 
 
 @pytest.mark.asyncio
-async def test_send_message_text_task_sends_one_text_message():
-    bot = _Bot()
-    app = SimpleNamespace(bot=bot)
+async def test_worker_marks_send_started_and_reports_success() -> None:
+    store = _Store()
+    worker = ScheduledDeliveryWorker(ScheduledWorkerDependencies(
+        store=store,
+        executor=_Executor(DeliveryOutcome.success(message_id=123)),
+        clock=lambda: NOW,
+    ))
 
-    message_id = await ScheduledMessageTaskRunner()._send_message(app, _task(text="你好"))
+    summary = await worker.run()
 
-    assert message_id == 101
-    assert [(name, kwargs["text"]) for name, _, kwargs in bot.calls] == [("send_message", "你好")]
+    assert (summary.created, summary.claimed, summary.succeeded) == (1, 1, 1)
+    assert store.started == [11]
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("media_type", "method_name"),
-    [
-        ("photo", "send_photo"),
-        ("video", "send_video"),
-        ("document", "send_document"),
-        ("animation", "send_animation"),
-    ],
-)
-async def test_send_message_media_task_sends_one_media_message(media_type: str, method_name: str):
-    bot = _Bot()
-    app = SimpleNamespace(bot=bot)
+async def test_worker_surfaces_non_success_to_scheduler_health() -> None:
+    worker = ScheduledDeliveryWorker(ScheduledWorkerDependencies(
+        store=_Store(),
+        executor=_Executor(DeliveryOutcome.permanent_failure("forbidden", "no access")),
+        clock=lambda: NOW,
+    ))
 
-    message_id = await ScheduledMessageTaskRunner()._send_message(
-        app,
-        _task(text="caption", media_type=media_type, media_file_id=f"{media_type}-file"),
+    with pytest.raises(ScheduledDeliveryBatchError) as error:
+        await worker.run()
+
+    assert error.value.summary.failed == 1
+
+
+def test_expired_lease_after_send_becomes_uncertain() -> None:
+    occurrence = SimpleNamespace(
+        send_started_at=NOW,
+        status="processing",
+        next_retry_at=None,
+        lease_until=NOW,
+        error_code=None,
+        error_message=None,
+        completed_at=None,
+        success=None,
     )
 
-    assert message_id == 101
-    assert [name for name, _, _ in bot.calls] == [method_name]
-    assert bot.calls[0][2]["caption"] == "caption"
+    recover_expired_occurrence(occurrence, NOW)
+
+    assert occurrence.status == DeliveryStatus.uncertain.value
+    assert occurrence.error_code == "lease_expired_after_send"
 
 
-@pytest.mark.asyncio
-async def test_send_message_sticker_task_sends_one_sticker_without_text_fallback():
-    bot = _Bot()
-    app = SimpleNamespace(bot=bot)
-
-    message_id = await ScheduledMessageTaskRunner()._send_message(
-        app,
-        _task(text="", media_type="sticker", media_file_id="sticker-file"),
+def test_retryable_outcome_uses_backoff_and_success_updates_task() -> None:
+    occurrence = SimpleNamespace(
+        id=7,
+        attempt_count=1,
+        status="processing",
+        next_retry_at=None,
+        lease_until=NOW,
+        error_code=None,
+        error_message=None,
+        completed_at=None,
+        message_id=None,
+        sent_at=None,
+        success=None,
     )
+    task = SimpleNamespace(last_sent_message_id=None)
+    policy = RetryPolicy(max_attempts=3, base_delay_seconds=60, max_delay_seconds=60)
 
-    assert message_id == 101
-    assert [name for name, _, _ in bot.calls] == ["send_sticker"]
+    finalize_occurrence(
+        occurrence,
+        task,
+        DeliveryOutcome.retryable_failure("rate_limit", "later"),
+        now=NOW,
+        retry_policy=policy,
+    )
+    assert occurrence.status == DeliveryStatus.retryable_failed.value
+    assert occurrence.next_retry_at == NOW + dt.timedelta(seconds=60)
 
-
-@pytest.mark.asyncio
-async def test_execute_sends_after_claim_session_is_closed(monkeypatch):
-    session = _Session()
-    bot = _Bot()
-    bot.session = session
-    task = _task(text="你好")
-    marked_sent: list[tuple[str, int]] = []
-
-    async def fake_get_due_tasks(session_obj, limit: int = 100):
-        return [task]
-
-    async def fake_mark_sent(session_obj, task_id: str, message_id: int):
-        marked_sent.append((task_id, message_id))
-        return task
-
-    monkeypatch.setattr(ScheduledMessageService, "get_due_tasks", staticmethod(fake_get_due_tasks))
-    monkeypatch.setattr(ScheduledMessageService, "mark_task_sent", staticmethod(fake_mark_sent))
-
-    app = SimpleNamespace(bot=bot, bot_data={"db": _Db(session)})
-
-    await ScheduledMessageTaskRunner().execute(app)
-
-    assert [name for name, _, _ in bot.calls] == ["send_message"]
-    assert session.active_events == [False]
-    assert marked_sent == [("task-1", 101)]
-    assert session.commits == 2
+    finalize_occurrence(
+        occurrence,
+        task,
+        DeliveryOutcome.success(message_id=99),
+        now=NOW,
+        retry_policy=policy,
+    )
+    assert task.last_sent_message_id == 99
+    assert occurrence.success is True
 
 
-@pytest.mark.asyncio
-async def test_toggle_task_enabled_rejects_empty_task(monkeypatch):
-    task = _task(enabled=False)
+def test_snapshot_is_complete_and_log_model_has_occurrence_fields() -> None:
+    task = SimpleNamespace(**_snapshot())
 
-    async def fake_get_task(session_obj, task_id: str):
-        return task
-
-    monkeypatch.setattr(ScheduledMessageService, "get_task_by_id_or_404", staticmethod(fake_get_task))
-
-    with pytest.raises(ValidationError):
-        await ScheduledMessageService.toggle_task_enabled(_Session(), "task-1", True)
+    assert snapshot_task(task) == _snapshot()
+    columns = ScheduledMessageLog.__table__.columns
+    assert {"run_key", "scheduled_for", "content_snapshot", "status", "lease_until"} <= set(columns.keys())

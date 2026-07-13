@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -58,10 +58,14 @@ class ScheduledMessageTask(Base):
 
 
 class ScheduledMessageLog(Base):
-    """定时消息发送日志表。"""
+    """定时消息 occurrence 与发送审计记录。"""
 
     __tablename__ = "scheduled_message_logs"
-    __table_args__ = {"schema": "bot"}
+    __table_args__ = (
+        UniqueConstraint("run_key", name="uq_sml_run_key"),
+        Index("ix_sml_due", "status", "next_retry_at", "lease_until"),
+        {"schema": "bot"},
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     task_id: Mapped[str] = mapped_column(
@@ -70,7 +74,17 @@ class ScheduledMessageLog(Base):
         index=True,
     )
     chat_id: Mapped[int] = mapped_column(BigInteger)
+    run_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    scheduled_for: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    content_snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending", index=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    next_retry_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    lease_until: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    send_started_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     message_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    sent_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), index=True)
-    success: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    sent_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    success: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
