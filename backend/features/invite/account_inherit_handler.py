@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import datetime as dt
-
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.error import BadRequest
 from telegram.ext import ContextTypes
@@ -96,101 +94,143 @@ async def account_inherit_command(update: Update, context: ContextTypes.DEFAULT_
     await show_user_inherit_home(update, context, chat_id)
 
 
+async def _show_admin_inherit_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> None:
+    from backend.features.admin.admin_handler import _admin_handler
+
+    await _admin_handler._show_account_inherit_menu(update, context, chat_id)
+
+
+async def _require_manage_permission(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+) -> bool:
+    user = update.effective_user
+    if user is None:
+        return False
+    allowed, reason = await PermissionPolicyService.require_manage(context, chat_id, user.id)
+    if allowed:
+        return True
+    await answer_callback_query_safely(update, f"❌ {reason or '没有权限'}", show_alert=True)
+    return False
+
+
+async def _toggle_inherit_setting(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+    *,
+    enabled: bool,
+) -> None:
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        await update_setting(session, chat_id, enabled=enabled)
+        await session.commit()
+    await _show_admin_inherit_menu(update, context, chat_id)
+
+
+def _inherit_back_keyboard(chat_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton("🔙 返回", callback_data=f"inh:user:{chat_id}")]]
+    )
+
+
+async def _generate_inherit_token(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+) -> None:
+    user = update.effective_user
+    if user is None:
+        return
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        try:
+            token, expires_at = await generate_token(session, chat_id, user.id)
+            await session.commit()
+        except ValidationError as exc:
+            await session.rollback()
+            await _render_text(
+                update,
+                f"❌ 继承令牌生成失败\n\n{exc}\n\n旧号需要在当前群有可继承的主积分或自定义积分。",
+                _inherit_back_keyboard(chat_id),
+            )
+            return
+    text = (
+        "🎟️ 继承令牌已生成\n\n"
+        f"`{token}`\n\n"
+        f"⏰ 过期时间：{expires_at.astimezone().strftime('%Y-%m-%d %H:%M:%S')}\n"
+        "请在新号私聊里立即使用，令牌仅展示这一次。"
+    )
+    await _render_text(update, text, _inherit_back_keyboard(chat_id))
+
+
+async def _start_inherit_token_input(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+) -> None:
+    user = update.effective_user
+    if user is None:
+        return
+    db: Database = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        await clear_user_state(session, chat_id=user.id, user_id=user.id)
+        await set_user_state(
+            session,
+            chat_id=user.id,
+            user_id=user.id,
+            state_type="inherit_wait_token_input",
+            state_data={"target_chat_id": chat_id},
+        )
+        await session.commit()
+    await _render_text(
+        update,
+        "🔓 炸号继承 | 使用令牌\n\n请发送旧号生成的一次性 token：",
+        _inherit_back_keyboard(chat_id),
+    )
+
+
+async def _dispatch_inherit_action(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+    *,
+    cb: CallbackParser,
+) -> None:
+    action = cb.get(1)
+    if action in {"manage", "toggle"}:
+        if not await _require_manage_permission(update, context, chat_id):
+            return
+
+    if action == "manage":
+        await _show_admin_inherit_menu(update, context, chat_id)
+        return
+    if action == "toggle":
+        await _toggle_inherit_setting(update, context, chat_id, enabled=cb.get(3) == "1")
+        return
+    if action == "user":
+        await show_user_inherit_home(update, context, chat_id)
+        return
+    token_action = cb.get(2) if action == "token" else None
+    if token_action == "gen":
+        await _generate_inherit_token(update, context, chat_id)
+        return
+    if token_action == "use":
+        await _start_inherit_token_input(update, context, chat_id)
+        return
+    await answer_callback_query_safely(update, "❌ 未识别的继承操作", show_alert=True)
+
+
 async def account_inherit_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.callback_query is None or update.effective_user is None:
         return
     cb = CallbackParser.parse(update.callback_query.data or "")
-    action = cb.get(1)
     chat_id = _extract_inherit_chat_id(cb)
     if chat_id is None:
         await answer_callback_query_safely(update, "❌ 群组参数无效", show_alert=True)
         return
-
-    db: Database = context.application.bot_data["db"]
-
-    if action in {"manage", "toggle"}:
-        allowed, reason = await PermissionPolicyService.require_manage(context, chat_id, update.effective_user.id)
-        if not allowed:
-            await answer_callback_query_safely(update, f"❌ {reason or '没有权限'}", show_alert=True)
-            return
-
-    if action == "manage":
-        from backend.features.admin.admin_handler import _admin_handler
-
-        await _admin_handler._show_account_inherit_menu(update, context, chat_id)
-        return
-
-    async with db.session_factory() as session:
-        if action == "toggle":
-            await update_setting(session, chat_id, enabled=cb.get(3) == "1")
-            await session.commit()
-            from backend.features.admin.admin_handler import _admin_handler
-
-            await _admin_handler._show_account_inherit_menu(update, context, chat_id)
-            return
-
-        if action == "user":
-            await session.commit()
-            await show_user_inherit_home(update, context, chat_id)
-            return
-
-        if action == "token" and cb.get(2) == "gen":
-            target_chat_id = chat_id
-            if target_chat_id is None:
-                await answer_callback_query_safely(update, "❌ 群组参数无效", show_alert=True)
-                return
-            try:
-                token, expires_at = await generate_token(session, target_chat_id, update.effective_user.id)
-                await session.commit()
-            except ValidationError as exc:
-                await session.rollback()
-                await _render_text(
-                    update,
-                    "\n".join(
-                        [
-                            "❌ 继承令牌生成失败",
-                            "",
-                            str(exc),
-                            "",
-                            "旧号需要在当前群有可继承的主积分或自定义积分。",
-                        ]
-                    ),
-                    InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"inh:user:{target_chat_id}")]]),
-                )
-                return
-            text = "\n".join(
-                [
-                    "🎟️ 继承令牌已生成",
-                    "",
-                    f"`{token}`",
-                    "",
-                    f"⏰ 过期时间：{expires_at.astimezone().strftime('%Y-%m-%d %H:%M:%S')}",
-                    "请在新号私聊里立即使用，令牌仅展示这一次。",
-                ]
-            )
-            await _render_text(update, text, InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"inh:user:{target_chat_id}")]]))
-            return
-
-        if action == "token" and cb.get(2) == "use":
-            target_chat_id = chat_id
-            if target_chat_id is None:
-                await answer_callback_query_safely(update, "❌ 群组参数无效", show_alert=True)
-                return
-            await clear_user_state(session, chat_id=update.effective_user.id, user_id=update.effective_user.id)
-            await set_user_state(
-                session,
-                chat_id=update.effective_user.id,
-                user_id=update.effective_user.id,
-                state_type="inherit_wait_token_input",
-                state_data={"target_chat_id": target_chat_id},
-            )
-            await session.commit()
-            await _render_text(
-                update,
-                "🔓 炸号继承 | 使用令牌\n\n请发送旧号生成的一次性 token：",
-                InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"inh:user:{target_chat_id}")]]),
-            )
-            return
+    await _dispatch_inherit_action(update, context, chat_id, cb=cb)
 
 
 async def handle_account_inherit_input(
