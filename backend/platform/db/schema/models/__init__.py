@@ -59,6 +59,7 @@ from backend.platform.db.schema.models.subscription import (  # noqa: F401
 from backend.platform.db.schema.models.alliance import (  # noqa: F401
     GarageForwardAuditLog,
     GarageForwardMessageMap,
+    GarageForwardRetryQueue,
     GarageForwardSetting,
     GarageForwardSource,
     GroupAlliance,

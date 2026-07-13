@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -178,6 +178,11 @@ class GarageForwardSource(Base):
     source_channel_id: Mapped[int] = mapped_column(BigInteger)
     source_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_seen_message_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        nullable=True,
+        comment="最近处理的源频道消息 ID 游标，用于观测缺口与未来回扫能力",
+    )
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: dt.datetime.now(dt.UTC),
@@ -229,4 +234,62 @@ class GarageForwardAuditLog(Base):
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: dt.datetime.now(dt.UTC),
+    )
+
+
+class GarageForwardRetryQueue(Base):
+    """车库转发的持久化执行记录。"""
+
+    __tablename__ = "garage_forward_retry_queue"
+    __table_args__ = (
+        UniqueConstraint(
+            "chat_id",
+            "source_channel_id",
+            "source_message_id",
+            name="uq_garage_forward_retry_event",
+        ),
+        Index(
+            "ix_garage_forward_retry_due",
+            "status",
+            "next_retry_at",
+            "lease_until",
+        ),
+        {"schema": "bot"},
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    chat_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("bot.tg_chats.id", ondelete="CASCADE"),
+        index=True,
+    )
+    source_channel_id: Mapped[int] = mapped_column(BigInteger)
+    source_message_id: Mapped[int] = mapped_column(BigInteger)
+    message_map_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("bot.garage_forward_message_map.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    reply_markup_snapshot: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="pending")
+    retry_count: Mapped[int] = mapped_column(Integer, default=0, comment="已重试次数")
+    max_retries: Mapped[int] = mapped_column(Integer, default=3, comment="最大重试次数")
+    next_retry_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: dt.datetime.now(dt.UTC),
+        nullable=True,
+        comment="下次重试时间，按指数退避计算",
+    )
+    lease_until: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    send_started_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True, comment="最近一次失败原因")
+    completed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: dt.datetime.now(dt.UTC),
+    )
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: dt.datetime.now(dt.UTC),
+        onupdate=lambda: dt.datetime.now(dt.UTC),
     )

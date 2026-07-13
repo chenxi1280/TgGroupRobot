@@ -377,7 +377,7 @@ def _full_tables() -> dict[str, dict]:
             },
         },
         "garage_forward_sources": {
-            "columns": {"id", "chat_id", "source_channel_id", "source_name", "enabled", "created_at"},
+            "columns": {"id", "chat_id", "source_channel_id", "source_name", "enabled", "last_seen_message_id", "created_at"},
             "uniques": [{"name": "uq_garage_forward_source_chat_channel", "column_names": ["chat_id", "source_channel_id"]}],
         },
         "garage_forward_message_map": {
@@ -392,6 +392,23 @@ def _full_tables() -> dict[str, dict]:
                 "id", "chat_id", "source_channel_id", "source_message_id",
                 "action", "result", "reason", "created_at",
             },
+        },
+        "garage_forward_retry_queue": {
+            "columns": {
+                "id", "chat_id", "source_channel_id", "source_message_id",
+                "message_map_id", "reply_markup_snapshot", "status", "retry_count",
+                "max_retries", "next_retry_at", "lease_until", "send_started_at",
+                "last_error", "completed_at", "created_at", "updated_at",
+            },
+            "indexes": [{
+                "name": "ix_garage_forward_retry_due",
+                "column_names": ["status", "next_retry_at", "lease_until"],
+                "unique": False,
+            }],
+            "uniques": [{
+                "name": "uq_garage_forward_retry_event",
+                "column_names": ["chat_id", "source_channel_id", "source_message_id"],
+            }],
         },
         "garage_certified_teachers": {
             "columns": {
@@ -643,3 +660,14 @@ async def test_schema_gate_fails_when_garage_forward_source_unique_missing(monke
 
     with pytest.raises(SchemaValidationError, match="uq_garage_forward_source_chat_channel"):
         await validate_database_schema(engine)  # type: ignore[arg-type]
+
+
+@pytest.mark.asyncio
+async def test_schema_gate_fails_when_garage_retry_event_unique_missing(monkeypatch) -> None:
+    tables = _full_tables()
+    tables["garage_forward_retry_queue"]["uniques"] = []
+    inspector = FakeInspector(schemas=["bot"], tables=tables)
+    monkeypatch.setattr("backend.platform.db.runtime.schema_gate.inspect", lambda _: inspector)
+
+    with pytest.raises(SchemaValidationError, match="uq_garage_forward_retry_event"):
+        await validate_database_schema(FakeEngine(inspector))  # type: ignore[arg-type]

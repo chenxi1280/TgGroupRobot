@@ -80,6 +80,7 @@ class GarageForwardAdminMixin:
             [InlineKeyboardButton("✏️ 关键词规则", callback_data=f"gfw:keywords:input:{chat_id}")],
             [InlineKeyboardButton("➕ 添加来源频道", callback_data=f"gfw:source:add:{chat_id}")],
             [InlineKeyboardButton("📜 转发日志", callback_data=f"gfw:audit:{chat_id}:a")],
+            [InlineKeyboardButton("⚠️ 失败任务", callback_data=f"gfw:tasks:{chat_id}:a")],
         ]
         for item in sources[:10]:
             keyboard_rows.append(
@@ -194,6 +195,29 @@ class GarageForwardAdminMixin:
 
         if action == "home":
             await self._show_garage_forward_prompt(update, context, chat_id)
+            return
+
+        if action == "tasks":
+            await self._show_garage_forward_tasks(
+                update,
+                context,
+                chat_id=chat_id,
+                status_code=callback_data.get(3) or "a",
+            )
+            return
+
+        if action == "ops":
+            delivery_id = callback_data.get_int_optional(4)
+            if delivery_id is None:
+                await answer_callback_query_safely(update, "任务编号无效", show_alert=True)
+                return
+            await self._handle_garage_operation(
+                update,
+                context,
+                chat_id=chat_id,
+                action=callback_data.get(3),
+                delivery_id=delivery_id,
+            )
             return
 
         if action == "toggle":

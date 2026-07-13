@@ -7,7 +7,18 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from backend.platform.db.runtime.session import Database
+from backend.platform.delivery import DeliveryStatus
 from backend.shared.services.base import ValidationError
+from backend.features.garage.forward_delivery_executor import TelegramGarageForwardExecutor
+from backend.features.garage.forward_delivery_repository import (
+    GarageReservationRequest,
+    SqlAlchemyGarageForwardStore,
+)
+from backend.features.garage.forward_delivery_worker import (
+    DEFAULT_LEASE_SECONDS,
+    GarageForwardWorker,
+    GarageWorkerDependencies,
+)
 from backend.features.garage.services.garage_forward_service import GarageForwardService
 from backend.features.garage.services.garage_features_service import TeacherSearchService
 
@@ -155,83 +166,74 @@ async def _list_destinations(db: Database, source_channel_id: int):
     return destinations
 
 
-async def _claim_forward_slot(db: Database, *, dest_chat_id: int, post: _ForwardPost):
+async def _record_duplicate(db: Database, *, dest_chat_id: int, post: _ForwardPost) -> None:
     async with db.session_factory() as session:
-        reservation = await GarageForwardService.claim_forward_slot(
-            session,
-            chat_id=dest_chat_id,
-            source_channel_id=post.source_channel_id,
-            source_message_id=post.source_message_id,
-        )
-        if reservation is None:
-            await GarageForwardService.append_audit(
-                session,
-                chat_id=dest_chat_id,
-                source_channel_id=post.source_channel_id,
-                source_message_id=post.source_message_id,
-                action="copy",
-                result="skipped",
-                reason="duplicate_message",
-            )
-            await session.commit()
-            return None
-        reservation_id = int(reservation.id)
-        await session.commit()
-        return reservation_id
-
-
-async def _record_forward_success(
-    db: Database,
-    *,
-    dest_chat_id: int,
-    post: _ForwardPost,
-    reservation_id: int,
-    copied,
-) -> None:
-    async with db.session_factory() as session:
-        await GarageForwardService.finalize_forward(
-            session,
-            message_map_id=reservation_id,
-            target_message_id=int(copied.message_id),
-        )
         await GarageForwardService.append_audit(
             session,
             chat_id=dest_chat_id,
             source_channel_id=post.source_channel_id,
             source_message_id=post.source_message_id,
             action="copy",
-            result="success",
+            result="skipped",
+            reason="duplicate_message",
         )
         await session.commit()
 
 
-async def _record_forward_failure(
+async def _reserve_forward_delivery(
     db: Database,
     *,
     dest_chat_id: int,
     post: _ForwardPost,
-    reservation_id: int,
-    exc: Exception,
-) -> None:
-    log.warning(
-        "garage_forward_copy_failed",
+    reply_markup,
+):
+    import datetime as dt
+
+    now = dt.datetime.now(dt.UTC)
+    request = GarageReservationRequest(
         chat_id=dest_chat_id,
         source_channel_id=post.source_channel_id,
         source_message_id=post.source_message_id,
-        error=str(exc),
+        reply_markup_snapshot=reply_markup.to_dict() if reply_markup is not None else None,
     )
-    async with db.session_factory() as session:
-        await GarageForwardService.abandon_forward_slot(session, message_map_id=reservation_id)
-        await GarageForwardService.append_audit(
-            session,
-            chat_id=dest_chat_id,
-            source_channel_id=post.source_channel_id,
-            source_message_id=post.source_message_id,
-            action="copy",
-            result="failed",
-            reason=str(exc)[:500],
-        )
-        await session.commit()
+    lease_until = now + dt.timedelta(seconds=DEFAULT_LEASE_SECONDS)
+    return await SqlAlchemyGarageForwardStore(db).reserve_live(
+        request,
+        now=now,
+        lease_until=lease_until,
+    )
+
+
+async def _execute_forward_delivery(
+    context: ContextTypes.DEFAULT_TYPE,
+    db: Database,
+    *,
+    plan,
+):
+    import datetime as dt
+
+    store = SqlAlchemyGarageForwardStore(db)
+    worker = GarageForwardWorker(GarageWorkerDependencies(
+        store=store,
+        executor=TelegramGarageForwardExecutor(context.bot),
+        clock=lambda: dt.datetime.now(dt.UTC),
+    ))
+    return await worker.process_claimed(plan)
+
+
+def _log_delivery_outcome(plan, outcome) -> None:
+    if outcome.status is DeliveryStatus.succeeded:
+        return
+    log.warning(
+        "garage_forward_delivery_failed",
+        delivery_id=plan.delivery_id,
+        chat_id=plan.chat_id,
+        source_channel_id=plan.source_channel_id,
+        source_message_id=plan.source_message_id,
+        status=outcome.status.value,
+        error_code=outcome.error_code,
+        error=outcome.message,
+    )
 
 
 async def _copy_forward_post(
@@ -242,31 +244,17 @@ async def _copy_forward_post(
     reply_markup,
 ) -> None:
     db: Database = context.application.bot_data["db"]
-    reservation_id = await _claim_forward_slot(db, dest_chat_id=dest_chat_id, post=post)
-    if reservation_id is None:
+    plan = await _reserve_forward_delivery(
+        db,
+        dest_chat_id=dest_chat_id,
+        post=post,
+        reply_markup=reply_markup,
+    )
+    if plan is None:
+        await _record_duplicate(db, dest_chat_id=dest_chat_id, post=post)
         return
-    try:
-        copied = await context.bot.copy_message(
-            chat_id=dest_chat_id,
-            from_chat_id=post.source_channel_id,
-            message_id=post.source_message_id,
-            reply_markup=reply_markup,
-        )
-        await _record_forward_success(
-            db,
-            dest_chat_id=dest_chat_id,
-            post=post,
-            reservation_id=reservation_id,
-            copied=copied,
-        )
-    except Exception as exc:
-        await _record_forward_failure(
-            db,
-            dest_chat_id=dest_chat_id,
-            post=post,
-            reservation_id=reservation_id,
-            exc=exc,
-        )
+    outcome = await _execute_forward_delivery(context, db, plan=plan)
+    _log_delivery_outcome(plan, outcome)
 
 
 async def _process_forward_destination(context: ContextTypes.DEFAULT_TYPE, *, setting, post: _ForwardPost) -> None:

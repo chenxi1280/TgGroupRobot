@@ -15,6 +15,7 @@ from backend.platform.scheduler.tasks.engagement_task import EngagementTask
 from backend.platform.scheduler.tasks.game_task import GameTask
 from backend.platform.scheduler.tasks.guess_task import GuessTask
 from backend.platform.scheduler.tasks.teacher_search_task import TeacherSearchTask
+from backend.platform.scheduler.tasks.garage_forward_retry_task import GarageForwardRetryTask
 
 __all__ = [
     "LotteryTask",
@@ -32,4 +33,5 @@ __all__ = [
     "GameTask",
     "GuessTask",
     "TeacherSearchTask",
+    "GarageForwardRetryTask",
 ]

@@ -129,6 +129,19 @@
 - `end_at` TIMESTAMPTZ
 - `created_at` TIMESTAMPTZ
 
+### `garage_forward_retry_queue`
+- `id` INT PK
+- `chat_id` BIGINT FK -> `tg_chats.id`
+- `source_channel_id / source_message_id` BIGINT
+- `message_map_id` INT FK -> `garage_forward_message_map.id`
+- `reply_markup_snapshot` JSONB，保存 Telegram 按钮完整快照
+- `status` VARCHAR(32)：`pending / processing / retryable_failed / succeeded / permanent_failed / uncertain / cancelled`
+- `retry_count / max_retries` INT
+- `next_retry_at / lease_until / send_started_at / completed_at` TIMESTAMPTZ
+- `last_error` TEXT
+- UNIQUE(`chat_id`,`source_channel_id`,`source_message_id`)
+- 用途：保存实时投递和重试的同一条执行记录；成功后不删除，结果不确定时禁止自动重放。
+
 ### `ad_campaigns`
 - `id` INT PK
 - `chat_id` BIGINT FK
@@ -143,11 +156,13 @@
 - `chat_settings.chat_id` -> `tg_chats.id`
 - `chat_members.chat_id` -> `tg_chats.id`；`chat_members.user_id` -> `tg_users.id`
 - `points_* / sign_in_logs / moderation_violations / verification_challenges / ad_campaigns` 均通过 `chat_id` 关联群
+- `garage_forward_retry_queue.message_map_id` -> `garage_forward_message_map.id`，来源事件唯一键同时约束消息映射和执行记录
 
 ## 3) 索引建议
 
 - 高频查询：`chat_id`、`user_id` 组合索引（已在迁移里加了核心索引）
 - `verification_challenges.token`、`expires_at`
+- `garage_forward_retry_queue(status,next_retry_at,lease_until)` 用于租约恢复和到期认领
 - 积分流水按 `chat_id/user_id/created_at` 可加复合索引（后续迭代）
 
 ## 4) 数据增长与性能优化建议
@@ -168,7 +183,7 @@
 - **群 + 用户** 0/1 **验证挑战**（`verification_challenges`）
 - **群** 0/1 **订阅**（`chat_subscriptions`）指向 **套餐**（`subscription_plans`）
 - **群** 1:N **广告活动**（`ad_campaigns`）
-
+- **来源消息 + 目标群** 1:1 **车库消息映射**，1:1 **车库投递执行记录**
 
 
 

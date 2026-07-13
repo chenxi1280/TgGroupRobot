@@ -2143,10 +2143,14 @@ CREATE TABLE IF NOT EXISTS bot.garage_forward_sources (
     source_channel_id BIGINT NOT NULL,
     source_name VARCHAR(255),
     enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    last_seen_message_id BIGINT,
     created_at TIMESTAMPTZ NOT NULL,
     CONSTRAINT fk_garage_forward_sources_chat_id FOREIGN KEY (chat_id)
         REFERENCES bot.tg_chats(id) ON DELETE CASCADE
 );
+
+ALTER TABLE bot.garage_forward_sources
+    ADD COLUMN IF NOT EXISTS last_seen_message_id BIGINT;
 
 CREATE TABLE IF NOT EXISTS bot.garage_forward_message_map (
     id SERIAL PRIMARY KEY,
@@ -2173,10 +2177,33 @@ CREATE TABLE IF NOT EXISTS bot.garage_forward_audit_logs (
         REFERENCES bot.tg_chats(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS bot.garage_forward_retry_queue (
+    id SERIAL PRIMARY KEY,
+    chat_id BIGINT NOT NULL REFERENCES bot.tg_chats(id) ON DELETE CASCADE,
+    source_channel_id BIGINT NOT NULL,
+    source_message_id BIGINT NOT NULL,
+    message_map_id INTEGER REFERENCES bot.garage_forward_message_map(id) ON DELETE SET NULL,
+    reply_markup_snapshot JSONB,
+    status VARCHAR(32) NOT NULL DEFAULT 'pending',
+    retry_count INTEGER NOT NULL DEFAULT 0,
+    max_retries INTEGER NOT NULL DEFAULT 3,
+    next_retry_at TIMESTAMPTZ,
+    lease_until TIMESTAMPTZ,
+    send_started_at TIMESTAMPTZ,
+    last_error TEXT,
+    completed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT uq_garage_forward_retry_event
+        UNIQUE (chat_id, source_channel_id, source_message_id)
+);
+
 CREATE INDEX IF NOT EXISTS ix_garage_forward_sources_chat_id ON bot.garage_forward_sources(chat_id);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_garage_forward_source_chat_channel
     ON bot.garage_forward_sources(chat_id, source_channel_id);
 CREATE INDEX IF NOT EXISTS ix_garage_forward_audit_logs_chat_id ON bot.garage_forward_audit_logs(chat_id);
+CREATE INDEX IF NOT EXISTS ix_garage_forward_retry_due
+    ON bot.garage_forward_retry_queue(status, next_retry_at, lease_until);
 
 -- ============================================
 -- 16. 车库认证 / 老师搜索 / 车评系统

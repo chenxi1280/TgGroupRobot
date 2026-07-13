@@ -26,6 +26,7 @@ def _register_scheduler_tasks(scheduler: Scheduler) -> None:
         CleanupTask,
         EngagementTask,
         GameTask,
+        GarageForwardRetryTask,
         GroupLockTask,
         GuessTask,
         LotteryTask,
@@ -51,6 +52,7 @@ def _register_scheduler_tasks(scheduler: Scheduler) -> None:
         GameTask(),
         GuessTask(),
         TeacherSearchTask(),
+        GarageForwardRetryTask(),
     ])
 
 

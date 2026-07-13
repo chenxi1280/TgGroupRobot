@@ -23,12 +23,20 @@ class _FakeResult:
     def all(self):
         return self._value
 
+    def scalars(self):
+        return self
+
 
 class _FakeSession:
     def __init__(self, *, execute_value=None) -> None:
         self._execute_value = execute_value
         self.deleted: list[object] = []
         self.flush_calls = 0
+        self.added: list[object] = []
+        self.committed = False
+
+    def add(self, item):
+        self.added.append(item)
 
     async def execute(self, stmt):
         return _FakeResult(self._execute_value)
@@ -41,6 +49,9 @@ class _FakeSession:
 
     async def flush(self):
         self.flush_calls += 1
+
+    async def commit(self):
+        self.committed = True
 
     async def rollback(self):
         return None
@@ -251,71 +262,6 @@ async def test_garage_forward_add_source_reuses_existing():
     assert existing.source_name == "新名称"
     assert session.flush_calls == 1
 
-
-@pytest.mark.asyncio
-async def test_garage_forward_claim_slot_returns_none_on_duplicate():
-    from sqlalchemy.exc import IntegrityError
-
-    class _SessionWithIntegrity(_FakeSession):
-        def __init__(self) -> None:
-            super().__init__()
-            self.added: list[object] = []
-            self.rolled_back = False
-
-        def add(self, item):
-            self.added.append(item)
-
-        async def flush(self):
-            raise IntegrityError("dup", None, None)
-
-        async def rollback(self):
-            self.rolled_back = True
-
-    session = _SessionWithIntegrity()
-
-    result = await GarageForwardService.claim_forward_slot(
-        session,
-        chat_id=-10001,
-        source_channel_id=-10002,
-        source_message_id=123,
-    )
-
-    assert result is None
-    assert session.rolled_back is True
-
-
-@pytest.mark.asyncio
-async def test_garage_forward_claim_slot_reclaims_stale_placeholder():
-    stale = SimpleNamespace(
-        id=5,
-        chat_id=-10001,
-        source_channel_id=-10002,
-        source_message_id=123,
-        target_message_id=0,
-        forwarded_at=dt.datetime.now(dt.UTC) - dt.timedelta(minutes=11),
-    )
-
-    class _SessionWithStale(_FakeSession):
-        def __init__(self) -> None:
-            super().__init__(execute_value=stale)
-            self.added: list[object] = []
-
-        def add(self, item):
-            self.added.append(item)
-
-    session = _SessionWithStale()
-
-    result = await GarageForwardService.claim_forward_slot(
-        session,
-        chat_id=-10001,
-        source_channel_id=-10002,
-        source_message_id=123,
-    )
-
-    assert stale in session.deleted
-    assert result is not None
-    assert session.added
-    assert session.flush_calls >= 2
 
 
 @pytest.mark.asyncio

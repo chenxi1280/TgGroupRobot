@@ -6,14 +6,29 @@ import pytest
 
 from backend.features.admin import admin_handler
 from backend.features.admin.admin_handler import handle_garage_forward_input
+from backend.features.garage import garage_forward_handler as forward_handler
 from backend.features.garage.garage_forward_handler import garage_forward_channel_post_handler
 from backend.features.garage.services.garage_forward_service import GarageForwardService
 from backend.features.garage.services.garage_features_service import TeacherSearchService
+from backend.platform.delivery import DeliveryOutcome
 from backend.platform.state import state_service
 from backend.shared.callback_parser import CallbackParser
 
 
 class _Session:
+    def __init__(self):
+        self.added: list[object] = []
+
+    def add(self, item):
+        self.added.append(item)
+
+    async def execute(self, stmt):
+        # 返回空结果，用于 update_last_seen_message_id 等查询
+        return SimpleNamespace(
+            scalar_one_or_none=lambda: None,
+            scalars=lambda: SimpleNamespace(all=lambda: []),
+        )
+
     async def commit(self):
         return None
 
@@ -37,9 +52,13 @@ class _SessionFactory:
 
 @pytest.mark.asyncio
 async def test_garage_forward_channel_post_copies_message_and_records(monkeypatch):
-    copied_calls: list[tuple[int, int, int]] = []
-    finalized: list[tuple[int, int]] = []
-    audits: list[tuple[int, str, str]] = []
+    events: list[tuple[str, int]] = []
+    plan = SimpleNamespace(
+        delivery_id=77,
+        chat_id=-20001,
+        source_channel_id=-10001,
+        source_message_id=321,
+    )
 
     async def fake_list_destinations_by_source(session, source_channel_id):
         return [
@@ -49,27 +68,17 @@ async def test_garage_forward_channel_post_copies_message_and_records(monkeypatc
             )
         ]
 
-    async def fake_claim_forward_slot(session, *, chat_id, source_channel_id, source_message_id):
-        return SimpleNamespace(id=77)
+    async def fake_reserve(db, *, dest_chat_id, post, reply_markup):
+        events.append(("reserve", dest_chat_id))
+        return plan
 
-    async def fake_finalize_forward(session, *, message_map_id, target_message_id):
-        finalized.append((message_map_id, target_message_id))
-
-    async def fake_abandon_forward_slot(session, *, message_map_id):
-        return True
-
-    async def fake_append_audit(session, *, chat_id, source_channel_id, action, result, reason=None, source_message_id=None):
-        audits.append((chat_id, action, result))
-
-    async def fake_copy_message(*, chat_id, from_chat_id, message_id, reply_markup=None):
-        copied_calls.append((chat_id, from_chat_id, message_id))
-        return SimpleNamespace(message_id=999)
+    async def fake_execute(context, db, *, plan):
+        events.append(("execute", plan.delivery_id))
+        return DeliveryOutcome.success(999)
 
     monkeypatch.setattr(GarageForwardService, "list_destinations_by_source", fake_list_destinations_by_source)
-    monkeypatch.setattr(GarageForwardService, "claim_forward_slot", fake_claim_forward_slot)
-    monkeypatch.setattr(GarageForwardService, "finalize_forward", fake_finalize_forward)
-    monkeypatch.setattr(GarageForwardService, "abandon_forward_slot", fake_abandon_forward_slot)
-    monkeypatch.setattr(GarageForwardService, "append_audit", fake_append_audit)
+    monkeypatch.setattr(forward_handler, "_reserve_forward_delivery", fake_reserve)
+    monkeypatch.setattr(forward_handler, "_execute_forward_delivery", fake_execute)
 
     update = SimpleNamespace(
         effective_chat=SimpleNamespace(id=-10001, type="channel"),
@@ -89,14 +98,12 @@ async def test_garage_forward_channel_post_copies_message_and_records(monkeypatc
     )
     context = SimpleNamespace(
         application=SimpleNamespace(bot_data={"db": SimpleNamespace(session_factory=_SessionFactory())}),
-        bot=SimpleNamespace(copy_message=fake_copy_message),
+        bot=SimpleNamespace(),
     )
 
     await garage_forward_channel_post_handler(update, context)
 
-    assert copied_calls == [(-20001, -10001, 321)]
-    assert finalized == [(77, 999)]
-    assert audits == [(-20001, "copy", "success")]
+    assert events == [("reserve", -20001), ("execute", 77)]
 
 
 @pytest.mark.asyncio
@@ -111,9 +118,6 @@ async def test_garage_forward_channel_post_indexes_teacher_for_destination(monke
             )
         ]
 
-    async def fake_claim_forward_slot(session, *, chat_id, source_channel_id, source_message_id):
-        return SimpleNamespace(id=77)
-
     async def fake_index(session, **kwargs):
         indexed.append(kwargs)
         return SimpleNamespace(indexed=True, reason=None, user_id=77, username="jt37373", label_count=6)
@@ -124,11 +128,13 @@ async def test_garage_forward_channel_post_indexes_teacher_for_destination(monke
     async def fake_noop(*args, **kwargs):
         return None
 
+    async def fake_reserve(*args, **kwargs):
+        return None
+
     monkeypatch.setattr(GarageForwardService, "list_destinations_by_source", fake_list_destinations_by_source)
-    monkeypatch.setattr(GarageForwardService, "claim_forward_slot", fake_claim_forward_slot)
-    monkeypatch.setattr(GarageForwardService, "finalize_forward", fake_noop)
     monkeypatch.setattr(GarageForwardService, "append_audit", fake_noop)
     monkeypatch.setattr(TeacherSearchService, "index_channel_post_teacher_profile", fake_index)
+    monkeypatch.setattr(forward_handler, "_reserve_forward_delivery", fake_reserve)
 
     update = SimpleNamespace(
         effective_chat=SimpleNamespace(id=-10001, type="channel"),
@@ -239,27 +245,11 @@ async def test_garage_forward_keyword_mode_respects_keyword_rules(monkeypatch):
             )
         ]
 
-    async def fake_claim_forward_slot(session, *, chat_id, source_channel_id, source_message_id):
-        return SimpleNamespace(id=88)
-
-    async def fake_finalize_forward(*args, **kwargs):
-        return None
-
-    async def fake_abandon_forward_slot(*args, **kwargs):
-        return None
-
-    async def fake_append_audit(*args, **kwargs):
-        return None
-
     async def fake_copy_message(*, chat_id, from_chat_id, message_id):
         copied_calls.append((chat_id, from_chat_id, message_id))
         return SimpleNamespace(message_id=1000)
 
     monkeypatch.setattr(GarageForwardService, "list_destinations_by_source", fake_list_destinations_by_source)
-    monkeypatch.setattr(GarageForwardService, "claim_forward_slot", fake_claim_forward_slot)
-    monkeypatch.setattr(GarageForwardService, "finalize_forward", fake_finalize_forward)
-    monkeypatch.setattr(GarageForwardService, "abandon_forward_slot", fake_abandon_forward_slot)
-    monkeypatch.setattr(GarageForwardService, "append_audit", fake_append_audit)
 
     update = SimpleNamespace(
         effective_chat=SimpleNamespace(id=-10001, type="channel"),
@@ -300,13 +290,7 @@ async def test_garage_forward_duplicate_claim_skips_copy_and_records_audit(monke
             )
         ]
 
-    async def fake_claim_forward_slot(session, *, chat_id, source_channel_id, source_message_id):
-        return None
-
-    async def fake_finalize_forward(*args, **kwargs):
-        return None
-
-    async def fake_abandon_forward_slot(*args, **kwargs):
+    async def fake_reserve(*args, **kwargs):
         return None
 
     async def fake_append_audit(session, *, chat_id, source_channel_id, action, result, reason=None, source_message_id=None):
@@ -317,10 +301,8 @@ async def test_garage_forward_duplicate_claim_skips_copy_and_records_audit(monke
         return SimpleNamespace(message_id=1000)
 
     monkeypatch.setattr(GarageForwardService, "list_destinations_by_source", fake_list_destinations_by_source)
-    monkeypatch.setattr(GarageForwardService, "claim_forward_slot", fake_claim_forward_slot)
-    monkeypatch.setattr(GarageForwardService, "finalize_forward", fake_finalize_forward)
-    monkeypatch.setattr(GarageForwardService, "abandon_forward_slot", fake_abandon_forward_slot)
     monkeypatch.setattr(GarageForwardService, "append_audit", fake_append_audit)
+    monkeypatch.setattr(forward_handler, "_reserve_forward_delivery", fake_reserve)
 
     update = SimpleNamespace(
         effective_chat=SimpleNamespace(id=-10001, type="channel"),
@@ -495,3 +477,96 @@ async def test_handle_garage_forward_manual_audit_cleanup(monkeypatch):
     assert cleanup_calls == [(-100123, "failed")]
     assert answers == ["已清理 3 条超期日志。"]
     assert shown == [(-100123, "failed")]
+
+
+# ----------------------------------------------------------------------
+# P2.2-G 车库转发恢复：实时持久化执行 + GarageForwardRetryTask 调度任务
+# ----------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_garage_forward_reserves_snapshot_before_execution(monkeypatch):
+    events: list[tuple[str, object]] = []
+    snapshot = {"inline_keyboard": [[{"text": "详情", "url": "https://example.com"}]]}
+    markup = SimpleNamespace(to_dict=lambda: snapshot)
+    plan = SimpleNamespace(
+        delivery_id=77,
+        chat_id=-20001,
+        source_channel_id=-10001,
+        source_message_id=321,
+    )
+
+    async def fake_list_destinations_by_source(session, source_channel_id):
+        return [
+            (
+                SimpleNamespace(chat_id=-20001, enabled=True, sync_mode="all", keyword_rules=[]),
+                SimpleNamespace(source_channel_id=-10001, source_name="车库源", enabled=True),
+            )
+        ]
+
+    async def fake_reserve(db, *, dest_chat_id, post, reply_markup):
+        events.append(("reserve", reply_markup.to_dict()))
+        return plan
+
+    async def fake_execute(context, db, *, plan):
+        events.append(("execute", plan.delivery_id))
+        return DeliveryOutcome.retryable_failure("rate_limit", "later")
+
+    monkeypatch.setattr(GarageForwardService, "list_destinations_by_source", fake_list_destinations_by_source)
+    monkeypatch.setattr(forward_handler, "_build_reply_markup", lambda setting: markup)
+    monkeypatch.setattr(forward_handler, "_reserve_forward_delivery", fake_reserve)
+    monkeypatch.setattr(forward_handler, "_execute_forward_delivery", fake_execute)
+
+    update = SimpleNamespace(
+        effective_chat=SimpleNamespace(id=-10001, type="channel"),
+        effective_message=SimpleNamespace(
+            message_id=321,
+            text="同步内容",
+            caption=None,
+            photo=None,
+            video=None,
+            document=None,
+            animation=None,
+            audio=None,
+            voice=None,
+            video_note=None,
+            sticker=None,
+        ),
+    )
+    context = SimpleNamespace(
+        application=SimpleNamespace(bot_data={"db": SimpleNamespace(session_factory=_SessionFactory())}),
+        bot=SimpleNamespace(),
+    )
+
+    await garage_forward_channel_post_handler(update, context)
+
+    assert events == [("reserve", snapshot), ("execute", 77)]
+
+
+@pytest.mark.asyncio
+async def test_garage_forward_retry_task_delegates_to_worker(monkeypatch):
+    from backend.platform.scheduler.tasks import garage_forward_retry_task as task_module
+
+    events: list[str] = []
+
+    class FakeWorker:
+        def __init__(self, dependencies) -> None:
+            events.append("build")
+
+        async def run(self):
+            events.append("run")
+
+    monkeypatch.setattr(task_module, "GarageForwardWorker", FakeWorker)
+    app = SimpleNamespace(bot=SimpleNamespace(), bot_data={"db": object()})
+
+    await task_module.GarageForwardRetryTask().execute(app)
+
+    assert events == ["build", "run"]
+
+
+@pytest.mark.asyncio
+async def test_garage_forward_retry_task_exposes_missing_database() -> None:
+    from backend.platform.scheduler.tasks.garage_forward_retry_task import GarageForwardRetryTask
+
+    with pytest.raises(RuntimeError, match="database"):
+        await GarageForwardRetryTask().execute(SimpleNamespace(bot=object(), bot_data={}))

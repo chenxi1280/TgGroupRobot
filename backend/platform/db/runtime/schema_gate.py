@@ -102,6 +102,17 @@ REQUIRED_INDEXES: tuple[RequiredIndex, ...] = (
         unique=True,
     ),
     RequiredIndex(
+        table_name="garage_forward_retry_queue",
+        index_name="uq_garage_forward_retry_event",
+        columns=("chat_id", "source_channel_id", "source_message_id"),
+        unique=True,
+    ),
+    RequiredIndex(
+        table_name="garage_forward_retry_queue",
+        index_name="ix_garage_forward_retry_due",
+        columns=("status", "next_retry_at", "lease_until"),
+    ),
+    RequiredIndex(
         table_name="garage_certified_teachers",
         index_name="uq_garage_certified_teacher_chat_user",
         columns=("chat_id", "user_id"),

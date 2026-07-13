@@ -75,4 +75,9 @@ TASK_CONFIG = {
         "enabled": True,
         "max_consecutive_failures": 10,
     },
+    "garage_forward_retry": {
+        "interval": 120,  # 2分钟，平衡重试及时性与 Telegram 限流
+        "enabled": True,
+        "max_consecutive_failures": 10,
+    },
 }

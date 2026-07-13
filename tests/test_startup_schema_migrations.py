@@ -51,6 +51,8 @@ async def test_run_startup_schema_migrations_executes_known_compat_patches(monke
     inspector = FakeInspector(tables={
         "chat_settings",
         "garage_forward_settings",
+        "garage_forward_sources",
+        "garage_forward_retry_queue",
         "teacher_search_settings",
         "scheduled_message_tasks",
         "ad_campaigns",
@@ -70,6 +72,12 @@ async def test_run_startup_schema_migrations_executes_known_compat_patches(monke
     assert any("CREATE SCHEMA IF NOT EXISTS bot" in sql for sql in executed_sql)
     assert any("ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS command_config_enabled" in sql for sql in executed_sql)
     assert any("ALTER TABLE bot.garage_forward_settings ADD COLUMN IF NOT EXISTS button_template_enabled" in sql for sql in executed_sql)
+    assert any("ALTER TABLE bot.garage_forward_sources ADD COLUMN IF NOT EXISTS last_seen_message_id" in sql for sql in executed_sql)
+    assert any("ALTER TABLE bot.garage_forward_retry_queue ADD COLUMN IF NOT EXISTS message_map_id" in sql for sql in executed_sql)
+    assert any("ALTER TABLE bot.garage_forward_retry_queue ADD COLUMN IF NOT EXISTS reply_markup_snapshot" in sql for sql in executed_sql)
+    assert any("ALTER TABLE bot.garage_forward_retry_queue ADD COLUMN IF NOT EXISTS status" in sql for sql in executed_sql)
+    assert any("CREATE UNIQUE INDEX IF NOT EXISTS uq_garage_forward_retry_event" in sql for sql in executed_sql)
+    assert any("CREATE INDEX IF NOT EXISTS ix_garage_forward_retry_queue_next_retry ON bot.garage_forward_retry_queue(next_retry_at)" in sql for sql in executed_sql)
     assert any("ALTER TABLE bot.teacher_search_settings ADD COLUMN IF NOT EXISTS only_open_course_enabled" in sql for sql in executed_sql)
     assert any("ALTER TABLE bot.teacher_search_settings ADD COLUMN IF NOT EXISTS attendance_mode" in sql for sql in executed_sql)
     assert any("ALTER TABLE bot.teacher_search_settings ADD COLUMN IF NOT EXISTS attendance_source_chat_id" in sql for sql in executed_sql)
@@ -145,3 +153,13 @@ def test_init_sql_contains_verification_timeout_state_and_attempt_history() -> N
     assert "CREATE TABLE IF NOT EXISTS bot.verification_timeout_attempts" in init_sql
     assert "CONSTRAINT uq_verification_timeout_attempt_no" in init_sql
     assert "CREATE INDEX IF NOT EXISTS ix_verification_timeout_due" in init_sql
+
+
+def test_init_sql_contains_durable_garage_forward_retry_state() -> None:
+    init_sql = (PROJECT_ROOT / "sql" / "init.sql").read_text(encoding="utf-8")
+
+    assert "CREATE TABLE IF NOT EXISTS bot.garage_forward_retry_queue" in init_sql
+    assert "reply_markup_snapshot JSONB" in init_sql
+    assert "status VARCHAR(32) NOT NULL DEFAULT 'pending'" in init_sql
+    assert "CONSTRAINT uq_garage_forward_retry_event" in init_sql
+    assert "CREATE INDEX IF NOT EXISTS ix_garage_forward_retry_due" in init_sql

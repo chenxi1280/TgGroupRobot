@@ -4,16 +4,17 @@ import datetime as dt
 
 import structlog
 from sqlalchemy import delete, func, select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.platform.db.schema.models.alliance import GarageForwardAuditLog, GarageForwardMessageMap
+from backend.platform.db.schema.models.alliance import (
+    GarageForwardAuditLog,
+    GarageForwardMessageMap,
+)
 
 log = structlog.get_logger(__name__)
 
 
 class GarageForwardRuntimeMixin:
-    _STALE_FORWARD_SLOT_TTL = dt.timedelta(minutes=10)
     AUDIT_RETENTION_DAYS = 30
 
     @staticmethod
@@ -32,71 +33,6 @@ class GarageForwardRuntimeMixin:
             )
         )
         return result.scalar_one_or_none() is not None
-
-    @staticmethod
-    async def claim_forward_slot(
-        session: AsyncSession,
-        *,
-        chat_id: int,
-        source_channel_id: int,
-        source_message_id: int,
-    ) -> GarageForwardMessageMap | None:
-        result = await session.execute(
-            select(GarageForwardMessageMap).where(
-                GarageForwardMessageMap.chat_id == chat_id,
-                GarageForwardMessageMap.source_channel_id == source_channel_id,
-                GarageForwardMessageMap.source_message_id == source_message_id,
-            )
-        )
-        existing = result.scalar_one_or_none()
-        if existing is not None:
-            is_stale_placeholder = (
-                int(existing.target_message_id or 0) == 0
-                and existing.forwarded_at <= dt.datetime.now(dt.UTC) - GarageForwardRuntimeMixin._STALE_FORWARD_SLOT_TTL
-            )
-            if is_stale_placeholder:
-                await session.delete(existing)
-                await session.flush()
-            else:
-                return None
-
-        item = GarageForwardMessageMap(
-            chat_id=chat_id,
-            source_channel_id=source_channel_id,
-            source_message_id=source_message_id,
-            target_message_id=0,
-        )
-        session.add(item)
-        try:
-            await session.flush()
-            return item
-        except IntegrityError:
-            await session.rollback()
-            return None
-
-    @staticmethod
-    async def finalize_forward(
-        session: AsyncSession,
-        *,
-        message_map_id: int,
-        target_message_id: int,
-    ) -> GarageForwardMessageMap | None:
-        item = await session.get(GarageForwardMessageMap, message_map_id)
-        if item is None:
-            return None
-        item.target_message_id = target_message_id
-        item.forwarded_at = dt.datetime.now(dt.UTC)
-        await session.flush()
-        return item
-
-    @staticmethod
-    async def abandon_forward_slot(session: AsyncSession, *, message_map_id: int) -> bool:
-        item = await session.get(GarageForwardMessageMap, message_map_id)
-        if item is None:
-            return False
-        await session.delete(item)
-        await session.flush()
-        return True
 
     @staticmethod
     async def append_audit(

@@ -109,6 +109,23 @@ GARAGE_FORWARD_SETTINGS_COMPAT_SQL: tuple[str, ...] = (
     "ALTER TABLE bot.garage_forward_settings ADD COLUMN IF NOT EXISTS button_template JSONB NOT NULL DEFAULT '[]'::jsonb",
 )
 
+GARAGE_FORWARD_SOURCES_COMPAT_SQL: tuple[str, ...] = (
+    "ALTER TABLE bot.garage_forward_sources ADD COLUMN IF NOT EXISTS last_seen_message_id BIGINT",
+)
+
+GARAGE_FORWARD_RETRY_QUEUE_COMPAT_SQL: tuple[str, ...] = (
+    "ALTER TABLE bot.garage_forward_retry_queue ADD COLUMN IF NOT EXISTS message_map_id INTEGER REFERENCES bot.garage_forward_message_map(id) ON DELETE SET NULL",
+    "ALTER TABLE bot.garage_forward_retry_queue ADD COLUMN IF NOT EXISTS reply_markup_snapshot JSONB",
+    "ALTER TABLE bot.garage_forward_retry_queue ADD COLUMN IF NOT EXISTS status VARCHAR(32) NOT NULL DEFAULT 'pending'",
+    "ALTER TABLE bot.garage_forward_retry_queue ADD COLUMN IF NOT EXISTS lease_until TIMESTAMPTZ",
+    "ALTER TABLE bot.garage_forward_retry_queue ADD COLUMN IF NOT EXISTS send_started_at TIMESTAMPTZ",
+    "ALTER TABLE bot.garage_forward_retry_queue ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ",
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_garage_forward_retry_event ON bot.garage_forward_retry_queue(chat_id, source_channel_id, source_message_id)",
+    "CREATE INDEX IF NOT EXISTS ix_garage_forward_retry_due ON bot.garage_forward_retry_queue(status, next_retry_at, lease_until)",
+    "CREATE INDEX IF NOT EXISTS ix_garage_forward_retry_queue_chat ON bot.garage_forward_retry_queue(chat_id)",
+    "CREATE INDEX IF NOT EXISTS ix_garage_forward_retry_queue_next_retry ON bot.garage_forward_retry_queue(next_retry_at)",
+)
+
 CAR_REVIEW_SETTINGS_COMPAT_SQL: tuple[str, ...] = (
     "ALTER TABLE bot.car_review_settings ADD COLUMN IF NOT EXISTS auto_refresh_board_enabled BOOLEAN NOT NULL DEFAULT FALSE",
 )
@@ -205,6 +222,8 @@ RENEWAL_CARD_KEYS_COMPAT_SQL: tuple[str, ...] = (
 COMPATIBILITY_MIGRATIONS: dict[str, tuple[str, ...]] = {
     "chat_settings": CHAT_SETTINGS_COMPAT_SQL,
     "garage_forward_settings": GARAGE_FORWARD_SETTINGS_COMPAT_SQL,
+    "garage_forward_sources": GARAGE_FORWARD_SOURCES_COMPAT_SQL,
+    "garage_forward_retry_queue": GARAGE_FORWARD_RETRY_QUEUE_COMPAT_SQL,
     "car_review_settings": CAR_REVIEW_SETTINGS_COMPAT_SQL,
     "teacher_search_settings": TEACHER_SEARCH_SETTINGS_COMPAT_SQL,
     "scheduled_message_tasks": SCHEDULED_MESSAGE_COMPAT_SQL,
