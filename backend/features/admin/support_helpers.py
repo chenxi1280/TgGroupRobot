@@ -53,127 +53,99 @@ def _resolve_private_admin_target_chat_id(cb: CallbackParser) -> int | None:
     return None
 
 
+def _resolve_alliance_target(cb: CallbackParser) -> int | None:
+    action = cb.get(1)
+    if action in {"members", "invite"}:
+        index = 3 if cb.length() >= _RESOLVE_PRIVATE_SCOPED_TARGET_CHAT_ID_THRESHOLD_4 else 2
+        return cb.get_int_optional(index)
+    if action in {"jointban", "leave"}:
+        return cb.get_int_optional(3 if cb.get(2) == "toggle" else 2)
+    indices = {"create": 3, "join": 3, "home": 2}
+    index = indices.get(action)
+    return cb.get_int_optional(index) if index is not None else None
+
+
+def _resolve_garage_forward_target(cb: CallbackParser) -> int | None:
+    action = cb.get(1)
+    if action in {"home", "audit", "toggle", "mode", "btn_toggle"}:
+        return cb.get_int_optional(2)
+    if action in {"keywords", "source", "buttons"}:
+        return cb.get_int_optional(3)
+    return None
+
+
+def _resolve_garage_auth_target(cb: CallbackParser) -> int | None:
+    action = cb.get(1)
+    if action in {"home", "toggle", "badge"}:
+        return cb.get_int_optional(2)
+    if action == "summary":
+        index = 3 if cb.length() >= _RESOLVE_PRIVATE_SCOPED_TARGET_CHAT_ID_THRESHOLD_4 else 2
+        return cb.get_int_optional(index)
+    if action in {"teacher", "wl"}:
+        return cb.get_int_optional(3)
+    if action != "limit":
+        return None
+    index = 3 if cb.get(2) in {"toggle", "mode", "interval", "max"} else 2
+    return cb.get_int_optional(index)
+
+
+def _resolve_teacher_search_target(cb: CallbackParser) -> int | None:
+    action = cb.get(1)
+    direct_indices = {
+        "home": 2, "toggle": 3, "attendance": 3, "attendance_word": 3,
+        "attendance_source": 3, "attendance_source_mode": 3,
+        "delete_mode": 2, "footer": 3, "open_course": 3,
+    }
+    if action in direct_indices:
+        return cb.get_int_optional(direct_indices[action])
+    if action == "attendance_mode":
+        return cb.get_int_optional(3 if cb.get(2) in {"menu", "set"} else 2)
+    if action == "delegate":
+        return cb.get_int_optional(3 if cb.get(2) == "start" else 2)
+    return None
+
+
+def _resolve_car_review_target(cb: CallbackParser) -> int | None:
+    action = cb.get(1)
+    variable = {"submit_cmd", "rank_cmd", "approver", "template"}
+    direct = {
+        "home", "toggle", "mode", "board", "lookup", "publish_target", "reward",
+        "fields", "field_add", "field_edit", "field_tog", "reports", "report",
+    }
+    if action in variable:
+        index = 3 if cb.length() >= _RESOLVE_PRIVATE_SCOPED_TARGET_CHAT_ID_THRESHOLD_4 else 2
+        return cb.get_int_optional(index)
+    return cb.get_int_optional(2) if action in direct else None
+
+
+_STANDARD_SCOPED_ACTIONS = {
+    "auc": {"home", "toggle", "perm", "points_mode", "list", "detail"},
+    "btm": {"home", "toggle", "text", "layout", "generate", "repeat", "button"},
+    "gm": {"home", "toggle", "rake", "auto", "delete_mode", "rounds", "help", "detail", "points"},
+    "guess": {"home", "create", "list", "settings", "detail", "open", "cancel"},
+    "act": {"home", "egg", "chat"},
+    "qpub": {"home", "input", "clear", "send"},
+}
+
+
+def _resolve_standard_scoped_target(cb: CallbackParser) -> int | None:
+    actions = _STANDARD_SCOPED_ACTIONS.get(cb.get(0), set())
+    return cb.get_int_optional(2) if cb.get(1) in actions else None
+
+
 def _resolve_private_scoped_target_chat_id(cb: CallbackParser) -> int | None:
     prefix = cb.get(0)
     if prefix == "adm":
         return _resolve_private_admin_target_chat_id(cb)
-
-    if prefix == "ali":
-        action = cb.get(1)
-        if action in {"members", "invite"}:
-            return cb.get_int_optional(3) if cb.length() >= _RESOLVE_PRIVATE_SCOPED_TARGET_CHAT_ID_THRESHOLD_4 else cb.get_int_optional(2)
-        if action in {"jointban", "leave"}:
-            return cb.get_int_optional(3) if cb.get(2) == "toggle" else cb.get_int_optional(2)
-        if action in {"create", "join"}:
-            return cb.get_int_optional(3)
-        if action == "home":
-            return cb.get_int_optional(2)
-        return None
-
-    if prefix == "gfw":
-        action = cb.get(1)
-        if action in {"home", "audit", "toggle", "mode", "btn_toggle"}:
-            return cb.get_int_optional(2)
-        if action in {"keywords", "source", "buttons"}:
-            return cb.get_int_optional(3)
-        return None
-
-    if prefix == "grg":
-        action = cb.get(1)
-        if action in {"home", "toggle", "badge"}:
-            return cb.get_int_optional(2)
-        if action == "summary":
-            return cb.get_int_optional(3) if cb.length() >= _RESOLVE_PRIVATE_SCOPED_TARGET_CHAT_ID_THRESHOLD_4 else cb.get_int_optional(2)
-        if action in {"teacher", "wl"}:
-            return cb.get_int_optional(3)
-        if action == "limit":
-            return cb.get_int_optional(3) if cb.get(2) in {"toggle", "mode", "interval", "max"} else cb.get_int_optional(2)
-        return None
-
-    if prefix == "tsearch":
-        action = cb.get(1)
-        if action == "home":
-            return cb.get_int_optional(2)
-        if action in {"toggle", "attendance"}:
-            return cb.get_int_optional(3)
-        if action == "attendance_mode":
-            if cb.get(2) in {"menu", "set"}:
-                return cb.get_int_optional(3)
-            return cb.get_int_optional(2)
-        if action in {"attendance_word", "attendance_source"}:
-            return cb.get_int_optional(3)
-        if action == "attendance_source_mode":
-            return cb.get_int_optional(3)
-        if action == "delete_mode":
-            return cb.get_int_optional(2)
-        if action == "delegate":
-            return cb.get_int_optional(3) if cb.get(2) == "start" else cb.get_int_optional(2)
-        if action == "footer":
-            return cb.get_int_optional(3)
-        if action == "open_course":
-            return cb.get_int_optional(3)
-        return None
-
-    if prefix == "crv":
-        action = cb.get(1)
-        if action == "home":
-            return cb.get_int_optional(2)
-        if action in {"submit_cmd", "rank_cmd", "approver", "template"}:
-            return cb.get_int_optional(3) if cb.length() >= _RESOLVE_PRIVATE_SCOPED_TARGET_CHAT_ID_THRESHOLD_4 else cb.get_int_optional(2)
-        if action in {
-            "toggle",
-            "mode",
-            "board",
-            "lookup",
-            "publish_target",
-            "reward",
-            "fields",
-            "field_add",
-            "field_edit",
-            "field_tog",
-            "reports",
-            "report",
-        }:
-            return cb.get_int_optional(2)
-        return None
-
-    if prefix == "auc":
-        action = cb.get(1)
-        if action in {"home", "toggle", "perm", "points_mode", "list", "detail"}:
-            return cb.get_int_optional(2)
-        return None
-
-    if prefix == "btm":
-        action = cb.get(1)
-        if action in {"home", "toggle", "text", "layout", "generate", "repeat", "button"}:
-            return cb.get_int_optional(2)
-        return None
-
-    if prefix == "gm":
-        action = cb.get(1)
-        if action in {"home", "toggle", "rake", "auto", "delete_mode", "rounds", "help", "detail", "points"}:
-            return cb.get_int_optional(2)
-        return None
-
-    if prefix == "guess":
-        action = cb.get(1)
-        if action in {"home", "create", "list", "settings", "detail", "open", "cancel"}:
-            return cb.get_int_optional(2)
-        return None
-
-    if prefix == "act":
-        action = cb.get(1)
-        if action in {"home", "egg", "chat"}:
-            return cb.get_int_optional(2)
-        return None
-
-    if prefix == "qpub":
-        action = cb.get(1)
-        if action in {"home", "input", "clear", "send"}:
-            return cb.get_int_optional(2)
-        return None
-
-    return None
+    resolvers = {
+        "ali": _resolve_alliance_target,
+        "gfw": _resolve_garage_forward_target,
+        "grg": _resolve_garage_auth_target,
+        "tsearch": _resolve_teacher_search_target,
+        "crv": _resolve_car_review_target,
+    }
+    resolver = resolvers.get(prefix, _resolve_standard_scoped_target)
+    return resolver(cb)
 
 
 def _get_import_state(context: ContextTypes.DEFAULT_TYPE, user_id: int, chat_id: int, *, mode: str) -> dict:
