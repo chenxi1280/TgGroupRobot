@@ -140,6 +140,12 @@ def format_blackjack_round_text(participant: GameParticipant, reveal_dealer: boo
     return "\n".join(lines)
 
 
+def _refill_blackjack_deck(data: dict, player_cards: list[int]) -> list[int]:
+    all_cards = build_blackjack_deck()
+    used = set(player_cards) | set(data.get("dealer_cards") or [])
+    return [card for card in all_cards if card not in used]
+
+
 async def blackjack_hit(
     session: AsyncSession,
     round_obj: GameRound,
@@ -149,12 +155,10 @@ async def blackjack_hit(
     deck = list(data.get("deck") or [])
     player_cards = list(data.get("player_cards") or [])
     if not deck:
-        # 牌组耗尽（极小概率），从完整牌组中移除已使用的牌
-        all_cards = build_blackjack_deck()
-        used = set(player_cards) | set(data.get("dealer_cards") or [])
-        deck = [c for c in all_cards if c not in used]
+        deck = _refill_blackjack_deck(data, player_cards)
         if not deck:
-            return round_obj, participant, await finalize_blackjack_round(session, round_obj, participant, mode="draw")
+            outcome = await finalize_blackjack_round(session, round_obj, participant, mode="draw")
+            return round_obj, participant, outcome
     player_cards.append(deck.pop())
     data["deck"] = deck
     data["player_cards"] = player_cards
@@ -177,6 +181,68 @@ async def blackjack_stand(
     return await finalize_blackjack_round(session, round_obj, participant, mode="stand")
 
 
+def _play_dealer_hand(dealer_cards: list[int], deck: list[int], *, should_play: bool) -> list[int]:
+    if not should_play:
+        return deck
+    while blackjack_total(dealer_cards) < _FINALIZE_BLACKJACK_ROUND_THRESHOLD_17:
+        if not deck:
+            deck = build_blackjack_deck()
+        dealer_cards.append(deck.pop())
+    return deck
+
+
+def _blackjack_outcome(
+    mode: str,
+    *,
+    player_total: int,
+    dealer_total: int,
+    player_natural: bool,
+    dealer_natural: bool,
+) -> tuple[str, Decimal | None]:
+    if mode == "bust":
+        return "lost", None
+    if player_natural and not dealer_natural:
+        return "won", Decimal("2.5")
+    if dealer_natural and not player_natural:
+        return "lost", None
+    if dealer_total > _FINALIZE_BLACKJACK_ROUND_THRESHOLD_21 or player_total > dealer_total:
+        return "won", Decimal("2")
+    if player_total == dealer_total:
+        return "push", None
+    return "lost", None
+
+
+def _store_blackjack_result(round_obj, participant, *, data: dict, deck: list[int], player_cards: list[int], dealer_cards: list[int]) -> None:
+    round_obj.status = "finished"
+    round_obj.settle_at = None
+    round_obj.result_data = {**data, "deck": deck, "player_cards": player_cards, "dealer_cards": dealer_cards}
+    participant.choice_data = {**(participant.choice_data or {}), "player_cards": player_cards, "dealer_cards": dealer_cards}
+
+
+async def _credit_blackjack_points(session, participant, setting, *, points_chat_id: int, multiplier: Decimal) -> int:
+    gross = int((Decimal(participant.bet_points) * multiplier).quantize(Decimal("1")))
+    rake = int((Decimal(gross) * get_rake_ratio_value(setting)).quantize(Decimal("1")))
+    payout = max(0, gross - rake)
+    participant.payout_points = payout
+    await change_points(session, points_chat_id, participant.user_id, amount=payout, txn_type=PointsTxnType.reward.value, reason="黑杰克获胜")
+    if rake > 0 and setting.rake_owner_user_id:
+        await change_points(session, points_chat_id, setting.rake_owner_user_id, amount=rake, txn_type=PointsTxnType.reward.value, reason="黑杰克抽水")
+    return payout
+
+
+async def _apply_blackjack_outcome(session, participant, setting, *, points_chat_id: int, status: str, multiplier: Decimal | None) -> str:
+    participant.status = status
+    if status == "lost":
+        return "❌ 本局失败"
+    if status == "push":
+        payout = participant.bet_points
+        participant.payout_points = payout
+        await change_points(session, points_chat_id, participant.user_id, amount=payout, txn_type=PointsTxnType.reward.value, reason="黑杰克平局返还")
+        return f"🤝 本局平局，返还 {payout} 积分"
+    payout = await _credit_blackjack_points(session, participant, setting, points_chat_id=points_chat_id, multiplier=multiplier)
+    return f"✅ 本局获胜，获得 {payout} 积分"
+
+
 async def finalize_blackjack_round(
     session: AsyncSession,
     round_obj: GameRound,
@@ -190,94 +256,14 @@ async def finalize_blackjack_round(
 
     player_total = blackjack_total(player_cards)
     player_natural = is_blackjack_natural(player_cards)
-    dealer_natural = is_blackjack_natural(dealer_cards)
-    if mode != "bust" and not player_natural:
-        while blackjack_total(dealer_cards) < _FINALIZE_BLACKJACK_ROUND_THRESHOLD_17:
-            if not deck:
-                deck = build_blackjack_deck()
-            dealer_cards.append(deck.pop())
+    deck = _play_dealer_hand(dealer_cards, deck, should_play=mode != "bust" and not player_natural)
     dealer_total = blackjack_total(dealer_cards)
     dealer_natural = is_blackjack_natural(dealer_cards)
-    round_obj.status = "finished"
-    round_obj.settle_at = None
-    round_obj.result_data = {**data, "deck": deck, "player_cards": player_cards, "dealer_cards": dealer_cards}
-    participant.choice_data = {**(participant.choice_data or {}), "player_cards": player_cards, "dealer_cards": dealer_cards}
-
+    _store_blackjack_result(round_obj, participant, data=data, deck=deck, player_cards=player_cards, dealer_cards=dealer_cards)
     setting = await get_or_create_setting(session, round_obj.chat_id)
-    rake_ratio = get_rake_ratio_value(setting)
     points_chat_id = get_round_points_chat_id(round_obj, round_obj.chat_id)
-    payout = 0
-    outcome_label = "❌ 本局失败"
-    if mode == "bust":
-        participant.status = "lost"
-    elif player_natural and not dealer_natural:
-        participant.status = "won"
-        multiplier = Decimal("2.5")
-        gross_payout = int((Decimal(participant.bet_points) * multiplier).quantize(Decimal("1")))
-        rake_amount = int((Decimal(gross_payout) * rake_ratio).quantize(Decimal("1")))
-        payout = max(0, gross_payout - rake_amount)
-        participant.payout_points = payout
-        await change_points(
-            session,
-            points_chat_id,
-            participant.user_id,
-            amount=payout,
-            txn_type=PointsTxnType.reward.value,
-            reason="黑杰克获胜",
-        )
-        if rake_amount > 0 and setting.rake_owner_user_id:
-            await change_points(
-                session,
-                points_chat_id,
-                setting.rake_owner_user_id,
-                amount=rake_amount,
-                txn_type=PointsTxnType.reward.value,
-                reason="黑杰克抽水",
-            )
-        outcome_label = f"✅ 本局获胜，获得 {payout} 积分"
-    elif dealer_natural and not player_natural:
-        participant.status = "lost"
-    elif dealer_total > _FINALIZE_BLACKJACK_ROUND_THRESHOLD_21 or player_total > dealer_total:
-        participant.status = "won"
-        multiplier = Decimal("2")
-        gross_payout = int((Decimal(participant.bet_points) * multiplier).quantize(Decimal("1")))
-        rake_amount = int((Decimal(gross_payout) * rake_ratio).quantize(Decimal("1")))
-        payout = max(0, gross_payout - rake_amount)
-        participant.payout_points = payout
-        await change_points(
-            session,
-            points_chat_id,
-            participant.user_id,
-            amount=payout,
-            txn_type=PointsTxnType.reward.value,
-            reason="黑杰克获胜",
-        )
-        if rake_amount > 0 and setting.rake_owner_user_id:
-            await change_points(
-                session,
-                points_chat_id,
-                setting.rake_owner_user_id,
-                amount=rake_amount,
-                txn_type=PointsTxnType.reward.value,
-                reason="黑杰克抽水",
-            )
-        outcome_label = f"✅ 本局获胜，获得 {payout} 积分"
-    elif player_total == dealer_total:
-        participant.status = "push"
-        payout = participant.bet_points
-        participant.payout_points = payout
-        await change_points(
-            session,
-            points_chat_id,
-            participant.user_id,
-            amount=payout,
-            txn_type=PointsTxnType.reward.value,
-            reason="黑杰克平局返还",
-        )
-        outcome_label = f"🤝 本局平局，返还 {payout} 积分"
-    else:
-        participant.status = "lost"
-
+    status, multiplier = _blackjack_outcome(mode, player_total=player_total, dealer_total=dealer_total, player_natural=player_natural, dealer_natural=dealer_natural)
+    outcome_label = await _apply_blackjack_outcome(session, participant, setting, points_chat_id=points_chat_id, status=status, multiplier=multiplier)
     await session.flush()
     return outcome_label
 
