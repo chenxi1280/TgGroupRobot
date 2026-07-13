@@ -71,30 +71,40 @@ def calculate_next_run_time(task: ScheduledMessageTask, last_sent_timestamp: int
     return next_time
 
 
+def _next_window_opening(
+    local_candidate: dt.datetime,
+    *,
+    start_hour: int,
+    end_hour: int,
+) -> dt.datetime:
+    opening = local_candidate.replace(
+        hour=start_hour,
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
+    if start_hour <= end_hour and local_candidate.hour < start_hour:
+        return opening
+    if start_hour > end_hour and end_hour < local_candidate.hour < start_hour:
+        return opening
+    return opening + dt.timedelta(days=1)
+
+
 def find_next_valid_time(from_timestamp: int, task: ScheduledMessageTask) -> int:
-    """
-    从指定时间开始，寻找下一个在时段窗口内的时间点
+    """返回候选时间或下一个 UTC+8 业务窗口的开始时刻。"""
+    if is_time_in_window(from_timestamp, task.day_start_hour, task.day_end_hour):
+        return from_timestamp
 
-    Args:
-        from_timestamp: 起始时间戳
-        task: 定时消息任务
-
-    Returns:
-        下一个在时段窗口内的 Unix 时间戳
-    """
-    current = from_timestamp
-    interval = max(task.repeat_interval_min * 60, 60)
-
-    # 最多向前查找 30 天（防止无限循环）
-    max_iterations = 30 * 24 * 60 // task.repeat_interval_min
-
-    for _ in range(max_iterations):
-        if is_time_in_window(current, task.day_start_hour, task.day_end_hour):
-            return current
-        current += interval
-
-    # 如果找不到，返回原时间（应该不会发生）
-    return current
+    local_candidate = dt.datetime.fromtimestamp(
+        from_timestamp,
+        dt.UTC,
+    ).astimezone(LOCAL_TIMEZONE)
+    next_opening = _next_window_opening(
+        local_candidate,
+        start_hour=task.day_start_hour,
+        end_hour=task.day_end_hour,
+    )
+    return int(next_opening.astimezone(dt.UTC).timestamp())
 
 
 def datetime_to_timestamp(dt_obj: dt.datetime) -> int:

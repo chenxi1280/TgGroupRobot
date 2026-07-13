@@ -4,11 +4,18 @@ import datetime as dt
 from types import SimpleNamespace
 
 from backend.shared.time_helper import (
+    LOCAL_TIMEZONE,
     calculate_next_run_time,
+    find_next_valid_time,
     format_timestamp,
     is_time_in_window,
     parse_date_time_string,
 )
+
+
+def _local_timestamp(year: int, month: int, day: int, hour: int) -> int:
+    value = dt.datetime(year, month, day, hour, tzinfo=LOCAL_TIMEZONE)
+    return int(value.timestamp())
 
 
 def test_parse_date_time_string_uses_local_timezone_utc8() -> None:
@@ -49,3 +56,61 @@ def test_calculate_next_run_time_respects_future_start() -> None:
         day_end_hour=23,
     )
     assert calculate_next_run_time(task) == task.start_at
+
+
+def test_find_next_valid_time_clamps_daily_candidate_to_next_window_start() -> None:
+    task = SimpleNamespace(
+        repeat_interval_min=1440,
+        day_start_hour=9,
+        day_end_hour=18,
+    )
+    candidate = _local_timestamp(2026, 7, 13, 19)
+
+    result = find_next_valid_time(candidate, task)
+
+    assert result == _local_timestamp(2026, 7, 14, 9)
+    assert is_time_in_window(result, 9, 18)
+
+
+def test_find_next_valid_time_clamps_twelve_hour_candidate() -> None:
+    task = SimpleNamespace(
+        repeat_interval_min=720,
+        day_start_hour=9,
+        day_end_hour=18,
+    )
+    candidate = _local_timestamp(2026, 7, 13, 19)
+
+    assert find_next_valid_time(candidate, task) == _local_timestamp(2026, 7, 14, 9)
+
+
+def test_find_next_valid_time_uses_same_day_opening_before_window() -> None:
+    task = SimpleNamespace(
+        repeat_interval_min=1440,
+        day_start_hour=9,
+        day_end_hour=18,
+    )
+    candidate = _local_timestamp(2026, 7, 13, 7)
+
+    assert find_next_valid_time(candidate, task) == _local_timestamp(2026, 7, 13, 9)
+
+
+def test_find_next_valid_time_clamps_cross_midnight_gap() -> None:
+    task = SimpleNamespace(
+        repeat_interval_min=1440,
+        day_start_hour=22,
+        day_end_hour=6,
+    )
+    candidate = _local_timestamp(2026, 7, 13, 12)
+
+    assert find_next_valid_time(candidate, task) == _local_timestamp(2026, 7, 13, 22)
+
+
+def test_find_next_valid_time_preserves_valid_cross_midnight_candidate() -> None:
+    task = SimpleNamespace(
+        repeat_interval_min=1440,
+        day_start_hour=22,
+        day_end_hour=6,
+    )
+    candidate = _local_timestamp(2026, 7, 14, 2)
+
+    assert find_next_valid_time(candidate, task) == candidate
