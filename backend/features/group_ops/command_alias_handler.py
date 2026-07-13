@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from importlib import import_module
+from typing import Awaitable, Callable
+
 import structlog
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -9,6 +12,22 @@ from backend.shared.services.command_config_service import get_command_alias, is
 
 log = structlog.get_logger(__name__)
 
+CommandHandler = Callable[[Update, ContextTypes.DEFAULT_TYPE], Awaitable[None]]
+COMMAND_TARGETS: dict[str, tuple[str, str]] = {
+    "start": ("backend.features.group_ops.start_handler", "start_command"),
+    "admin": ("backend.features.admin.admin_handler", "admin_command"),
+    "inherit": ("backend.features.invite.account_inherit_handler", "account_inherit_command"),
+    "sign": ("backend.features.points.points_handler", "sign_command"),
+    "points": ("backend.features.points.points_handler", "points_command"),
+    "rank": ("backend.features.points.points_handler", "points_rank_command"),
+    "link": ("backend.features.invite.invite_link_handler", "link_command"),
+    "link_stat": ("backend.features.invite.invite_link_handler", "link_stat_command"),
+    "renew": ("backend.features.subscription.renewal_handler", "renew_command"),
+    "mydata": ("backend.features.nearby.nearby_handler", "mydata_command"),
+    "nearby": ("backend.features.nearby.nearby_handler", "nearby_command"),
+    "list": ("backend.features.nearby.nearby_handler", "list_command"),
+}
+
 
 def _extract_command_key(text: str) -> str | None:
     if not text or not text.startswith("/"):
@@ -16,6 +35,22 @@ def _extract_command_key(text: str) -> str | None:
     command_part = text.split(None, 1)[0]
     command = command_part[1:].split("@", 1)[0]
     return command.lower() if command else None
+
+
+def _build_alias_map(settings: object) -> dict[str, str]:
+    return {
+        alias: key
+        for key in COMMAND_TARGETS
+        if (alias := get_command_alias(settings, key)) is not None
+    }
+
+
+def _load_command_handler(target_key: str) -> CommandHandler | None:
+    target = COMMAND_TARGETS.get(target_key)
+    if target is None:
+        return None
+    module_name, attribute_name = target
+    return getattr(import_module(module_name), attribute_name)
 
 
 async def command_alias_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -35,27 +70,7 @@ async def command_alias_handler(update: Update, context: ContextTypes.DEFAULT_TY
         settings = await get_chat_settings(session, chat.id)
         await session.commit()
 
-    # 只处理别名，不重复处理原始指令
-    alias_map: dict[str, str] = {}
-    for key in (
-        "start",
-        "admin",
-        "inherit",
-        "sign",
-        "points",
-        "rank",
-        "link",
-        "link_stat",
-        "renew",
-        "mydata",
-        "nearby",
-        "list",
-    ):
-        alias = get_command_alias(settings, key)
-        if alias:
-            alias_map[alias] = key
-
-    target_key = alias_map.get(command_text)
+    target_key = _build_alias_map(settings).get(command_text)
     if not target_key:
         return
 
@@ -63,66 +78,8 @@ async def command_alias_handler(update: Update, context: ContextTypes.DEFAULT_TY
         await message.reply_text("该指令已关闭。")
         return
 
-    # 延迟导入，避免循环依赖
-    if target_key == "start":
-        from backend.features.group_ops.start_handler import start_command
-
-        await start_command(update, context)
+    handler = _load_command_handler(target_key)
+    if handler is None:
+        log.warning("command_alias_unhandled", key=target_key, chat_id=chat.id)
         return
-    if target_key == "admin":
-        from backend.features.admin.admin_handler import admin_command
-
-        await admin_command(update, context)
-        return
-    if target_key == "inherit":
-        from backend.features.invite.account_inherit_handler import account_inherit_command
-
-        await account_inherit_command(update, context)
-        return
-    if target_key == "sign":
-        from backend.features.points.points_handler import sign_command
-
-        await sign_command(update, context)
-        return
-    if target_key == "points":
-        from backend.features.points.points_handler import points_command
-
-        await points_command(update, context)
-        return
-    if target_key == "rank":
-        from backend.features.points.points_handler import points_rank_command
-
-        await points_rank_command(update, context)
-        return
-    if target_key == "link":
-        from backend.features.invite.invite_link_handler import link_command
-
-        await link_command(update, context)
-        return
-    if target_key == "link_stat":
-        from backend.features.invite.invite_link_handler import link_stat_command
-
-        await link_stat_command(update, context)
-        return
-    if target_key == "renew":
-        from backend.features.subscription.renewal_handler import renew_command
-
-        await renew_command(update, context)
-        return
-    if target_key == "mydata":
-        from backend.features.nearby.nearby_handler import mydata_command
-
-        await mydata_command(update, context)
-        return
-    if target_key == "nearby":
-        from backend.features.nearby.nearby_handler import nearby_command
-
-        await nearby_command(update, context)
-        return
-    if target_key == "list":
-        from backend.features.nearby.nearby_handler import list_command
-
-        await list_command(update, context)
-        return
-
-    log.warning("command_alias_unhandled", key=target_key, chat_id=chat.id)
+    await handler(update, context)
