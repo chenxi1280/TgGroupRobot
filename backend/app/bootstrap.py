@@ -134,20 +134,19 @@ def _register_routers(app: Application) -> None:
 def _register_common_handlers(app: Application) -> None:
     """注册通用处理器"""
     dispatcher = MessageRouter()
-
     app.add_handler(TypeHandler(Update, _raw_update_probe), group=-99)
+    _register_group_safety_handlers(app)
+    _register_message_dispatchers(app, dispatcher)
+    _register_common_callbacks(app)
+    app.add_handler(ChatMemberHandler(invite_link_join_hint_handler, ChatMemberHandler.CHAT_MEMBER))
+    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, new_members_handler))
 
-    # ==================== Group -5: 系统提示清理 ====================
-    # 这类消息不依赖用户文本内容，必须早于风控处理；否则风控命中后抛出
-    # ApplicationHandlerStop 会导致自动删除完全没有机会执行。
+
+def _register_group_safety_handlers(app: Application) -> None:
     app.add_handler(
         MessageHandler(filters.ChatType.GROUPS & filters.ALL, auto_delete_handler),
         group=-5,
     )
-
-    # ==================== Group -4/-3: 群风控入口（优先于业务处理）====================
-    # PTB 同一个 group 内只执行第一个匹配的 handler；反刷屏和垃圾防护都匹配
-    # filters.ALL，必须拆到不同 group，否则后注册的长内容/违禁词等防护不会运行。
     app.add_handler(
         MessageHandler(filters.ChatType.GROUPS & filters.ALL, anti_flood_message_handler),
         group=-4,
@@ -156,15 +155,13 @@ def _register_common_handlers(app: Application) -> None:
         MessageHandler(filters.ChatType.GROUPS & filters.ALL, anti_spam_message_handler),
         group=-3,
     )
-
-    # 命令别名处理（仅群内，优先于其他命令）
     app.add_handler(
         MessageHandler(filters.ChatType.GROUPS & filters.COMMAND, command_alias_handler),
         group=-2,
     )
 
-    # ==================== Group -2: 统一消息分发入口 ====================
-    # 群聊统一入口：非命令消息都进入分发器，确保媒体消息也能经过等级限制/商城/欢迎等规则
+
+def _register_message_dispatchers(app: Application, dispatcher: MessageRouter) -> None:
     app.add_handler(
         MessageHandler(
             (filters.ChatType.GROUPS & ~filters.COMMAND)
@@ -173,8 +170,6 @@ def _register_common_handlers(app: Application) -> None:
         ),
         group=-2,
     )
-
-    # 私聊 /clear 命令入口（FSM 清空文本/按钮/时间等）
     app.add_handler(
         MessageHandler(
             filters.ChatType.PRIVATE & filters.Regex(r"^/clear(?:@\w+)?\s*$"),
@@ -182,8 +177,6 @@ def _register_common_handlers(app: Application) -> None:
         ),
         group=-2,
     )
-
-    # 私聊媒体消息入口（用于 FSM 场景，例如定时消息编辑媒体）
     media_filters = filters.ChatType.PRIVATE & (
         filters.PHOTO
         | filters.VIDEO
@@ -197,7 +190,8 @@ def _register_common_handlers(app: Application) -> None:
         group=-2,
     )
 
-    # ==================== 按钮回调处理器 ====================
+
+def _register_common_callbacks(app: Application) -> None:
     app.add_handler(CallbackQueryHandler(verify_callback, pattern=r"^vfy:"))
     app.add_handler(CallbackQueryHandler(admin_verify_callback, pattern=r"^adm_vfy:"))
     app.add_handler(CallbackQueryHandler(verification_timeout_help_callback, pattern=r"^vfy_help:"))
@@ -205,10 +199,6 @@ def _register_common_handlers(app: Application) -> None:
     app.add_handler(CallbackQueryHandler(anti_flood_config_callback, pattern=r"^afcfg:"))
     app.add_handler(CallbackQueryHandler(anti_spam_config_callback, pattern=r"^ascfg:"))
     app.add_handler(CallbackQueryHandler(garbage_guard_config_callback, pattern=r"^gg:"))
-
-    # ==================== 新成员加入事件 ====================
-    app.add_handler(ChatMemberHandler(invite_link_join_hint_handler, ChatMemberHandler.CHAT_MEMBER))
-    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, new_members_handler))
 
 
 async def _on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:

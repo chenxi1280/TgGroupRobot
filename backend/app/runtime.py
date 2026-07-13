@@ -8,9 +8,7 @@ import time
 from telegram import Update
 
 from backend.app.bootstrap import (
-    _PID_FILE,
     _check_single_instance,
-    _should_skip_single_instance_lock,
     _validate_schema_or_exit,
     build_application,
     log,
@@ -81,6 +79,42 @@ async def _wait_for_shutdown_signal() -> None:
             loop.remove_signal_handler(shutdown_signal)
 
 
+async def _start_admin_web(app, settings):
+    if not getattr(settings, "admin_web_enabled", True):
+        return None, None
+    import uvicorn
+
+    from backend.features.web_admin.app import create_admin_web_app
+
+    admin_web_app = create_admin_web_app(app.bot_data["db"], settings)
+    config = uvicorn.Config(
+        admin_web_app,
+        host=settings.admin_web_host,
+        port=settings.admin_web_port,
+        log_level="info",
+    )
+    server = uvicorn.Server(config)
+    task = asyncio.create_task(server.serve())
+    log.info(
+        "admin_web_started",
+        host=settings.admin_web_host,
+        port=settings.admin_web_port,
+        url=f"http://{settings.admin_web_host}:{settings.admin_web_port}/admin/",
+    )
+    return server, task
+
+
+async def _stop_admin_web(server, task: asyncio.Task | None) -> None:
+    if server is not None:
+        server.should_exit = True
+    if task is None:
+        return
+    try:
+        await asyncio.wait_for(task, timeout=10)
+    except asyncio.TimeoutError:
+        task.cancel()
+
+
 async def run_bot_with_scheduler() -> None:
     startup_started = time.perf_counter()
     app = build_application()
@@ -115,35 +149,10 @@ async def run_bot_with_scheduler() -> None:
         _register_scheduler_tasks(scheduler)
         await scheduler.start()
         scheduler_started = True
-        if getattr(settings, "admin_web_enabled", True):
-            from backend.features.web_admin.app import create_admin_web_app
-            import uvicorn
-
-            db = app.bot_data["db"]
-            admin_web_app = create_admin_web_app(db, settings)
-            config = uvicorn.Config(
-                admin_web_app,
-                host=settings.admin_web_host,
-                port=settings.admin_web_port,
-                log_level="info",
-            )
-            admin_web_server = uvicorn.Server(config)
-            admin_web_task = asyncio.create_task(admin_web_server.serve())
-            log.info(
-                "admin_web_started",
-                host=settings.admin_web_host,
-                port=settings.admin_web_port,
-                url=f"http://{settings.admin_web_host}:{settings.admin_web_port}/admin/",
-            )
+        admin_web_server, admin_web_task = await _start_admin_web(app, settings)
         await _wait_for_shutdown_signal()
     finally:
-        if admin_web_server is not None:
-            admin_web_server.should_exit = True
-        if admin_web_task is not None:
-            try:
-                await asyncio.wait_for(admin_web_task, timeout=10)
-            except asyncio.TimeoutError:
-                admin_web_task.cancel()
+        await _stop_admin_web(admin_web_server, admin_web_task)
         if scheduler_started:
             await scheduler.stop()
         if polling_started and app.updater is not None:
