@@ -37,8 +37,8 @@ async def execute_flood_punishment(
     context: ContextTypes.DEFAULT_TYPE,
     chat_id: int,
     actor_id: int,
-    action: str,
-    *,
+    *, action: str,
+
     tracker,
     message_ids: list[int] | None = None,
     cleanup_messages: bool = False,
@@ -131,7 +131,7 @@ async def anti_flood_message_handler(update: Update, context: ContextTypes.DEFAU
         context,
         chat.id,
         user.id if user is not None else None,
-        True if explicit_garbage else settings.anti_flood_exempt_admin,
+        exempt_admin=True if explicit_garbage else settings.anti_flood_exempt_admin,
     ):
         log.info("flood_skip_admin_exempt", chat_id=chat.id, user_id=user.id if user is not None else None)
         return
@@ -156,7 +156,7 @@ async def anti_flood_message_handler(update: Update, context: ContextTypes.DEFAU
         chat.id,
         actor_id,
         max_messages,
-        window_seconds,
+        time_window_seconds=window_seconds,
     )
 
     if flood_result.is_flooding:
@@ -212,7 +212,7 @@ async def anti_flood_message_handler(update: Update, context: ContextTypes.DEFAU
             context,
             chat.id,
             actor_id,
-            settings.anti_flood_action,
+            requested_action=settings.anti_flood_action,
             sender_chat_id=sender_chat.id if sender_chat is not None else None,
         )
         action = resolution.action
@@ -276,7 +276,7 @@ async def anti_flood_message_handler(update: Update, context: ContextTypes.DEFAU
                 "🚫 检测到刷屏行为！",
                 user.mention_html() if user is not None else "频道身份发言",
                 f"{flood_result.time_span:.1f} 秒内发送了 {flood_result.message_count} 条消息",
-                action_text,
+                action_label=action_text,
                 fallback_reason=fallback_reason,
             )
 

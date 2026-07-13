@@ -20,7 +20,7 @@ async def handle_verification_input(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session,
-    state,
+    *, state,
     message_text: str,
 ) -> None:
     if update.effective_user is None or update.effective_message is None:
@@ -53,7 +53,7 @@ async def handle_verification_input(
     await session.commit()
     return_rule = state.state_data.get("return_rule") if isinstance(state.state_data, dict) else None
     if return_rule in {"button", "math", "mute"}:
-        await admin_handler_instance()._show_verification_rule_detail(update, context, target_chat_id, return_rule)
+        await admin_handler_instance()._show_verification_rule_detail(update, context, target_chat_id, mode=return_rule)
         return
     await admin_handler_instance()._show_verification_rules_menu(update, context, target_chat_id)
 

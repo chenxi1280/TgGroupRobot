@@ -38,7 +38,7 @@ def _append_pending_source_result(lines: list[str], idx: int, profile) -> None:
         lines.append(f"   原帖：{source_url}")
 
 
-def _append_bound_teacher_result(lines: list[str], idx: int, profile, tg_user, *, badge: str) -> None:
+def _append_bound_teacher_result(lines: list[str], idx: int, profile, *, tg_user,  badge: str) -> None:
     labels = " ".join(getattr(profile, "labels", None) or [])
     extra = " / ".join(part for part in [labels, profile.region_text, profile.price_text] if part)
     score_extra = ""
@@ -68,7 +68,7 @@ def format_teacher_keyword_search(keyword: str, rows, *, badge: str, fallback_no
         if getattr(profile, "source_status", None) == "pending_bind":
             _append_pending_source_result(lines, idx, profile)
             continue
-        _append_bound_teacher_result(lines, idx, profile, tg_user, badge=badge)
+        _append_bound_teacher_result(lines, idx, profile, tg_user=tg_user, badge=badge)
     return "\n".join(lines)
 
 

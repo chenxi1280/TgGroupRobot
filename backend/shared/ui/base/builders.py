@@ -167,7 +167,7 @@ class KeyboardBuilder:
         current_page: int,
         total_items: int,
         page_size: int,
-        list_action: str = "list",
+        *, list_action: str = "list",
     ) -> "KeyboardBuilder":
         """添加分页导航
 
@@ -246,7 +246,7 @@ class PaginatedListBuilder(KeyboardBuilder, Generic[T]):
         callback_prefix: str,
         item_formatter: Callable[[T], str],
         item_action: str = "detail",
-        chat_id: int | None = None,
+        *, chat_id: int | None = None,
     ):
         """初始化分页列表构建器
 
@@ -265,7 +265,7 @@ class PaginatedListBuilder(KeyboardBuilder, Generic[T]):
         items: list[T],
         page: int = 0,
         page_size: int = 5,
-        get_item_id: Callable[[T], int] | None = None,
+        *, get_item_id: Callable[[T], int] | None = None,
     ) -> "PaginatedListBuilder[T]":
         """添加分页项目
 
@@ -291,6 +291,6 @@ class PaginatedListBuilder(KeyboardBuilder, Generic[T]):
                 self.add_button(label, self.item_action)
 
         # 添加分页导航
-        self.add_pagination(page, len(items), page_size, "list")
+        self.add_pagination(page, len(items), page_size, list_action="list")
 
         return self

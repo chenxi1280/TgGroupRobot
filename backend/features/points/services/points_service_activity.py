@@ -18,7 +18,7 @@ async def _get_or_create_daily_stats(
     session: AsyncSession,
     chat_id: int,
     user_id: int,
-    stat_date: dt.date,
+    *, stat_date: dt.date,
 ) -> UserDailyStats:
     res = await session.execute(
         select(UserDailyStats).where(
@@ -41,7 +41,7 @@ async def sign_in(
     session: AsyncSession,
     chat_id: int,
     user_id: int,
-    points: int,
+    *, points: int,
     consecutive_days: int = 0,
     consecutive_bonus: int = 0,
 ) -> SignResult:
@@ -59,7 +59,7 @@ async def sign_in(
     )
     if res.scalar_one_or_none() is not None:
         bal = await get_balance(session, chat_id, user_id)
-        stats = await _get_or_create_daily_stats(session, chat_id, user_id, today)
+        stats = await _get_or_create_daily_stats(session, chat_id, user_id, stat_date=today)
         return SignResult(
             success=False,
             balance=bal,
@@ -68,7 +68,7 @@ async def sign_in(
             reason="already_signed",
         )
 
-    stats = await _get_or_create_daily_stats(session, chat_id, user_id, today)
+    stats = await _get_or_create_daily_stats(session, chat_id, user_id, stat_date=today)
     yesterday_sign = await session.execute(
         select(SignInLog).where(
             and_(
@@ -145,7 +145,7 @@ async def add_message_points(
     session: AsyncSession,
     chat_id: int,
     user_id: int,
-    points: int,
+    *, points: int,
     daily_limit: int | None = None,
     min_length: int | None = None,
     message_length: int = 0,
@@ -155,7 +155,7 @@ async def add_message_points(
         return PointsResult(success=False, balance=bal, reason="message_too_short")
 
     today = dt.datetime.now(dt.UTC).date()
-    stats = await _get_or_create_daily_stats(session, chat_id, user_id, today)
+    stats = await _get_or_create_daily_stats(session, chat_id, user_id, stat_date=today)
 
     if daily_limit is not None and stats.message_points_earned >= daily_limit:
         bal = await get_balance(session, chat_id, user_id)
@@ -189,11 +189,11 @@ async def add_invite_points(
     session: AsyncSession,
     chat_id: int,
     inviter_user_id: int,
-    points: int,
+    *, points: int,
     daily_limit: int | None = None,
 ) -> PointsResult:
     today = dt.datetime.now(dt.UTC).date()
-    stats = await _get_or_create_daily_stats(session, chat_id, inviter_user_id, today)
+    stats = await _get_or_create_daily_stats(session, chat_id, inviter_user_id, stat_date=today)
 
     if daily_limit is not None and stats.invite_points_earned >= daily_limit:
         bal = await get_balance(session, chat_id, inviter_user_id)

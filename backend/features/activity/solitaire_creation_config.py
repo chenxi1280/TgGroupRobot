@@ -56,7 +56,7 @@ async def solitaire_create_config_message(update: Update, context: ContextTypes.
                 deadline=deadline,
             )
             if result.success:
-                published = await _publish_created_solitaire(update, context, session, result, target_chat_id, chat.id, user.id)
+                published = await _publish_created_solitaire(update, context, session, result=result, target_chat_id=target_chat_id, state_chat_id=chat.id, user_id=user.id)
                 if not published:
                     await update.effective_message.reply_text("❌ 接龙创建失败，请检查机器人在目标群的发言权限后重试。")
                     return WAIT_CONFIG
@@ -124,7 +124,7 @@ async def _publish_created_solitaire(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session,
-    result,
+    *, result,
     target_chat_id: int,
     state_chat_id: int,
     user_id: int,

@@ -13,7 +13,7 @@ async def handle_points_extended_input(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session,
-    state,
+    *, state,
     message_text: str,
 ) -> None:
     if update.effective_user is None or update.effective_message is None:
@@ -35,8 +35,8 @@ async def handle_points_extended_input(
         update,
         context,
         session,
-        state,
-        message_text,
+        state=state,
+        message_text=message_text,
         target_chat_id=target_chat_id,
     ):
         return
@@ -45,8 +45,8 @@ async def handle_points_extended_input(
         update,
         context,
         session,
-        state,
-        message_text,
+        state=state,
+        message_text=message_text,
         target_chat_id=target_chat_id,
     ):
         return
@@ -55,8 +55,8 @@ async def handle_points_extended_input(
         update,
         context,
         session,
-        state,
-        message_text,
+        state=state,
+        message_text=message_text,
         target_chat_id=target_chat_id,
     ):
         return

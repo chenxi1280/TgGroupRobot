@@ -32,7 +32,7 @@ async def _check_member_profile(
     app,
     _session,
     settings: ChatSettings,
-    member: ChatMember,
+    *, member: ChatMember,
     stored_user: TgUser,
 ) -> bool:
     try:
@@ -65,9 +65,9 @@ async def _check_member_profile(
         context,
         chat,
         current_user,
-        settings,
-        old_username,
-        old_name,
+        settings=settings,
+        old_username=old_username,
+        old_name=old_name,
     )
 
     now = dt.datetime.now(dt.UTC)
@@ -138,7 +138,7 @@ class RenameMonitorTask(ScheduledTask):
 
                 for member, stored_user in member_result.all():
                     checked += 1
-                    if await _check_member_profile(app, session, settings, member, stored_user):
+                    if await _check_member_profile(app, session, settings, member=member, stored_user=stored_user):
                         changed += 1
                     if self.request_pause_seconds > 0:
                         await asyncio.sleep(self.request_pause_seconds)

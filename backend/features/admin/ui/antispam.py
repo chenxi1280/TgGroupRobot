@@ -196,7 +196,7 @@ def _two_button_row(
     left_text: str,
     left_callback: str,
     right_text: str,
-    right_callback: str,
+    *, right_callback: str,
 ) -> list[InlineKeyboardButton]:
     return [
         InlineKeyboardButton(left_text, callback_data=left_callback),
@@ -208,7 +208,7 @@ def _condition_rows(
     settings,
     chat_id: int,
     rule_id: str,
-    banned_word_count: int = 0,
+    *, banned_word_count: int = 0,
 ) -> list[list[InlineKeyboardButton]]:
     rule = get_rule_config(settings, rule_id)
     if rule_id == "banned_words":
@@ -219,7 +219,7 @@ def _condition_rows(
                 "⚙️ 内容长度:",
                 f"gg:cycle:{rule_id}:message_max_length:{chat_id}",
                 f"{rule['message_max_length']} 字",
-                f"gg:cycle:{rule_id}:message_max_length:{chat_id}",
+                right_callback=f"gg:cycle:{rule_id}:message_max_length:{chat_id}",
             )
         ]
     if rule_id == "long_name":
@@ -228,7 +228,7 @@ def _condition_rows(
                 "⚙️ 昵称长度:",
                 f"gg:cycle:{rule_id}:name_max_length:{chat_id}",
                 f"{rule['name_max_length']} 字",
-                f"gg:cycle:{rule_id}:name_max_length:{chat_id}",
+                right_callback=f"gg:cycle:{rule_id}:name_max_length:{chat_id}",
             )
         ]
     if rule_id == "spam_user":
@@ -237,16 +237,16 @@ def _condition_rows(
         return _flood_condition_rows(rule, chat_id, rule_id)
     if rule_id == "manual_warning":
         return [
-            _two_button_row("⚙️ 警告词:", f"gg:noop:{chat_id}", "warn / 警告", f"gg:noop:{chat_id}")
+            _two_button_row("⚙️ 警告词:", f"gg:noop:{chat_id}", "warn / 警告", right_callback=f"gg:noop:{chat_id}")
         ]
     if rule_id == "leave_ban":
         return [
-            _two_button_row("⚙️ 离群动作:", f"gg:noop:{chat_id}", "自动封禁", f"gg:noop:{chat_id}")
+            _two_button_row("⚙️ 离群动作:", f"gg:noop:{chat_id}", "自动封禁", right_callback=f"gg:noop:{chat_id}")
         ]
     if rule_id == "quick_reply_actions":
         return quick_reply_condition_rows(rule, chat_id, rule_id)
     return [
-            _two_button_row("⚙️ 检测条件:", f"gg:noop:{chat_id}", "固定检测", f"gg:noop:{chat_id}")
+            _two_button_row("⚙️ 检测条件:", f"gg:noop:{chat_id}", "固定检测", right_callback=f"gg:noop:{chat_id}")
         ]
 
 
@@ -256,7 +256,7 @@ def _banned_words_condition_rows(chat_id: int, banned_word_count: int) -> list[l
             "⚙️ 检测条件:",
             f"banned_word:list:{chat_id}",
             f"{banned_word_count} 个违禁词",
-            f"banned_word:list:{chat_id}",
+            right_callback=f"banned_word:list:{chat_id}",
         ),
         [InlineKeyboardButton("➕ 添加违禁词", callback_data=f"banned_word:add:{chat_id}")],
     ]
@@ -268,13 +268,13 @@ def _spam_user_condition_rows(rule: dict, chat_id: int, rule_id: str) -> list[li
             "⚙️ 无用户名:",
             f"gg:toggle:{rule_id}:check_no_username:{chat_id}",
             _status(bool(rule.get("check_no_username"))),
-            f"gg:toggle:{rule_id}:check_no_username:{chat_id}",
+            right_callback=f"gg:toggle:{rule_id}:check_no_username:{chat_id}",
         ),
         _two_button_row(
             "⚙️ 外文昵称:",
             f"gg:toggle:{rule_id}:check_foreign_name:{chat_id}",
             _status(bool(rule.get("check_foreign_name"))),
-            f"gg:toggle:{rule_id}:check_foreign_name:{chat_id}",
+            right_callback=f"gg:toggle:{rule_id}:check_foreign_name:{chat_id}",
         ),
     ]
 
@@ -285,24 +285,24 @@ def _flood_condition_rows(rule: dict, chat_id: int, rule_id: str) -> list[list[I
             "⚙️ 触发条数:",
             f"gg:cycle:{rule_id}:messages:{chat_id}",
             f"{rule['messages']} 条",
-            f"gg:cycle:{rule_id}:messages:{chat_id}",
+            right_callback=f"gg:cycle:{rule_id}:messages:{chat_id}",
         ),
         _two_button_row(
             "⚙️ 时间窗口:",
             f"gg:cycle:{rule_id}:seconds:{chat_id}",
             f"{rule['seconds']} 秒",
-            f"gg:cycle:{rule_id}:seconds:{chat_id}",
+            right_callback=f"gg:cycle:{rule_id}:seconds:{chat_id}",
         ),
     ]
 
 
-def garbage_guard_rule_keyboard(settings, chat_id: int, rule_id: str, banned_word_count: int = 0) -> InlineKeyboardMarkup:
+def garbage_guard_rule_keyboard(settings, chat_id: int, rule_id: str, *, banned_word_count: int = 0) -> InlineKeyboardMarkup:
     rule = get_rule_config(settings, rule_id)
     rows: list[list[InlineKeyboardButton]] = [_status_row(rule, chat_id, rule_id)]
-    rows.extend(_condition_rows(settings, chat_id, rule_id, banned_word_count))
+    rows.extend(_condition_rows(settings, chat_id, rule_id, banned_word_count=banned_word_count))
 
     if rule_id == "quick_reply_actions":
-        rows.extend(quick_reply_action_rows(rule, chat_id, rule_id, _seconds_label(int(rule["mute_seconds"]))))
+        rows.extend(quick_reply_action_rows(rule, chat_id, rule_id, mute_seconds_label=_seconds_label(int(rule["mute_seconds"]))))
         return InlineKeyboardMarkup(rows)
 
     rows.extend(_standard_rule_action_rows(rule, chat_id, rule_id))
@@ -316,7 +316,7 @@ def _status_row(rule: dict, chat_id: int, rule_id: str) -> list[InlineKeyboardBu
         "⚙️ 状态:",
         f"gg:toggle:{rule_id}:enabled:{chat_id}",
         _status(bool(rule.get("enabled"))),
-        f"gg:toggle:{rule_id}:enabled:{chat_id}",
+        right_callback=f"gg:toggle:{rule_id}:enabled:{chat_id}",
     )
 
 
@@ -327,7 +327,7 @@ def _standard_rule_action_rows(rule: dict, chat_id: int, rule_id: str) -> list[l
             "⚙️ 删除消息:",
             f"gg:toggle:{rule_id}:delete_message:{chat_id}",
             _status(bool(rule.get("delete_message"))),
-            f"gg:toggle:{rule_id}:delete_message:{chat_id}",
+            right_callback=f"gg:toggle:{rule_id}:delete_message:{chat_id}",
         )
     )
     rows.append(
@@ -335,7 +335,7 @@ def _standard_rule_action_rows(rule: dict, chat_id: int, rule_id: str) -> list[l
             "⚙️ 警告成员:",
             f"gg:toggle:{rule_id}:warn_enabled:{chat_id}",
             _status(bool(rule.get("warn_enabled"))),
-            f"gg:toggle:{rule_id}:warn_enabled:{chat_id}",
+            right_callback=f"gg:toggle:{rule_id}:warn_enabled:{chat_id}",
         )
     )
     if bool(rule.get("warn_enabled")):
@@ -356,7 +356,7 @@ def _warn_threshold_row(rule: dict, chat_id: int, rule_id: str) -> list[InlineKe
         "⚙️ 警告次数:",
         f"gg:cycle:{rule_id}:warn_threshold:{chat_id}",
         f"警告{rule['warn_threshold']}次",
-        f"gg:cycle:{rule_id}:warn_threshold:{chat_id}",
+        right_callback=f"gg:cycle:{rule_id}:warn_threshold:{chat_id}",
     )
 
 
@@ -365,7 +365,7 @@ def _mute_enabled_row(rule: dict, chat_id: int, rule_id: str) -> list[InlineKeyb
         "⚙️ 禁言成员:",
         f"gg:toggle:{rule_id}:mute_enabled:{chat_id}",
         _status(bool(rule.get("mute_enabled"))),
-        f"gg:toggle:{rule_id}:mute_enabled:{chat_id}",
+        right_callback=f"gg:toggle:{rule_id}:mute_enabled:{chat_id}",
     )
 
 
@@ -374,7 +374,7 @@ def _mute_duration_row(rule: dict, chat_id: int, rule_id: str) -> list[InlineKey
         "⚙️ 禁言时长:",
         f"gg:cycle:{rule_id}:mute_seconds:{chat_id}",
         _seconds_label(int(rule["mute_seconds"])),
-        f"gg:cycle:{rule_id}:mute_seconds:{chat_id}",
+        right_callback=f"gg:cycle:{rule_id}:mute_seconds:{chat_id}",
     )
 
 
@@ -383,7 +383,7 @@ def _kick_enabled_row(rule: dict, chat_id: int, rule_id: str) -> list[InlineKeyb
         "⚙️ 踢出成员:",
         f"gg:toggle:{rule_id}:kick_enabled:{chat_id}",
         _status(bool(rule.get("kick_enabled"))),
-        f"gg:toggle:{rule_id}:kick_enabled:{chat_id}",
+        right_callback=f"gg:toggle:{rule_id}:kick_enabled:{chat_id}",
     )
 
 
@@ -393,7 +393,7 @@ def _notice_enabled_row(rule: dict, chat_id: int, rule_id: str) -> list[InlineKe
         "⚙️ 提示消息:",
         f"gg:toggle:{rule_id}:notice_enabled:{chat_id}",
         notice_label,
-        f"gg:toggle:{rule_id}:notice_enabled:{chat_id}",
+        right_callback=f"gg:toggle:{rule_id}:notice_enabled:{chat_id}",
     )
 
 
@@ -402,7 +402,7 @@ def _notice_delete_row(rule: dict, chat_id: int, rule_id: str) -> list[InlineKey
         "⚙️ 提示删除:",
         f"gg:cycle:{rule_id}:notice_delete_seconds:{chat_id}",
         f"{rule['notice_delete_seconds']}秒",
-        f"gg:cycle:{rule_id}:notice_delete_seconds:{chat_id}",
+        right_callback=f"gg:cycle:{rule_id}:notice_delete_seconds:{chat_id}",
     )
 
 
@@ -412,11 +412,11 @@ def _whitelist_row(settings, chat_id: int) -> list[InlineKeyboardButton]:
         "⚙️ 白名单用户:",
         f"gg:whitelist:{chat_id}",
         f"{whitelist_count}人",
-        f"gg:whitelist:{chat_id}",
+        right_callback=f"gg:whitelist:{chat_id}",
     )
 
 
-def format_garbage_rule_text(chat_title: str, settings, rule_id: str, banned_word_count: int = 0) -> str:
+def format_garbage_rule_text(chat_title: str, settings, rule_id: str, *, banned_word_count: int = 0) -> str:
     definition = RULE_DEFINITIONS[rule_id]
     rule = get_rule_config(settings, rule_id)
     return "\n".join(

@@ -30,7 +30,7 @@ class ModuleSettingsService:
         session: AsyncSession,
         chat_id: int,
         chat_type: str | None = None,
-        title: str | None = None,
+        *, title: str | None = None,
     ) -> TgChat:
         inferred_type = cls._infer_chat_type(chat_id, chat_type)
         chat = await ServiceBase._get_by_id(session, TgChat, chat_id)

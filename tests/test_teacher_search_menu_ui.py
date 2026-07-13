@@ -379,7 +379,7 @@ async def test_teacher_search_footer_text_button_starts_text_state(monkeypatch):
         update,
         context,
         -1001,
-        CallbackParser.parse("tsearch:footer:text:-1001"),
+        callback_data=CallbackParser.parse("tsearch:footer:text:-1001"),
     )
 
     assert captured["state"] == (
@@ -411,7 +411,7 @@ async def test_teacher_search_footer_link_button_returns_to_text_only_menu(monke
         update,
         context,
         -1001,
-        CallbackParser.parse("tsearch:footer:link:-1001"),
+        callback_data=CallbackParser.parse("tsearch:footer:link:-1001"),
     )
 
     assert captured["answer"] == "底部按钮不需要配置链接，点击后会直接触发老师搜索。"
@@ -438,7 +438,7 @@ async def test_teacher_search_delegate_button_starts_short_target_state(monkeypa
         update,
         context,
         -1001,
-        CallbackParser.parse("tsearch:delegate:start:-1001"),
+        callback_data=CallbackParser.parse("tsearch:delegate:start:-1001"),
     )
 
     assert captured["state"] == (
@@ -469,7 +469,7 @@ async def test_teacher_search_attendance_manual_button_starts_short_target_state
         update,
         context,
         -1001,
-        CallbackParser.parse("tsearch:attendance:manual:-1001"),
+        callback_data=CallbackParser.parse("tsearch:attendance:manual:-1001"),
     )
 
     assert captured["state"] == (
@@ -501,7 +501,7 @@ async def test_teacher_search_attendance_mode_callback_updates_setting(monkeypat
         update,
         context,
         -1001,
-        CallbackParser.parse("tsearch:attendance_mode:set:-1001:keyword"),
+        callback_data=CallbackParser.parse("tsearch:attendance_mode:set:-1001:keyword"),
     )
 
     assert captured["updates"] == (-1001, {"attendance_mode": "keyword"})
@@ -533,7 +533,7 @@ async def test_teacher_search_attendance_source_set_opens_source_mode_page(monke
         update,
         context,
         -1001,
-        CallbackParser.parse("tsearch:attendance_source:set:-1001:-2002"),
+        callback_data=CallbackParser.parse("tsearch:attendance_source:set:-1001:-2002"),
     )
 
     assert captured["permission"] == (-2002, 123, "manage")
@@ -565,7 +565,7 @@ async def test_teacher_search_attendance_source_mode_callback_links_group_and_se
         update,
         context,
         -1001,
-        CallbackParser.parse("tsearch:attendance_source_mode:set:-1001:-2002:keyword"),
+        callback_data=CallbackParser.parse("tsearch:attendance_source_mode:set:-1001:-2002:keyword"),
     )
 
     assert captured["permission"] == (-2002, 123, "manage")
@@ -597,7 +597,7 @@ async def test_teacher_search_force_location_toggle_enables_nearby(monkeypatch):
         update,
         context,
         -1001,
-        CallbackParser.parse("tsearch:toggle:force_loc:-1001:1"),
+        callback_data=CallbackParser.parse("tsearch:toggle:force_loc:-1001:1"),
     )
 
     assert captured["updates"] == (
@@ -641,9 +641,9 @@ async def test_teacher_search_footer_text_input_updates_label(monkeypatch):
         update,
         context,
         session,
-        state,
-        -1001,
-        "车库入口",
+        state=state,
+        target_chat_id=-1001,
+        text_value="车库入口",
     )
 
     assert handled is True
@@ -683,9 +683,9 @@ async def test_teacher_search_footer_link_input_clears_legacy_state(monkeypatch)
         update,
         context,
         session,
-        state,
-        -1001,
-        "https://example.com/h5/teacher-search",
+        state=state,
+        target_chat_id=-1001,
+        text_value="https://example.com/h5/teacher-search",
     )
 
     assert handled is True
@@ -825,7 +825,7 @@ async def test_teacher_member_location_input_only_saves_member_location(monkeypa
     monkeypatch.setattr("backend.platform.state.state_service.clear_user_state", fake_clear_user_state)
     monkeypatch.setattr("backend.platform.state.state_service.set_user_state", fake_set_user_state)
 
-    await handle_teacher_member_location_input(update, context, session, state, "")
+    await handle_teacher_member_location_input(update, context, session, state=state, message_text="")
 
     assert captured["cleared"] == (123, 123)
     assert captured["restored"] == (123, 123, "selected_chat", {"managed_chat_id": -2002})
@@ -940,8 +940,8 @@ async def test_teacher_self_location_button_starts_location_state(monkeypatch):
     async def fake_is_teacher(session, chat_id: int, user_id: int):
         return True
 
-    async def fake_start_text_input_state(context, chat_id: int, user_id: int, state_type: str, state_data: dict):
-        captured["state"] = (chat_id, user_id, state_type, state_data)
+    async def fake_start_text_input_state(context, chat_id: int, user_id: int, *, state_type: str, payload: dict):
+        captured["state"] = (chat_id, user_id, state_type, payload)
 
     async def fake_safe_edit(update, text, reply_markup=None):
         captured["text"] = text
@@ -1056,7 +1056,7 @@ async def test_teacher_self_location_input_updates_teacher_profile_only(monkeypa
     monkeypatch.setattr("backend.features.admin.garage.teacher_self.clear_user_state", fake_clear_user_state)
     monkeypatch.setattr("backend.features.admin.garage.teacher_self.show_teacher_self_home", fake_show_home)
 
-    await handle_teacher_self_input(update, context, session, state, "")
+    await handle_teacher_self_input(update, context, session, state=state, message_text="")
 
     assert captured["teacher_profile"] == {
         "chat_id": -1001,
@@ -1115,9 +1115,9 @@ async def test_teacher_search_attendance_target_input_marks_teacher(monkeypatch)
         update,
         context,
         session,
-        state,
-        -1001,
-        "@teacher_a",
+        state=state,
+        target_chat_id=-1001,
+        text_value="@teacher_a",
     )
 
     assert handled is True
@@ -1158,9 +1158,9 @@ async def test_teacher_search_footer_link_input_ignores_invalid_url(monkeypatch)
         update,
         context,
         session,
-        state,
-        -1001,
-        "ftp://example.com",
+        state=state,
+        target_chat_id=-1001,
+        text_value="ftp://example.com",
     )
 
     assert handled is True
@@ -1203,9 +1203,9 @@ async def test_teacher_search_footer_text_input_clear(monkeypatch):
         update,
         context,
         session,
-        state,
-        -1001,
-        "/clear",
+        state=state,
+        target_chat_id=-1001,
+        text_value="/clear",
     )
 
     assert handled is True
@@ -1249,9 +1249,9 @@ async def test_teacher_search_delegate_target_input_starts_short_location_state(
         update,
         context,
         session,
-        state,
-        -1001,
-        "@teacher_a",
+        state=state,
+        target_chat_id=-1001,
+        text_value="@teacher_a",
     )
 
     assert handled is True
@@ -1299,9 +1299,9 @@ async def test_teacher_search_delegate_location_input_requires_location_message(
         update,
         context,
         session,
-        state,
-        -1001,
-        "39.1,116.1",
+        state=state,
+        target_chat_id=-1001,
+        text_value="39.1,116.1",
     )
 
     assert handled is True
@@ -1353,9 +1353,9 @@ async def test_teacher_search_delegate_location_input_saves_telegram_location(mo
         update,
         context,
         session,
-        state,
-        -1001,
-        "",
+        state=state,
+        target_chat_id=-1001,
+        text_value="",
     )
 
     assert handled is True
@@ -1420,9 +1420,9 @@ async def test_teacher_search_delegate_location_input_saves_shared_map_venue(mon
         update,
         context,
         session,
-        state,
-        -1001,
-        "",
+        state=state,
+        target_chat_id=-1001,
+        text_value="",
     )
 
     assert handled is True
@@ -1476,9 +1476,9 @@ async def test_teacher_search_delegate_location_input_saves_google_maps_link(mon
         update,
         context,
         session,
-        state,
-        -1001,
-        "https://www.google.com/maps/place/Test/@31.2304,121.4737,17z",
+        state=state,
+        target_chat_id=-1001,
+        text_value="https://www.google.com/maps/place/Test/@31.2304,121.4737,17z",
     )
 
     assert handled is True
@@ -1537,9 +1537,9 @@ async def test_teacher_search_delegate_location_input_expands_short_google_maps_
         update,
         context,
         session,
-        state,
-        -1001,
-        "https://maps.app.goo.gl/abc123",
+        state=state,
+        target_chat_id=-1001,
+        text_value="https://maps.app.goo.gl/abc123",
     )
 
     assert handled is True

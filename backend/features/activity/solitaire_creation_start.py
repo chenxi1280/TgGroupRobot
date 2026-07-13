@@ -33,7 +33,7 @@ async def solitaire_create_start_callback(update: Update, context: ContextTypes.
     user = update.effective_user
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
-        await set_user_state(session, chat.id, user.id, "solitaire_create", {"target_chat_id": target_chat_id})
+        await set_user_state(session, chat.id, user.id, state_type="solitaire_create", state_data={"target_chat_id": target_chat_id})
         await session.commit()
 
     deadline_example = next_top_of_hour(days_offset=1).astimezone(LOCAL_TIMEZONE)

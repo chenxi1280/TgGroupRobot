@@ -194,7 +194,7 @@ async def test_bottom_button_detail_shows_bound_event(monkeypatch):
     update = SimpleNamespace(effective_user=SimpleNamespace(id=42))
     context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(_FakeSession())}))
 
-    await admin_handler._admin_handler._show_bottom_button_detail(update, context, -1001, 7)
+    await admin_handler._admin_handler._show_bottom_button_detail(update, context, -1001, layout_id=7)
 
     rows = [[button.text for button in row] for row in captured["keyboard"]]
     assert "绑定事件：事件：积分排行榜" in captured["text"]
@@ -229,7 +229,7 @@ async def test_bottom_button_event_menu_renders_categories(monkeypatch):
     update = SimpleNamespace(effective_user=SimpleNamespace(id=42))
     context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(_FakeSession())}))
 
-    await admin_handler._admin_handler._show_bottom_button_event_menu(update, context, -1001, 7)
+    await admin_handler._admin_handler._show_bottom_button_event_menu(update, context, -1001, layout_id=7)
 
     rows = [[button.text for button in row] for row in captured["keyboard"]]
     callbacks = [[button.callback_data for button in row] for row in captured["keyboard"]]
@@ -275,7 +275,7 @@ async def test_bottom_button_event_list_renders_category_events(monkeypatch):
     update = SimpleNamespace(effective_user=SimpleNamespace(id=42))
     context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(_FakeSession())}))
 
-    await admin_handler._admin_handler._show_bottom_button_event_list(update, context, -1001, 7, "points")
+    await admin_handler._admin_handler._show_bottom_button_event_list(update, context, -1001, layout_id=7, category="points")
 
     rows = [[button.text for button in row] for row in captured["keyboard"]]
     callbacks = [[button.callback_data for button in row] for row in captured["keyboard"]]
@@ -298,6 +298,6 @@ async def test_unimplemented_feature_redirects_auction_todo_to_real_menu(monkeyp
     context = SimpleNamespace()
     callback_data = CallbackParser.parse("adm:todo:-1009900:auction")
 
-    await admin_handler._admin_handler._show_unimplemented_feature(update, context, -1009900, callback_data)
+    await admin_handler._admin_handler._show_unimplemented_feature(update, context, -1009900, callback_data=callback_data)
 
     assert called == {"chat_id": -1009900}

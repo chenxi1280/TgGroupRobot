@@ -59,14 +59,13 @@ async def apply_verification_punishment(
     context: ContextTypes.DEFAULT_TYPE,
     chat_id: int,
     user_id: int,
-    settings,
-    *,
+    *, settings,
     action: str | None = None,
     mute_seconds: int | None = None,
 ) -> str:
     selected = action or getattr(settings, "verification_timeout_action", "mute") or "mute"
     if selected == "none":
-        await unrestrict_and_notify(context, chat_id, user_id, getattr(settings, "language", "zh-CN"))
+        await unrestrict_and_notify(context, chat_id, user_id, language=getattr(settings, "language", "zh-CN"))
         return "none"
     if selected == "kick":
         await execute_user_action(
@@ -88,7 +87,7 @@ async def apply_verification_punishment(
     return "mute"
 
 
-async def unrestrict_and_notify(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int, language: str) -> None:
+async def unrestrict_and_notify(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int, *, language: str) -> None:
     await restrict_user_safely(
         context,
         feature="进群验证",

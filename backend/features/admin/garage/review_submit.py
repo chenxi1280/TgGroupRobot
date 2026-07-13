@@ -65,22 +65,22 @@ async def handle_car_review_submit_input(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session,
-    state,
+    *, state,
     message_text: str,
 ) -> None:
     if update.effective_message is None or update.effective_user is None:
         return
     if state.state_type == TEACHER_STATE:
-        await _handle_teacher_input(update, context, session, state, message_text)
+        await _handle_teacher_input(update, context, session, state=state, message_text=message_text)
         return
     if state.state_type == BODY_STATE:
-        await _handle_body_input(update, context, session, state, message_text)
+        await _handle_body_input(update, context, session, state=state, message_text=message_text)
         return
     await clear_user_state(session, chat_id=state.chat_id, user_id=update.effective_user.id)
     await update.effective_message.reply_text("车评提交状态异常，已退出，请回群重新点击“提交车评”。")
 
 
-async def _handle_teacher_input(update: Update, context: ContextTypes.DEFAULT_TYPE, session, state, message_text: str) -> None:
+async def _handle_teacher_input(update: Update, context: ContextTypes.DEFAULT_TYPE, session, *, state, message_text: str) -> None:
     data = state.state_data if isinstance(state.state_data, dict) else {}
     target_chat_id = data.get("target_chat_id")
     if not isinstance(target_chat_id, int):
@@ -123,7 +123,7 @@ async def _handle_teacher_input(update: Update, context: ContextTypes.DEFAULT_TY
     )
 
 
-async def _handle_body_input(update: Update, context: ContextTypes.DEFAULT_TYPE, session, state, message_text: str) -> None:
+async def _handle_body_input(update: Update, context: ContextTypes.DEFAULT_TYPE, session, *, state, message_text: str) -> None:
     data = state.state_data if isinstance(state.state_data, dict) else {}
     target_chat_id = data.get("target_chat_id")
     teacher_user_id = data.get("teacher_user_id")

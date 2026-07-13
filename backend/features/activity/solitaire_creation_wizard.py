@@ -53,7 +53,7 @@ async def solitaire_create_title_message(update: Update, context: ContextTypes.D
     chat = update.effective_chat
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
-        state_data = await set_user_state(session, chat.id, user.id, "solitaire_create", {"title": update.effective_message.text})
+        state_data = await set_user_state(session, chat.id, user.id, state_type="solitaire_create", state_data={"title": update.effective_message.text})
         await session.commit()
     await update.effective_message.reply_text(_description_prompt(state_data.state_data.get("title")))
     return WAIT_DESCRIPTION
@@ -71,7 +71,7 @@ async def solitaire_create_description_message(update: Update, context: ContextT
         state_data = state.state_data if state else {}
         description = None if text == "/skip" else text
         state_data["description"] = description
-        await set_user_state(session, chat.id, user.id, "solitaire_create", state_data)
+        await set_user_state(session, chat.id, user.id, state_type="solitaire_create", state_data=state_data)
         await session.commit()
     await update.effective_message.reply_text(_max_participants_prompt(description))
     return WAIT_MAX_PARTICIPANTS
@@ -101,7 +101,7 @@ async def solitaire_create_max_message(update: Update, context: ContextTypes.DEF
 
     state_data["max_participants"] = max_participants
     async with db.session_factory() as session:
-        await set_user_state(session, chat.id, user.id, "solitaire_create", state_data)
+        await set_user_state(session, chat.id, user.id, state_type="solitaire_create", state_data=state_data)
         await session.commit()
     await update.effective_message.reply_text(_points_required_prompt(max_participants))
     return WAIT_POINTS_REQUIRED
@@ -131,7 +131,7 @@ async def solitaire_create_points_message(update: Update, context: ContextTypes.
 
     state_data["points_required"] = points_required
     async with db.session_factory() as session:
-        await set_user_state(session, chat.id, user.id, "solitaire_create", state_data)
+        await set_user_state(session, chat.id, user.id, state_type="solitaire_create", state_data=state_data)
         await session.commit()
     deadline_sample_text = next_top_of_hour(days_offset=1).astimezone(LOCAL_TIMEZONE).strftime("%Y-%m-%d %H:%M")
     await update.effective_message.reply_text(

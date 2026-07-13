@@ -63,7 +63,7 @@ async def verify_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             return
         if action == "decline":
             try:
-                await apply_verification_punishment(context, chat.id, update.effective_user.id, settings)
+                await apply_verification_punishment(context, chat.id, update.effective_user.id, settings=settings)
             except Exception as exc:
                 log.warning("verification_decline_punishment_failed", chat_id=chat.id, user_id=update.effective_user.id, error=str(exc))
                 await session.commit()
@@ -88,11 +88,11 @@ async def verify_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
     if settings.join_self_review_enabled:
         async with db.session_factory() as session:
-            started = await start_self_review_if_needed(context, session, chat, update.effective_user, settings)
+            started = await start_self_review_if_needed(context, session, chat, user=update.effective_user, settings=settings)
             await session.commit()
         if started:
             await q.edit_message_text("✅ 初步验证已通过，请继续发送口令完成自助审核。")
             return
-    await unrestrict_and_notify(context, chat.id, ch.user_id, settings.language)
+    await unrestrict_and_notify(context, chat.id, ch.user_id, language=settings.language)
     await send_after_verify_welcome(context, chat.id, ch.user_id)
     await q.edit_message_text(t(settings.language, "verify.ok"))

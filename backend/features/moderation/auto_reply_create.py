@@ -27,7 +27,7 @@ async def auto_reply_create_start_impl(update: Update, context: ContextTypes.DEF
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
-        target_chat_title = await _load_target_chat_title(session, chat.type, chat.title, target_chat_id)
+        target_chat_title = await _load_target_chat_title(session, chat.type, chat.title, target_chat_id=target_chat_id)
         await ensure_chat(session, chat_id=target_chat_id, chat_type="group", title=target_chat_title)
         await ensure_user(
             session,
@@ -48,7 +48,7 @@ async def auto_reply_create_start_impl(update: Update, context: ContextTypes.DEF
     await show_auto_reply_rule_detail(update, context, chat_id=target_chat_id, rule_id=rule_id)
 
 
-async def _load_target_chat_title(session, chat_type: str, chat_title: str | None, target_chat_id: int) -> str:
+async def _load_target_chat_title(session, chat_type: str, chat_title: str | None, *, target_chat_id: int) -> str:
     if chat_type != "private":
         return chat_title or f"群组{target_chat_id}"
 

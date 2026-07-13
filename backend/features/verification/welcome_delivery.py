@@ -40,7 +40,7 @@ async def send_rendered_payload(context: ContextTypes.DEFAULT_TYPE, chat_id: int
         return None
 
 
-async def apply_welcome_delete_strategy(session, welcome, message_id: int, context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> None:
+async def apply_welcome_delete_strategy(session, welcome, message_id: int, *, context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> None:
     if welcome.delete_mode == WelcomeDeleteMode.delete_prev.value and welcome.last_sent_message_id:
         try:
             await context.bot.delete_message(chat_id=chat_id, message_id=welcome.last_sent_message_id)
@@ -62,12 +62,12 @@ async def apply_welcome_delete_strategy(session, welcome, message_id: int, conte
         if delay > 0:
             spawn_background_task(
                 context,
-                delete_welcome_later(context, chat_id, message_id, delay),
+                delete_welcome_later(context, chat_id, message_id, delay=delay),
                 name="welcome_delivery.delete_later",
             )
 
 
-async def delete_welcome_later(context: ContextTypes.DEFAULT_TYPE, chat_id: int, message_id: int, delay: int) -> None:
+async def delete_welcome_later(context: ContextTypes.DEFAULT_TYPE, chat_id: int, message_id: int, *, delay: int) -> None:
     try:
         await asyncio.sleep(max(delay, 1))
     except asyncio.CancelledError:

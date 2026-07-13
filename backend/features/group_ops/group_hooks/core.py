@@ -147,10 +147,10 @@ async def _process_control_hooks(
         context,
         runtime.chat,
         runtime.user,
-        runtime.message,
-        settings,
-        is_admin,
-        runtime.message_text,
+        message=runtime.message,
+        settings=settings,
+        is_admin=is_admin,
+        message_text=runtime.message_text,
     ):
         return True
     if await _process_night_mode(context, runtime.chat, runtime.user, runtime.message, settings, is_admin):
@@ -160,15 +160,15 @@ async def _process_control_hooks(
             context,
             db,
             runtime.chat,
-            runtime.user,
-            runtime.message,
-            runtime.message_text,
+            user=runtime.user,
+            message=runtime.message,
+            message_text=runtime.message_text,
         )
     if runtime.real_user_id is None or is_admin:
         return False
-    if await _process_alliance_joint_ban(context, db, runtime.chat, runtime.user, runtime.message):
+    if await _process_alliance_joint_ban(context, db, runtime.chat, user=runtime.user, message=runtime.message):
         return True
-    if not await _check_force_subscribe(context, runtime.chat, runtime.user, runtime.message, settings):
+    if not await _check_force_subscribe(context, runtime.chat, runtime.user, message=runtime.message, settings=settings):
         return True
     return await _process_new_member_limit(context, db, runtime.chat, runtime.user, runtime.message, settings)
 
@@ -183,20 +183,20 @@ async def _process_feature_hooks(
     is_admin: bool,
 ) -> bool:
     if runtime.real_user_id is not None and runtime.message_text:
-        if await try_bottom_button_text_trigger(update, context, runtime.chat.id, runtime.message_text):
+        if await try_bottom_button_text_trigger(update, context, runtime.chat.id, button_text=runtime.message_text):
             return True
     if runtime.sender_chat_actor and runtime.message_text:
-        await _index_garage_channel_post(context, db, runtime.chat, runtime.message, runtime.message_text)
+        await _index_garage_channel_post(context, db, runtime.chat, message=runtime.message, message_text=runtime.message_text)
     if runtime.real_user_id is not None:
         if await _process_garage_features(
             context,
             db,
             runtime.chat,
-            runtime.user,
-            runtime.message,
-            runtime.message_text,
-            settings,
-            is_admin,
+            user=runtime.user,
+            message=runtime.message,
+            message_text=runtime.message_text,
+            settings=settings,
+            is_admin=is_admin,
         ):
             return True
     return await _process_moderation_and_auto_reply(
@@ -223,10 +223,10 @@ async def _process_moderation_and_auto_reply(
             context,
             db,
             runtime.chat,
-            runtime.user,
-            runtime.message,
-            runtime.message_text,
-            settings,
+            user=runtime.user,
+            message=runtime.message,
+            message_text=runtime.message_text,
+            settings=settings,
         )
         if deleted:
             return True
@@ -243,7 +243,7 @@ async def _process_moderation_and_auto_reply(
             sender_chat_id=runtime.sender_chat_id,
         )
     if not _is_reserved_activity_trigger(runtime.message_text):
-        await _process_auto_reply(context, db, runtime.chat, runtime.message, runtime.message_text)
+        await _process_auto_reply(context, db, runtime.chat, message=runtime.message, message_text=runtime.message_text)
     return False
 
 
@@ -268,9 +268,9 @@ async def unified_group_message_handler(update: Update, context: ContextTypes.DE
         context,
         runtime.chat,
         runtime.user,
-        settings,
-        old_username,
-        old_name,
+        settings=settings,
+        old_username=old_username,
+        old_name=old_name,
     ):
         log.info("rename_monitor_processed", chat_id=runtime.chat.id, user_id=runtime.user.id)
 

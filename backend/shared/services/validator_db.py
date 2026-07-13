@@ -10,7 +10,7 @@ async def validate_unique(
     session: AsyncSession,
     model: type,
     filters: dict[str, Any],
-    field_name: str = "字段",
+    *, field_name: str = "字段",
     exclude_id: int | None = None,
 ) -> tuple[bool, str | None]:
     stmt = select(model).where(*[
@@ -35,7 +35,7 @@ async def validate_exists(
     session: AsyncSession,
     model: type,
     filters: dict[str, Any],
-    field_name: str = "记录",
+    *, field_name: str = "记录",
 ) -> tuple[bool, str | None]:
     stmt = select(model).where(*[
         getattr(model, k) == v for k, v in filters.items()

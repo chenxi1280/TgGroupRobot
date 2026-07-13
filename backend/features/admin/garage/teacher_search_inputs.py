@@ -141,24 +141,24 @@ async def handle_teacher_search_feature_input(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session,
-    state,
+    *, state,
     target_chat_id: int,
     text_value: str,
 ) -> bool:
     if state.state_type in {"teacher_footer_text_input", "teacher_footer_button_input"}:
-        await _handle_footer_button_text_input(update, context, session, target_chat_id, text_value)
+        await _handle_footer_button_text_input(update, context, session, target_chat_id=target_chat_id, text_value=text_value)
         return True
 
     if state.state_type == "teacher_footer_link_input":
-        await _handle_footer_button_link_input(update, context, session, target_chat_id, text_value)
+        await _handle_footer_button_link_input(update, context, session, target_chat_id=target_chat_id, text_value=text_value)
         return True
 
     if state.state_type == DELEGATE_TARGET_STATE:
-        await _handle_delegate_target_input(update, session, target_chat_id, text_value)
+        await _handle_delegate_target_input(update, session, target_chat_id, text_value=text_value)
         return True
 
     if state.state_type == ATTENDANCE_TARGET_STATE:
-        await _handle_attendance_target_input(update, context, session, target_chat_id, text_value)
+        await _handle_attendance_target_input(update, context, session, target_chat_id=target_chat_id, text_value=text_value)
         return True
 
     if state.state_type in ATTENDANCE_KEYWORD_STATES:
@@ -166,14 +166,14 @@ async def handle_teacher_search_feature_input(
             update,
             context,
             session,
-            target_chat_id,
-            ATTENDANCE_KEYWORD_STATES[state.state_type],
-            text_value,
+            target_chat_id=target_chat_id,
+            kind=ATTENDANCE_KEYWORD_STATES[state.state_type],
+            text_value=text_value,
         )
         return True
 
     if state.state_type == DELEGATE_LOCATION_STATE:
-        await _handle_delegate_location_input(update, context, session, state, target_chat_id, text_value)
+        await _handle_delegate_location_input(update, context, session, state=state, target_chat_id=target_chat_id, text_value=text_value)
         return True
 
     return False
@@ -183,7 +183,7 @@ async def handle_teacher_member_location_input(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session,
-    state,
+    *, state,
     message_text: str,
 ) -> None:
     from backend.features.garage.services.garage_features_service import GarageAuthService, TeacherSearchService
@@ -257,7 +257,7 @@ async def _finish_footer_input(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session,
-    target_chat_id: int,
+    *, target_chat_id: int,
     reply_text: str,
 ) -> None:
     if update.effective_user is None or update.effective_message is None:
@@ -272,7 +272,7 @@ async def _handle_footer_button_text_input(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session,
-    target_chat_id: int,
+    *, target_chat_id: int,
     text_value: str,
 ) -> None:
     from backend.features.garage.services.garage_features_service import TeacherSearchService
@@ -290,8 +290,8 @@ async def _handle_footer_button_text_input(
         update,
         context,
         session,
-        target_chat_id,
-        f"已设置底部按钮文字：{config.button_text}" if config.button_text else "已清空底部按钮文字。",
+        target_chat_id=target_chat_id,
+        reply_text=f"已设置底部按钮文字：{config.button_text}" if config.button_text else "已清空底部按钮文字。",
     )
 
 
@@ -299,7 +299,7 @@ async def _handle_footer_button_link_input(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session,
-    target_chat_id: int,
+    *, target_chat_id: int,
     text_value: str,
 ) -> None:
     if update.effective_message is None or update.effective_user is None:
@@ -315,7 +315,7 @@ async def _handle_delegate_target_input(
     update: Update,
     session,
     target_chat_id: int,
-    text_value: str,
+    *, text_value: str,
 ) -> None:
     from backend.features.garage.services.garage_features_service import TeacherSearchService
     from backend.platform.state.state_service import set_user_state
@@ -348,7 +348,7 @@ async def _handle_attendance_target_input(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session,
-    target_chat_id: int,
+    *, target_chat_id: int,
     text_value: str,
 ) -> None:
     from backend.features.garage.services.garage_features_service import GarageAuthService, TeacherSearchService
@@ -383,7 +383,7 @@ async def _handle_attendance_keyword_input(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session,
-    target_chat_id: int,
+    *, target_chat_id: int,
     kind: str,
     text_value: str,
 ) -> None:
@@ -393,7 +393,7 @@ async def _handle_attendance_keyword_input(
         return
 
     try:
-        await TeacherSearchService.update_attendance_keyword(session, target_chat_id, kind, text_value)
+        await TeacherSearchService.update_attendance_keyword(session, target_chat_id, kind, keyword=text_value)
     except ValidationError as exc:
         await update.effective_message.reply_text(str(exc))
         return
@@ -409,7 +409,7 @@ async def _handle_delegate_location_input(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session,
-    state,
+    *, state,
     target_chat_id: int,
     text_value: str,
 ) -> None:

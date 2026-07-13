@@ -67,7 +67,7 @@ async def _process_quick_reply_action(
     action = match_quick_reply_action(settings, message.text or "")
     if action is None:
         return False
-    if not await should_exempt_admin(context, chat.id, user.id, True):
+    if not await should_exempt_admin(context, chat.id, user.id, exempt_admin=True):
         return False
 
     target = getattr(reply_to_message, "from_user", None)
@@ -75,7 +75,7 @@ async def _process_quick_reply_action(
         return False
     if is_global_whitelisted(settings, target.id):
         return False
-    if await should_exempt_admin(context, chat.id, target.id, True):
+    if await should_exempt_admin(context, chat.id, target.id, exempt_admin=True):
         return False
 
     await ensure_chat(session, chat_id=chat.id, chat_type=chat.type, title=chat.title)
@@ -106,8 +106,8 @@ async def execute_spam_punishment(
     context: ContextTypes.DEFAULT_TYPE,
     chat_id: int,
     actor_id: int,
-    action: str,
-    *,
+    *, action: str,
+
     message_ids: list[int] | None = None,
     mute_seconds: int = 600,
     sender_chat_id: int | None = None,
@@ -175,7 +175,7 @@ async def anti_spam_message_handler(update: Update, context: ContextTypes.DEFAUL
                 context,
                 chat.id,
                 leave_member.id,
-                True,
+                exempt_admin=True,
             ):
                 await ensure_chat(session, chat_id=chat.id, chat_type=chat.type, title=chat.title)
                 await ensure_user(
@@ -214,15 +214,15 @@ async def anti_spam_message_handler(update: Update, context: ContextTypes.DEFAUL
                 )
                 await session.commit()
                 if delete_requested and not delete_applied:
-                    await delete_garbage_message_fallback(context, chat.id, message, "leave_ban", "成员离开群组")
+                    await delete_garbage_message_fallback(context, chat.id, message, rule_id="leave_ban", detail="成员离开群组")
                 if not bool(ban_result.applied):
-                    await notify_garbage_action_failure(context, chat.id, "leave_ban", "成员离开群组")
+                    await notify_garbage_action_failure(context, chat.id, "leave_ban", detail="成员离开群组")
                 if bool(config.get("notice_enabled")):
                     notice = build_moderation_notice(
                         "🚫 离群封禁已执行",
                         _user_label(leave_member),
                         "用户离开群组",
-                        action_label,
+                        action_label=action_label,
                     )
                     await send_temporary_notice(
                         context.bot,
@@ -246,13 +246,13 @@ async def anti_spam_message_handler(update: Update, context: ContextTypes.DEFAUL
         manual_config = get_rule_config(settings, "manual_warning")
         if bool(manual_config.get("enabled")) and _is_manual_warning_text(message.text or "") and message.reply_to_message is not None:
             issuer_id = user.id if user is not None else None
-            if issuer_id is not None and await should_exempt_admin(context, chat.id, issuer_id, True):
+            if issuer_id is not None and await should_exempt_admin(context, chat.id, issuer_id, exempt_admin=True):
                 target = getattr(message.reply_to_message, "from_user", None)
                 if (
                     target is not None
                     and target.id > 0
                     and not is_global_whitelisted(settings, target.id)
-                    and not await should_exempt_admin(context, chat.id, target.id, True)
+                    and not await should_exempt_admin(context, chat.id, target.id, exempt_admin=True)
                 ):
                     await ensure_chat(session, chat_id=chat.id, chat_type=chat.type, title=chat.title)
                     await ensure_user(
@@ -293,7 +293,7 @@ async def anti_spam_message_handler(update: Update, context: ContextTypes.DEFAUL
             return
 
         # 垃圾防护规则对管理员与总白名单用户无效。
-        if await should_exempt_admin(context, chat.id, real_user.id if real_user is not None else None, True):
+        if await should_exempt_admin(context, chat.id, real_user.id if real_user is not None else None, exempt_admin=True):
             await session.commit()
             log.info("spam_skip_admin_exempt", chat_id=chat.id, user_id=real_user.id if real_user is not None else None)
             return
@@ -372,7 +372,7 @@ async def anti_spam_message_handler(update: Update, context: ContextTypes.DEFAUL
             context,
             chat.id,
             user.id if user is not None else actor_id,
-            settings.anti_spam_action,
+            requested_action=settings.anti_spam_action,
             sender_chat_id=sender_chat.id if sender_chat is not None else None,
         )
         action = resolution.action
@@ -423,7 +423,7 @@ async def anti_spam_message_handler(update: Update, context: ContextTypes.DEFAUL
         "🚫 反垃圾已拦截消息",
         user.mention_html() if user is not None else "频道身份发言",
         violation.rule,
-        action_label,
+        action_label=action_label,
         fallback_reason=fallback_reason,
     )
 

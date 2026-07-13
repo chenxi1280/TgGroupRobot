@@ -68,7 +68,7 @@ async def _process_group_lock_controls(
     context: ContextTypes.DEFAULT_TYPE,
     chat,
     user,
-    message,
+    *, message,
     settings,
     is_admin: bool,
     message_text: str,

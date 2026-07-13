@@ -233,8 +233,8 @@ class GarageReviewViewsMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        report_id: int,
-        *,
+        *, report_id: int,
+
         status: str = "all",
     ) -> None:
         from backend.features.garage.services.garage_features_service import CarReviewService

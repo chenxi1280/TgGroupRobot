@@ -10,7 +10,7 @@ from backend.shared.services.formatters import format_user_display_name
 LeaderboardRow = tuple[int, int, str | None, str | None, str | None]
 
 
-def _format_rank_user(user_id: int, username: str | None, first_name: str | None, last_name: str | None) -> str:
+def _format_rank_user(user_id: int, username: str | None, first_name: str | None, *, last_name: str | None) -> str:
     user = SimpleNamespace(id=user_id, username=username, first_name=first_name, last_name=last_name)
     return format_user_display_name(user, user_id)
 
@@ -19,7 +19,7 @@ def format_sign_in_success_message(
     points: int,
     balance: int,
     consecutive_days: int = 0,
-    bonus_points: int = 0,
+    *, bonus_points: int = 0,
 ) -> str:
     msg = "✅ 签到成功！\n"
     msg += f"获得 {points} 积分\n"
@@ -54,7 +54,7 @@ def format_leaderboard_message(
 
     msg = "🏆 积分排行榜（前10名）\n\n"
     for i, (user_id, balance, username, first_name, last_name) in enumerate(leaderboard, 1):
-        name = _format_rank_user(user_id, username, first_name, last_name)
+        name = _format_rank_user(user_id, username, first_name, last_name=last_name)
         msg += f"{i}. {name} - {balance} 积分\n"
     return msg
 
@@ -67,6 +67,6 @@ def format_daily_points_leaderboard_message(
 
     msg = "🏆 今日积分排行（前10名）\n\n"
     for i, (user_id, earned_points, username, first_name, last_name) in enumerate(leaderboard, 1):
-        name = _format_rank_user(user_id, username, first_name, last_name)
+        name = _format_rank_user(user_id, username, first_name, last_name=last_name)
         msg += f"{i}. {name} - 今日获得 {earned_points} 积分\n"
     return msg

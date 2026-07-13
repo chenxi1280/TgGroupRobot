@@ -51,7 +51,7 @@ def _spec_days(value: int) -> int:
     return days
 
 
-def _format_user(user_id: int | None, username: str | None, first_name: str | None, last_name: str | None) -> str:
+def _format_user(user_id: int | None, username: str | None, first_name: str | None, *, last_name: str | None) -> str:
     if user_id is None:
         return ""
     name = " ".join(part for part in [first_name, last_name] if part).strip()
@@ -485,7 +485,7 @@ async def serialize_cards(session: AsyncSession, cards: list[RenewalCardKey]) ->
     if user_ids:
         users = (await session.execute(select(TgUser).where(TgUser.id.in_(user_ids)))).scalars().all()
         user_map = {
-            user.id: _format_user(user.id, user.username, user.first_name, user.last_name)
+            user.id: _format_user(user.id, user.username, user.first_name, last_name=user.last_name)
             for user in users
         }
 
@@ -500,7 +500,7 @@ async def serialize_cards(session: AsyncSession, cards: list[RenewalCardKey]) ->
             )
         ).all()
         for chat_id, user_id, username, first_name, last_name in owner_rows:
-            owner_map.setdefault(int(chat_id), _format_user(user_id, username, first_name, last_name))
+            owner_map.setdefault(int(chat_id), _format_user(user_id, username, first_name, last_name=last_name))
 
     items = []
     for card in cards:

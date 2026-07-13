@@ -44,8 +44,8 @@ async def _resolve_settlement_winner(
             session,
             item.chat_id,
             bid.bid_user_id,
-            -bid.bid_amount,
-            PointsTxnType.penalty.value,
+            amount=-bid.bid_amount,
+            txn_type=PointsTxnType.penalty.value,
             reason=f"拍卖成交 #{item.id}",
         )
         if ok:

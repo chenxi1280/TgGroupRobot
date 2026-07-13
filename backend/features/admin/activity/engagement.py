@@ -16,7 +16,7 @@ class EngagementAdminControllerMixin(
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        callback_data: CallbackParser,
+        *, callback_data: CallbackParser,
     ) -> None:
         action = callback_data.get(1)
         db: Database = context.application.bot_data["db"]
@@ -26,9 +26,9 @@ class EngagementAdminControllerMixin(
 
         async with db.session_factory() as session:
             if action == "egg":
-                await self._handle_engagement_egg(update, context, chat_id, callback_data, session)
+                await self._handle_engagement_egg(update, context, chat_id, callback_data=callback_data, session=session)
                 return
 
             if action == "chat":
-                await self._handle_engagement_chat(update, context, chat_id, callback_data, session)
+                await self._handle_engagement_chat(update, context, chat_id, callback_data=callback_data, session=session)
                 return

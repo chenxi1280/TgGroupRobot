@@ -33,7 +33,7 @@ async def reply_or_edit(
     update: Update,
     text: str,
     reply_markup: InlineKeyboardMarkup | None = None,
-    parse_mode: str | None = None,
+    *, parse_mode: str | None = None,
 ) -> None:
     if update.callback_query is not None:
         try:
@@ -98,7 +98,7 @@ async def show_nearby_list(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     target_chat_id: int,
-    page: int,
+    *, page: int,
 ) -> None:
     if update.effective_user is None:
         return
@@ -161,7 +161,7 @@ async def show_member_detail(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     target_chat_id: int,
-    target_user_id: int,
+    *, target_user_id: int,
     back_page: int,
 ) -> None:
     if update.effective_user is None:
@@ -192,7 +192,7 @@ async def show_member_detail(
             float(viewer_profile.latitude),
             float(viewer_profile.longitude),
             float(profile.latitude),
-            float(profile.longitude),
+            lon2=float(profile.longitude),
         )
         display_name = build_user_display_name(user, user.id)
         distance_text = format_distance(distance, fuzzy=profile.fuzzy_distance)

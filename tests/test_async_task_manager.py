@@ -113,7 +113,7 @@ async def test_join_notice_and_welcome_delete_use_managed_tasks(monkeypatch):
         last_sent_message_id=None,
     )
 
-    await welcome_delivery.apply_welcome_delete_strategy(session, welcome, 123, context, -1001)
+    await welcome_delivery.apply_welcome_delete_strategy(session, welcome, 123, context=context, chat_id=-1001)
 
     assert scheduled == [
         (context, "verification.cleanup_notice"),

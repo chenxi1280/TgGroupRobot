@@ -143,7 +143,7 @@ class GarageAllianceAdminMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        callback_data: CallbackParser,
+        *, callback_data: CallbackParser,
     ) -> None:
         from backend.platform.db.schema.models.enums import ConversationStateType
         from backend.features.garage.services.alliance_service import AllianceService
@@ -164,8 +164,8 @@ class GarageAllianceAdminMixin:
                 context,
                 update.effective_user.id,
                 chat_id,
-                ConversationStateType.alliance_create_name_input.value,
-                {"target_chat_id": chat_id},
+                state_type=ConversationStateType.alliance_create_name_input.value,
+                payload={"target_chat_id": chat_id},
             )
             await self.message_helper.safe_edit(
                 update,
@@ -179,8 +179,8 @@ class GarageAllianceAdminMixin:
                 context,
                 update.effective_user.id,
                 chat_id,
-                ConversationStateType.alliance_join_code_input.value,
-                {"target_chat_id": chat_id},
+                state_type=ConversationStateType.alliance_join_code_input.value,
+                payload={"target_chat_id": chat_id},
             )
             await self.message_helper.safe_edit(
                 update,

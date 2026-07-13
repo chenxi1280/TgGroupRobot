@@ -65,7 +65,7 @@ def build_points_alias_patterns(settings: ChatSettings) -> dict[str, re.Pattern]
     }
 
 
-async def ensure_chat(session: AsyncSession, chat_id: int, chat_type: str, title: str | None) -> TgChat:
+async def ensure_chat(session: AsyncSession, chat_id: int, chat_type: str, *, title: str | None) -> TgChat:
     """
     确保群组存在，不存在则创建，存在则更新信息
 

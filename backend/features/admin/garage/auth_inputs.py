@@ -13,7 +13,7 @@ async def handle_auth_feature_input(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session,
-    state_type: str,
+    *, state_type: str,
     target_chat_id: int,
     text_value: str,
 ) -> bool:
@@ -27,29 +27,29 @@ async def handle_auth_feature_input(
             await update.effective_message.reply_text("认证图标不能为空。")
             return True
         await GarageAuthService.update_settings(session, target_chat_id, garage_auth_badge=text_value[:16])
-        await _finish_auth_input(update, context, session, target_chat_id)
+        await _finish_auth_input(update, context, session, target_chat_id=target_chat_id)
         return True
 
     if state_type == "garage_teacher_input":
         try:
-            await GarageAuthService.add_teacher(session, target_chat_id, update.effective_user.id, text_value)
+            await GarageAuthService.add_teacher(session, target_chat_id, update.effective_user.id, raw=text_value)
         except ValidationError as exc:
             await update.effective_message.reply_text(str(exc))
             return True
         await clear_admin_input_state(session, target_chat_id=target_chat_id, user_id=update.effective_user.id)
         await session.commit()
-        await admin_handler_instance()._show_garage_teacher_list_menu(update, context, target_chat_id, 0)
+        await admin_handler_instance()._show_garage_teacher_list_menu(update, context, target_chat_id, page=0)
         return True
 
     if state_type == "garage_whitelist_input":
         try:
-            await GarageAuthService.add_whitelist(session, target_chat_id, update.effective_user.id, text_value)
+            await GarageAuthService.add_whitelist(session, target_chat_id, update.effective_user.id, raw=text_value)
         except ValidationError as exc:
             await update.effective_message.reply_text(str(exc))
             return True
         await clear_admin_input_state(session, target_chat_id=target_chat_id, user_id=update.effective_user.id)
         await session.commit()
-        await admin_handler_instance()._show_garage_whitelist_menu(update, context, target_chat_id, 0)
+        await admin_handler_instance()._show_garage_whitelist_menu(update, context, target_chat_id, page=0)
         return True
 
     if state_type in {"garage_limit_interval_input", "garage_limit_max_count_input"}:
@@ -63,7 +63,7 @@ async def handle_auth_feature_input(
             else {"garage_limit_max_count": number}
         )
         await GarageAuthService.update_settings(session, target_chat_id, **update_kwargs)
-        await _finish_auth_input(update, context, session, target_chat_id)
+        await _finish_auth_input(update, context, session, target_chat_id=target_chat_id)
         return True
 
     return False
@@ -73,7 +73,7 @@ async def _finish_auth_input(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session,
-    target_chat_id: int,
+    *, target_chat_id: int,
 ) -> None:
     if update.effective_user is None:
         return

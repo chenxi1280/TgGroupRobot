@@ -13,7 +13,7 @@ def create_back_button(
     chat_id: int | None,
     to_menu: str = "main",
     label: str = "🔙 返回",
-    prefix: str = "adm",
+    *, prefix: str = "adm",
 ) -> InlineKeyboardButton:
     """创建返回按钮
 
@@ -46,7 +46,7 @@ def create_confirmation_buttons(
     confirm_callback: str,
     cancel_callback: str,
     confirm_label: str = "✅ 确认",
-    cancel_label: str = "❌ 取消",
+    *, cancel_label: str = "❌ 取消",
 ) -> list[InlineKeyboardButton]:
     """创建确认对话框按钮
 
@@ -74,7 +74,7 @@ def create_toggle_button(
     label: str,
     key: str,
     enabled: bool,
-    prefix: str = "toggle",
+    *, prefix: str = "toggle",
     chat_id: int | None = None,
 ) -> InlineKeyboardButton:
     """创建开关按钮
@@ -137,8 +137,9 @@ def create_action_button(
     label: str,
     action: str,
     prefix: str,
+    *,
     chat_id: int | None = None,
-    *args: int | str,
+    extra_args: tuple[int | str, ...] = (),
 ) -> InlineKeyboardButton:
     """创建动作按钮
 
@@ -147,18 +148,20 @@ def create_action_button(
         action: 动作名称
         prefix: 回调前缀
         chat_id: 群组 ID
-        *args: 额外的动作参数
+        extra_args: 额外的动作参数
 
     Returns:
         InlineKeyboardButton 对象
 
     Example:
-        >>> btn = create_action_button("编辑", "edit", "arp", 123, 1)
+        >>> btn = create_action_button(
+        ...     "编辑", "edit", "arp", chat_id=123, extra_args=(1,)
+        ... )
         >>> btn.callback_data
         'arp:edit:123:1'
     """
     callback_builder = CallbackBuilder(prefix, chat_id)
-    callback_data = callback_builder.build(action, *args)
+    callback_data = callback_builder.build(action, *extra_args)
     return InlineKeyboardButton(label, callback_data=callback_data)
 
 
@@ -166,7 +169,7 @@ def create_detail_button(
     label: str,
     item_id: int,
     prefix: str,
-    chat_id: int | None = None,
+    *, chat_id: int | None = None,
     action: str = "detail",
 ) -> InlineKeyboardButton:
     """创建详情按钮

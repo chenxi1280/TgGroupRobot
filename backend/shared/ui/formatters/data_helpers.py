@@ -69,7 +69,7 @@ def format_datetime(
     datetime_obj: dt.datetime | None,
     format_str: str = "%m-%d %H:%M",
     timezone_offset: int = 8,
-    default: str = "",
+    *, default: str = "",
 ) -> str:
     """格式化日期时间
 
@@ -169,7 +169,7 @@ def format_item_label(
     title: str,
     status_icon: str = "",
     extra_info: str = "",
-    max_length: int | None = None,
+    *, max_length: int | None = None,
 ) -> str:
     """格式化项目标签（用于列表项）
 
@@ -240,7 +240,7 @@ def format_bool_label(
     value: bool,
     true_label: str = "是",
     false_label: str = "否",
-    true_icon: str = "✅",
+    *, true_icon: str = "✅",
     false_icon: str = "❌",
 ) -> str:
     """格式化布尔值标签

@@ -98,7 +98,7 @@ async def detect_spam_violation(
     settings: ChatSettings,
     message: Message,
     chat_id: int,
-    user_id: int,
+    *, user_id: int,
     tracker: AntiSpamTracker,
 ) -> SpamViolation:
     rules = get_antispam_rules(settings)

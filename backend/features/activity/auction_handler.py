@@ -43,7 +43,7 @@ async def _check_auction_create_allowed(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     setting,
-    chat_id: int,
+    *, chat_id: int,
     user_id: int,
 ) -> bool:
     del context, chat_id, user_id
@@ -135,8 +135,8 @@ async def auction_group_message_handler(update: Update, context: ContextTypes.DE
                     session,
                     chat.id,
                     user.id,
-                    ConversationStateType.auction_wait_start_price.value,
-                    data,
+                    state_type=ConversationStateType.auction_wait_start_price.value,
+                    state_data=data,
                 )
                 await session.commit()
                 await _reply(update, _auction_start_price_prompt())
@@ -152,8 +152,8 @@ async def auction_group_message_handler(update: Update, context: ContextTypes.DE
                     session,
                     chat.id,
                     user.id,
-                    ConversationStateType.auction_wait_end_at.value,
-                    data,
+                    state_type=ConversationStateType.auction_wait_end_at.value,
+                    state_data=data,
                 )
                 await session.commit()
                 sample_dt = next_top_of_hour(days_offset=1)
@@ -183,8 +183,8 @@ async def auction_group_message_handler(update: Update, context: ContextTypes.DE
                     session,
                     chat.id,
                     user.id,
-                    ConversationStateType.auction_wait_confirm.value,
-                    data,
+                    state_type=ConversationStateType.auction_wait_confirm.value,
+                    state_data=data,
                 )
                 await session.commit()
                 await _reply(update, _auction_confirm_prompt(data, text))
@@ -236,7 +236,7 @@ async def auction_group_message_handler(update: Update, context: ContextTypes.DE
         is_create_trigger = _is_auction_create_trigger(text)
 
         if is_create_trigger:
-            if not await _check_auction_create_allowed(update, context, setting, chat.id, user.id):
+            if not await _check_auction_create_allowed(update, context, setting, chat_id=chat.id, user_id=user.id):
                 return True
             state_data = (
                 {"source_message_id": message.reply_to_message.message_id}
@@ -247,8 +247,8 @@ async def auction_group_message_handler(update: Update, context: ContextTypes.DE
                 session,
                 chat.id,
                 user.id,
-                ConversationStateType.auction_wait_title.value,
-                state_data,
+                state_type=ConversationStateType.auction_wait_title.value,
+                state_data=state_data,
             )
             await session.commit()
             if message.reply_to_message is not None:

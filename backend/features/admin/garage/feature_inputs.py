@@ -13,7 +13,7 @@ async def handle_garage_features_input(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session,
-    state,
+    *, state,
     message_text: str,
 ) -> None:
     if update.effective_user is None or update.effective_message is None:
@@ -26,11 +26,11 @@ async def handle_garage_features_input(
     state_type = state.state_type
     text_value = message_text.strip()
 
-    if await handle_auth_feature_input(update, context, session, state_type, target_chat_id, text_value):
+    if await handle_auth_feature_input(update, context, session, state_type=state_type, target_chat_id=target_chat_id, text_value=text_value):
         return
-    if await handle_teacher_search_feature_input(update, context, session, state, target_chat_id, text_value):
+    if await handle_teacher_search_feature_input(update, context, session, state=state, target_chat_id=target_chat_id, text_value=text_value):
         return
-    if await handle_car_review_feature_input(update, context, session, state, target_chat_id, message_text):
+    if await handle_car_review_feature_input(update, context, session, state=state, target_chat_id=target_chat_id, message_text=message_text):
         return
 
     await update.effective_message.reply_text("配置状态异常，请重新进入页面。")

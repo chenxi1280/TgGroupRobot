@@ -64,7 +64,7 @@ class ScheduledMessageQueryMixin:
         session: AsyncSession,
         chat_id: int,
         enabled_only: bool = False,
-        limit: int = 50,
+        *, limit: int = 50,
         offset: int = 0,
     ) -> list[ScheduledMessageTask]:
         stmt = select(ScheduledMessageTask).where(ScheduledMessageTask.chat_id == chat_id)

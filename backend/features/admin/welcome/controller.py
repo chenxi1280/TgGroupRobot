@@ -76,7 +76,7 @@ class WelcomeAdminControllerMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        welcome_id: int,
+        *, welcome_id: int,
     ) -> None:
         from backend.platform.db.schema.models.enums import WelcomeDeleteMode, WelcomeMode
         from backend.features.verification.welcome_service import WelcomeService
@@ -158,7 +158,7 @@ class WelcomeAdminControllerMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        callback_data: CallbackParser,
+        *, callback_data: CallbackParser,
     ) -> None:
         from backend.platform.db.schema.models.enums import ConversationStateType, WelcomeDeleteMode, WelcomeMode
         from backend.features.verification.welcome_service import WelcomeService
@@ -170,12 +170,12 @@ class WelcomeAdminControllerMixin:
             async with db.session_factory() as session:
                 item = await WelcomeService.create_message(session, chat_id)
                 await session.commit()
-            await self._show_welcome_detail_menu(update, context, chat_id, item.id)
+            await self._show_welcome_detail_menu(update, context, chat_id, welcome_id=item.id)
             return
 
         if op == "detail":
             welcome_id = callback_data.require_int(4, label="welcome_id")
-            await self._show_welcome_detail_menu(update, context, chat_id, welcome_id)
+            await self._show_welcome_detail_menu(update, context, chat_id, welcome_id=welcome_id)
             return
 
         if op == "toggle":
@@ -184,7 +184,7 @@ class WelcomeAdminControllerMixin:
                 item = await WelcomeService.get_message(session, chat_id, welcome_id)
                 await WelcomeService.update_field(session, chat_id, welcome_id, enabled=not item.enabled)
                 await session.commit()
-            await self._show_welcome_detail_menu(update, context, chat_id, welcome_id)
+            await self._show_welcome_detail_menu(update, context, chat_id, welcome_id=welcome_id)
             return
 
         if op == "mode":
@@ -198,7 +198,7 @@ class WelcomeAdminControllerMixin:
                 )
                 await WelcomeService.update_field(session, chat_id, welcome_id, welcome_mode=next_mode)
                 await session.commit()
-            await self._show_welcome_detail_menu(update, context, chat_id, welcome_id)
+            await self._show_welcome_detail_menu(update, context, chat_id, welcome_id=welcome_id)
             return
 
         if op == "delete":
@@ -253,7 +253,7 @@ class WelcomeAdminControllerMixin:
                     delete_delay_seconds=next_delay,
                 )
                 await session.commit()
-            await self._show_welcome_detail_menu(update, context, chat_id, welcome_id)
+            await self._show_welcome_detail_menu(update, context, chat_id, welcome_id=welcome_id)
             return
 
         if op == "input":
@@ -288,8 +288,8 @@ class WelcomeAdminControllerMixin:
                 context,
                 update.effective_user.id,
                 chat_id,
-                state_type,
-                {"target_chat_id": chat_id, "welcome_id": welcome_id},
+                state_type=state_type,
+                payload={"target_chat_id": chat_id, "welcome_id": welcome_id},
             )
             prompt = {
                 "title": "👉 请输入标题备注：",

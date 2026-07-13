@@ -20,9 +20,9 @@ async def create_auto_reply_rule_impl(
     session: AsyncSession,
     chat_id: int,
     created_by_user_id: int,
-    keywords: list[str],
+    *, keywords: list[str],
     reply_content: str,
-    *,
+
     match_type: str = AutoReplyMatchType.contains.value,
     case_sensitive: bool = False,
     delete_source: bool = False,

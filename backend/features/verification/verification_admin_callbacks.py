@@ -62,12 +62,12 @@ async def admin_verify_callback_impl(update: Update, context: ContextTypes.DEFAU
                 return
             if settings.join_self_review_enabled:
                 target_user = await context.bot.get_chat_member(chat.id, user_id)
-                started = await start_self_review_if_needed(context, session, chat, target_user.user, settings)
+                started = await start_self_review_if_needed(context, session, chat, user=target_user.user, settings=settings)
                 await session.commit()
                 await query.edit_message_text(f"✅ 已通过用户 {user_id} 的{'初步验证，已进入自助审核。' if started else '验证'}")
                 if started:
                     return
-            await unrestrict_and_notify(context, chat.id, user_id, settings.language)
+            await unrestrict_and_notify(context, chat.id, user_id, language=settings.language)
             await send_after_verify_welcome(context, chat.id, user_id)
             await query.edit_message_text(f"✅ 已通过用户 {user_id} 的验证")
             return
@@ -142,7 +142,7 @@ async def verification_timeout_help_callback_impl(update: Update, context: Conte
         settings = await get_chat_settings(session, chat.id)
         await mark_challenge_released(session, chat.id, target_user_id)
         await session.commit()
-    await unrestrict_and_notify(context, chat.id, target_user_id, settings.language)
+    await unrestrict_and_notify(context, chat.id, target_user_id, language=settings.language)
     await query.answer()
     mark_callback_query_answered(update)
     await query.edit_message_text(

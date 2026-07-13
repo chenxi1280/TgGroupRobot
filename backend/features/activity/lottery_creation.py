@@ -163,8 +163,8 @@ async def _parse_preset_winner_ids_from_message(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session,
-    value: str,
-    *,
+    *, value: str,
+
     include_message_entities: bool = True,
 ) -> list[int]:
     normalized = value.strip()
@@ -219,7 +219,7 @@ async def _resolve_preset_winner_refs_from_config_text(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session,
-    text: str,
+    *, text: str,
     prizes: list[dict],
 ) -> tuple[list[int], list[dict]] | None:
     values = collect_winner_reference_values(text)
@@ -229,8 +229,8 @@ async def _resolve_preset_winner_refs_from_config_text(
         update,
         context,
         session,
-        values,
-        prizes,
+        values=values,
+        prizes=prizes,
         include_message_entities=False,
     )
 
@@ -239,9 +239,9 @@ async def _parse_preset_winner_refs_from_values(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session,
-    values: list[str],
+    *, values: list[str],
     prizes: list[dict],
-    *,
+
     include_message_entities: bool,
 ) -> tuple[list[int], list[dict]]:
     merged_ids: list[int] = []
@@ -263,7 +263,7 @@ async def _parse_preset_winner_refs_from_values(
             update,
             context,
             session,
-            winner_value,
+            value=winner_value,
             include_message_entities=include_message_entities and prize_name is None,
         ):
             _add_unique_user_id(merged_ids, user_id)
@@ -816,7 +816,7 @@ async def _create_and_publish_lottery(
     return lottery
 
 
-async def _reply_point_type_prompt(update: Update, session, state: object, data: dict) -> None:
+async def _reply_point_type_prompt(update: Update, session, state: object, *, data: dict) -> None:
     from backend.features.points.services.points_extended_service import PointsExtendedService
 
     data["step"] = "point_type"
@@ -829,7 +829,7 @@ async def _reply_point_type_prompt(update: Update, session, state: object, data:
     )
 
 
-async def _reply_preset_confirm(update: Update, session, state: object, data: dict) -> None:
+async def _reply_preset_confirm(update: Update, session, state: object, *, data: dict) -> None:
     data["step"] = "preset_confirm"
     _save_state_data(state, data)
     config = _build_config_from_state(data)
@@ -845,16 +845,16 @@ async def _reply_preset_confirm(update: Update, session, state: object, data: di
     )
 
 
-async def _reply_next_prompt(update: Update, session, state: object, data: dict, next_step: str) -> None:
+async def _reply_next_prompt(update: Update, session, state: object, *, data: dict, next_step: str) -> None:
     data["step"] = next_step
     _save_state_data(state, data)
     target_chat_id = int(data["target_chat_id"])
     nav_keyboard = _wizard_nav_keyboard(target_chat_id, back_callback=_wizard_back_callback(target_chat_id))
     if next_step == "point_type":
-        await _reply_point_type_prompt(update, session, state, data)
+        await _reply_point_type_prompt(update, session, state, data=data)
         return
     if next_step == "preset_confirm":
-        await _reply_preset_confirm(update, session, state, data)
+        await _reply_preset_confirm(update, session, state, data=data)
         return
     await _commit_wizard_state_before_prompt(session)
     if next_step == "subscribe_targets":
@@ -923,7 +923,7 @@ async def _reply_next_prompt(update: Update, session, state: object, data: dict,
         )
 
 
-async def _edit_wizard_step_prompt(update: Update, query, session, state: object, data: dict, step: str) -> None:
+async def _edit_wizard_step_prompt(update: Update, query, session, *, state: object, data: dict, step: str) -> None:
     data["step"] = step
     target_chat_id = int(data["target_chat_id"])
     _save_state_data(state, data)
@@ -1036,7 +1036,7 @@ async def _edit_wizard_step_prompt(update: Update, query, session, state: object
         )
 
 
-async def _handle_lottery_wizard_message(update: Update, context: ContextTypes.DEFAULT_TYPE, session, state: object, text: str) -> None:
+async def _handle_lottery_wizard_message(update: Update, context: ContextTypes.DEFAULT_TYPE, session, *, state: object, text: str) -> None:
     data = _state_data(state)
     step = data.get("step")
     try:
@@ -1051,11 +1051,11 @@ async def _handle_lottery_wizard_message(update: Update, context: ContextTypes.D
                 data["description"] = None
             if not data["title"]:
                 raise ValueError("抽奖名称不能为空")
-            await _reply_next_prompt(update, session, state, data, "prize_name")
+            await _reply_next_prompt(update, session, state, data=data, next_step="prize_name")
         elif step == "subscribe_targets":
             targets = parse_lottery_subscribe_targets(text)
             data["subscribe_targets"] = await validate_lottery_subscribe_targets(context, targets)
-            await _reply_next_prompt(update, session, state, data, "preset_confirm")
+            await _reply_next_prompt(update, session, state, data=data, next_step="preset_confirm")
         elif step == "prize_name":
             prize_name = text.strip()
             if not prize_name:
@@ -1063,7 +1063,7 @@ async def _handle_lottery_wizard_message(update: Update, context: ContextTypes.D
             if any(str(prize.get("name") or "").strip() == prize_name for prize in data.get("prizes") or []):
                 raise ValueError(f"奖品名称不能重复：{prize_name}")
             data["pending_prize_name"] = prize_name[:128]
-            await _reply_next_prompt(update, session, state, data, "prize_quantity")
+            await _reply_next_prompt(update, session, state, data=data, next_step="prize_quantity")
         elif step == "prize_quantity":
             quantity = _parse_positive_int(text, "中奖人数/份数")
             prize_name = data.pop("pending_prize_name", "").strip()
@@ -1072,7 +1072,7 @@ async def _handle_lottery_wizard_message(update: Update, context: ContextTypes.D
             prizes = list(data.get("prizes") or [])
             prizes.append({"name": prize_name, "quantity": quantity, "points_reward": 0})
             data["prizes"] = prizes
-            await _reply_next_prompt(update, session, state, data, "prize_action")
+            await _reply_next_prompt(update, session, state, data=data, next_step="prize_action")
         elif step == "prize_action":
             await update.effective_message.reply_text("请使用按钮选择继续添加奖品，或完成奖品设置。")
         elif step == "draw_param":
@@ -1081,53 +1081,53 @@ async def _handle_lottery_wizard_message(update: Update, context: ContextTypes.D
             else:
                 data["draw_time"] = _parse_future_time(text).isoformat()
                 data["max_participants"] = 0
-            await _reply_next_prompt(update, session, state, data, _next_step_after_draw_param(data))
+            await _reply_next_prompt(update, session, state, data=data, next_step=_next_step_after_draw_param(data))
         elif step == "point_type":
             await update.effective_message.reply_text("请使用按钮选择积分类型。")
         elif step == "participation_cost":
             data["participation_cost"] = _parse_non_negative_int(text, "扣除积分")
-            await _reply_next_prompt(update, session, state, data, _next_step_after_points(data))
+            await _reply_next_prompt(update, session, state, data=data, next_step=_next_step_after_points(data))
         elif step == "invite_requirement":
             if data.get("selection_mode") == "ranking_random":
                 data["required_invites"] = _parse_non_negative_int(text, "邀请入围最低人数")
             else:
                 data["required_invites"] = _parse_positive_int(text, "邀请人数")
             if data.get("selection_mode") == "ranking_random":
-                await _reply_next_prompt(update, session, state, data, "finalist_limit")
+                await _reply_next_prompt(update, session, state, data=data, next_step="finalist_limit")
             else:
-                await _reply_next_prompt(update, session, state, data, "preset_confirm")
+                await _reply_next_prompt(update, session, state, data=data, next_step="preset_confirm")
         elif step == "activity_requirement":
             if data.get("selection_mode") == "ranking_random":
                 data["required_activity_count"] = _parse_non_negative_int(text, "活跃入围最低消息数")
             else:
                 data["required_activity_count"] = _parse_positive_int(text, "活跃消息数")
             if data.get("selection_mode") == "ranking_random":
-                await _reply_next_prompt(update, session, state, data, "finalist_limit")
+                await _reply_next_prompt(update, session, state, data=data, next_step="finalist_limit")
             else:
-                await _reply_next_prompt(update, session, state, data, "preset_confirm")
+                await _reply_next_prompt(update, session, state, data=data, next_step="preset_confirm")
         elif step == "finalist_limit":
             data["finalist_limit"] = _parse_positive_int(text, "入围人数")
-            await _reply_next_prompt(update, session, state, data, "preset_confirm")
+            await _reply_next_prompt(update, session, state, data=data, next_step="preset_confirm")
         elif step == "preset_winners":
             if text.strip() in PRESET_CLEAR_WORDS:
                 data["preset_winner_ids"] = []
                 data["preset_winner_assignments"] = []
-                await _reply_next_prompt(update, session, state, data, "preset_confirm")
+                await _reply_next_prompt(update, session, state, data=data, next_step="preset_confirm")
                 await session.commit()
                 return
             preset_ids, preset_assignments = await _parse_preset_winner_refs_from_values(
                 update,
                 context,
                 session,
-                text.strip().splitlines() or [text],
-                list(data.get("prizes") or []),
+                values=text.strip().splitlines() or [text],
+                prizes=list(data.get("prizes") or []),
                 include_message_entities=True,
             )
             if len(preset_ids) > _prize_slot_count(list(data.get("prizes") or [])):
                 raise ValueError("内定中奖人数不能超过中奖人数")
             data["preset_winner_ids"] = preset_ids
             data["preset_winner_assignments"] = preset_assignments
-            await _reply_next_prompt(update, session, state, data, "preset_confirm")
+            await _reply_next_prompt(update, session, state, data=data, next_step="preset_confirm")
         else:
             await update.effective_message.reply_text("当前抽奖创建状态异常，请取消后重新创建。")
         await session.commit()
@@ -1142,7 +1142,7 @@ class LotteryCreationMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         target_chat_id: int,
-        lottery_type: str = "common",
+        *, lottery_type: str = "common",
         selection_mode: str = "threshold_random",
         draw_trigger: str = "time_deadline",
     ) -> None:
@@ -1200,10 +1200,10 @@ class LotteryCreationMixin:
         await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
 
 
-async def parse_lottery_config_message(update: Update, context: ContextTypes.DEFAULT_TYPE, session, state: object, text: str) -> None:
+async def parse_lottery_config_message(update: Update, context: ContextTypes.DEFAULT_TYPE, session, *, state: object, text: str) -> None:
     state_step = (getattr(state, "state_data", None) or {}).get("step")
     if state_step in LOTTERY_CREATE_STEPS:
-        await _handle_lottery_wizard_message(update, context, session, state, text)
+        await _handle_lottery_wizard_message(update, context, session, state=state, text=text)
         return
     try:
         lottery_type = state.state_data.get("lottery_type", "common")
@@ -1216,7 +1216,7 @@ async def parse_lottery_config_message(update: Update, context: ContextTypes.DEF
             draw_trigger=draw_trigger,
             allow_unresolved_winner_refs=True,
         )
-        resolved_preset = await _resolve_preset_winner_refs_from_config_text(update, context, session, text, config.prizes)
+        resolved_preset = await _resolve_preset_winner_refs_from_config_text(update, context, session, text=text, prizes=config.prizes)
         if resolved_preset is not None:
             resolved_preset_ids, resolved_preset_assignments = resolved_preset
             prize_slot_count = _prize_slot_count(config.prizes)
@@ -1325,7 +1325,7 @@ async def handle_lottery_wizard_callback(update: Update, context: ContextTypes.D
                         ),
                     )
                     return
-                await _edit_wizard_step_prompt(update, q, session, state, data, previous_step)
+                await _edit_wizard_step_prompt(update, q, session, state=state, data=data, step=previous_step)
                 await session.commit()
                 return
             if action == "pt":

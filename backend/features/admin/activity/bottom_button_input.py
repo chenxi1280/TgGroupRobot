@@ -14,9 +14,9 @@ async def handle_bottom_button_admin_input(
     update,
     context,
     session,
-    state,
+    *, state,
     message_text: str,
-    *,
+
     target_chat_id: int,
 ) -> bool:
     if update.effective_user is None or update.effective_message is None:
@@ -73,5 +73,5 @@ async def handle_bottom_button_admin_input(
         await generate_bottom_buttons(context, session, target_chat_id)
     await clear_private_admin_state(session, target_chat_id=target_chat_id, user_id=user_id)
     await session.commit()
-    await admin_handler_instance()._show_bottom_button_detail(update, context, target_chat_id, layout_id)
+    await admin_handler_instance()._show_bottom_button_detail(update, context, target_chat_id, layout_id=layout_id)
     return True

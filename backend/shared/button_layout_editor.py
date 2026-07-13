@@ -76,7 +76,7 @@ class ButtonLayoutEditorService:
             raise ValidationError(f"按钮位置无效，每行最多 {MAX_BUTTON_COLS} 个按钮。")
         elif cls.get_cell(draft, row_index, col_index) is not None:
             raise ValidationError("该位置已经有按钮。")
-        cls._set_cell(draft, row_index, col_index, {"text": "", "url": ""})
+        cls._set_cell(draft, row_index, col_index, value={"text": "", "url": ""})
         return cls._trim_grid(draft), row_index, col_index
 
     @classmethod
@@ -121,7 +121,7 @@ class ButtonLayoutEditorService:
             cell["action_type"] = action_type
         if payload is not None:
             cell["payload"] = payload
-        cls._set_cell(draft, row_index, col_index, cell)
+        cls._set_cell(draft, row_index, col_index, value=cell)
         return cls._trim_grid(draft)
 
     @classmethod
@@ -129,7 +129,7 @@ class ButtonLayoutEditorService:
         draft = cls._clone_grid(grid)
         if cls.get_cell(draft, row_index, col_index) is None:
             return cls._trim_grid(draft)
-        cls._set_cell(draft, row_index, col_index, None)
+        cls._set_cell(draft, row_index, col_index, value=None)
         return cls._trim_grid(draft)
 
     @classmethod
@@ -138,7 +138,7 @@ class ButtonLayoutEditorService:
         grid: ButtonGrid,
         row_index: int,
         col_index: int,
-        direction: str,
+        *, direction: str,
     ) -> tuple[ButtonGrid, int, int, bool]:
         source = cls.get_cell(grid, row_index, col_index)
         if source is None:
@@ -160,8 +160,8 @@ class ButtonLayoutEditorService:
         while len(draft) <= max_target_row:
             draft.append([])
         target = cls.get_cell(draft, target_row, target_col)
-        cls._set_cell(draft, row_index, col_index, target)
-        cls._set_cell(draft, target_row, target_col, source)
+        cls._set_cell(draft, row_index, col_index, value=target)
+        cls._set_cell(draft, target_row, target_col, value=source)
         trimmed = cls._trim_grid(draft)
         if cls.get_cell(trimmed, target_row, target_col) == source:
             return trimmed, target_row, target_col, True
@@ -341,7 +341,7 @@ class ButtonLayoutEditorService:
         return draft or [[]]
 
     @staticmethod
-    def _set_cell(grid: ButtonGrid, row_index: int, col_index: int, value: ButtonCell) -> None:
+    def _set_cell(grid: ButtonGrid, row_index: int, col_index: int, *, value: ButtonCell) -> None:
         while len(grid) <= row_index:
             grid.append([])
         while len(grid[row_index]) <= col_index:
@@ -487,7 +487,7 @@ async def _show_module_detail(
     if editor_ctx.module_type == "welcome":
         from backend.features.admin.admin_handler import _admin_handler
 
-        await _admin_handler._show_welcome_detail_menu(update, context, editor_ctx.target_chat_id, editor_ctx.entity_id)
+        await _admin_handler._show_welcome_detail_menu(update, context, editor_ctx.target_chat_id, welcome_id=editor_ctx.entity_id)
         return
 
     if editor_ctx.module_type == "invite":
@@ -524,7 +524,7 @@ async def _persist_draft(
     session,
     context: ContextTypes.DEFAULT_TYPE,
     editor_ctx: ButtonEditorContext,
-    grid: ButtonGrid,
+    *, grid: ButtonGrid,
 ) -> None:
     _save_draft_to_memory(context, editor_ctx, grid)
     buttons = ButtonLayoutEditorService.export_complete_buttons(grid, module_type=editor_ctx.module_type)
@@ -715,7 +715,7 @@ async def button_layout_editor_callback(update: Update, context: ContextTypes.DE
                     row_index=editor_ctx.row_index,
                     col_index=editor_ctx.col_index,
                 )
-                await _persist_draft(session, context, editor_ctx, next_grid)
+                await _persist_draft(session, context, editor_ctx, grid=next_grid)
                 await session.commit()
                 await show_button_detail(
                     update,
@@ -733,7 +733,7 @@ async def button_layout_editor_callback(update: Update, context: ContextTypes.DE
 
             if action == "clear":
                 next_grid = ButtonLayoutEditorService.clear_buttons()
-                await _persist_draft(session, context, editor_ctx, next_grid)
+                await _persist_draft(session, context, editor_ctx, grid=next_grid)
                 await session.commit()
                 await show_layout_menu(update, context, editor_ctx, session=session)
                 return
@@ -793,7 +793,7 @@ async def button_layout_editor_callback(update: Update, context: ContextTypes.DE
                     int(editor_ctx.row_index or 0),
                     int(editor_ctx.col_index or 0),
                 )
-                await _persist_draft(session, context, editor_ctx, next_grid)
+                await _persist_draft(session, context, editor_ctx, grid=next_grid)
                 await session.commit()
                 await show_layout_menu(update, context, editor_ctx, session=session)
                 return
@@ -804,9 +804,9 @@ async def button_layout_editor_callback(update: Update, context: ContextTypes.DE
                     draft,
                     int(editor_ctx.row_index or 0),
                     int(editor_ctx.col_index or 0),
-                    str(extra or ""),
+                    direction=str(extra or ""),
                 )
-                await _persist_draft(session, context, editor_ctx, next_grid)
+                await _persist_draft(session, context, editor_ctx, grid=next_grid)
                 await session.commit()
                 if not changed:
                     await answer_callback_query_safely(update, "已经到边界了", show_alert=False)
@@ -835,7 +835,7 @@ async def handle_button_layout_editor_input(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session,
-    state,
+    *, state,
     message_text: str,
 ) -> None:
     if update.effective_user is None or update.effective_message is None:
@@ -908,7 +908,7 @@ async def handle_button_layout_editor_input(
             await update.effective_message.reply_text("当前状态不支持按钮编辑。")
             return
 
-        await _persist_draft(session, context, editor_ctx, next_grid)
+        await _persist_draft(session, context, editor_ctx, grid=next_grid)
         await ConversationStateService.clear(session, state.chat_id, update.effective_user.id)
         if state.chat_id != update.effective_user.id:
             await ConversationStateService.clear(session, update.effective_user.id, update.effective_user.id)

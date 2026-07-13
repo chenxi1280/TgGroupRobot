@@ -343,7 +343,7 @@ def _load_model_metadata() -> None:
     import backend.platform.db.schema.models.welcome  # noqa: F401
 
 
-def _required_index_sql(table_name: str, index_name: str, columns: Iterable[str], unique: bool) -> str:
+def _required_index_sql(table_name: str, index_name: str, columns: Iterable[str], *, unique: bool) -> str:
     unique_sql = "UNIQUE " if unique else ""
     column_sql = ", ".join(columns)
     return f"CREATE {unique_sql}INDEX IF NOT EXISTS {index_name} ON bot.{table_name}({column_sql})"

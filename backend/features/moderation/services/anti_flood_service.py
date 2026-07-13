@@ -73,7 +73,7 @@ class AntiFloodTracker:
         chat_id: int,
         user_id: int,
         max_messages: int,
-        time_window_seconds: int,
+        *, time_window_seconds: int,
     ) -> FloodDetectionResult:
         """检测是否刷屏"""
         async with self._lock:
@@ -199,7 +199,7 @@ async def execute_flood_punishment(
     bot: Bot,
     chat_id: int,
     user_id: int,
-    action: str,
+    *, action: str,
     mute_duration: int = 3600,
     cleanup_messages: bool = True,
 ) -> bool:

@@ -15,12 +15,12 @@ from backend.features.nearby.services.nearby_profile_service import (
 
 
 def test_haversine_distance_zero() -> None:
-    assert haversine_distance_km(39.9, 116.4, 39.9, 116.4) == 0.0
+    assert haversine_distance_km(39.9, 116.4, 39.9, lon2=116.4) == 0.0
 
 
 def test_haversine_distance_beijing_shanghai() -> None:
     # 北京天安门到上海人民广场直线距离大约在 1060km 左右
-    distance = haversine_distance_km(39.9087, 116.3975, 31.2304, 121.4737)
+    distance = haversine_distance_km(39.9087, 116.3975, 31.2304, lon2=121.4737)
     assert 1000 <= distance <= 1150
 
 
@@ -68,7 +68,7 @@ async def test_list_nearby_entries_sorts_by_distance_and_preserves_fields() -> N
         async def execute(self, stmt):
             return FakeResult()
 
-    entries = await list_nearby_entries(FakeSession(), -100, 1, 39.9, 116.4)
+    entries = await list_nearby_entries(FakeSession(), -100, 1, requester_lat=39.9, requester_lon=116.4)
 
     assert [entry.user_id for entry in entries] == [2, 3]
     assert entries[0].display_name == "@alice"

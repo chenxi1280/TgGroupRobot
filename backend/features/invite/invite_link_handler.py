@@ -83,7 +83,7 @@ async def invite_link_create_start_callback(update: Update, context: ContextType
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
-        await set_user_state(session, chat.id, user.id, "invite_link_create", {"target_chat_id": target_chat_id})
+        await set_user_state(session, chat.id, user.id, state_type="invite_link_create", state_data={"target_chat_id": target_chat_id})
         await session.commit()
     await q.edit_message_text("➕ 创建邀请链接\n\n请输入链接名称（可选）\n\n输入 /skip 跳过")
     return WAIT_NAME
@@ -100,7 +100,7 @@ async def invite_link_create_name_message(update: Update, context: ContextTypes.
         state = await get_user_state(session, chat.id, user.id)
         state_data = dict(state.state_data if state else {})
         state_data["name"] = None if raw_name == "/skip" else raw_name
-        state_record = await set_user_state(session, chat.id, user.id, "invite_link_create", state_data)
+        state_record = await set_user_state(session, chat.id, user.id, state_type="invite_link_create", state_data=state_data)
         await session.commit()
     await update.effective_message.reply_text(
         f"名称: {state_record.state_data.get('name') or '未命名'}\n\n请输入成员数量限制（可选）\n\n输入数字或 /skip 跳过"
@@ -129,7 +129,7 @@ async def invite_link_create_limit_message(update: Update, context: ContextTypes
                 await update.effective_message.reply_text("请输入有效的数字或 /skip 跳过")
                 return WAIT_LIMIT
         state_data["member_limit"] = member_limit
-        await set_user_state(session, chat.id, user.id, "invite_link_create", state_data)
+        await set_user_state(session, chat.id, user.id, state_type="invite_link_create", state_data=state_data)
         await session.commit()
     await update.effective_message.reply_text(
         build_numeric_duration_prompt_text(

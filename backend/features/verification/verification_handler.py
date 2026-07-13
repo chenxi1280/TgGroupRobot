@@ -90,7 +90,7 @@ async def _send_invite_join_notify(context: ContextTypes.DEFAULT_TYPE, chat, mem
         log.warning("invite_join_notify_failed", chat_id=chat.id, member_user_id=member.id, error=str(exc))
 
 
-async def _track_invite_for_member(context: ContextTypes.DEFAULT_TYPE, session, chat, member, settings) -> None:
+async def _track_invite_for_member(context: ContextTypes.DEFAULT_TYPE, session, chat, *, member, settings) -> None:
     invite_hint = _pop_invite_join_hint(context, chat_id=chat.id, user_id=member.id)
     user_data = getattr(context, "user_data", None)
     if invite_hint is None and isinstance(user_data, dict):
@@ -130,8 +130,8 @@ async def _send_verification_prompt(
     context: ContextTypes.DEFAULT_TYPE,
     chat_id: int,
     settings,
-    text: str,
     *,
+    text: str,
     reply_markup=None,
 ) -> None:
     media_type = getattr(settings, "verification_cover_media_type", None)
@@ -197,7 +197,7 @@ async def new_members_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
                 continue
 
             welcomed_members.append(u)
-            await _track_invite_for_member(context, session, chat, u, settings)
+            await _track_invite_for_member(context, session, chat, member=u, settings=settings)
 
             if not settings.verification_enabled:
                 started = await _start_self_review_if_needed(context, session, chat, u, settings)
@@ -214,7 +214,7 @@ async def new_members_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
                         context,
                         chat.id,
                         u.id,
-                        settings,
+                        settings=settings,
                         action="mute",
                         mute_seconds=int(getattr(settings, "verification_direct_mute_duration", 0) or 0),
                     )
@@ -273,7 +273,7 @@ async def new_members_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
                         context,
                         chat.id,
                         settings,
-                        (
+                        text=(
                             f"{mention}\n\n"
                             f"{agreement_text}\n\n"
                             f"⏱️ 请在 {settings.verification_timeout_seconds} 秒内点击按钮。"
@@ -288,7 +288,7 @@ async def new_members_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
                         context,
                         chat.id,
                         settings,
-                        f"🔢 {mention}\n\n{prompt_text}\n\n<b>{ch.question}</b>\n\n⏱️ {settings.verification_timeout_seconds} 秒内完成",
+                        text=f"🔢 {mention}\n\n{prompt_text}\n\n<b>{ch.question}</b>\n\n⏱️ {settings.verification_timeout_seconds} 秒内完成",
                     )
                 elif settings.verification_mode == "captcha":
                     await context.bot.send_message(chat_id=chat.id, text=f"🔢 {mention} 请输入以下验证码以完成验证：\n\n<b>{ch.question}</b>\n\n⏱️ {settings.verification_timeout_seconds} 秒内完成", parse_mode="HTML")

@@ -9,7 +9,7 @@ class PointsDetailPagesMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        type_id: int,
+        *, type_id: int,
     ) -> None:
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
@@ -35,7 +35,7 @@ class PointsDetailPagesMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        level_id: int,
+        *, level_id: int,
     ) -> None:
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
@@ -62,7 +62,7 @@ class PointsDetailPagesMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        level_id: int,
+        *, level_id: int,
     ) -> None:
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:

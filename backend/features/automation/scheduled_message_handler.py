@@ -83,7 +83,7 @@ async def sm_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             return
 
         if action == "list":
-            await _scheduled_message_handler.show_list(update, context, target_chat_id, parser.get_int(3, default=0))
+            await _scheduled_message_handler.show_list(update, context, target_chat_id, page=parser.get_int(3, default=0))
         elif action == "open":
             await _scheduled_message_handler.show_detail(update, context, target_chat_id, parser.get(3))
         elif action == "add":
@@ -93,22 +93,22 @@ async def sm_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
                 update,
                 context,
                 target_chat_id,
-                parser.get(3),
-                parser.get(4),
-                parser.get(5),
+                task_id=parser.get(3),
+                field=parser.get(4),
+                value=parser.get(5),
             )
         elif action == "edit":
             await _scheduled_message_handler.edit_field(
                 update,
                 context,
                 target_chat_id,
-                parser.get(3),
-                parser.get(4),
+                task_id=parser.get(3),
+                field=parser.get(4),
             )
         elif action == "preview":
-            await _scheduled_message_handler.preview_task(update, context, target_chat_id, parser.get(3))
+            await _scheduled_message_handler.preview_task(update, context, target_chat_id, task_id=parser.get(3))
         elif action == "history":
-            await _scheduled_message_handler.show_occurrence_history(update, context, target_chat_id, parser.get(3))
+            await _scheduled_message_handler.show_occurrence_history(update, context, target_chat_id, task_key=parser.get(3))
         elif action == "occ_retry":
             await _scheduled_message_handler.operate_occurrence(
                 update, context, chat_id=target_chat_id, occurrence_id=parser.get_int(3), action="retry"
@@ -126,11 +126,11 @@ async def sm_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
                 update, context, chat_id=target_chat_id, occurrence_id=parser.get_int(3), action="replay"
             )
         elif action == "del_confirm":
-            await _scheduled_message_handler.confirm_delete(update, context, target_chat_id, parser.get(3))
+            await _scheduled_message_handler.confirm_delete(update, context, target_chat_id, task_id=parser.get(3))
         elif action == "del_do":
-            await _scheduled_message_handler.delete_task(update, context, target_chat_id, parser.get(3))
+            await _scheduled_message_handler.delete_task(update, context, target_chat_id, task_id=parser.get(3))
         elif action == "del_cancel":
-            await _scheduled_message_handler.cancel_delete(update, context, target_chat_id, parser.get(3))
+            await _scheduled_message_handler.cancel_delete(update, context, target_chat_id, task_id=parser.get(3))
         else:
             await update.callback_query.answer(text="❌ 未知的操作", show_alert=True)
     except Exception as exc:

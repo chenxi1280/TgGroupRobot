@@ -38,20 +38,20 @@ log = structlog.get_logger(__name__)
 
 class InviteRouter(BaseRouter):
     """邀请链接功能路由器"""
-    
+
     @property
     def name(self) -> str:
         return "invite"
-    
+
     def register(self, app: Application) -> None:
         log.debug(f"Registering {self.name} router")
-        
+
         # 命令处理器
         app.add_handler(CommandHandler("link", link_command))
         app.add_handler(CommandHandler("link_stat", link_stat_command))
         app.add_handler(MessageHandler(filters.ChatType.GROUPS & filters.Regex(r"^邀请$"), link_command))
         app.add_handler(MessageHandler(filters.ChatType.GROUPS & filters.Regex(r"^邀请统计$"), link_stat_command))
-        
+
         # 回调处理器
         app.add_handler(CallbackQueryHandler(invite_link_menu_callback, pattern=r"^inv:menu$"))
         app.add_handler(CallbackQueryHandler(invite_link_home_callback, pattern=r"^inv:home:"))
@@ -69,13 +69,13 @@ class InviteRouter(BaseRouter):
         app.add_handler(CallbackQueryHandler(invite_link_refresh_callback, pattern=r"^inv:refresh:\d+(?::-?\d+)?$"))
         app.add_handler(CallbackQueryHandler(invite_link_revoke_callback, pattern=r"^inv:revoke:\d+(?::-?\d+)?$"))
         app.add_handler(CallbackQueryHandler(invite_link_delete_callback, pattern=r"^inv:delete:\d+(?::-?\d+)?$"))
-        
+
         # 用户邀请链接回调
         app.add_handler(CallbackQueryHandler(user_invite_menu_callback, pattern=r"^inv:user:menu:\-?\d+$"))
         app.add_handler(CallbackQueryHandler(user_invite_create_callback, pattern=r"^inv:user:create:\-?\d+$"))
         app.add_handler(CallbackQueryHandler(user_invite_list_callback, pattern=r"^inv:user:list:\-?\d+$"))
         app.add_handler(CallbackQueryHandler(user_invite_rank_callback, pattern=r"^inv:user:rank:\-?\d+$"))
-        
+
         # 邀请链接创建流程对话
         invite_link_conv = ConversationHandler(
             entry_points=[PerUserConversationCallbackHandler(invite_link_create_start_callback, pattern=r"^inv:create")],
@@ -91,5 +91,5 @@ class InviteRouter(BaseRouter):
             per_chat=True,
         )
         app.add_handler(invite_link_conv)
-        
+
         log.debug(f"{self.name} router registered successfully")

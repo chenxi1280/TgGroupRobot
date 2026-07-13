@@ -88,7 +88,7 @@ async def _create_and_send_user_invite_link(update: Update, context: ContextType
             session,
             context.bot,
             chat.id,
-            user.id,
+            user_id=user.id,
             name=_user_link_name(user),
         )
         if success and link:
@@ -145,7 +145,7 @@ async def link_stat_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     )
 
 
-async def show_user_invite_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int) -> None:
+async def show_user_invite_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id: int, *, user_id: int) -> None:
     from backend.features.invite.services.invite_service import get_user_invite_stats
 
     db: Database = context.application.bot_data["db"]
@@ -189,7 +189,7 @@ async def user_invite_menu_callback(update: Update, context: ContextTypes.DEFAUL
         return
     await q.answer()
     mark_callback_query_answered(update)
-    await show_user_invite_menu(update, context, chat_id, user.id)
+    await show_user_invite_menu(update, context, chat_id, user_id=user.id)
 
 
 async def user_invite_create_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -210,7 +210,7 @@ async def user_invite_create_callback(update: Update, context: ContextTypes.DEFA
             session,
             context.bot,
             chat_id,
-            user.id,
+            user_id=user.id,
             name=_user_link_name(user),
         )
         if success and link:
@@ -223,7 +223,7 @@ async def user_invite_create_callback(update: Update, context: ContextTypes.DEFA
     if success and link:
         await q.answer()
         mark_callback_query_answered(update)
-        await show_user_invite_menu(update, context, chat_id, user.id)
+        await show_user_invite_menu(update, context, chat_id, user_id=user.id)
         await context.bot.send_message(
             chat_id=user.id,
             text=message_text,
@@ -232,7 +232,7 @@ async def user_invite_create_callback(update: Update, context: ContextTypes.DEFA
         await q.answer()
         mark_callback_query_answered(update)
         await q.edit_message_text(message_text)
-        await show_user_invite_menu(update, context, chat_id, user.id)
+        await show_user_invite_menu(update, context, chat_id, user_id=user.id)
 
 
 async def user_invite_list_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

@@ -186,7 +186,7 @@ async def test_verification_rule_action_enables_one_rule_without_disabling_self_
     context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(_FakeSession())}))
     callback_data = CallbackParser.parse("adm:vfy_home:-1001:rule:mute:toggle")
 
-    await admin_handler._admin_handler._handle_verification_home(update, context, -1001, callback_data)
+    await admin_handler._admin_handler._handle_verification_home(update, context, -1001, callback_data=callback_data)
 
     assert settings.verification_enabled is True
     assert settings.verification_mode == "mute"
@@ -260,9 +260,9 @@ async def test_self_review_force_subscribe_preview_returns_to_self_review(monkey
         update,
         context,
         -1001,
-        "fs_preview",
-        "",
-        context.application.bot_data["db"],
+        action="fs_preview",
+        key="",
+        db=context.application.bot_data["db"],
     )
 
     assert "强制关注" in rendered["text"]

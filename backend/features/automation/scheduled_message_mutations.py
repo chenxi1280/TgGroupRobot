@@ -100,7 +100,7 @@ class ScheduledMessageMutationMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         target_chat_id: int,
-        task_id: str,
+        *, task_id: str,
         field: str,
         value: str,
     ) -> None:
@@ -127,11 +127,11 @@ class ScheduledMessageMutationMixin:
                     task = await ScheduledMessageService.toggle_task_enabled(session, task_id, value == "1")
                 elif field == "delete_previous":
                     task = await ScheduledMessageService.update_task_toggle_option(
-                        session, task_id, "delete_previous", value == "1"
+                        session, task_id, "delete_previous", value=value == "1"
                     )
                 elif field == "pin_message":
                     task = await ScheduledMessageService.update_task_toggle_option(
-                        session, task_id, "pin_message", value == "1"
+                        session, task_id, "pin_message", value=value == "1"
                     )
                 elif field == "repeat":
                     task = await ScheduledMessageService.update_task_repeat(session, task_id, int(value))
@@ -141,8 +141,8 @@ class ScheduledMessageMutationMixin:
                         session,
                         state_chat_id,
                         update.effective_user.id if update.effective_user else 0,
-                        ConversationStateType.sm_edit_day_start.value,
-                        {"task_id": task_id, "start_hour": int(value), "target_chat_id": target_chat_id},
+                        state_type=ConversationStateType.sm_edit_day_start.value,
+                        state_data={"task_id": task_id, "start_hour": int(value), "target_chat_id": target_chat_id},
                     )
                     await session.commit()
                     keyboard = sm_day_period_end_keyboard(target_chat_id, task_id, int(value))
@@ -168,7 +168,7 @@ class ScheduledMessageMutationMixin:
                         session,
                         task_id,
                         state.state_data["start_hour"],
-                        int(value),
+                        day_end_hour=int(value),
                     )
                     await ConversationStateService.clear(
                         session,
@@ -211,7 +211,7 @@ class ScheduledMessageMutationMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         target_chat_id: int,
-        task_id: str,
+        *, task_id: str,
         field: str,
     ) -> None:
         if not await self._check_permission(update, context, target_chat_id):
@@ -321,8 +321,8 @@ class ScheduledMessageMutationMixin:
                 session,
                 state_chat_id,
                 update.effective_user.id if update.effective_user else 0,
-                state_type,
-                {"task_id": task_id, "target_chat_id": target_chat_id},
+                state_type=state_type,
+                state_data={"task_id": task_id, "target_chat_id": target_chat_id},
             )
             await session.commit()
 
@@ -336,7 +336,7 @@ class ScheduledMessageMutationMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         target_chat_id: int,
-        task_id: str,
+        *, task_id: str,
     ) -> None:
         if update.effective_user is None:
             return
@@ -393,7 +393,7 @@ class ScheduledMessageMutationMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         target_chat_id: int,
-        task_id: str,
+        *, task_id: str,
     ) -> None:
         if not await self._check_permission(update, context, target_chat_id):
             await self.message_helper.safe_edit(update, text="❌ 需要管理员权限")
@@ -411,7 +411,7 @@ class ScheduledMessageMutationMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         target_chat_id: int,
-        task_id: str,
+        *, task_id: str,
     ) -> None:
         if not await self._check_permission(update, context, target_chat_id):
             await self.message_helper.safe_edit(update, text="❌ 需要管理员权限")
@@ -438,7 +438,7 @@ class ScheduledMessageMutationMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         target_chat_id: int,
-        task_id: str,
+        *, task_id: str,
     ) -> None:
         await self.show_detail(update, context, target_chat_id, task_id)
 
@@ -447,7 +447,7 @@ class ScheduledMessageMutationMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         target_chat_id: int,
-        task_id: str | None = None,
+        *, task_id: str | None = None,
     ) -> None:
         if update.effective_user:
             db: Database = context.application.bot_data["db"]

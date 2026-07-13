@@ -31,8 +31,8 @@ async def test_night_mode_time_prompt_uses_unified_copy_ui(monkeypatch):
     rendered: list[tuple[str, object, str | None]] = []
     started: list[tuple[str, dict]] = []
 
-    async def fake_start_text_input_state(context, user_id: int, chat_id: int, state_type: str, state_data: dict):
-        started.append((state_type, state_data))
+    async def fake_start_text_input_state(context, user_id: int, chat_id: int, *, state_type: str, payload: dict):
+        started.append((state_type, payload))
 
     async def fake_safe_edit(update, text: str, reply_markup=None, parse_mode=None):
         rendered.append((text, reply_markup, parse_mode))
@@ -47,7 +47,7 @@ async def test_night_mode_time_prompt_uses_unified_copy_ui(monkeypatch):
         update,
         context,
         -1001,
-        CallbackParser.parse("adm:night:-1001:input:start"),
+        callback_data=CallbackParser.parse("adm:night:-1001:input:start"),
     )
 
     assert started and started[0][1]["field"] == "start"
@@ -61,8 +61,8 @@ async def test_group_lock_time_prompt_uses_unified_copy_ui(monkeypatch):
     rendered: list[tuple[str, object, str | None]] = []
     started: list[tuple[str, dict]] = []
 
-    async def fake_start_text_input_state(context, user_id: int, chat_id: int, state_type: str, state_data: dict):
-        started.append((state_type, state_data))
+    async def fake_start_text_input_state(context, user_id: int, chat_id: int, *, state_type: str, payload: dict):
+        started.append((state_type, payload))
 
     async def fake_safe_edit(update, text: str, reply_markup=None, parse_mode=None):
         rendered.append((text, reply_markup, parse_mode))
@@ -77,7 +77,7 @@ async def test_group_lock_time_prompt_uses_unified_copy_ui(monkeypatch):
         update,
         context,
         -1001,
-        CallbackParser.parse("adm:gl:-1001:input:open_time"),
+        callback_data=CallbackParser.parse("adm:gl:-1001:input:open_time"),
     )
 
     assert started and started[0][1]["target_chat_id"] == -1001
@@ -124,7 +124,7 @@ async def test_night_control_start_input_syncs_legacy_group_lock_time(monkeypatc
     monkeypatch.setattr(limit_night_command_inputs, "clear_admin_input_state", fake_clear_state)
     monkeypatch.setattr(limit_night_command_inputs.admin_handler_instance(), "_show_night_mode_menu", fake_show_menu)
 
-    await limit_night_command_inputs.handle_night_mode_input(update, context, session, state, "23:30")
+    await limit_night_command_inputs.handle_night_mode_input(update, context, session, state=state, message_text="23:30")
 
     assert settings.night_mode_start_time == "23:30"
     assert settings.group_lock_close_time == "23:30"
@@ -136,8 +136,8 @@ async def test_game_auto_start_prompt_uses_unified_copy_ui(monkeypatch):
     rendered: list[tuple[str, object, str | None]] = []
     started: list[tuple[str, dict]] = []
 
-    async def fake_start_text_input_state(context, user_id: int, chat_id: int, state_type: str, state_data: dict):
-        started.append((state_type, state_data))
+    async def fake_start_text_input_state(context, user_id: int, chat_id: int, *, state_type: str, payload: dict):
+        started.append((state_type, payload))
 
     async def fake_safe_edit(update, text: str, reply_markup=None, parse_mode=None):
         rendered.append((text, reply_markup, parse_mode))
@@ -152,7 +152,7 @@ async def test_game_auto_start_prompt_uses_unified_copy_ui(monkeypatch):
         update,
         context,
         -1001,
-        CallbackParser.parse("gm:auto:-1001:start_time"),
+        callback_data=CallbackParser.parse("gm:auto:-1001:start_time"),
     )
 
     assert started and started[0][0] == "game_wait_auto_start_time"

@@ -52,7 +52,7 @@ async def test_guess_deadline_prompt_uses_unified_copy_ui(monkeypatch):
         update,
         context,
         -1001,
-        CallbackParser.parse("guess:create:-1001:deadline"),
+        callback_data=CallbackParser.parse("guess:create:-1001:deadline"),
     )
 
     assert started and started[0][0] == "guess_wait_deadline"
@@ -90,19 +90,19 @@ async def test_guess_step_prompts_use_complete_examples(monkeypatch):
         update,
         context,
         -1001,
-        CallbackParser.parse("guess:create:-1001:title"),
+        callback_data=CallbackParser.parse("guess:create:-1001:title"),
     )
     await admin_handler._admin_handler._handle_guess(
         update,
         context,
         -1001,
-        CallbackParser.parse("guess:create:-1001:options"),
+        callback_data=CallbackParser.parse("guess:create:-1001:options"),
     )
     await admin_handler._admin_handler._handle_guess(
         update,
         context,
         -1001,
-        CallbackParser.parse("guess:settings:-1001:rake_ratio"),
+        callback_data=CallbackParser.parse("guess:settings:-1001:rake_ratio"),
     )
 
     assert [item[0] for item in started] == ["guess_wait_title", "guess_wait_options", "guess_wait_rake_ratio"]
@@ -120,8 +120,8 @@ async def test_new_member_window_prompt_uses_numeric_duration_ui(monkeypatch):
     rendered: list[tuple[str, object, str | None]] = []
     started: list[tuple[str, dict]] = []
 
-    async def fake_start_text_input_state(context, user_id: int, chat_id: int, state_type: str, state_data: dict):
-        started.append((state_type, state_data))
+    async def fake_start_text_input_state(context, user_id: int, chat_id: int, *, state_type: str, payload: dict):
+        started.append((state_type, payload))
 
     async def fake_safe_edit(update, text: str, reply_markup=None, parse_mode=None):
         rendered.append((text, reply_markup, parse_mode))
@@ -136,7 +136,7 @@ async def test_new_member_window_prompt_uses_numeric_duration_ui(monkeypatch):
         update,
         context,
         -1001,
-        CallbackParser.parse("adm:nml:-1001:input:window"),
+        callback_data=CallbackParser.parse("adm:nml:-1001:input:window"),
     )
 
     assert started and started[0][1]["field"] == "window"
@@ -150,8 +150,8 @@ async def test_garage_limit_interval_prompt_uses_numeric_duration_ui(monkeypatch
     rendered: list[tuple[str, object, str | None]] = []
     started: list[tuple[str, dict]] = []
 
-    async def fake_start_text_input_state(context, user_id: int, chat_id: int, state_type: str, state_data: dict):
-        started.append((state_type, state_data))
+    async def fake_start_text_input_state(context, user_id: int, chat_id: int, *, state_type: str, payload: dict):
+        started.append((state_type, payload))
 
     async def fake_safe_edit(update, text: str, reply_markup=None, parse_mode=None):
         rendered.append((text, reply_markup, parse_mode))
@@ -166,7 +166,7 @@ async def test_garage_limit_interval_prompt_uses_numeric_duration_ui(monkeypatch
         update,
         context,
         -1001,
-        CallbackParser.parse("grg:limit:interval:-1001"),
+        callback_data=CallbackParser.parse("grg:limit:interval:-1001"),
     )
 
     assert started and started[0][0] == "garage_limit_interval_input"

@@ -53,7 +53,7 @@ async def get_or_create_chat_reward(session: AsyncSession, chat_id: int) -> Enga
     return reward
 
 
-async def get_or_create_chat_stat(session: AsyncSession, chat_id: int, user_id: int, biz_date: dt.date) -> EngagementChatStat:
+async def get_or_create_chat_stat(session: AsyncSession, chat_id: int, user_id: int, *, biz_date: dt.date) -> EngagementChatStat:
     stmt = select(EngagementChatStat).where(
         EngagementChatStat.chat_id == chat_id,
         EngagementChatStat.user_id == user_id,

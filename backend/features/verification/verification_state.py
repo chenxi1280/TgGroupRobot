@@ -18,7 +18,7 @@ from backend.shared.handlers.base.chat_resolver import ChatResolver
 log = structlog.get_logger(__name__)
 
 
-async def start_self_review_if_needed(context: ContextTypes.DEFAULT_TYPE, session, chat, user, settings) -> bool:
+async def start_self_review_if_needed(context: ContextTypes.DEFAULT_TYPE, session, chat, *, user, settings) -> bool:
     if not bool(getattr(settings, "join_self_review_enabled", False)):
         return False
     challenge = await create_or_replace_challenge(
@@ -50,7 +50,7 @@ async def start_self_review_if_needed(context: ContextTypes.DEFAULT_TYPE, sessio
     return True
 
 
-async def resolve_verification_config_state(session, db, chat, user) -> ConversationState | None:
+async def resolve_verification_config_state(session, db, chat, *, user) -> ConversationState | None:
     if chat.type != "private":
         state = await ConversationStateService.get(session, chat.id, user.id)
         if state and state.state_type == "verification_config":

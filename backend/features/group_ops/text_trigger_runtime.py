@@ -87,7 +87,7 @@ async def try_bottom_button_text_trigger(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     chat_id: int,
-    button_text: str,
+    *, button_text: str,
 ) -> bool:
     if update.effective_message is None:
         return False
@@ -110,9 +110,9 @@ async def try_bottom_button_text_trigger(
         await update.effective_message.reply_text("底部按钮事件未配置，请联系管理员。")
         return True
 
-    handled = await try_group_text_trigger(update, context, chat_id, trigger_text)
+    handled = await try_group_text_trigger(update, context, chat_id, payload=trigger_text)
     if not handled and layout.action_mode != "event":
-        handled = await _try_auto_reply_trigger(update, context, chat_id, trigger_text)
+        handled = await _try_auto_reply_trigger(update, context, chat_id, payload=trigger_text)
     if not handled:
         await update.effective_message.reply_text("该底部按钮事件当前不可用，请联系管理员检查功能配置。")
     return True
@@ -122,7 +122,7 @@ async def _try_garage_text_trigger(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     chat_id: int,
-    payload: str,
+    *, payload: str,
 ) -> bool:
     if update.effective_chat is None or update.effective_user is None or update.effective_message is None:
         return False
@@ -180,9 +180,9 @@ async def _try_garage_text_trigger(
                         context,
                         session,
                         update.effective_chat,
-                        update.effective_user,
-                        update.effective_message,
-                        teacher_setting,
+                        user=update.effective_user,
+                        message=update.effective_message,
+                        teacher_setting=teacher_setting,
                         is_teacher=is_attendance_teacher,
                         status=status,
                     )
@@ -192,11 +192,11 @@ async def _try_garage_text_trigger(
             context,
             session,
             update.effective_chat,
-            update.effective_user,
-            update.effective_message,
-            payload,
-            teacher_setting,
-            chat_settings,
+            user=update.effective_user,
+            message=update.effective_message,
+            text=payload,
+            teacher_setting=teacher_setting,
+            chat_settings=chat_settings,
             is_teacher=is_teacher,
             is_attendance_teacher=is_attendance_teacher,
             is_admin=is_admin,
@@ -207,11 +207,11 @@ async def _try_garage_text_trigger(
             context,
             session,
             update.effective_chat,
-            update.effective_user,
-            update.effective_message,
-            payload,
-            car_review_setting,
-            chat_settings,
+            user=update.effective_user,
+            message=update.effective_message,
+            text=payload,
+            car_review_setting=car_review_setting,
+            chat_settings=chat_settings,
         )
         if not handled:
             await session.commit()
@@ -222,16 +222,16 @@ async def _try_teacher_search_trigger(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     chat_id: int,
-    payload: str,
+    *, payload: str,
 ) -> bool:
-    return await _try_garage_text_trigger(update, context, chat_id, payload)
+    return await _try_garage_text_trigger(update, context, chat_id, payload=payload)
 
 
 async def _try_invite_trigger(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     chat_id: int,
-    payload: str,
+    *, payload: str,
 ) -> bool:
     if payload not in INVITE_TEXT_COMMANDS:
         return False
@@ -300,7 +300,7 @@ async def _try_engagement_reward_trigger(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     chat_id: int,
-    payload: str,
+    *, payload: str,
 ) -> bool:
     if (
         getattr(update, "effective_chat", None) is None
@@ -328,7 +328,7 @@ async def _try_auto_reply_trigger(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     chat_id: int,
-    payload: str,
+    *, payload: str,
 ) -> bool:
     if update.effective_chat is None or update.effective_message is None:
         return False
@@ -337,14 +337,14 @@ async def _try_auto_reply_trigger(
     from backend.features.group_ops.group_hooks.moderation import _process_auto_reply
 
     db: Database = context.application.bot_data["db"]
-    return await _process_auto_reply(context, db, update.effective_chat, update.effective_message, payload)
+    return await _process_auto_reply(context, db, update.effective_chat, message=update.effective_message, message_text=payload)
 
 
 async def try_group_text_trigger(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     chat_id: int,
-    payload: str,
+    *, payload: str,
 ) -> bool:
     trigger_text = payload.strip()
     if not trigger_text:
@@ -354,12 +354,12 @@ async def try_group_text_trigger(
     if handled:
         return True
 
-    if await _try_invite_trigger(update, context, chat_id, trigger_text):
+    if await _try_invite_trigger(update, context, chat_id, payload=trigger_text):
         return True
     if await _try_game_trigger(update, context, trigger_text):
         return True
     if await _try_guess_trigger(update, context, trigger_text):
         return True
-    if await _try_engagement_reward_trigger(update, context, chat_id, trigger_text):
+    if await _try_engagement_reward_trigger(update, context, chat_id, payload=trigger_text):
         return True
-    return await _try_teacher_search_trigger(update, context, chat_id, trigger_text)
+    return await _try_teacher_search_trigger(update, context, chat_id, payload=trigger_text)

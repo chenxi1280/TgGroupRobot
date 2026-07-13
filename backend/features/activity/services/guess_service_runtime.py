@@ -40,9 +40,9 @@ async def resolve_user_id(session: AsyncSession, raw: str) -> int | None:
     return user_id
 
 
-async def create_event(session: AsyncSession, chat_id: int, creator_user_id: int, draft: dict) -> GuessEvent:
+async def create_event(session: AsyncSession, chat_id: int, creator_user_id: int, *, draft: dict) -> GuessEvent:
     await ModuleSettingsService.ensure(session, chat_id=chat_id, user_id=creator_user_id)
-    await ensure_user(session, creator_user_id, None, None, None, None)
+    await ensure_user(session, creator_user_id, None, first_name=None, last_name=None, language_code=None)
     banker_user_id = draft.get("banker_user_id")
     deadline_at = parse_deadline(str(draft.get("deadline_at")))
     if deadline_at <= now():
@@ -155,7 +155,7 @@ async def place_bet(session: AsyncSession, *, event: GuessEvent, user_id: int, o
         if result.scalar_one_or_none() is not None:
             raise ValidationError("当前活动不允许重复下注。")
 
-    ok, _ = await change_points(session, event.chat_id, user_id, -amount, PointsTxnType.penalty.value, reason=f"竞猜下注 #{event.id}")
+    ok, _ = await change_points(session, event.chat_id, user_id, amount=-amount, txn_type=PointsTxnType.penalty.value, reason=f"竞猜下注 #{event.id}")
     if not ok:
         balance = await get_balance(session, event.chat_id, user_id)
         raise ValidationError(f"主积分不足，当前余额 {balance}。")
@@ -188,12 +188,12 @@ async def settle_event(session: AsyncSession, *, event: GuessEvent, winner_optio
 
     for user_id, payout in plan.winner_payouts.items():
         if payout > 0:
-            await change_points(session, event.chat_id, user_id, payout, PointsTxnType.reward.value, reason=f"竞猜中奖 #{event.id}")
+            await change_points(session, event.chat_id, user_id, amount=payout, txn_type=PointsTxnType.reward.value, reason=f"竞猜中奖 #{event.id}")
     for user_id, rake_amount in plan.rake_payouts.items():
         if rake_amount > 0:
-            await change_points(session, event.chat_id, user_id, rake_amount, PointsTxnType.reward.value, reason=f"竞猜抽水 #{event.id}")
+            await change_points(session, event.chat_id, user_id, amount=rake_amount, txn_type=PointsTxnType.reward.value, reason=f"竞猜抽水 #{event.id}")
     if banker_user_id is not None and plan.banker_delta != 0:
-        await _apply_points_delta_allow_negative(session, event.chat_id, banker_user_id, plan.banker_delta, f"竞猜庄家结算 #{event.id}")
+        await _apply_points_delta_allow_negative(session, event.chat_id, banker_user_id, amount=plan.banker_delta, reason=f"竞猜庄家结算 #{event.id}")
 
     event.status = "opened"
     event.winner_option = winner_option
@@ -361,7 +361,7 @@ async def cancel_event(session: AsyncSession, *, event: GuessEvent) -> None:
     result = await session.execute(select(GuessBet).where(GuessBet.event_id == event.id))
     bets = list(result.scalars().all())
     for bet in bets:
-        await change_points(session, event.chat_id, bet.user_id, bet.bet_points, PointsTxnType.reward.value, reason=f"竞猜取消退款 #{event.id}")
+        await change_points(session, event.chat_id, bet.user_id, amount=bet.bet_points, txn_type=PointsTxnType.reward.value, reason=f"竞猜取消退款 #{event.id}")
     event.status = "cancelled"
     event.updated_at = now()
     await session.flush()
@@ -377,7 +377,7 @@ async def _get_or_create_points_account(session: AsyncSession, chat_id: int, use
     return account
 
 
-async def _apply_points_delta_allow_negative(session: AsyncSession, chat_id: int, user_id: int, amount: int, reason: str) -> int:
+async def _apply_points_delta_allow_negative(session: AsyncSession, chat_id: int, user_id: int, *, amount: int, reason: str) -> int:
     account = await _get_or_create_points_account(session, chat_id, user_id)
     account.balance += amount
     session.add(

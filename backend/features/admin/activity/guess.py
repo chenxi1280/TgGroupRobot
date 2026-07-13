@@ -171,8 +171,8 @@ class GuessAdminControllerMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        draft: dict,
-        *,
+        *, draft: dict,
+
         toast: str | None = None,
     ) -> None:
         draft = _guess_draft_with_defaults(draft)
@@ -242,7 +242,7 @@ class GuessAdminControllerMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        status: str,
+        *, status: str,
     ) -> None:
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
@@ -263,7 +263,7 @@ class GuessAdminControllerMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        event_id: int,
+        *, event_id: int,
     ) -> None:
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
@@ -289,7 +289,7 @@ class GuessAdminControllerMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        callback_data: CallbackParser,
+        *, callback_data: CallbackParser,
     ) -> None:
         action = callback_data.get(1)
         db: Database = context.application.bot_data["db"]
@@ -350,18 +350,18 @@ class GuessAdminControllerMixin:
                     draft["allow_repeat_bet"] = not bool(draft.get("allow_repeat_bet", False))
                     await _start_guess_input_state(session, user_id=update.effective_user.id, chat_id=chat_id, state_type="guess_wait_title", draft=draft)
                     await session.commit()
-                    await self._show_guess_create_menu(update, context, chat_id, draft)
+                    await self._show_guess_create_menu(update, context, chat_id, draft=draft)
                     return
                 if sub == "clear":
                     await clear_private_admin_state(session, target_chat_id=chat_id, user_id=update.effective_user.id)
                     draft = _guess_draft_with_defaults({})
                     await _start_guess_input_state(session, user_id=update.effective_user.id, chat_id=chat_id, state_type="guess_wait_title", draft=draft)
                     await session.commit()
-                    await self._show_guess_create_menu(update, context, chat_id, draft)
+                    await self._show_guess_create_menu(update, context, chat_id, draft=draft)
                     return
                 if sub == "preview":
                     await session.commit()
-                    await self._show_guess_create_menu(update, context, chat_id, draft)
+                    await self._show_guess_create_menu(update, context, chat_id, draft=draft)
                     return
                 if sub == "publish":
                     draft = _guess_draft_with_defaults(draft)
@@ -373,7 +373,7 @@ class GuessAdminControllerMixin:
                             update,
                             context,
                             chat_id,
-                            draft,
+                            draft=draft,
                             toast="❌ 发布失败：请先补齐活动名字、竞猜选项和截止时间。下面可以直接继续修改。",
                         )
                         return
@@ -392,7 +392,7 @@ class GuessAdminControllerMixin:
                     event.announcement_message_id = sent.message_id
                     await clear_private_admin_state(session, target_chat_id=chat_id, user_id=update.effective_user.id)
                     await session.commit()
-                    await self._show_guess_event_detail(update, context, chat_id, event.id)
+                    await self._show_guess_event_detail(update, context, chat_id, event_id=event.id)
                     return
             if action == "settings":
                 sub = callback_data.get(3)
@@ -417,11 +417,11 @@ class GuessAdminControllerMixin:
                     return
             if action == "list":
                 await session.commit()
-                await self._show_guess_event_list(update, context, chat_id, callback_data.get(3))
+                await self._show_guess_event_list(update, context, chat_id, status=callback_data.get(3))
                 return
             if action == "detail":
                 await session.commit()
-                await self._show_guess_event_detail(update, context, chat_id, callback_data.get_int(3))
+                await self._show_guess_event_detail(update, context, chat_id, event_id=callback_data.get_int(3))
                 return
             if action == "open":
                 event = await get_guess_event(session, chat_id, callback_data.get_int(3))
@@ -432,7 +432,7 @@ class GuessAdminControllerMixin:
                 note = await settle_guess_event(session, event=event, winner_option=callback_data.get(4))
                 await context.bot.send_message(chat_id=chat_id, text=f"{format_event_runtime(event)}\n\n{note}", parse_mode="Markdown")
                 await session.commit()
-                await self._show_guess_event_detail(update, context, chat_id, event.id)
+                await self._show_guess_event_detail(update, context, chat_id, event_id=event.id)
                 return
             if action == "cancel":
                 event = await get_guess_event(session, chat_id, callback_data.get_int(3))
@@ -442,5 +442,5 @@ class GuessAdminControllerMixin:
                     return
                 await cancel_guess_event(session, event=event)
                 await session.commit()
-                await self._show_guess_event_detail(update, context, chat_id, event.id)
+                await self._show_guess_event_detail(update, context, chat_id, event_id=event.id)
                 return

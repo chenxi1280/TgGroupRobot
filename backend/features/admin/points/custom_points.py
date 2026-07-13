@@ -8,7 +8,7 @@ class CustomPointsAdminControllerMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        callback_data: CallbackParser,
+        *, callback_data: CallbackParser,
     ) -> None:
         op = callback_data.get(3)
         if op == "noop":
@@ -19,10 +19,10 @@ class CustomPointsAdminControllerMixin:
             async with db.session_factory() as session:
                 item = await PointsExtendedService.create_custom_point_type(session, chat_id, update.effective_user.id)
                 await session.commit()
-            await self._show_custom_point_detail(update, context, chat_id, item.id)
+            await self._show_custom_point_detail(update, context, chat_id, type_id=item.id)
             return
         if op == "detail":
-            await self._show_custom_point_detail(update, context, chat_id, callback_data.get_int(4))
+            await self._show_custom_point_detail(update, context, chat_id, type_id=callback_data.get_int(4))
             return
         if op == "clear_confirm":
             type_id = callback_data.get_int(4)
@@ -61,7 +61,7 @@ class CustomPointsAdminControllerMixin:
                 if item is not None:
                     await PointsExtendedService.update_custom_point_type(session, item, enabled=enabled)
                 await session.commit()
-            await self._show_custom_point_detail(update, context, chat_id, type_id)
+            await self._show_custom_point_detail(update, context, chat_id, type_id=type_id)
             return
         if op == "delete":
             type_id = callback_data.get_int(4)
@@ -169,7 +169,7 @@ class CustomPointsAdminControllerMixin:
                 else:
                     await session.commit()
                     await answer_callback_query_safely(update, "自定义积分不存在", show_alert=True)
-            await self._show_custom_point_detail(update, context, chat_id, type_id)
+            await self._show_custom_point_detail(update, context, chat_id, type_id=type_id)
             return
         if op == "export":
             type_id = callback_data.get_int(4)

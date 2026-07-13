@@ -63,11 +63,11 @@ async def auto_reply_config_handler_impl(update: Update, context: ContextTypes.D
                     if not text:
                         await session.commit()
                         return
-                    await _parse_auto_reply_config(update, session, state, text)
+                    await _parse_auto_reply_config(update, session, state, text=text)
                 else:
                     await session.commit()
             else:
-                await _handle_auto_reply_edit_input(update, session, state, text)
+                await _handle_auto_reply_edit_input(update, session, state, text=text)
 
             log.info("auto_reply_handler_done")
     except Exception as exc:
@@ -127,7 +127,7 @@ async def auto_reply_message_handler_impl(update: Update, context: ContextTypes.
         log.warning("auto_reply_send_failed", error=str(exc))
 
 
-async def _parse_auto_reply_config(update: Update, session, state: object, text: str) -> None:
+async def _parse_auto_reply_config(update: Update, session, state: object, *, text: str) -> None:
     try:
         config = _parse_auto_reply_config_text(text)
         target_chat_id = state.state_data.get("target_chat_id") or update.effective_chat.id
@@ -243,7 +243,7 @@ def _build_create_success_text(config: dict, result) -> str:
     )
 
 
-async def _handle_auto_reply_edit_input(update: Update, session, state: object, text: str) -> None:
+async def _handle_auto_reply_edit_input(update: Update, session, state: object, *, text: str) -> None:
     state_data = state.state_data or {}
     target_chat_id = state_data.get("target_chat_id")
     rule_id = state_data.get("rule_id")
@@ -253,7 +253,7 @@ async def _handle_auto_reply_edit_input(update: Update, session, state: object, 
         await session.commit()
         return
 
-    updated_rule = await _apply_auto_reply_edit(update, session, state.state_type, target_chat_id, rule_id, text)
+    updated_rule = await _apply_auto_reply_edit(update, session, state.state_type, target_chat_id=target_chat_id, rule_id=rule_id, text=text)
     if updated_rule is None:
         await update.effective_message.reply_text("❌ 自动回复规则不存在或不属于当前群组。")
         await session.commit()
@@ -269,7 +269,7 @@ async def _handle_auto_reply_edit_input(update: Update, session, state: object, 
     )
 
 
-async def _apply_auto_reply_edit(update: Update, session, state_type: str, target_chat_id: int, rule_id: int, text: str):
+async def _apply_auto_reply_edit(update: Update, session, state_type: str, *, target_chat_id: int, rule_id: int, text: str):
     if state_type == ConversationStateType.auto_reply_edit_keywords.value:
         keywords = [item.strip() for item in text.split(",") if item.strip()]
         return await update_auto_reply_rule(session, rule_id, chat_id=target_chat_id, keywords=keywords)

@@ -46,7 +46,7 @@ class InviteLinkHandler(BaseHandler):
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         target_chat_id: int,
-        chat_title: str | None = None,
+        *, chat_title: str | None = None,
     ) -> None:
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
@@ -63,7 +63,7 @@ class InviteLinkHandler(BaseHandler):
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         target_chat_id: int,
-        page: int = 0,
+        *, page: int = 0,
     ) -> None:
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
@@ -186,14 +186,14 @@ async def show_invite_link_menu_from_message(
     context: ContextTypes.DEFAULT_TYPE,
     target_chat_id: int,
 ) -> None:
-    await _invite_link_handler.show_menu(update, context, target_chat_id, str(target_chat_id))
+    await _invite_link_handler.show_menu(update, context, target_chat_id, chat_title=str(target_chat_id))
 
 
 async def handle_invite_link_config_input(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session,
-    state,
+    *, state,
     message_text: str,
 ) -> None:
     if update.effective_user is None or update.effective_message is None:

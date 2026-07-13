@@ -22,19 +22,19 @@ log = structlog.get_logger(__name__)
 
 class PointsRouter(BaseRouter):
     """积分功能路由器"""
-    
+
     @property
     def name(self) -> str:
         return "points"
-    
+
     def register(self, app: Application) -> None:
         log.debug(f"Registering {self.name} router")
-        
+
         # 命令处理器
         app.add_handler(CommandHandler("sign", sign_command))
         app.add_handler(CommandHandler("points", points_command))
         app.add_handler(CommandHandler("rank", points_rank_command))
-        
+
         # 积分配置流程对话
         points_config_conv = ConversationHandler(
             entry_points=[PerUserConversationCallbackHandler(points_config_callback, pattern=r"^pts:edit:")],

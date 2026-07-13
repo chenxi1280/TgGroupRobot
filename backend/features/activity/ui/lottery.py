@@ -94,7 +94,7 @@ def manual_draw_prize_keyboard(
     target_chat_id: int,
     lottery_id: int,
     prize_index: int,
-    prize_name: str,
+    *, prize_name: str,
     participants: list,
     page: int = 0,
     page_size: int = 8,
@@ -173,7 +173,7 @@ def manual_draw_summary_keyboard_with_winners(
     target_chat_id: int,
     lottery_id: int,
     prizes: list,
-    winners: dict,
+    *, winners: dict,
 ) -> InlineKeyboardMarkup:
     """手动开奖汇总键盘（已选择部分中奖人）
 

@@ -9,7 +9,7 @@ class SubscriptionAdminControllerMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        callback_data: CallbackParser,
+        *, callback_data: CallbackParser,
     ) -> None:
         """处理续费入口操作"""
         sub_action = callback_data.get(2) if callback_data.length() >= 3 else "page"

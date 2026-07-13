@@ -241,9 +241,9 @@ async def test_new_member_limit_delete_failure_still_blocks_and_notifies_admin()
         _context(bot),
         SimpleNamespace(),
         SimpleNamespace(id=-1001),
-        SimpleNamespace(id=42, first_name="A", last_name=None, username=None),
-        message,
-        settings,
+        user=SimpleNamespace(id=42, first_name="A", last_name=None, username=None),
+        message=message,
+        settings=settings,
         joined_at_lookup=joined_at_lookup,
     )
 
@@ -268,8 +268,8 @@ async def test_night_mode_delete_failure_still_blocks_and_notifies_admin() -> No
         _context(bot),
         SimpleNamespace(id=-1001),
         SimpleNamespace(id=42),
-        message,
-        settings,
+        message=message,
+        settings=settings,
         is_admin=False,
         night_time_check=lambda _: True,
     )
@@ -307,8 +307,8 @@ async def test_alliance_joint_ban_failure_still_stops_later_processing(monkeypat
         _context(bot),
         _Db(),
         SimpleNamespace(id=-1001),
-        SimpleNamespace(id=42),
-        SimpleNamespace(message_id=31, sender_chat=None),
+        user=SimpleNamespace(id=42),
+        message=SimpleNamespace(message_id=31, sender_chat=None),
     )
 
     assert handled is True
@@ -332,8 +332,8 @@ async def test_group_lock_phrase_delete_runs_only_after_permission_success() -> 
         _context(bot),
         SimpleNamespace(id=-1001),
         SimpleNamespace(id=42),
-        message,
-        settings,
+        message=message,
+        settings=settings,
         is_admin=True,
         message_text="关群",
     )
@@ -372,9 +372,9 @@ async def test_legacy_banned_word_uses_unified_action_diagnostic(monkeypatch) ->
         _context(bot),
         _Db(),
         SimpleNamespace(id=-1001),
-        SimpleNamespace(id=42, username=None),
-        _Message(delete_fails=True),
-        "违禁词测试",
+        user=SimpleNamespace(id=42, username=None),
+        message=_Message(delete_fails=True),
+        message_text="违禁词测试",
         settings=None,
     )
 

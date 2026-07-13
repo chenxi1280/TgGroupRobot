@@ -36,8 +36,8 @@ async def verification_config_handler(update: Update, context: ContextTypes.DEFA
     await verification_config_handler_impl(update, context)
 
 
-async def parse_verification_config(update: Update, session, state, text: str) -> None:
-    await parse_verification_config_impl(update, session, state, text)
+async def parse_verification_config(update: Update, session, state, *, text: str) -> None:
+    await parse_verification_config_impl(update, session, state, text=text)
 
 
 async def verification_cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

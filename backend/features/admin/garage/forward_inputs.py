@@ -20,7 +20,7 @@ async def handle_garage_forward_input(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session,
-    state,
+    *, state,
     message_text: str,
 ) -> None:
     from backend.features.garage.services.garage_forward_service import GarageForwardService
@@ -41,21 +41,21 @@ async def handle_garage_forward_input(
         return
 
     if state.state_type == "garage_forward_keyword_input":
-        await _handle_keyword_input(update, context, session, target_chat_id, message_text)
+        await _handle_keyword_input(update, context, session, target_chat_id=target_chat_id, message_text=message_text)
         return
 
     if state.state_type == "garage_forward_buttons_input":
-        await _handle_buttons_input(update, context, session, target_chat_id, message_text)
+        await _handle_buttons_input(update, context, session, target_chat_id=target_chat_id, message_text=message_text)
         return
 
-    await _handle_source_input(update, context, session, target_chat_id, message_text)
+    await _handle_source_input(update, context, session, target_chat_id=target_chat_id, message_text=message_text)
 
 
 async def _handle_keyword_input(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session,
-    target_chat_id: int,
+    *, target_chat_id: int,
     message_text: str,
 ) -> None:
     from backend.features.garage.services.garage_forward_service import GarageForwardService
@@ -93,7 +93,7 @@ async def _handle_buttons_input(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session,
-    target_chat_id: int,
+    *, target_chat_id: int,
     message_text: str,
 ) -> None:
     from backend.features.automation.scheduled_message_handler import _parse_buttons_text
@@ -138,7 +138,7 @@ async def _handle_source_input(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session,
-    target_chat_id: int,
+    *, target_chat_id: int,
     message_text: str,
 ) -> None:
     from backend.features.garage.services.garage_forward_service import GarageForwardService

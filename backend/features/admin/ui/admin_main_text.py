@@ -10,7 +10,7 @@ def format_verification_menu_text(
     chat_title: str,
     enabled: bool,
     verification_mode: str,
-    timeout_seconds: int,
+    *, timeout_seconds: int,
     restrict_can_send: bool,
     timeout_action: str,
     mute_duration: int,

@@ -107,7 +107,7 @@ class BottomButtonAdminControllerMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        layout_id: int,
+        *, layout_id: int,
     ) -> None:
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
@@ -146,7 +146,7 @@ class BottomButtonAdminControllerMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        layout_id: int,
+        *, layout_id: int,
     ) -> None:
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
@@ -185,7 +185,7 @@ class BottomButtonAdminControllerMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        layout_id: int,
+        *, layout_id: int,
         category: str,
     ) -> None:
         db: Database = context.application.bot_data["db"]
@@ -235,7 +235,7 @@ class BottomButtonAdminControllerMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        callback_data: CallbackParser,
+        *, callback_data: CallbackParser,
     ) -> None:
         action = callback_data.get(1)
         db: Database = context.application.bot_data["db"]
@@ -257,8 +257,8 @@ class BottomButtonAdminControllerMixin:
                     context,
                     update.effective_user.id,
                     update.effective_user.id,
-                    "bottom_button_text_input",
-                    {"target_chat_id": chat_id},
+                    state_type="bottom_button_text_input",
+                    payload={"target_chat_id": chat_id},
                 )
                 setting = await get_bottom_button_setting(session, chat_id)
                 await session.commit()
@@ -310,7 +310,7 @@ class BottomButtonAdminControllerMixin:
                 layout_id = callback_data.get_int(4)
                 if sub == "detail":
                     await session.commit()
-                    await self._show_bottom_button_detail(update, context, chat_id, layout_id)
+                    await self._show_bottom_button_detail(update, context, chat_id, layout_id=layout_id)
                     return
                 if sub == "mode":
                     await update_layout_button(session, chat_id=chat_id, layout_id=layout_id, action_mode=callback_data.get(5))
@@ -318,16 +318,16 @@ class BottomButtonAdminControllerMixin:
                     if setting.enabled:
                         await generate_bottom_buttons(context, session, chat_id)
                     await session.commit()
-                    await self._show_bottom_button_detail(update, context, chat_id, layout_id)
+                    await self._show_bottom_button_detail(update, context, chat_id, layout_id=layout_id)
                     return
                 if sub == "events":
                     await session.commit()
-                    await self._show_bottom_button_event_menu(update, context, chat_id, layout_id)
+                    await self._show_bottom_button_event_menu(update, context, chat_id, layout_id=layout_id)
                     return
                 if sub == "eventcat":
                     category = callback_data.get(5)
                     await session.commit()
-                    await self._show_bottom_button_event_list(update, context, chat_id, layout_id, category)
+                    await self._show_bottom_button_event_list(update, context, chat_id, layout_id=layout_id, category=category)
                     return
                 if sub == "event":
                     event_key = decode_event_callback_key(callback_data.get(5))
@@ -341,7 +341,7 @@ class BottomButtonAdminControllerMixin:
                     if event is None:
                         await session.commit()
                         await answer_callback_query_safely(update, "事件类型无效", show_alert=True)
-                        await self._show_bottom_button_event_menu(update, context, chat_id, layout_id)
+                        await self._show_bottom_button_event_menu(update, context, chat_id, layout_id=layout_id)
                         return
                     button_text = event.default_button_text if not (layout.button_text or "").strip() or layout.button_text == "按钮" else None
                     await update_layout_button(
@@ -356,7 +356,7 @@ class BottomButtonAdminControllerMixin:
                     if setting.enabled:
                         await generate_bottom_buttons(context, session, chat_id)
                     await session.commit()
-                    await self._show_bottom_button_detail(update, context, chat_id, layout_id)
+                    await self._show_bottom_button_detail(update, context, chat_id, layout_id=layout_id)
                     return
                 if sub == "delete":
                     await delete_layout_button(session, chat_id, layout_id)
@@ -372,8 +372,8 @@ class BottomButtonAdminControllerMixin:
                         context,
                         update.effective_user.id,
                         update.effective_user.id,
-                        state_type,
-                        {"target_chat_id": chat_id, "layout_id": layout_id},
+                        state_type=state_type,
+                        payload={"target_chat_id": chat_id, "layout_id": layout_id},
                     )
                     await session.commit()
                     prompt = "👉 现在输入按钮文字：" if sub == "text" else "👉 现在输入按钮发送内容："

@@ -72,7 +72,7 @@ def invite_link_list_keyboard(
     links: list,
     chat_id: int | None = None,
     page: int = 0,
-    page_size: int = 5,
+    *, page_size: int = 5,
 ) -> InlineKeyboardMarkup:
     """邀请链接列表键盘
 

@@ -551,8 +551,8 @@ async def test_auto_reply_text_button_callback_runs_group_text_trigger(monkeypat
         assert (chat_id, rule_id) == (-100456, 9)
         return rule
 
-    async def fake_group_text_trigger(update, context, chat_id: int, trigger_text: str):
-        triggers.append((update.effective_user.id, chat_id, trigger_text))
+    async def fake_group_text_trigger(update, context, chat_id: int, *, payload: str):
+        triggers.append((update.effective_user.id, chat_id, payload))
         return True
 
     monkeypatch.setattr(auto_reply_button_actions, "get_auto_reply_rule_in_chat", fake_get_rule)

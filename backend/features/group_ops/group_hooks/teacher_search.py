@@ -54,12 +54,12 @@ async def _process_teacher_search_features(
     context: ContextTypes.DEFAULT_TYPE,
     session,
     chat,
-    user,
+    *, user,
     message,
     text: str,
     teacher_setting,
     chat_settings=None,
-    *,
+
     is_teacher: bool,
     is_attendance_teacher: bool | None = None,
     is_admin: bool,
@@ -80,8 +80,8 @@ async def _process_teacher_search_features(
             context,
             session,
             chat,
-            user,
-            message,
+            user=user,
+            message=message,
             latitude=location_pair[0],
             longitude=location_pair[1],
             is_teacher=is_teacher,
@@ -95,9 +95,9 @@ async def _process_teacher_search_features(
             context,
             session,
             chat,
-            user,
-            message,
-            teacher_setting,
+            user=user,
+            message=message,
+            teacher_setting=teacher_setting,
             is_teacher=attendance_is_teacher,
             status=keyword_status,
         )
@@ -107,10 +107,10 @@ async def _process_teacher_search_features(
         context,
         session,
         chat,
-        user,
-        message,
-        text,
-        teacher_setting,
+        user=user,
+        message=message,
+        text=text,
+        teacher_setting=teacher_setting,
         is_teacher=is_teacher,
         is_admin=is_admin,
         is_whitelisted=is_whitelisted,
@@ -135,7 +135,7 @@ async def _process_teacher_search_features(
         if chat_settings is not None and not is_command_enabled(chat_settings, "open_teachers"):
             await message.reply_text("该指令已关闭。")
             return True
-        await _reply_open_course_teachers(context, session, chat, message, delete_mode=delete_mode)
+        await _reply_open_course_teachers(context, session, chat, message=message, delete_mode=delete_mode)
         return True
 
     nearby_condition = _parse_nearby_condition(text)
@@ -147,9 +147,9 @@ async def _process_teacher_search_features(
             context,
             session,
             chat,
-            user,
-            message,
-            teacher_setting,
+            user=user,
+            message=message,
+            teacher_setting=teacher_setting,
             keyword=nearby_condition or None,
             delete_mode=delete_mode,
         )
@@ -166,22 +166,22 @@ async def _process_teacher_search_features(
                 context,
                 session,
                 chat,
-                user,
-                message,
-                teacher_setting,
+                user=user,
+                message=message,
+                teacher_setting=teacher_setting,
                 keyword=nearby_keyword or None,
                 delete_mode=delete_mode,
             )
         elif keyword in {"开课", "开课老师"}:
-            await _reply_open_course_teachers(context, session, chat, message, delete_mode=delete_mode)
+            await _reply_open_course_teachers(context, session, chat, message=message, delete_mode=delete_mode)
         else:
             await _reply_teacher_keyword_search(
                 context,
                 session,
                 chat,
-                message,
-                teacher_setting,
-                keyword,
+                message=message,
+                teacher_setting=teacher_setting,
+                keyword=keyword,
                 delete_mode=delete_mode,
             )
         return True
@@ -209,10 +209,10 @@ async def _process_teacher_search_features(
         context,
         session,
         chat,
-        message,
-        text,
-        teacher_setting,
-        chat_settings,
+        message=message,
+        keyword=text,
+        teacher_setting=teacher_setting,
+        chat_settings=chat_settings,
         delete_mode=delete_mode,
     ):
         return True
@@ -261,10 +261,10 @@ async def _reply_attendance_checkin(
     context: ContextTypes.DEFAULT_TYPE,
     session,
     chat,
-    user,
+    *, user,
     message,
     teacher_setting,
-    *,
+
     is_teacher: bool,
     status: str = "open",
 ) -> None:
@@ -327,11 +327,11 @@ async def _block_teacher_without_location(
     context: ContextTypes.DEFAULT_TYPE,
     session,
     chat,
-    user,
+    *, user,
     message,
     text: str,
     teacher_setting,
-    *,
+
     is_teacher: bool,
     is_admin: bool,
     is_whitelisted: bool,
@@ -364,9 +364,9 @@ async def _record_teacher_location(
     context: ContextTypes.DEFAULT_TYPE,
     session,
     chat,
-    user,
+    *, user,
     message,
-    *,
+
     latitude: float,
     longitude: float,
     is_teacher: bool,
@@ -403,8 +403,8 @@ async def _reply_open_course_teachers(
     context: ContextTypes.DEFAULT_TYPE,
     session,
     chat,
-    message,
-    *,
+    *, message,
+
     delete_mode: str,
 ) -> None:
     rows = await TeacherSearchService.list_open_course_teachers(session, chat.id)
@@ -440,10 +440,10 @@ async def _reply_nearby_teachers(
     context: ContextTypes.DEFAULT_TYPE,
     session,
     chat,
-    user,
+    *, user,
     message,
     teacher_setting,
-    *,
+
     keyword: str | None = None,
     delete_mode: str,
 ) -> None:
@@ -474,7 +474,7 @@ async def _reply_nearby_teachers(
         session,
         chat.id,
         float(location.latitude),
-        float(location.longitude),
+        longitude=float(location.longitude),
         only_open_course=getattr(teacher_setting, "only_open_course_enabled", True),
         keyword=keyword,
         limit=10,
@@ -524,10 +524,10 @@ async def _reply_teacher_keyword_search(
     context: ContextTypes.DEFAULT_TYPE,
     session,
     chat,
-    message,
+    *, message,
     teacher_setting,
     keyword: str,
-    *,
+
     delete_mode: str,
 ) -> None:
     if not teacher_setting.tag_search_enabled:
@@ -540,7 +540,7 @@ async def _reply_teacher_keyword_search(
             delete_mode=delete_mode,
         )
         return
-    rows, fallback_note = await _search_teacher_keyword_rows(session, chat.id, keyword, teacher_setting)
+    rows, fallback_note = await _search_teacher_keyword_rows(session, chat.id, keyword, teacher_setting=teacher_setting)
     badge = await _get_auth_badge(session, chat.id)
     await session.commit()
     if not rows:
@@ -567,11 +567,11 @@ async def _try_reply_bare_keyword_search(
     context: ContextTypes.DEFAULT_TYPE,
     session,
     chat,
-    message,
+    *, message,
     keyword: str,
     teacher_setting,
     chat_settings,
-    *,
+
     delete_mode: str,
 ) -> bool:
     if not keyword or keyword.startswith("/") or not getattr(teacher_setting, "tag_search_enabled", False):
@@ -580,7 +580,7 @@ async def _try_reply_bare_keyword_search(
         return False
     if await is_reserved_group_text_command_for_chat(session, chat.id, keyword):
         return False
-    rows, fallback_note = await _search_teacher_keyword_rows(session, chat.id, keyword, teacher_setting)
+    rows, fallback_note = await _search_teacher_keyword_rows(session, chat.id, keyword, teacher_setting=teacher_setting)
     if not rows:
         return False
     badge = await _get_auth_badge(session, chat.id)
@@ -596,7 +596,7 @@ async def _try_reply_bare_keyword_search(
     return True
 
 
-async def _search_teacher_keyword_rows(session, chat_id: int, keyword: str, teacher_setting):
+async def _search_teacher_keyword_rows(session, chat_id: int, keyword: str, *, teacher_setting):
     only_open_course = getattr(teacher_setting, "only_open_course_enabled", True)
     rows = await TeacherSearchService.search_teachers_by_keyword(
         session,

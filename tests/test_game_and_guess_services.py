@@ -210,7 +210,7 @@ async def test_blackjack_natural_beats_dealer_drawn_twenty_one(monkeypatch):
         choice_data={"player_cards": [1, 10], "dealer_cards": [7, 7], "points_chat_id": -1001},
     )
 
-    outcome = await game_blackjack.finalize_blackjack_round(_FlushSession(), round_obj, participant, "stand")
+    outcome = await game_blackjack.finalize_blackjack_round(_FlushSession(), round_obj, participant, mode="stand")
 
     assert participant.status == "won"
     assert participant.payout_points == 250
@@ -259,7 +259,7 @@ async def test_blackjack_dealer_natural_beats_player_non_natural_twenty_one(monk
         choice_data={"player_cards": [10, 5, 6], "dealer_cards": [1, 10], "points_chat_id": -1001},
     )
 
-    outcome = await game_blackjack.finalize_blackjack_round(_FlushSession(), round_obj, participant, "stand")
+    outcome = await game_blackjack.finalize_blackjack_round(_FlushSession(), round_obj, participant, mode="stand")
 
     assert participant.status == "lost"
     assert participant.payout_points == 0
@@ -420,7 +420,7 @@ async def test_guess_admin_title_input_saves_draft_and_refreshes_menu(monkeypatc
     session = _GuessInputSession()
     state = SimpleNamespace(state_type="guess_wait_title", state_data={"target_chat_id": -1001})
 
-    handled = await handle_guess_admin_input(update, SimpleNamespace(), session, state, "世界杯决赛", target_chat_id=-1001)
+    handled = await handle_guess_admin_input(update, SimpleNamespace(), session, state=state, message_text="世界杯决赛", target_chat_id=-1001)
 
     assert handled is True
     assert cleared == [(-1001, 42)]
@@ -452,11 +452,11 @@ async def test_guess_admin_cover_input_accepts_photo_and_image_document(monkeypa
 
     photo_message = _GuessInputMessage(photo=[SimpleNamespace(file_id="small"), SimpleNamespace(file_id="large")])
     photo_update = SimpleNamespace(effective_user=SimpleNamespace(id=42), effective_message=photo_message)
-    await handle_guess_admin_input(photo_update, SimpleNamespace(), _GuessInputSession(), state, "", target_chat_id=-1001)
+    await handle_guess_admin_input(photo_update, SimpleNamespace(), _GuessInputSession(), state=state, message_text="", target_chat_id=-1001)
 
     document_message = _GuessInputMessage(document=SimpleNamespace(file_id="doc-image", mime_type="image/png"))
     document_update = SimpleNamespace(effective_user=SimpleNamespace(id=42), effective_message=document_message)
-    await handle_guess_admin_input(document_update, SimpleNamespace(), _GuessInputSession(), state, "", target_chat_id=-1001)
+    await handle_guess_admin_input(document_update, SimpleNamespace(), _GuessInputSession(), state=state, message_text="", target_chat_id=-1001)
 
     assert saved[0]["cover_file_id"] == "large"
     assert saved[1]["cover_file_id"] == "doc-image"
@@ -511,7 +511,7 @@ async def test_guess_publish_uses_default_command_keyword(monkeypatch):
         update,
         context,
         -1001,
-        CallbackParser.parse("guess:create:-1001:publish"),
+        callback_data=CallbackParser.parse("guess:create:-1001:publish"),
     )
 
     assert created and created[0]["command_keyword"] == "竞猜"

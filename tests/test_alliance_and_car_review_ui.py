@@ -239,7 +239,7 @@ async def test_car_review_report_detail_pending_shows_approve_and_reject(monkeyp
     update = SimpleNamespace()
     context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}))
 
-    await admin_handler._admin_handler._show_car_review_report_detail(update, context, -100123, 9, status="pending")
+    await admin_handler._admin_handler._show_car_review_report_detail(update, context, -100123, report_id=9, status="pending")
 
     text, keyboard = rendered[0]
     assert "报告编号：9" in text

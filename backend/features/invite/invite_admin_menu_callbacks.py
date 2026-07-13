@@ -39,7 +39,7 @@ async def invite_link_menu_callback(update: Update, context: ContextTypes.DEFAUL
         await _invite_link_handler.message_helper.safe_edit(update, "仅管理员可使用此功能")
         return
 
-    await _invite_link_handler.show_menu(update, context, chat.id, chat.title)
+    await _invite_link_handler.show_menu(update, context, chat.id, chat_title=chat.title)
 
 
 async def invite_link_home_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -71,7 +71,7 @@ async def invite_link_list_callback(update: Update, context: ContextTypes.DEFAUL
     )
     if target_chat_id is None:
         return
-    await _invite_link_handler.show_list(update, context, target_chat_id, CallbackParser.parse(q.data or "").get_int(2, default=0))
+    await _invite_link_handler.show_list(update, context, target_chat_id, page=CallbackParser.parse(q.data or "").get_int(2, default=0))
 
 
 async def invite_link_stats_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

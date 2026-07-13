@@ -22,7 +22,7 @@ async def anti_spam_config_message_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session: AsyncSession,
-    state: ConversationState,
+    *, state: ConversationState,
     message_text: str,
 ) -> None:
     if update.effective_user is None or update.effective_message is None:

@@ -31,7 +31,7 @@ class LotteryDrawMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         lottery_id: int,
-        target_chat_id: int | None = None,
+        *, target_chat_id: int | None = None,
     ) -> None:
         chat = update.effective_chat
         db: Database = context.application.bot_data["db"]

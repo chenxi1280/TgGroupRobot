@@ -15,13 +15,13 @@ def quick_reply_condition_rows(rule: dict, chat_id: int, rule_id: str) -> list[l
             "⚙️ 禁言回复词:",
             f"gg:input:{rule_id}:mute_keyword:{chat_id}",
             str(rule.get("mute_keyword", "j")),
-            f"gg:input:{rule_id}:mute_keyword:{chat_id}",
+            right_callback=f"gg:input:{rule_id}:mute_keyword:{chat_id}",
         ),
         _two_button_row(
             "⚙️ 踢出回复词:",
             f"gg:input:{rule_id}:kick_keyword:{chat_id}",
             str(rule.get("kick_keyword", "t")),
-            f"gg:input:{rule_id}:kick_keyword:{chat_id}",
+            right_callback=f"gg:input:{rule_id}:kick_keyword:{chat_id}",
         ),
     ]
 
@@ -30,20 +30,20 @@ def quick_reply_action_rows(
     rule: dict,
     chat_id: int,
     rule_id: str,
-    mute_seconds_label: str,
+    *, mute_seconds_label: str,
 ) -> list[list[InlineKeyboardButton]]:
     rows = [
         _two_button_row(
             "⚙️ 删除指令:",
             f"gg:toggle:{rule_id}:delete_message:{chat_id}",
             _status(bool(rule.get("delete_message"))),
-            f"gg:toggle:{rule_id}:delete_message:{chat_id}",
+            right_callback=f"gg:toggle:{rule_id}:delete_message:{chat_id}",
         ),
         _two_button_row(
             "⚙️ 禁言时长:",
             f"gg:cycle:{rule_id}:mute_seconds:{chat_id}",
             mute_seconds_label,
-            f"gg:cycle:{rule_id}:mute_seconds:{chat_id}",
+            right_callback=f"gg:cycle:{rule_id}:mute_seconds:{chat_id}",
         ),
         _notice_row(rule, chat_id, rule_id),
     ]
@@ -57,7 +57,7 @@ def _two_button_row(
     left_text: str,
     left_callback: str,
     right_text: str,
-    right_callback: str,
+    *, right_callback: str,
 ) -> list[InlineKeyboardButton]:
     return [
         InlineKeyboardButton(left_text, callback_data=left_callback),
@@ -75,7 +75,7 @@ def _notice_row(rule: dict, chat_id: int, rule_id: str) -> list[InlineKeyboardBu
         "⚙️ 提示消息:",
         f"gg:toggle:{rule_id}:notice_enabled:{chat_id}",
         notice_label,
-        f"gg:toggle:{rule_id}:notice_enabled:{chat_id}",
+        right_callback=f"gg:toggle:{rule_id}:notice_enabled:{chat_id}",
     )
 
 
@@ -84,5 +84,5 @@ def _notice_delete_row(rule: dict, chat_id: int, rule_id: str) -> list[InlineKey
         "⚙️ 提示删除:",
         f"gg:cycle:{rule_id}:notice_delete_seconds:{chat_id}",
         f"{rule['notice_delete_seconds']}秒",
-        f"gg:cycle:{rule_id}:notice_delete_seconds:{chat_id}",
+        right_callback=f"gg:cycle:{rule_id}:notice_delete_seconds:{chat_id}",
     )

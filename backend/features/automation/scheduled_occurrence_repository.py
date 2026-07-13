@@ -77,7 +77,7 @@ def finalize_occurrence(
     now: dt.datetime,
     retry_policy: RetryPolicy,
 ) -> None:
-    status, next_retry_at = _resolve_status(occurrence, outcome, now, retry_policy)
+    status, next_retry_at = _resolve_status(occurrence, outcome, now, retry_policy=retry_policy)
     occurrence.status = status.value
     occurrence.next_retry_at = next_retry_at
     occurrence.lease_until = None
@@ -93,7 +93,7 @@ def finalize_occurrence(
         task.last_sent_message_id = int(outcome.message_id)
 
 
-def _resolve_status(occurrence, outcome, now, retry_policy):
+def _resolve_status(occurrence, outcome, now, *, retry_policy):
     if outcome.status is not DeliveryStatus.retryable_failed:
         return outcome.status, None
     attempts = int(occurrence.attempt_count or 0)
@@ -199,12 +199,12 @@ async def _plan_task(session, task: ScheduledMessageTask, now_ts: int) -> int:
         task.enabled = False
         return 0
     scheduled_for = int(task.next_run_at or now_ts)
-    created = await _insert_occurrence(session, task, snapshot, scheduled_for)
+    created = await _insert_occurrence(session, task, snapshot, scheduled_for=scheduled_for)
     task.next_run_at = calculate_next_run_time(task, now_ts)
     return created
 
 
-async def _insert_occurrence(session, task, snapshot, scheduled_for: int) -> int:
+async def _insert_occurrence(session, task, snapshot, *, scheduled_for: int) -> int:
     statement = (
         insert(ScheduledMessageLog)
         .values(

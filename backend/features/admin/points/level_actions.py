@@ -9,7 +9,7 @@ class PointsLevelActionsMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        callback_data: CallbackParser,
+        *, callback_data: CallbackParser,
     ) -> None:
         op = callback_data.get(3)
         if op == "noop":
@@ -35,7 +35,7 @@ class PointsLevelActionsMixin:
             await self._show_points_level_menu(update, context, chat_id)
             return
         if op == "detail":
-            await self._show_points_level_detail(update, context, chat_id, callback_data.get_int(4))
+            await self._show_points_level_detail(update, context, chat_id, level_id=callback_data.get_int(4))
             return
         if op == "edit":
             field = callback_data.get(4)
@@ -66,7 +66,7 @@ class PointsLevelActionsMixin:
                 if level is not None:
                     await PointsExtendedService.update_level(session, level, perm_name=perm, perm_value=perm_value)
                 await session.commit()
-            await self._show_points_level_detail(update, context, chat_id, level_id)
+            await self._show_points_level_detail(update, context, chat_id, level_id=level_id)
             return
         if op == "delete":
             level_id = callback_data.get_int(4)
@@ -75,7 +75,7 @@ class PointsLevelActionsMixin:
                 if len(levels) <= 1:
                     await session.commit()
                     await answer_callback_query_safely(update, "至少保留一个等级，无法删除", show_alert=True)
-                    await self._show_points_level_detail(update, context, chat_id, level_id)
+                    await self._show_points_level_detail(update, context, chat_id, level_id=level_id)
                     return
                 level = await PointsExtendedService.get_level(session, chat_id, level_id)
                 if level is not None:
@@ -84,6 +84,6 @@ class PointsLevelActionsMixin:
             await self._show_points_level_menu(update, context, chat_id)
             return
         if op == "delete_confirm":
-            await self._show_points_level_delete_confirm(update, context, chat_id, callback_data.get_int(4))
+            await self._show_points_level_delete_confirm(update, context, chat_id, level_id=callback_data.get_int(4))
             return
         await answer_callback_query_safely(update, "未识别的积分等级操作，请刷新页面后重试", show_alert=True)

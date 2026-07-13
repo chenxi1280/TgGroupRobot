@@ -43,7 +43,7 @@ async def delete_source_if_needed(
     context: ContextTypes.DEFAULT_TYPE,
     chat_id: int,
     message_id: int,
-    delete_mode: str,
+    *, delete_mode: str,
 ) -> None:
     if delete_mode != "delete":
         return
@@ -54,7 +54,7 @@ async def delete_source_if_needed(
         return
 
 
-async def build_user_game_stats(session, chat_id: int, user_id: int, game_type: str, title: str) -> str:
+async def build_user_game_stats(session, chat_id: int, user_id: int, *, game_type: str, title: str) -> str:
     result = await session.execute(
         select(
             GameParticipant.status,
@@ -115,7 +115,7 @@ async def handle_game_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             text=format_k3_help(setting.k3_enabled, setting.rake_ratio),
             reply_to_message_id=update.effective_message.message_id,
         )
-        await delete_source_if_needed(context, chat.id, update.effective_message.message_id, setting.delete_game_message_mode)
+        await delete_source_if_needed(context, chat.id, update.effective_message.message_id, delete_mode=setting.delete_game_message_mode)
         return True
 
     if text in {"快3规则", "快三规则"}:
@@ -132,7 +132,7 @@ async def handle_game_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     if text in {"快3统计", "快三统计"}:
         async with db.session_factory() as session:
-            text_reply = await build_user_game_stats(session, chat.id, user.id, "k3", "🎲 快三")
+            text_reply = await build_user_game_stats(session, chat.id, user.id, game_type="k3", title="🎲 快三")
             await session.commit()
         await PublishService.reply(
             context,
@@ -187,7 +187,7 @@ async def handle_game_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                 if active_round is not None
                 else resolve_points_chat_id(setting, chat.id)
             )
-            ok, balance = await change_points(session, points_chat_id, user.id, -bet_points, PointsTxnType.penalty.value, reason="快三下注")
+            ok, balance = await change_points(session, points_chat_id, user.id, amount=-bet_points, txn_type=PointsTxnType.penalty.value, reason="快三下注")
             if not ok:
                 await session.commit()
                 await PublishService.reply(
@@ -202,8 +202,8 @@ async def handle_game_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                     session,
                     chat.id,
                     user.id,
-                    guess,
-                    bet_points,
+                    guess=guess,
+                    bet_points=bet_points,
                     points_chat_id=points_chat_id,
                 )
             except ValidationError as exc:
@@ -233,7 +233,7 @@ async def handle_game_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             ),
             reply_to_message_id=update.effective_message.message_id,
         )
-        await delete_source_if_needed(context, chat.id, update.effective_message.message_id, setting.delete_game_message_mode)
+        await delete_source_if_needed(context, chat.id, update.effective_message.message_id, delete_mode=setting.delete_game_message_mode)
         return True
 
     if text == "黑杰克":
@@ -247,7 +247,7 @@ async def handle_game_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             text=format_blackjack_help(setting.blackjack_enabled, setting.rake_ratio),
             reply_to_message_id=update.effective_message.message_id,
         )
-        await delete_source_if_needed(context, chat.id, update.effective_message.message_id, setting.delete_game_message_mode)
+        await delete_source_if_needed(context, chat.id, update.effective_message.message_id, delete_mode=setting.delete_game_message_mode)
         return True
 
     if text == "黑杰克规则":
@@ -267,7 +267,7 @@ async def handle_game_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     if text == "黑杰克统计":
         async with db.session_factory() as session:
-            text_reply = await build_user_game_stats(session, chat.id, user.id, "blackjack", "🃏 黑杰克")
+            text_reply = await build_user_game_stats(session, chat.id, user.id, game_type="blackjack", title="🃏 黑杰克")
             await session.commit()
         await PublishService.reply(
             context,
@@ -316,7 +316,7 @@ async def handle_game_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                 )
                 return True
             points_chat_id = resolve_points_chat_id(setting, chat.id)
-            ok, balance = await change_points(session, points_chat_id, user.id, -blackjack_bet, PointsTxnType.penalty.value, reason="黑杰克下注")
+            ok, balance = await change_points(session, points_chat_id, user.id, amount=-blackjack_bet, txn_type=PointsTxnType.penalty.value, reason="黑杰克下注")
             if not ok:
                 await session.commit()
                 await PublishService.reply(
@@ -331,7 +331,7 @@ async def handle_game_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                     session,
                     chat.id,
                     user.id,
-                    blackjack_bet,
+                    bet_points=blackjack_bet,
                     points_chat_id=points_chat_id,
                 )
             except ValidationError as exc:
@@ -342,7 +342,7 @@ async def handle_game_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             if len((participant.choice_data or {}).get("player_cards") or []) == 2:
                 from backend.features.activity.services.game_service import blackjack_total
                 if blackjack_total(participant.choice_data["player_cards"]) == 21:
-                    outcome = await finalize_blackjack_round(session, round_obj, participant, "stand")
+                    outcome = await finalize_blackjack_round(session, round_obj, participant, mode="stand")
             await session.commit()
         round_text = format_blackjack_round_text(participant, reveal_dealer=bool(outcome), outcome=outcome)
         sent = await context.bot.send_message(
@@ -359,7 +359,7 @@ async def handle_game_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                 stored_round.announcement_message_id = sent.message_id
             await session.commit()
         await show_blackjack_panel(context, db, chat.id)
-        await delete_source_if_needed(context, chat.id, update.effective_message.message_id, setting.delete_game_message_mode)
+        await delete_source_if_needed(context, chat.id, update.effective_message.message_id, delete_mode=setting.delete_game_message_mode)
         return True
 
     if text in {"要牌", "停牌"}:
@@ -405,7 +405,7 @@ async def handle_game_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                 reply_to_message_id=update.effective_message.message_id,
             )
         await show_blackjack_panel(context, db, chat.id)
-        await delete_source_if_needed(context, chat.id, update.effective_message.message_id, setting.delete_game_message_mode)
+        await delete_source_if_needed(context, chat.id, update.effective_message.message_id, delete_mode=setting.delete_game_message_mode)
         return True
 
     return False

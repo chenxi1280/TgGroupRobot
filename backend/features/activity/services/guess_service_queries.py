@@ -38,7 +38,7 @@ async def count_events_by_status(session: AsyncSession, chat_id: int) -> dict[st
     return counts
 
 
-async def list_events(session: AsyncSession, chat_id: int, status: str, limit: int = 10) -> list[GuessEvent]:
+async def list_events(session: AsyncSession, chat_id: int, status: str, *, limit: int = 10) -> list[GuessEvent]:
     stmt = select(GuessEvent).where(GuessEvent.chat_id == chat_id, GuessEvent.status == status).order_by(desc(GuessEvent.id)).limit(limit)
     result = await session.execute(stmt)
     return list(result.scalars().all())

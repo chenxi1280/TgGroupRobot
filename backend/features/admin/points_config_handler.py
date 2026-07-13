@@ -64,13 +64,13 @@ class PointsConfigHandler(BaseHandler):
         elif action == "toggle":
             await self._handle_toggle(update, context, target_chat_id, field)
         elif action == "edit":
-            return await self._handle_edit(update, context, target_chat_id, field)
+            return await self._handle_edit(update, context, target_chat_id, field=field)
         elif action == "rule":
-            await self._handle_rule(update, context, target_chat_id, field)
+            await self._handle_rule(update, context, target_chat_id, rule_type=field)
         elif action == "view":
-            await self._handle_view(update, context, target_chat_id, field)
+            await self._handle_view(update, context, target_chat_id, feature=field)
         elif action == "todo":
-            return await self._handle_todo(update, context, target_chat_id, field)
+            return await self._handle_todo(update, context, target_chat_id, feature=field)
         elif action == "cancel":
             await self._handle_cancel(update, context, target_chat_id)
         return None
@@ -100,15 +100,15 @@ class PointsConfigHandler(BaseHandler):
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        rule_type: str,
-        *,
+        *, rule_type: str,
+
         changed: bool = False,
     ) -> None:
         await show_rule_page(
             update,
             context,
             chat_id,
-            rule_type,
+            rule_type=rule_type,
             changed=changed,
             get_chat_settings_func=get_chat_settings,
             safe_edit_func=_safe_edit_message,
@@ -119,7 +119,7 @@ class PointsConfigHandler(BaseHandler):
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        field: str,
+        *, field: str,
     ) -> None:
         """处理开关切换"""
         callback_data = CallbackParser.parse(update.callback_query.data or "")
@@ -151,7 +151,7 @@ class PointsConfigHandler(BaseHandler):
             "invite_points_enabled": "invite",
         }
         if field in rule_map:
-            await self._show_rule_page(update, context, chat_id, rule_map[field], changed=True)
+            await self._show_rule_page(update, context, chat_id, rule_type=rule_map[field], changed=True)
         else:
             await self._show_points_home(update, context, chat_id, changed=True)
 
@@ -160,7 +160,7 @@ class PointsConfigHandler(BaseHandler):
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        field: str,
+        *, field: str,
     ) -> None:
         """处理数值编辑 - 进入对话状态"""
         db: Database = context.application.bot_data["db"]
@@ -204,22 +204,22 @@ class PointsConfigHandler(BaseHandler):
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        rule_type: str,
+        *, rule_type: str,
     ) -> None:
-        await self._show_rule_page(update, context, chat_id, rule_type)
+        await self._show_rule_page(update, context, chat_id, rule_type=rule_type)
 
     async def _handle_view(
         self,
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        feature: str,
+        *, feature: str,
     ) -> None:
         handled = await handle_view(
             update,
             context,
             chat_id,
-            feature,
+            feature=feature,
             get_chat_settings_func=get_chat_settings,
             safe_edit_func=_safe_edit_message,
             show_points_home_func=show_points_home,
@@ -232,14 +232,14 @@ class PointsConfigHandler(BaseHandler):
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        feature: str,
+        *, feature: str,
     ) -> int | None:
         return await handle_todo(
             update,
             context,
             chat_id,
-            feature,
-            self._handle_edit,
+            feature=feature,
+            edit_handler=self._handle_edit,
             safe_edit_func=_safe_edit_message,
             get_chat_settings_func=get_chat_settings,
         )

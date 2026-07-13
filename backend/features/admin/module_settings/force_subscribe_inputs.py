@@ -106,7 +106,7 @@ async def handle_force_subscribe_channel_input(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session,
-    state,
+    *, state,
     message_text: str,
 ) -> None:
     if update.effective_user is None:
@@ -117,10 +117,10 @@ async def handle_force_subscribe_channel_input(
     settings = await admin_module().get_chat_settings(session, target_chat_id)
 
     if state.state_type == "force_subscribe_channel_1_input":
-        if not await _apply_force_subscribe_target(update, context, settings, "force_subscribe_bound_channel_1", message_text):
+        if not await _apply_force_subscribe_target(update, context, settings, attr_name="force_subscribe_bound_channel_1", message_text=message_text):
             return
     elif state.state_type == "force_subscribe_channel_2_input":
-        if not await _apply_force_subscribe_target(update, context, settings, "force_subscribe_bound_channel_2", message_text):
+        if not await _apply_force_subscribe_target(update, context, settings, attr_name="force_subscribe_bound_channel_2", message_text=message_text):
             return
     elif state.state_type == "force_subscribe_text_input":
         value = message_text.strip()
@@ -160,7 +160,7 @@ async def _apply_force_subscribe_target(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     settings,
-    attr_name: str,
+    *, attr_name: str,
     message_text: str,
 ) -> bool:
     value = _optional_text(message_text)

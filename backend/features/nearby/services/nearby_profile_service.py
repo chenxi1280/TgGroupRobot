@@ -41,7 +41,7 @@ class NearbyEntry:
     profile: NearbyProfile
 
 
-def haversine_distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+def haversine_distance_km(lat1: float, lon1: float, lat2: float, *, lon2: float) -> float:
     """计算 WGS84 球面距离（公里）。"""
     lat1_rad = math.radians(lat1)
     lat2_rad = math.radians(lat2)
@@ -124,7 +124,7 @@ async def get_or_create_profile(
     session: AsyncSession,
     chat_id: int,
     user: UserIdentityLike,
-    chat_type: str | None = None,
+    *, chat_type: str | None = None,
     chat_title: str | None = None,
 ) -> NearbyProfile:
     """获取或创建群内个人资料。"""
@@ -216,7 +216,7 @@ async def list_nearby_entries(
     session: AsyncSession,
     chat_id: int,
     requester_user_id: int,
-    requester_lat: float,
+    *, requester_lat: float,
     requester_lon: float,
 ) -> list[NearbyEntry]:
     """获取群内可见用户并按距离排序。"""
@@ -241,7 +241,7 @@ async def list_nearby_entries(
         if lat is None or lon is None:
             continue
 
-        distance = haversine_distance_km(requester_lat, requester_lon, lat, lon)
+        distance = haversine_distance_km(requester_lat, requester_lon, lat, lon2=lon)
         entries.append(
             NearbyEntry(
                 user_id=user.id,

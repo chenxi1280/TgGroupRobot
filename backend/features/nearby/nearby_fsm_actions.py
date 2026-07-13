@@ -19,7 +19,7 @@ async def handle_fsm_text_input_action(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session: AsyncSession,
-    state,
+    *, state,
     message_text: str,
 ) -> None:
     if update.effective_user is None or update.effective_message is None:
@@ -60,7 +60,7 @@ async def handle_fsm_location_input_action(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session: AsyncSession,
-    state,
+    *, state,
 ) -> None:
     if update.effective_user is None or update.effective_message is None:
         return
@@ -96,9 +96,9 @@ async def start_edit_state_action(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     db: Database,
-    target_chat_id: int,
+    *, target_chat_id: int,
     field: str,
-    *,
+
     reply_or_edit_func,
 ) -> None:
     if update.effective_user is None:
@@ -137,8 +137,8 @@ async def toggle_visible_action(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     db: Database,
-    target_chat_id: int,
-    *,
+    *, target_chat_id: int,
+
     show_mydata_panel_func,
 ) -> None:
     if update.effective_user is None:
@@ -164,9 +164,9 @@ async def handle_clear_action(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     db: Database,
-    target_chat_id: int,
+    *, target_chat_id: int,
     step: str,
-    *,
+
     reply_or_edit_func,
     show_mydata_panel_func,
 ) -> None:

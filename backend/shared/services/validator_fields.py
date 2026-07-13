@@ -31,7 +31,7 @@ def validate_string_length(
     text: str,
     min_length: int = 0,
     max_length: int = 1000,
-    field_name: str = "文本",
+    *, field_name: str = "文本",
 ) -> tuple[bool, str | None]:
     if text is None:
         return True, None
@@ -86,7 +86,7 @@ def validate_range(
     value: int | float,
     min_value: int | float | None = None,
     max_value: int | float | None = None,
-    field_name: str = "数值",
+    *, field_name: str = "数值",
 ) -> tuple[bool, str | None]:
     if value is None:
         return True, None

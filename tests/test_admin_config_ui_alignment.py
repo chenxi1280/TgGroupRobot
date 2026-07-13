@@ -409,7 +409,7 @@ async def test_engagement_egg_menu_exposes_publish_and_pause_controls(monkeypatc
     update = SimpleNamespace()
     context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}))
 
-    await admin_handler._admin_handler._show_engagement_egg(update, context, -100123, 7)
+    await admin_handler._admin_handler._show_engagement_egg(update, context, -100123, event_id=7)
 
     keyboard = rendered[0]
     row_texts = [[button.text for button in row] for row in keyboard.inline_keyboard]
@@ -487,7 +487,7 @@ async def test_game_toggle_start_publishes_runtime_panel(monkeypatch):
         update,
         context,
         -100123,
-        CallbackParser.parse("gm:toggle:-100123:k3:1"),
+        callback_data=CallbackParser.parse("gm:toggle:-100123:k3:1"),
     )
 
     assert captured["updates"] == (-100123, {"k3_enabled": True})

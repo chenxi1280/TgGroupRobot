@@ -55,7 +55,7 @@ async def _process_new_member_limit(
     context: ContextTypes.DEFAULT_TYPE,
     db: Database,
     chat,
-    user,
+    *, user,
     message,
     settings,
     joined_at_lookup=_get_member_joined_at,

@@ -12,7 +12,7 @@ async def execute_spam_punishment(
     bot: Bot,
     chat_id: int,
     user_id: int,
-    action: str,
+    *, action: str,
     mute_duration: int,
     message_ids: list[int],
 ) -> bool:

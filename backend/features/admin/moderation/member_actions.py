@@ -34,7 +34,7 @@ class ModerationMemberActionsMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        callback_data: CallbackParser,
+        *, callback_data: CallbackParser,
     ) -> None:
         from backend.platform.db.schema.models.enums import ConversationStateType, ForceSubscribeAction
 
@@ -69,8 +69,8 @@ class ModerationMemberActionsMixin:
                 context,
                 update.effective_user.id,
                 chat_id,
-                state_type,
-                {"target_chat_id": chat_id},
+                state_type=state_type,
+                payload={"target_chat_id": chat_id},
             )
             prompt = {
                 "channel1": "👉 请回复需要绑定的频道1（频道id、用户名或链接）：",
@@ -168,7 +168,7 @@ class ModerationMemberActionsMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        callback_data: CallbackParser,
+        *, callback_data: CallbackParser,
     ) -> None:
         from backend.platform.db.schema.models.enums import ConversationStateType
 
@@ -205,8 +205,8 @@ class ModerationMemberActionsMixin:
                 context,
                 update.effective_user.id,
                 chat_id,
-                ConversationStateType.new_member_limit_text_input.value,
-                {"target_chat_id": chat_id, "field": arg},
+                state_type=ConversationStateType.new_member_limit_text_input.value,
+                payload={"target_chat_id": chat_id, "field": arg},
             )
             if arg == "window":
                 await self.message_helper.safe_edit(
@@ -247,7 +247,7 @@ class ModerationMemberActionsMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        callback_data: CallbackParser,
+        *, callback_data: CallbackParser,
     ) -> None:
         from backend.platform.db.schema.models.enums import ConversationStateType
 
@@ -298,8 +298,8 @@ class ModerationMemberActionsMixin:
                 context,
                 update.effective_user.id,
                 chat_id,
-                ConversationStateType.night_mode_text_input.value,
-                {"target_chat_id": chat_id, "field": arg},
+                state_type=ConversationStateType.night_mode_text_input.value,
+                payload={"target_chat_id": chat_id, "field": arg},
             )
             prompt_map = {
                 "warn_text": "👉 请输入提示文案：",

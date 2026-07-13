@@ -55,7 +55,7 @@ async def auto_reply_text_button_callback(update: Update, context: ContextTypes.
         return
 
     try:
-        handled = await try_group_text_trigger(update, context, chat_id, trigger_text)
+        handled = await try_group_text_trigger(update, context, chat_id, payload=trigger_text)
     except Exception as exc:
         log.warning(
             "auto_reply_text_button_trigger_failed",

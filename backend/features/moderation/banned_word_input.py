@@ -23,7 +23,7 @@ async def banned_word_config_handler(update: Update, context: ContextTypes.DEFAU
     await banned_word_config_handler_impl(update, context)
 
 
-async def _parse_banned_word_config(update: Update, session, state: object, text: str) -> None:
+async def _parse_banned_word_config(update: Update, session, state: object, *, text: str) -> None:
     """解析违禁词配置"""
     try:
         lines = text.strip().split("\n")

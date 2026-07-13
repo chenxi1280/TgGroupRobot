@@ -36,7 +36,7 @@ async def list_egg_events(
     session: AsyncSession,
     chat_id: int,
     status: str | None = None,
-    limit: int = 20,
+    *, limit: int = 20,
 ) -> list[EngagementEggEvent]:
     stmt = select(EngagementEggEvent).where(EngagementEggEvent.chat_id == chat_id)
     if status and status != "all":
@@ -95,7 +95,7 @@ async def update_egg_event_from_template(
     session: AsyncSession,
     chat_id: int,
     raw: str,
-    event_id: int | None = None,
+    *, event_id: int | None = None,
 ) -> EngagementEggEvent:
     parsed = parse_egg_template(raw)
     if parsed.get("chat_id") is not None and parsed["chat_id"] != chat_id:
@@ -124,7 +124,7 @@ def get_clue_reward_points(egg: EngagementEgg | EngagementEggEvent, clue_index: 
     return int(rewards[clue_index] or 0) if clue_index < len(rewards) else 0
 
 
-async def try_claim_egg(session: AsyncSession, chat_id: int, user_id: int, answer: str) -> int | None:
+async def try_claim_egg(session: AsyncSession, chat_id: int, user_id: int, *, answer: str) -> int | None:
     stmt = (
         select(EngagementEggEvent)
         .where(
@@ -152,8 +152,8 @@ async def try_claim_egg(session: AsyncSession, chat_id: int, user_id: int, answe
                 session,
                 chat_id,
                 user_id,
-                reward_points,
-                PointsTxnType.reward.value,
+                amount=reward_points,
+                txn_type=PointsTxnType.reward.value,
                 reason=f"彩蛋奖励：{event.title}",
             )
             if not ok:

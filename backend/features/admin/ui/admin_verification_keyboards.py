@@ -29,7 +29,7 @@ def verification_config_menu(
     enabled: bool,
     mode: str,
     timeout_seconds: int,
-    timeout_action: str,
+    *, timeout_action: str,
     restrict_can_send: bool,
     chat_id: int | None = None,
 ) -> InlineKeyboardMarkup:

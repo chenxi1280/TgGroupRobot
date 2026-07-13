@@ -16,7 +16,7 @@ async def handle_alliance_input(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session,
-    state,
+    *, state,
     message_text: str,
 ) -> None:
     from backend.features.garage.services.alliance_service import AllianceService

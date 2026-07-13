@@ -375,7 +375,7 @@ async def test_handle_garage_forward_input_updates_keywords(monkeypatch):
         chat_id=42,
     )
 
-    await handle_garage_forward_input(update, context, session, state, "榜单,开奖\n榜单")
+    await handle_garage_forward_input(update, context, session, state=state, message_text="榜单,开奖\n榜单")
 
     assert updates == [(-10001, ["榜单", "开奖"])]
     assert clear_calls == [(-10001, 42), (42, 42)]
@@ -416,7 +416,7 @@ async def test_handle_garage_forward_input_rejects_non_channel_source(monkeypatc
         chat_id=7,
     )
 
-    await handle_garage_forward_input(update, context, session, state, "@not_channel")
+    await handle_garage_forward_input(update, context, session, state=state, message_text="@not_channel")
 
     assert added_sources == []
     assert replies == ["来源必须是频道，群组或私聊不能作为车库转发来源。"]
@@ -438,7 +438,7 @@ async def test_handle_garage_forward_audit_routes_with_short_code(monkeypatch):
         update,
         context,
         -100123,
-        CallbackParser.parse("gfw:audit:-100123:k"),
+        callback_data=CallbackParser.parse("gfw:audit:-100123:k"),
     )
 
     assert calls == [(-100123, "skipped")]
@@ -471,7 +471,7 @@ async def test_handle_garage_forward_manual_audit_cleanup(monkeypatch):
         update,
         context,
         -100123,
-        CallbackParser.parse("gfw:audit_cleanup:-100123:f"),
+        callback_data=CallbackParser.parse("gfw:audit_cleanup:-100123:f"),
     )
 
     assert cleanup_calls == [(-100123, "failed")]

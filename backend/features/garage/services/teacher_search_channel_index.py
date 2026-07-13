@@ -248,7 +248,7 @@ async def _bind_channel_source_to_teacher(
 ) -> TeacherProfile:
     from backend.features.garage.services.garage_auth_service import GarageAuthService
 
-    await GarageAuthService.add_teacher_by_user_id(session, chat_id, user_id, None)
+    await GarageAuthService.add_teacher_by_user_id(session, chat_id, user_id, operator_user_id=None)
     profile = await TeacherSearchSettingsMixin.ensure_teacher_profile(session, chat_id, user_id)
     _apply_channel_profile_payload(profile, text)
     await session.flush()

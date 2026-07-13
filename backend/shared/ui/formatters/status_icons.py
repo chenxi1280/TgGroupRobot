@@ -213,7 +213,7 @@ class StatusIcons:
         value: Any,
         true_value: Any = True,
         active_icon: str = "🟢",
-        inactive_icon: str = "🔴",
+        *, inactive_icon: str = "🔴",
     ) -> str:
         """根据值获取状态图标
 

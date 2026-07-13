@@ -278,7 +278,7 @@ async def _check_force_subscribe(
     context: ContextTypes.DEFAULT_TYPE,
     chat,
     user,
-    message,
+    *, message,
     settings,
 ) -> bool:
     if not bool(getattr(settings, "force_subscribe_enabled", False)):

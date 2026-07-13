@@ -61,7 +61,7 @@ async def test_welcome_detail_keyboard_matches_doc_style(monkeypatch):
     update = SimpleNamespace()
     context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(_FakeSession())}))
 
-    await admin_handler._admin_handler._show_welcome_detail_menu(update, context, -1001, 9)
+    await admin_handler._admin_handler._show_welcome_detail_menu(update, context, -1001, welcome_id=9)
 
     rows = [[button.text for button in row] for row in rendered["keyboard"]]
     assert rows == [
@@ -107,7 +107,7 @@ async def test_welcome_default_title_is_not_marked_configured(monkeypatch):
     update = SimpleNamespace()
     context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(_FakeSession())}))
 
-    await admin_handler._admin_handler._show_welcome_detail_menu(update, context, -1001, 9)
+    await admin_handler._admin_handler._show_welcome_detail_menu(update, context, -1001, welcome_id=9)
 
     rows = [[button.text for button in row] for row in rendered["keyboard"]]
     assert "📮 标题备注: 【等待设置】" in rendered["text"]
@@ -143,7 +143,7 @@ async def test_welcome_text_input_prompt_shows_current_text_and_tokens(monkeypat
         update,
         context,
         -1001,
-        CallbackParser.parse("adm:wel:-1001:input:9:text"),
+        callback_data=CallbackParser.parse("adm:wel:-1001:input:9:text"),
     )
 
     assert started == {

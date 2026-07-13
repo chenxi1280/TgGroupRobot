@@ -126,7 +126,7 @@ async def _get_token_by_hash(session: AsyncSession, chat_id: int, token_hash: st
     return result.scalar_one_or_none()
 
 
-async def consume_token(session: AsyncSession, chat_id: int, new_user_id: int, plain_token: str) -> dict:
+async def consume_token(session: AsyncSession, chat_id: int, new_user_id: int, *, plain_token: str) -> dict:
     setting = await get_or_create_setting(session, chat_id)
     if not setting.enabled:
         raise ValidationError("当前群未开启炸号继承。")

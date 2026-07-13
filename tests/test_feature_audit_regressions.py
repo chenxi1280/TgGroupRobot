@@ -85,7 +85,7 @@ async def test_car_review_duplicate_audit_is_blocked(monkeypatch):
     context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}))
     callback_data = CallbackParser.parse("crv:report:-100123:approve:3:p")
 
-    await admin_handler._admin_handler._handle_car_review(update, context, -100123, callback_data)
+    await admin_handler._admin_handler._handle_car_review(update, context, -100123, callback_data=callback_data)
 
     assert answered == [("该报告当前状态不可再次审核", True)]
     assert rendered == [(3, "pending")]
@@ -145,7 +145,7 @@ async def test_car_review_non_admin_approver_does_not_block_real_admin(monkeypat
     context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}))
     callback_data = CallbackParser.parse("crv:report:-100123:approve:3:p")
 
-    await admin_handler._admin_handler._handle_car_review(update, context, -100123, callback_data)
+    await admin_handler._admin_handler._handle_car_review(update, context, -100123, callback_data=callback_data)
 
     assert approved == {"approver_checked_for": 999, "approver_user_id": 7}
     assert answered == [("报告已通过审核，当前未执行自动发布", False)]
@@ -321,7 +321,7 @@ async def test_quick_publish_text_updates_draft(monkeypatch):
         state_data={"target_chat_id": -1001, "field": "text"},
     )
 
-    await handler._handle_quick_publish_input(update, context, _Session(), state, "hello world")
+    await handler._handle_quick_publish_input(update, context, _Session(), state=state, message_text="hello world")
 
     draft = context.user_data["quick_publish_draft"][str(-1001)]
     assert draft["text"] == "hello world"
@@ -351,7 +351,7 @@ async def test_quick_publish_home_requires_permission_service(monkeypatch):
     context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}), user_data={})
     callback_data = CallbackParser.parse("qpub:home:-1001")
 
-    await admin_handler._admin_handler._handle_quick_publish(update, context, -1001, callback_data)
+    await admin_handler._admin_handler._handle_quick_publish(update, context, -1001, callback_data=callback_data)
 
     assert ("perm", -1001) in calls
     assert ("menu", -1001) in calls
@@ -414,7 +414,7 @@ async def test_punishment_policy_preset_updates_actions(monkeypatch):
     context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb()}))
     callback_data = CallbackParser.parse("adm:punish:-1001:preset:mute")
 
-    await admin_handler._admin_handler._handle_punishment_policy(update, context, -1001, callback_data)
+    await admin_handler._admin_handler._handle_punishment_policy(update, context, -1001, callback_data=callback_data)
 
     assert settings.anti_spam_action == "mute"
     assert settings.anti_flood_action == "mute"
@@ -478,7 +478,7 @@ async def test_scheduled_edit_field_keeps_target_chat_id_in_private_state(monkey
     )
     context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}))
 
-    await handler.edit_field(update, context, -1005566, "task-1", "text")
+    await handler.edit_field(update, context, -1005566, task_id="task-1", field="text")
 
     assert started == {
         "chat_id": 9001,
@@ -541,8 +541,8 @@ async def test_scheduled_button_fsm_accepts_line_format(monkeypatch):
         update,
         context,
         -1005566,
-        42,
-        "官网|example.com ; 帮助|https://help.example.com",
+        user_id=42,
+        text="官网|example.com ; 帮助|https://help.example.com",
     )
 
     assert updated == {
@@ -570,7 +570,7 @@ async def test_points_level_unknown_op_uses_specific_message(monkeypatch):
         SimpleNamespace(),
         SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()})),
         -100123,
-        CallbackParser.parse("adm:lvl:-100123:unknown"),
+        callback_data=CallbackParser.parse("adm:lvl:-100123:unknown"),
     )
 
     assert answered == [("未识别的积分等级操作，请刷新页面后重试", True)]
@@ -589,7 +589,7 @@ async def test_force_subscribe_unknown_input_uses_specific_message(monkeypatch):
         SimpleNamespace(effective_user=SimpleNamespace(id=42)),
         SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()})),
         -100123,
-        CallbackParser.parse("adm:forcesub:-100123:input:unknown"),
+        callback_data=CallbackParser.parse("adm:forcesub:-100123:input:unknown"),
     )
 
     assert answered == [("未识别的强制关注配置项，请返回后重试", True)]
@@ -646,9 +646,9 @@ async def test_new_member_limit_blocks_media_and_links(monkeypatch):
         context,
         _Db(),
         chat,
-        user,
-        message,
-        settings,
+        user=user,
+        message=message,
+        settings=settings,
     )
 
     assert blocked is True
@@ -695,8 +695,8 @@ async def test_night_mode_blocks_messages(monkeypatch):
         context,
         chat,
         user,
-        message,
-        settings,
+        message=message,
+        settings=settings,
         is_admin=False,
     )
 

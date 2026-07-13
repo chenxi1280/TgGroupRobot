@@ -9,7 +9,7 @@ class PointsMallProductPagesMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        product_id: int,
+        *, product_id: int,
     ) -> None:
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
@@ -44,7 +44,7 @@ class PointsMallProductPagesMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        product_id: int,
+        *, product_id: int,
     ) -> None:
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:

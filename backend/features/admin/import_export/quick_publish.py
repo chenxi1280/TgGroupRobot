@@ -17,7 +17,7 @@ class QuickPublishAdminMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        callback_data: CallbackParser,
+        *, callback_data: CallbackParser,
     ) -> None:
         from backend.platform.db.schema.models.enums import ConversationStateType
         from backend.shared.services.permission_service import PermissionPolicyService
@@ -51,8 +51,8 @@ class QuickPublishAdminMixin:
                 context,
                 update.effective_user.id,
                 update.effective_user.id,
-                ConversationStateType.quick_publish_input.value,
-                {"target_chat_id": chat_id, "field": field},
+                state_type=ConversationStateType.quick_publish_input.value,
+                payload={"target_chat_id": chat_id, "field": field},
             )
             prompt_map = {
                 "text": "请输入要发布的文本内容：",

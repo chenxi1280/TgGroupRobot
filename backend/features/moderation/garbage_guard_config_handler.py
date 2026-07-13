@@ -71,7 +71,7 @@ async def _render_home(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_
     )
 
 
-async def _render_rule(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id: int, rule_id: str) -> None:
+async def _render_rule(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id: int, *, rule_id: str) -> None:
     q = update.callback_query
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
@@ -210,7 +210,7 @@ async def garbage_guard_config_callback(update: Update, context: ContextTypes.DE
         if rule_id not in RULE_DEFINITIONS:
             await answer_callback_query_safely(update, "规则不存在", show_alert=True)
             return
-        await _render_rule(update, context, chat_id, rule_id)
+        await _render_rule(update, context, chat_id, rule_id=rule_id)
         return
 
     if op not in {"toggle", "cycle"}:
@@ -238,18 +238,18 @@ async def garbage_guard_config_callback(update: Update, context: ContextTypes.DE
             cycle_rule_value(settings, rule_id, field)
         await session.commit()
 
-    await _render_rule(update, context, chat_id, rule_id)
+    await _render_rule(update, context, chat_id, rule_id=rule_id)
 
 
 async def garbage_guard_whitelist_message_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session: AsyncSession,
-    state: ConversationState,
+    *, state: ConversationState,
     message_text: str,
 ) -> None:
     if state.state_type == ConversationStateType.garbage_guard_quick_reply_keyword.value:
-        await garbage_guard_quick_reply_keyword_message_handler(update, context, session, state, message_text)
+        await garbage_guard_quick_reply_keyword_message_handler(update, context, session, state=state, message_text=message_text)
         return
 
     if update.effective_user is None or update.effective_message is None:
@@ -295,7 +295,7 @@ async def garbage_guard_quick_reply_keyword_message_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session: AsyncSession,
-    state: ConversationState,
+    *, state: ConversationState,
     message_text: str,
 ) -> None:
     if update.effective_user is None or update.effective_message is None:

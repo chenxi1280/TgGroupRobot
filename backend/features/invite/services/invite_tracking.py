@@ -61,7 +61,7 @@ async def track_and_award_invite(
     session: AsyncSession,
     chat_id: int,
     inviter_user_id: int,
-    invited_user_id: int,
+    *, invited_user_id: int,
     invite_link_id: int | None = None,
 ) -> tuple[bool, bool, str | None]:
     """追踪邀请并发放积分"""

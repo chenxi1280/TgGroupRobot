@@ -37,7 +37,7 @@ async def detect_spam_violation(
     settings: ChatSettings,
     message: Message,
     chat_id: int,
-    user_id: int,
+    *, user_id: int,
 ) -> SpamViolation:
     return await _detect_spam_violation(
         settings,

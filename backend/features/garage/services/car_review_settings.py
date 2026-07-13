@@ -126,7 +126,7 @@ class CarReviewSettingsMixin:
         session: AsyncSession,
         chat_id: int,
         field_id: int,
-        field_label: str,
+        *, field_label: str,
     ) -> CarReviewCustomField | None:
         item = await session.get(CarReviewCustomField, field_id)
         if item is None or item.chat_id != chat_id:

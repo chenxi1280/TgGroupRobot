@@ -23,7 +23,7 @@ class PointsMallOrderPagesMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        product_id: int | None = None,
+        *, product_id: int | None = None,
         status: str = "all",
     ) -> None:
         """显示积分商城订单管理页"""
@@ -79,8 +79,8 @@ class PointsMallOrderPagesMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        order_id: int,
-        *,
+        *, order_id: int,
+
         status: str = "all",
         product_id: int | None = None,
     ) -> None:

@@ -19,8 +19,8 @@ async def create_banned_word_impl(
     session: AsyncSession,
     chat_id: int,
     created_by_user_id: int,
-    word: str,
-    *,
+    *, word: str,
+
     match_type: str,
     action: str,
     mute_duration: int,

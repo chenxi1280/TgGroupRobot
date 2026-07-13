@@ -67,7 +67,7 @@ class MessageDispatcher:
         if chat.type == "private":
             if user is None:
                 return
-            await self._dispatch_private(update, context, chat, user, message_text)
+            await self._dispatch_private(update, context, chat, user=user, message_text=message_text)
         else:
             # 群聊消息统一进入处理链，非文本消息也要经过强制关注/防护等规则。
             if user is None:
@@ -79,7 +79,7 @@ class MessageDispatcher:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat: Any,
-        user: Any,
+        *, user: Any,
         message_text: str,
     ) -> None:
         """分发私聊消息
@@ -115,7 +115,7 @@ class MessageDispatcher:
         # 无配置状态，走默认私聊处理
         await private_default_handler(update, context)
 
-    async def _get_user_state(self, session: Any, db: Database, user_id: int, chat_id: int) -> Any:
+    async def _get_user_state(self, session: Any, db: Database, user_id: int, *, chat_id: int) -> Any:
         """兼容旧调用方，同时通过新的 scoped state 规则解析状态。"""
         private_state = await get_user_state(session, chat_id=chat_id, user_id=user_id)
         if private_state is not None and private_state.state_type != "selected_chat":

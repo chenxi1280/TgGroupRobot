@@ -35,7 +35,7 @@ def solitaire_list_keyboard(
     solitaires: list,
     chat_id: int | None = None,
     page: int = 0,
-    page_size: int = 5,
+    *, page_size: int = 5,
 ) -> InlineKeyboardMarkup:
     """接龙列表键盘
 

@@ -146,7 +146,7 @@ async def apply_join_guard_action(
         )
 
 
-async def handle_join_spam_guard(context: ContextTypes.DEFAULT_TYPE, chat, user, settings) -> bool:
+async def handle_join_spam_guard(context: ContextTypes.DEFAULT_TYPE, chat, user, *, settings) -> bool:
     if not bool(getattr(settings, "join_spam_guard_enabled", False)):
         return False
     signals = collect_join_spam_signals(user)
@@ -174,7 +174,7 @@ async def handle_join_spam_guard(context: ContextTypes.DEFAULT_TYPE, chat, user,
     return True
 
 
-async def handle_join_burst_guard(context: ContextTypes.DEFAULT_TYPE, session, chat, members: list, settings) -> bool:
+async def handle_join_burst_guard(context: ContextTypes.DEFAULT_TYPE, session, chat, *, members: list, settings) -> bool:
     if not members or not bool(getattr(settings, "join_burst_enabled", False)):
         return False
     recent_count = await count_recent_joiners(session, chat.id, int(getattr(settings, "join_burst_window_seconds", 30) or 30))

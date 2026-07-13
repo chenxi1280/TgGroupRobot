@@ -73,7 +73,7 @@ async def apply_quick_reply_action(
     target_message_id: int | None,
 ) -> UserActionResult:
     config = get_rule_config(settings, QUICK_REPLY_RULE_ID)
-    resolution = await resolve_effective_action(context, chat_id, target_user_id, action)
+    resolution = await resolve_effective_action(context, chat_id, target_user_id, requested_action=action)
     mute_seconds = int(config.get("mute_seconds", 3600) or 3600)
     detail = "管理员引用回复快捷处置"
     result = await execute_user_action(
@@ -99,7 +99,7 @@ async def apply_quick_reply_action(
         detail=detail,
         action=action_label[:32],
     )
-    await _send_quick_reply_notice(context, chat_id, config, target_label, detail, action_label)
+    await _send_quick_reply_notice(context, chat_id, config, target_label=target_label, detail=detail, action_label=action_label)
     return result
 
 
@@ -107,7 +107,7 @@ async def _send_quick_reply_notice(
     context: ContextTypes.DEFAULT_TYPE,
     chat_id: int,
     config: dict,
-    target_label: str,
+    *, target_label: str,
     detail: str,
     action_label: str,
 ) -> None:
@@ -115,7 +115,7 @@ async def _send_quick_reply_notice(
         return
     text = str(config.get("notice_text") or "").strip()
     if not text:
-        text = build_moderation_notice("🚫 快捷回复已处理", target_label, detail, action_label)
+        text = build_moderation_notice("🚫 快捷回复已处理", target_label, detail, action_label=action_label)
     await send_temporary_notice(
         context.bot,
         chat_id=chat_id,

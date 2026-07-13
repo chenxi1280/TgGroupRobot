@@ -72,7 +72,7 @@ class GroupMessageHandler:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat: Any,
-        user: Any,
+        *, user: Any,
         message_text: str,
     ) -> bool:
         """处理群聊消息

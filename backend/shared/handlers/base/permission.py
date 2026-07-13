@@ -25,7 +25,7 @@ class PermissionHelper:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        error_message: str | None = None,
+        *, error_message: str | None = None,
         show_alert: bool = False,
     ) -> bool:
         """检查并要求管理员权限

@@ -9,7 +9,7 @@ class TeacherSearchActionsMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        callback_data: CallbackParser,
+        *, callback_data: CallbackParser,
     ) -> None:
         from backend.platform.db.schema.models.enums import ConversationStateType
         from backend.features.garage.services.garage_features_service import TeacherSearchService
@@ -28,8 +28,8 @@ class TeacherSearchActionsMixin:
                 context,
                 update.effective_user.id,
                 chat_id,
-                ConversationStateType.teacher_search_attendance_target_input.value,
-                {"target_chat_id": chat_id},
+                state_type=ConversationStateType.teacher_search_attendance_target_input.value,
+                payload={"target_chat_id": chat_id},
             )
             await self.message_helper.safe_edit(
                 update,
@@ -73,7 +73,7 @@ class TeacherSearchActionsMixin:
                 if not allowed:
                     await answer_callback_query_safely(update, error_text or "你没有该群组的管理权限", show_alert=True)
                     return
-                await self._show_teacher_search_attendance_source_mode_menu(update, context, chat_id, source_chat_id)
+                await self._show_teacher_search_attendance_source_mode_menu(update, context, chat_id, source_chat_id=source_chat_id)
                 return
         if action == "attendance_source_mode":
             sub_action = callback_data.get(2)
@@ -127,8 +127,8 @@ class TeacherSearchActionsMixin:
                 context,
                 update.effective_user.id,
                 chat_id,
-                state_type,
-                {"target_chat_id": chat_id},
+                state_type=state_type,
+                payload={"target_chat_id": chat_id},
             )
             await self.message_helper.safe_edit(
                 update,
@@ -144,8 +144,8 @@ class TeacherSearchActionsMixin:
                 context,
                 update.effective_user.id,
                 chat_id,
-                ConversationStateType.teacher_search_footer_text_input.value,
-                {"target_chat_id": chat_id},
+                state_type=ConversationStateType.teacher_search_footer_text_input.value,
+                payload={"target_chat_id": chat_id},
             )
             await self.message_helper.safe_edit(
                 update,
@@ -211,8 +211,8 @@ class TeacherSearchActionsMixin:
                 context,
                 update.effective_user.id,
                 chat_id,
-                ConversationStateType.teacher_search_delegate_target_input.value,
-                {"target_chat_id": chat_id},
+                state_type=ConversationStateType.teacher_search_delegate_target_input.value,
+                payload={"target_chat_id": chat_id},
             )
             await self.message_helper.safe_edit(
                 update,
@@ -225,7 +225,7 @@ class TeacherSearchActionsMixin:
                 update,
                 context,
                 chat_id,
-                callback_data.get_int_optional(4) or 0,
+                page=callback_data.get_int_optional(4) or 0,
             )
             return
         await self._show_teacher_search_menu(update, context, chat_id)

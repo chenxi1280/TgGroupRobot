@@ -351,7 +351,7 @@ def parse_lottery_config_text(
     text: str,
     lottery_type: str = "common",
     selection_mode: str = "threshold_random",
-    draw_trigger: str = "time_deadline",
+    *, draw_trigger: str = "time_deadline",
     allow_unresolved_winner_refs: bool = False,
 ) -> ParsedLotteryConfig:
     lines = text.strip().split("\n")

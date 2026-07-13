@@ -26,10 +26,10 @@ async def test_should_exempt_admin_accepts_group_admin_and_bot_admin(monkeypatch
 
     context = SimpleNamespace(bot=SimpleNamespace())
 
-    assert await should_exempt_admin(context, -100, 10, True) is True
-    assert await should_exempt_admin(context, -100, 20, True) is True
-    assert await should_exempt_admin(context, -100, 30, True) is False
-    assert await should_exempt_admin(context, -100, 10, False) is False
+    assert await should_exempt_admin(context, -100, 10, exempt_admin=True) is True
+    assert await should_exempt_admin(context, -100, 20, exempt_admin=True) is True
+    assert await should_exempt_admin(context, -100, 30, exempt_admin=True) is False
+    assert await should_exempt_admin(context, -100, 10, exempt_admin=False) is False
 
 
 @pytest.mark.asyncio
@@ -43,11 +43,11 @@ async def test_resolve_effective_action_downgrades_for_channel_and_admin(monkeyp
         )
     )
 
-    admin_resolution = await resolve_effective_action(context, -100, 123, "mute")
+    admin_resolution = await resolve_effective_action(context, -100, 123, requested_action="mute")
     assert admin_resolution.action == "delete"
     assert "群主/管理员" in admin_resolution.fallback_reason
 
-    channel_resolution = await resolve_effective_action(context, -100, 123, "ban", sender_chat_id=-200)
+    channel_resolution = await resolve_effective_action(context, -100, 123, requested_action="ban", sender_chat_id=-200)
     assert channel_resolution.action == "delete"
     assert "频道身份" in channel_resolution.fallback_reason
 
@@ -62,7 +62,7 @@ def test_notice_and_action_label_helpers():
         "🚫 测试",
         "用户A",
         "rule_x",
-        "删除消息",
+        action_label="删除消息",
         fallback_reason="已降级",
         extra_lines=["额外信息"],
     )

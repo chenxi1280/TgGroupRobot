@@ -183,7 +183,7 @@ def create_admin_web_app(db: Database, settings: Settings) -> FastAPI:
         request: Request,
         response: Response,
         admin: AdminAccount = Depends(_current_admin),
-        session: AsyncSession = Depends(_session),
+        *, session: AsyncSession = Depends(_session),
     ):
         await logout_session(session, request.cookies.get(SESSION_COOKIE_NAME), admin)
         await session.commit()
@@ -217,7 +217,7 @@ def create_admin_web_app(db: Database, settings: Settings) -> FastAPI:
         spec_days: int | None = None,
         keyword: str | None = None,
         limit: int = Query(default=100, ge=1, le=500),
-        offset: int = Query(default=0, ge=0),
+        *, offset: int = Query(default=0, ge=0),
         admin: AdminAccount = Depends(_current_admin),
         session: AsyncSession = Depends(_session),
     ):
@@ -233,7 +233,7 @@ def create_admin_web_app(db: Database, settings: Settings) -> FastAPI:
         spec_days: int | None = None,
         batch_id: int | None = None,
         status: str | None = None,
-        keyword: str | None = None,
+        *, keyword: str | None = None,
         limit: int = Query(default=100, ge=1, le=500),
         offset: int = Query(default=0, ge=0),
         admin: AdminAccount = Depends(_current_admin),
@@ -295,7 +295,7 @@ def create_admin_web_app(db: Database, settings: Settings) -> FastAPI:
         spec_days: int | None = None,
         batch_id: int | None = None,
         status: str | None = None,
-        keyword: str | None = None,
+        *, keyword: str | None = None,
         admin: AdminAccount = Depends(_current_admin),
         session: AsyncSession = Depends(_session),
     ):
@@ -454,7 +454,7 @@ def create_admin_web_app(db: Database, settings: Settings) -> FastAPI:
         account_id: int,
         status: str,
         admin: AdminAccount = Depends(_current_admin),
-        session: AsyncSession = Depends(_session),
+        *, session: AsyncSession = Depends(_session),
     ):
         if status not in {"active", "disabled"}:
             raise HTTPException(status_code=400, detail="账号状态无效")
@@ -482,7 +482,7 @@ def create_admin_web_app(db: Database, settings: Settings) -> FastAPI:
         account_id: int,
         payload: AdminPasswordRequest,
         admin: AdminAccount = Depends(_current_admin),
-        session: AsyncSession = Depends(_session),
+        *, session: AsyncSession = Depends(_session),
     ):
         account = await session.get(AdminAccount, account_id)
         if account is None:
@@ -505,7 +505,7 @@ def create_admin_web_app(db: Database, settings: Settings) -> FastAPI:
         payload: CurrentPasswordRequest,
         request: Request,
         admin: AdminAccount = Depends(_current_admin),
-        session: AsyncSession = Depends(_session),
+        *, session: AsyncSession = Depends(_session),
     ):
         account = await session.get(AdminAccount, admin.id)
         if account is None or not verify_password(payload.old_password, account.password_hash):
@@ -532,7 +532,7 @@ def create_admin_web_app(db: Database, settings: Settings) -> FastAPI:
         limit: int = Query(default=100, ge=1, le=500),
         offset: int = Query(default=0, ge=0),
         admin: AdminAccount = Depends(_current_admin),
-        session: AsyncSession = Depends(_session),
+        *, session: AsyncSession = Depends(_session),
     ):
         _ = admin
         total = int((await session.execute(select(func.count(AdminAuditLog.id)))).scalar() or 0)

@@ -16,7 +16,7 @@ async def create_ad_campaign(
     session: AsyncSession,
     chat_id: int,
     created_by_user_id: int,
-    title: str,
+    *, title: str,
     content: str,
     image_file_id: str | None = None,
     image_url: str | None = None,

@@ -23,26 +23,26 @@ from backend.features.group_ops.group_hooks.control_night import _process_night_
 from backend.features.group_ops.group_hooks.control_rename import _process_rename_monitor  # noqa: F401
 
 
-async def _process_new_member_limit(context, db, chat, user, message, settings) -> bool:
+async def _process_new_member_limit(context, db, chat, *, user, message, settings) -> bool:
     return await _process_new_member_limit_impl(
         context,
         db,
         chat,
-        user,
-        message,
-        settings,
+        user=user,
+        message=message,
+        settings=settings,
         joined_at_lookup=_get_member_joined_at,
     )
 
 
-async def _process_night_mode(context, chat, user, message, settings, is_admin: bool) -> bool:
+async def _process_night_mode(context, chat, user, *, message, settings, is_admin: bool) -> bool:
     return await _process_night_mode_impl(
         context,
         chat,
         user,
-        message,
-        settings,
-        is_admin,
+        message=message,
+        settings=settings,
+        is_admin=is_admin,
         night_time_check=_is_night_time,
     )
 

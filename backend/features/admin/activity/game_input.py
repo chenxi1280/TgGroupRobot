@@ -14,9 +14,9 @@ async def handle_game_admin_input(
     update,
     context,
     session,
-    state,
+    *, state,
     message_text: str,
-    *,
+
     target_chat_id: int,
 ) -> bool:
     if update.effective_user is None or update.effective_message is None:

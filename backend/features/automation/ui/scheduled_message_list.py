@@ -5,7 +5,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from backend.shared.ui.base.helpers import create_back_button
 
 
-def sm_list_keyboard(tasks: list, chat_id: int, page: int = 0, page_size: int = 10) -> InlineKeyboardMarkup:
+def sm_list_keyboard(tasks: list, chat_id: int, page: int = 0, *, page_size: int = 10) -> InlineKeyboardMarkup:
     buttons = []
     start_idx = page * page_size
     end_idx = start_idx + page_size

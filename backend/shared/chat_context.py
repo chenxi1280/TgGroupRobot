@@ -122,7 +122,7 @@ class PrivateChatContext:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         target_chat_id: int | None = None,
-        chat_index: int = 2,
+        *, chat_index: int = 2,
         allow_fallback_to_current_chat: bool = True,
         error_message_select_chat: str = "请先选择一个群组",
         error_message_no_permission: str = "你没有该群组的管理权限",

@@ -50,7 +50,7 @@ async def create_scheduled_message(
     session: AsyncSession,
     chat_id: int,
     created_by_user_id: int,
-    content: str,
+    *, content: str,
     schedule_type: str,
     interval_minutes: int | None = None,
     initial_delay_minutes: int = 0,
@@ -87,7 +87,7 @@ async def update_scheduled_message(
     session: AsyncSession,
     message_id: int,
     content: str | None = None,
-    schedule_type: str | None = None,
+    *, schedule_type: str | None = None,
     interval_minutes: int | None = None,
 ) -> UpdateResult:
     message = await get_scheduled_message(session, message_id)

@@ -39,7 +39,7 @@ async def _process_night_mode(
     context: ContextTypes.DEFAULT_TYPE,
     chat,
     user,
-    message,
+    *, message,
     settings,
     is_admin: bool,
     night_time_check=_is_night_time,

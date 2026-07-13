@@ -87,7 +87,7 @@ async def _process_car_review_features(
     context: ContextTypes.DEFAULT_TYPE,
     session,
     chat,
-    user,
+    *, user,
     message,
     text: str,
     car_review_setting,
@@ -110,7 +110,7 @@ async def _process_car_review_features(
             )
             return True
         title, since = rank_request
-        await _reply_car_review_rankings(context, session, chat, message, title=title, since=since)
+        await _reply_car_review_rankings(context, session, chat, message=message, title=title, since=since)
         return True
 
     submit_command = car_review_setting.submit_command.strip() or "提交报告"
@@ -125,7 +125,7 @@ async def _process_car_review_features(
                 reply_to_message_id=message.message_id,
             )
             return True
-        await _reply_car_review_submit_entry(context, session, chat, message, car_review_setting)
+        await _reply_car_review_submit_entry(context, session, chat, message=message, car_review_setting=car_review_setting)
         return True
 
     if submit_command and text.startswith(submit_command):
@@ -139,10 +139,10 @@ async def _process_car_review_features(
                 reply_to_message_id=message.message_id,
             )
             return True
-        await _submit_car_review(context, session, chat, user, message, text, submit_command, car_review_setting)
+        await _submit_car_review(context, session, chat, user=user, message=message, text=text, submit_command=submit_command, car_review_setting=car_review_setting)
         return True
 
-    if await _maybe_reply_car_review_lookup(context, session, chat, message, text, car_review_setting):
+    if await _maybe_reply_car_review_lookup(context, session, chat, message=message, text=text, car_review_setting=car_review_setting):
         return True
 
     return False
@@ -152,7 +152,7 @@ async def _reply_car_review_submit_entry(
     context: ContextTypes.DEFAULT_TYPE,
     session,
     chat,
-    message,
+    *, message,
     car_review_setting,
 ) -> None:
     if not getattr(car_review_setting, "approver_user_id", None):
@@ -185,8 +185,8 @@ async def _reply_car_review_rankings(
     context: ContextTypes.DEFAULT_TYPE,
     session,
     chat,
-    message,
-    *,
+    *, message,
+
     title: str,
     since: dt.datetime | None,
 ) -> None:
@@ -215,7 +215,7 @@ async def _submit_car_review(
     context: ContextTypes.DEFAULT_TYPE,
     session,
     chat,
-    user,
+    *, user,
     message,
     text: str,
     submit_command: str,
@@ -333,7 +333,7 @@ async def _maybe_reply_car_review_lookup(
     context: ContextTypes.DEFAULT_TYPE,
     session,
     chat,
-    message,
+    *, message,
     text: str,
     car_review_setting,
 ) -> bool:
@@ -365,7 +365,7 @@ async def _maybe_reply_car_review_lookup(
     if teacher_user is None:
         return False
 
-    await _reply_teacher_reviews(context, session, chat, message, teacher_user)
+    await _reply_teacher_reviews(context, session, chat, message=message, teacher_user=teacher_user)
     return True
 
 
@@ -373,7 +373,7 @@ async def _reply_teacher_reviews(
     context: ContextTypes.DEFAULT_TYPE,
     session,
     chat,
-    message,
+    *, message,
     teacher_user: TgUser,
 ) -> None:
     reports = await CarReviewService.list_reports_for_teacher(session, chat.id, teacher_user.id, limit=5)

@@ -90,7 +90,7 @@ async def handle_game_runtime_callback(update: Update, context: ContextTypes.DEF
             await answer_callback_query_safely(update, f"下注积分必须在 1 到 {MAX_GAME_BET_POINTS} 之间", show_alert=True)
             return
         async with db.session_factory() as session:
-            await ensure_user(session, user.id, user.username, user.first_name, user.last_name, user.language_code)
+            await ensure_user(session, user.id, user.username, first_name=user.first_name, last_name=user.last_name, language_code=user.language_code)
             setting = await get_or_create_setting(session, chat_id)
             if not setting.k3_enabled:
                 await session.commit()
@@ -102,7 +102,7 @@ async def handle_game_runtime_callback(update: Update, context: ContextTypes.DEF
                 if active_round is not None
                 else resolve_points_chat_id(setting, chat_id)
             )
-            ok, balance = await change_points(session, points_chat_id, user.id, -bet_points, PointsTxnType.penalty.value, reason="快三下注")
+            ok, balance = await change_points(session, points_chat_id, user.id, amount=-bet_points, txn_type=PointsTxnType.penalty.value, reason="快三下注")
             if not ok:
                 await session.commit()
                 await answer_callback_query_safely(update, f"积分不足，当前余额 {balance}", show_alert=True)
@@ -112,8 +112,8 @@ async def handle_game_runtime_callback(update: Update, context: ContextTypes.DEF
                     session,
                     chat_id,
                     user.id,
-                    guess,
-                    bet_points,
+                    guess=guess,
+                    bet_points=bet_points,
                     points_chat_id=points_chat_id,
                 )
             except ValidationError as exc:
@@ -143,14 +143,14 @@ async def handle_game_runtime_callback(update: Update, context: ContextTypes.DEF
             await answer_callback_query_safely(update, f"下注积分必须在 1 到 {MAX_GAME_BET_POINTS} 之间", show_alert=True)
             return
         async with db.session_factory() as session:
-            await ensure_user(session, user.id, user.username, user.first_name, user.last_name, user.language_code)
+            await ensure_user(session, user.id, user.username, first_name=user.first_name, last_name=user.last_name, language_code=user.language_code)
             setting = await get_or_create_setting(session, chat_id)
             if not setting.blackjack_enabled:
                 await session.commit()
                 await answer_callback_query_safely(update, "黑杰克当前未开启", show_alert=True)
                 return
             points_chat_id = resolve_points_chat_id(setting, chat_id)
-            ok, balance = await change_points(session, points_chat_id, user.id, -bet_points, PointsTxnType.penalty.value, reason="黑杰克下注")
+            ok, balance = await change_points(session, points_chat_id, user.id, amount=-bet_points, txn_type=PointsTxnType.penalty.value, reason="黑杰克下注")
             if not ok:
                 await session.commit()
                 await answer_callback_query_safely(update, f"积分不足，当前余额 {balance}", show_alert=True)
@@ -160,7 +160,7 @@ async def handle_game_runtime_callback(update: Update, context: ContextTypes.DEF
                     session,
                     chat_id,
                     user.id,
-                    bet_points,
+                    bet_points=bet_points,
                     points_chat_id=points_chat_id,
                 )
             except ValidationError as exc:
@@ -171,7 +171,7 @@ async def handle_game_runtime_callback(update: Update, context: ContextTypes.DEF
             if len((participant.choice_data or {}).get("player_cards") or []) == 2:
                 from backend.features.activity.services.game_service import blackjack_total
                 if blackjack_total(participant.choice_data["player_cards"]) == 21:
-                    outcome = await finalize_blackjack_round(session, round_obj, participant, "stand")
+                    outcome = await finalize_blackjack_round(session, round_obj, participant, mode="stand")
             await session.commit()
         sent = await context.bot.send_message(
             chat_id=chat_id,

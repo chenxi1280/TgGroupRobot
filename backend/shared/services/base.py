@@ -110,7 +110,7 @@ class ServiceBase:
         session: AsyncSession,
         model: type[ModelT],
         filters: dict[str, Any] | None = None,
-        active_only: bool = False,
+        *, active_only: bool = False,
         order_by: str = "created_at",
         descending: bool = True,
         limit: int | None = None,
@@ -230,7 +230,7 @@ class ServiceBase:
         session: AsyncSession,
         model: type[ModelT],
         filters: dict[str, Any],
-        updates: dict[str, Any],
+        *, updates: dict[str, Any],
     ) -> ModelT:
         """
         通用的替换或创建方法（update or insert）

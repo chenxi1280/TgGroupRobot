@@ -26,9 +26,9 @@ async def handle_points_mall_input(
     update,
     context,
     session,
-    state,
+    *, state,
     message_text: str,
-    *,
+
     target_chat_id: int,
 ) -> bool:
     if update.effective_user is None or update.effective_message is None:
@@ -188,5 +188,5 @@ async def handle_points_mall_input(
 
     await clear_points_state(session, target_chat_id=target_chat_id, user_id=user_id)
     await session.commit()
-    await admin_handler_instance()._show_points_mall_product_detail(update, context, target_chat_id, product.product_id)
+    await admin_handler_instance()._show_points_mall_product_detail(update, context, target_chat_id, product_id=product.product_id)
     return True

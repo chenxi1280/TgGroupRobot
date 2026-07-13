@@ -189,7 +189,7 @@ async def test_force_subscribe_cycle_action_updates_setting(monkeypatch):
         update,
         context,
         -100123,
-        CallbackParser.parse("adm:fs:-100123:cycle_action"),
+        callback_data=CallbackParser.parse("adm:fs:-100123:cycle_action"),
     )
 
     assert settings.force_subscribe_not_subscribed_action == "delete_only"
@@ -217,7 +217,7 @@ async def test_force_subscribe_cycle_check_mode_updates_setting(monkeypatch):
         update,
         context,
         -100123,
-        CallbackParser.parse("adm:fs:-100123:cycle_check_mode"),
+        callback_data=CallbackParser.parse("adm:fs:-100123:cycle_check_mode"),
     )
 
     assert settings.force_subscribe_check_mode == "any"
@@ -258,7 +258,7 @@ async def test_force_subscribe_preview_uses_resolved_channel_buttons(monkeypatch
         update,
         context,
         -100123,
-        CallbackParser.parse("adm:fs:-100123:preview"),
+        callback_data=CallbackParser.parse("adm:fs:-100123:preview"),
     )
 
     assert rendered
@@ -295,7 +295,7 @@ async def test_force_subscribe_delete_after_opens_selection(monkeypatch):
         update,
         context,
         -100123,
-        CallbackParser.parse("adm:fs:-100123:cycle_delete_after"),
+        callback_data=CallbackParser.parse("adm:fs:-100123:cycle_delete_after"),
     )
 
     assert settings.force_subscribe_delete_warn_after_seconds == 90
@@ -327,7 +327,7 @@ async def test_force_subscribe_delete_after_selection_updates_setting(monkeypatc
         update,
         context,
         -100123,
-        CallbackParser.parse("adm:fs:-100123:delete_after:120"),
+        callback_data=CallbackParser.parse("adm:fs:-100123:delete_after:120"),
     )
 
     assert settings.force_subscribe_delete_warn_after_seconds == 120
@@ -384,8 +384,8 @@ async def test_force_subscribe_buttons_input_accepts_line_format(monkeypatch):
         update,
         context,
         session,
-        state,
-        "加入频道|https://t.me/channel_a\n联系客服|https://t.me/channel_b",
+        state=state,
+        message_text="加入频道|https://t.me/channel_a\n联系客服|https://t.me/channel_b",
     )
 
     assert settings.force_subscribe_custom_buttons_enabled is True
@@ -456,8 +456,8 @@ async def test_force_subscribe_target_input_validates_accessible_group(monkeypat
         update,
         context,
         session,
-        state,
-        "https://t.me/group_a",
+        state=state,
+        message_text="https://t.me/group_a",
     )
 
     assert settings.force_subscribe_bound_channel_1 == "https://t.me/group_a"
@@ -513,8 +513,8 @@ async def test_force_subscribe_target_input_rejects_bot_deep_link(monkeypatch):
         update,
         context,
         session,
-        state,
-        "https://t.me/demo_bot?start=abc",
+        state=state,
+        message_text="https://t.me/demo_bot?start=abc",
     )
 
     assert settings.force_subscribe_bound_channel_1 == "@old_channel"
@@ -567,8 +567,8 @@ async def test_force_subscribe_target_input_rejects_unsupported_targets(monkeypa
         update,
         context,
         session,
-        state,
-        raw_target,
+        state=state,
+        message_text=raw_target,
     )
 
     assert settings.force_subscribe_bound_channel_1 == "@old_channel"

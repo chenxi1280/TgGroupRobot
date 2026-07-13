@@ -66,7 +66,7 @@ class CoreBasicMenusMixin:
         db: Database = context.application.bot_data["db"]
         await self._set_current_chat(db, update.effective_user.id, chat_id)
         chat_title = await self._get_chat_title(db, chat_id)
-        await _invite_link_handler.show_menu(update, context, chat_id, chat_title)
+        await _invite_link_handler.show_menu(update, context, chat_id, chat_title=chat_title)
 
     async def _show_stats_menu(
         self,

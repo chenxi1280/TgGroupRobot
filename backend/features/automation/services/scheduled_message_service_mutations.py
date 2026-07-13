@@ -23,7 +23,7 @@ class ScheduledMessageMutationMixin:
         session: AsyncSession,
         chat_id: int,
         created_by_user_id: int,
-        title: str,
+        *, title: str,
         **kwargs: Any,
     ) -> ScheduledMessageTask:
         chat = await session.get(TgChat, chat_id)
@@ -181,7 +181,7 @@ class ScheduledMessageMutationMixin:
         session: AsyncSession,
         task_id: str | uuid.UUID,
         media_type: str,
-        media_file_id: str | None = None,
+        *, media_file_id: str | None = None,
     ) -> ScheduledMessageTask:
         cls.validate_media_type(media_type)
         return await cls.update_task(
@@ -217,7 +217,7 @@ class ScheduledMessageMutationMixin:
         session: AsyncSession,
         task_id: str | uuid.UUID,
         day_start_hour: int,
-        day_end_hour: int,
+        *, day_end_hour: int,
     ) -> ScheduledMessageTask:
         cls.validate_day_period(day_start_hour, day_end_hour)
         return await cls.update_task(
@@ -253,7 +253,7 @@ class ScheduledMessageMutationMixin:
         session: AsyncSession,
         task_id: str | uuid.UUID,
         option: str,
-        value: bool,
+        *, value: bool,
     ) -> ScheduledMessageTask:
         cls.validate_toggle_option(option)
         return await cls.update_task(session, task_id, **{option: value})

@@ -197,7 +197,7 @@ async def handle_account_inherit_input(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session,
-    state,
+    *, state,
     message_text: str,
 ) -> None:
     if update.effective_user is None or update.effective_message is None:
@@ -211,7 +211,7 @@ async def handle_account_inherit_input(
         await update.effective_message.reply_text("token 不能为空。")
         return
     try:
-        snapshot = await consume_token(session, target_chat_id, update.effective_user.id, token)
+        snapshot = await consume_token(session, target_chat_id, update.effective_user.id, plain_token=token)
     except ValidationError as exc:
         await update.effective_message.reply_text(f"❌ {exc}")
         return

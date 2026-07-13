@@ -42,7 +42,7 @@ async def verification_config_handler_impl(update: Update, context: ContextTypes
             return
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
-            state = await resolve_verification_config_state(session, db, chat, user)
+            state = await resolve_verification_config_state(session, db, chat, user=user)
             if state is None:
                 await session.commit()
                 return
@@ -57,12 +57,12 @@ async def verification_config_handler_impl(update: Update, context: ContextTypes
                 await session.commit()
                 await update.effective_message.reply_text(f"❌ {reason or '需要管理员权限'}")
                 return
-            await parse_verification_config_impl(update, session, state, text)
+            await parse_verification_config_impl(update, session, state, text=text)
     except Exception as exc:
         log.exception("verification_config_handler_error", error=str(exc), error_type=type(exc).__name__, exc_info=True)
 
 
-async def parse_verification_config_impl(update: Update, session, state, text: str) -> None:
+async def parse_verification_config_impl(update: Update, session, state, *, text: str) -> None:
     try:
         config = _parse_verification_config_text(text)
         target_chat_id = resolve_state_chat_id(state, update.effective_chat.id if update.effective_chat else None)
@@ -193,7 +193,7 @@ async def verification_cancel_callback_impl(update: Update, context: ContextType
     user = update.effective_user
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
-        state = await resolve_verification_config_state(session, db, chat, user)
+        state = await resolve_verification_config_state(session, db, chat, user=user)
         resolved_chat_id = resolve_state_chat_id(state, target_chat_id) if state is not None else target_chat_id
         allowed, reason = await PermissionPolicyService.require_manage(context, chat_id=resolved_chat_id, user_id=user.id, capability="settings")
         if not allowed:

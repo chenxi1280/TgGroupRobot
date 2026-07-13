@@ -164,7 +164,12 @@ async def test_toggle_all_enabled_updates_three_existing_switches(monkeypatch):
     monkeypatch.setattr(points_config_handler, "_safe_edit_message", fake_safe_edit)
     monkeypatch.setattr(points_config_handler, "get_chat_settings", fake_get_chat_settings)
 
-    await points_config_handler._points_config_handler._handle_toggle(update, context, -1001, "all_enabled")
+    await points_config_handler._points_config_handler._handle_toggle(
+        update,
+        context,
+        -1001,
+        field="all_enabled",
+    )
 
     assert settings.sign_enabled is True
     assert settings.message_points_enabled is True

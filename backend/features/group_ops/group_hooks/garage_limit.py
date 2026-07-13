@@ -27,11 +27,11 @@ async def _process_garage_limit(
     context: ContextTypes.DEFAULT_TYPE,
     session,
     chat,
-    user,
+    *, user,
     message,
     message_text: str,
     settings,
-    *,
+
     is_admin: bool,
     is_teacher: bool,
     is_whitelisted: bool,

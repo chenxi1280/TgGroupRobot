@@ -46,7 +46,7 @@ async def change_points(
     session: AsyncSession,
     chat_id: int,
     user_id: int,
-    amount: int,
+    *, amount: int,
     txn_type: str,
     reason: str | None = None,
 ) -> tuple[bool, int]:

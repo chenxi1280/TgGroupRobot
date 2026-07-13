@@ -11,7 +11,7 @@ class GarageReviewActionsMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        callback_data: CallbackParser,
+        *, callback_data: CallbackParser,
     ) -> None:
         from backend.features.garage.services.garage_features_service import CarReviewService
         from backend.features.group_ops.group_message_handler import _publish_car_review_report
@@ -66,11 +66,11 @@ class GarageReviewActionsMixin:
             await self._show_car_review_menu(update, context, chat_id)
             return
         if action == "submit_cmd" and callback_data.get(2) == "edit":
-            await self._start_text_input_state(context, update.effective_user.id, chat_id, ConversationStateType.car_review_submit_command_input.value, {"target_chat_id": chat_id})
+            await self._start_text_input_state(context, update.effective_user.id, chat_id, state_type=ConversationStateType.car_review_submit_command_input.value, payload={"target_chat_id": chat_id})
             await self.message_helper.safe_edit(update, "💯 车评系统 | 提交报告指令\n\n👉 请输入新的指令：", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"crv:home:{chat_id}")]]))
             return
         if action == "rank_cmd" and callback_data.get(2) == "edit":
-            await self._start_text_input_state(context, update.effective_user.id, chat_id, ConversationStateType.car_review_rank_command_input.value, {"target_chat_id": chat_id})
+            await self._start_text_input_state(context, update.effective_user.id, chat_id, state_type=ConversationStateType.car_review_rank_command_input.value, payload={"target_chat_id": chat_id})
             await self.message_helper.safe_edit(update, "💯 车评系统 | 查询排行指令\n\n👉 请输入新的指令：", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"crv:home:{chat_id}")]]))
             return
         if action == "publish_target":
@@ -94,15 +94,15 @@ class GarageReviewActionsMixin:
             await self._show_car_review_publish_menu(update, context, chat_id)
             return
         if action == "approver" and callback_data.get(2) == "set":
-            await self._start_text_input_state(context, update.effective_user.id, chat_id, ConversationStateType.car_review_approver_input.value, {"target_chat_id": chat_id})
+            await self._start_text_input_state(context, update.effective_user.id, chat_id, state_type=ConversationStateType.car_review_approver_input.value, payload={"target_chat_id": chat_id})
             await self.message_helper.safe_edit(update, "💯 车评系统 | 指定审核人\n\n👉 请输入用户名或ID，发送“清空”取消：", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"crv:home:{chat_id}")]]))
             return
         if action == "template" and callback_data.get(2) == "edit":
-            await self._start_text_input_state(context, update.effective_user.id, chat_id, ConversationStateType.car_review_template_input.value, {"target_chat_id": chat_id})
+            await self._start_text_input_state(context, update.effective_user.id, chat_id, state_type=ConversationStateType.car_review_template_input.value, payload={"target_chat_id": chat_id})
             await self.message_helper.safe_edit(update, "💯 车评系统 | 评价模板\n\n👉 请输入新的模板：", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"crv:home:{chat_id}")]]))
             return
         if action == "reward":
-            await self._start_text_input_state(context, update.effective_user.id, chat_id, ConversationStateType.car_review_reward_points_input.value, {"target_chat_id": chat_id})
+            await self._start_text_input_state(context, update.effective_user.id, chat_id, state_type=ConversationStateType.car_review_reward_points_input.value, payload={"target_chat_id": chat_id})
             await self.message_helper.safe_edit(update, "💯 车评系统 | 积分奖励\n\n👉 请输入奖励积分：", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"crv:home:{chat_id}")]]))
             return
         if action == "fields":
@@ -113,8 +113,8 @@ class GarageReviewActionsMixin:
                 context,
                 update.effective_user.id,
                 chat_id,
-                ConversationStateType.car_review_field_add_input.value,
-                {"target_chat_id": chat_id},
+                state_type=ConversationStateType.car_review_field_add_input.value,
+                payload={"target_chat_id": chat_id},
             )
             await self.message_helper.safe_edit(
                 update,
@@ -131,8 +131,8 @@ class GarageReviewActionsMixin:
                 context,
                 update.effective_user.id,
                 chat_id,
-                ConversationStateType.car_review_field_label_input.value,
-                {"target_chat_id": chat_id, "field_id": field_id},
+                state_type=ConversationStateType.car_review_field_label_input.value,
+                payload={"target_chat_id": chat_id, "field_id": field_id},
             )
             await self.message_helper.safe_edit(
                 update,
@@ -165,7 +165,7 @@ class GarageReviewActionsMixin:
                 await self._show_car_review_reports_menu(update, context, chat_id, status=status)
                 return
             if sub == "detail":
-                await self._show_car_review_report_detail(update, context, chat_id, report_id, status=status)
+                await self._show_car_review_report_detail(update, context, chat_id, report_id=report_id, status=status)
                 return
             async with db.session_factory() as session:
                 setting = await CarReviewService.get_setting(session, chat_id)
@@ -178,7 +178,7 @@ class GarageReviewActionsMixin:
                 if current.report_status != "pending":
                     await session.commit()
                     await answer_callback_query_safely(update, "该报告当前状态不可再次审核", show_alert=True)
-                    await self._show_car_review_report_detail(update, context, chat_id, report_id, status=status)
+                    await self._show_car_review_report_detail(update, context, chat_id, report_id=report_id, status=status)
                     return
                 if setting.approver_user_id and update.effective_user.id != setting.approver_user_id:
                     approver_is_admin = await is_user_admin(context, chat_id, setting.approver_user_id)
@@ -192,7 +192,7 @@ class GarageReviewActionsMixin:
                     else:
                         await session.commit()
                         await answer_callback_query_safely(update, "仅指定审核人可以处理该报告", show_alert=True)
-                        await self._show_car_review_report_detail(update, context, chat_id, report_id, status=status)
+                        await self._show_car_review_report_detail(update, context, chat_id, report_id=report_id, status=status)
                         return
                 if sub == "approve":
                     report = await CarReviewService.approve_report(
@@ -275,8 +275,8 @@ class GarageReviewActionsMixin:
                                 session,
                                 chat_id,
                                 report.author_user_id,
-                                setting.reward_points,
-                                PointsTxnType.reward.value,
+                                amount=setting.reward_points,
+                                txn_type=PointsTxnType.reward.value,
                                 reason="车评审核通过奖励",
                             )
                             await CarReviewService.append_audit(
@@ -301,10 +301,10 @@ class GarageReviewActionsMixin:
                 else:
                     await session.commit()
                     await answer_callback_query_safely(update, "暂不支持该审核操作", show_alert=True)
-                    await self._show_car_review_report_detail(update, context, chat_id, report_id, status=status)
+                    await self._show_car_review_report_detail(update, context, chat_id, report_id=report_id, status=status)
                     return
                 await session.commit()
             await answer_callback_query_safely(update, message, show_alert=False)
-            await self._show_car_review_report_detail(update, context, chat_id, report_id, status=status)
+            await self._show_car_review_report_detail(update, context, chat_id, report_id=report_id, status=status)
             return
         await self._show_car_review_menu(update, context, chat_id)

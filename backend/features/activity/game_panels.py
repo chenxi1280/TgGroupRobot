@@ -140,9 +140,9 @@ async def render_panel_message(
     context: ContextTypes.DEFAULT_TYPE,
     chat_id: int,
     text: str,
-    reply_markup: InlineKeyboardMarkup,
+    *, reply_markup: InlineKeyboardMarkup,
     message_id: int | None,
-    *,
+
     create_if_missing: bool = True,
 ) -> int:
     if message_id:
@@ -178,8 +178,8 @@ async def show_k3_panel(context: ContextTypes.DEFAULT_TYPE, db: Database, chat_i
         context,
         chat_id,
         text,
-        k3_panel_keyboard(chat_id),
-        existing_message_id,
+        reply_markup=k3_panel_keyboard(chat_id),
+        message_id=existing_message_id,
         create_if_missing=create_if_missing,
     )
     if not message_id:
@@ -200,8 +200,8 @@ async def show_blackjack_panel(context: ContextTypes.DEFAULT_TYPE, db: Database,
         context,
         chat_id,
         text,
-        blackjack_panel_keyboard(chat_id),
-        existing_message_id,
+        reply_markup=blackjack_panel_keyboard(chat_id),
+        message_id=existing_message_id,
         create_if_missing=create_if_missing,
     )
     if not message_id:

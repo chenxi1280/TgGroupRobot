@@ -9,7 +9,7 @@ class ModerationStateMixin:
         context: ContextTypes.DEFAULT_TYPE,
         user_id: int,
         state_chat_id: int,
-        state_type: str,
+        *, state_type: str,
         payload: dict,
     ) -> None:
         from backend.platform.state.conversation_state_service import SELECTED_CHAT_STATE

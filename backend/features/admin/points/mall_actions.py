@@ -9,7 +9,7 @@ class PointsMallActionsMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        callback_data: CallbackParser,
+        *, callback_data: CallbackParser,
     ) -> None:
         op = callback_data.get(3)
         if op == "noop":
@@ -98,7 +98,7 @@ class PointsMallActionsMixin:
             product_token = callback_data.get_int_optional(7)
             product_id = None if product_token in {None, 0} else product_token
             if sub == "detail":
-                await self._show_points_mall_order_detail(update, context, chat_id, order_id, status=status, product_id=product_id)
+                await self._show_points_mall_order_detail(update, context, chat_id, order_id=order_id, status=status, product_id=product_id)
                 return
             async with db.session_factory() as session:
                 if sub == "fulfill":
@@ -128,7 +128,7 @@ class PointsMallActionsMixin:
                     return
                 await session.commit()
             await answer_callback_query_safely(update, message, show_alert=not success)
-            await self._show_points_mall_order_detail(update, context, chat_id, order_id, status=status, product_id=product_id)
+            await self._show_points_mall_order_detail(update, context, chat_id, order_id=order_id, status=status, product_id=product_id)
             return
         if op == "product":
             sub = callback_data.get(4)
@@ -136,13 +136,13 @@ class PointsMallActionsMixin:
                 async with db.session_factory() as session:
                     product = await PointsExtendedService.create_product(session, chat_id)
                     await session.commit()
-                await self._show_points_mall_product_detail(update, context, chat_id, product.product_id)
+                await self._show_points_mall_product_detail(update, context, chat_id, product_id=product.product_id)
                 return
             if sub == "detail":
-                await self._show_points_mall_product_detail(update, context, chat_id, callback_data.get_int(5))
+                await self._show_points_mall_product_detail(update, context, chat_id, product_id=callback_data.get_int(5))
                 return
             if sub == "preview":
-                await self._show_points_mall_product_preview(update, context, chat_id, callback_data.get_int(5))
+                await self._show_points_mall_product_preview(update, context, chat_id, product_id=callback_data.get_int(5))
                 return
             if sub == "toggle":
                 product_id = callback_data.get_int(5)
@@ -152,7 +152,7 @@ class PointsMallActionsMixin:
                     if product is not None:
                         await PointsExtendedService.update_product_status(session, product, on_sale=enabled)
                     await session.commit()
-                await self._show_points_mall_product_detail(update, context, chat_id, product_id)
+                await self._show_points_mall_product_detail(update, context, chat_id, product_id=product_id)
                 return
             if sub == "delete":
                 product_id = callback_data.get_int(5)

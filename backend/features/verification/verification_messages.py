@@ -62,7 +62,7 @@ async def verify_message_handler(update: Update, context: ContextTypes.DEFAULT_T
             if ch is None or ch.solved:
                 await session.commit()
                 return
-        result = await solve_by_answer(session, chat.id, user.id, message_text)
+        result = await solve_by_answer(session, chat.id, user.id, answer=message_text)
         await session.commit()
 
         if result and result.solved:
@@ -72,7 +72,7 @@ async def verify_message_handler(update: Update, context: ContextTypes.DEFAULT_T
                 log.warning("verification_success_reply_failed", chat_id=chat.id, user_id=user.id, error=str(exc))
             if settings.join_self_review_enabled and not is_self_review_question(ch.question):
                 async with db.session_factory() as next_session:
-                    started = await start_self_review_if_needed(context, next_session, chat, user, settings)
+                    started = await start_self_review_if_needed(context, next_session, chat, user=user, settings=settings)
                     await next_session.commit()
                 if started:
                     try:
@@ -80,7 +80,7 @@ async def verify_message_handler(update: Update, context: ContextTypes.DEFAULT_T
                     except Exception as exc:
                         log.warning("verification_self_review_prompt_failed", chat_id=chat.id, user_id=user.id, error=str(exc))
                     return
-            await unrestrict_and_notify(context, chat.id, user.id, settings.language)
+            await unrestrict_and_notify(context, chat.id, user.id, language=settings.language)
             await send_after_verify_welcome(context, chat.id, user.id)
         else:
             if is_self_review_question(ch.question) and settings.join_self_review_wrong_action == "reject_block":
@@ -108,7 +108,7 @@ async def verify_message_handler(update: Update, context: ContextTypes.DEFAULT_T
             wrong_action = getattr(settings, "verification_wrong_action", "none") or "none"
             if not is_self_review_question(ch.question) and wrong_action != "none":
                 try:
-                    await apply_verification_punishment(context, chat.id, user.id, settings, action=wrong_action)
+                    await apply_verification_punishment(context, chat.id, user.id, settings=settings, action=wrong_action)
                     async with db.session_factory() as next_session:
                         await mark_challenge_released(next_session, chat.id, user.id)
                     await next_session.commit()

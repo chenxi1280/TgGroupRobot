@@ -9,7 +9,7 @@ class VerificationHomeActionsMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        callback_data: CallbackParser,
+        *, callback_data: CallbackParser,
     ) -> None:
         section = callback_data.get(3)
         action = callback_data.get(4)
@@ -21,16 +21,16 @@ class VerificationHomeActionsMixin:
             await self._show_verification_rules_menu(update, context, chat_id)
             return
         if section == "rule":
-            await self._handle_verification_rule_action(update, context, chat_id, action, key, value, db)
+            await self._handle_verification_rule_action(update, context, chat_id, mode=action, action=key, key=value, db=db)
             return
         if section == "spam":
-            await self._handle_join_spam_guard_action(update, context, chat_id, action, key, db)
+            await self._handle_join_spam_guard_action(update, context, chat_id, action=action, key=key, db=db)
             return
         if section == "self_review":
-            await self._handle_join_self_review_action(update, context, chat_id, action, key, db)
+            await self._handle_join_self_review_action(update, context, chat_id, action=action, key=key, db=db)
             return
         if section == "burst":
-            await self._handle_join_burst_guard_action(update, context, chat_id, action, key, db)
+            await self._handle_join_burst_guard_action(update, context, chat_id, action=action, key=key, db=db)
             return
         if section == "timeouts":
             await self._handle_verification_timeout_action(
@@ -49,7 +49,7 @@ class VerificationHomeActionsMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        mode: str,
+        *, mode: str,
         action: str,
         key: str,
         db: Database,
@@ -59,15 +59,15 @@ class VerificationHomeActionsMixin:
             return
 
         if action in {"", "home"}:
-            await self._show_verification_rule_detail(update, context, chat_id, mode)
+            await self._show_verification_rule_detail(update, context, chat_id, mode=mode)
             return
 
         if action == "preview":
-            await self._show_verification_rule_preview(update, context, chat_id, mode)
+            await self._show_verification_rule_preview(update, context, chat_id, mode=mode)
             return
 
         if action == "input":
-            await self._start_verification_rule_input(update, context, chat_id, mode, key)
+            await self._start_verification_rule_input(update, context, chat_id, mode=mode, field=key)
             return
 
         async with db.session_factory() as session:
@@ -104,14 +104,14 @@ class VerificationHomeActionsMixin:
                     )
             await session.commit()
 
-        await self._show_verification_rule_detail(update, context, chat_id, mode)
+        await self._show_verification_rule_detail(update, context, chat_id, mode=mode)
 
     async def _start_verification_rule_input(
         self,
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        mode: str,
+        *, mode: str,
         field: str,
     ) -> None:
         from backend.platform.db.schema.models.enums import ConversationStateType
@@ -133,8 +133,8 @@ class VerificationHomeActionsMixin:
             context,
             update.effective_user.id,
             chat_id,
-            state_type,
-            {"target_chat_id": chat_id, "return_rule": mode},
+            state_type=state_type,
+            payload={"target_chat_id": chat_id, "return_rule": mode},
         )
         await self.message_helper.safe_edit(
             update,
@@ -147,7 +147,7 @@ class VerificationHomeActionsMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        mode: str,
+        *, mode: str,
     ) -> None:
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
@@ -199,7 +199,7 @@ class VerificationHomeActionsMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        action: str,
+        *, action: str,
         key: str,
         db: Database,
     ) -> None:
@@ -237,7 +237,7 @@ class VerificationHomeActionsMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        action: str,
+        *, action: str,
         key: str,
         db: Database,
     ) -> None:
@@ -275,8 +275,8 @@ class VerificationHomeActionsMixin:
                 context,
                 update.effective_user.id,
                 chat_id,
-                state_type,
-                {"target_chat_id": chat_id, "return_to": "verification_self_review"},
+                state_type=state_type,
+                payload={"target_chat_id": chat_id, "return_to": "verification_self_review"},
             )
             prompt = {
                 "channel1": "👉 请回复需要绑定的频道/群组1（ID、用户名或链接）：",
@@ -337,7 +337,7 @@ class VerificationHomeActionsMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        action: str,
+        *, action: str,
         key: str,
         db: Database,
     ) -> None:

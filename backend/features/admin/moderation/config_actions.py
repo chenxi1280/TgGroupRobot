@@ -9,7 +9,7 @@ class ModerationConfigActionsMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        callback_data: CallbackParser,
+        *, callback_data: CallbackParser,
     ) -> None:
         action = callback_data.get(3) or "home"
         preset = callback_data.get(4)
@@ -42,7 +42,7 @@ class ModerationConfigActionsMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        callback_data: CallbackParser,
+        *, callback_data: CallbackParser,
     ) -> None:
         from backend.platform.db.schema.models.enums import ConversationStateType
 
@@ -62,7 +62,7 @@ class ModerationConfigActionsMixin:
             if not command_key:
                 await answer_callback_query_safely(update, "未识别的命令项，请返回后重试", show_alert=True)
                 return
-            await self._show_command_config_detail(update, context, chat_id, command_key)
+            await self._show_command_config_detail(update, context, chat_id, command_key=command_key)
             return
 
         if op == "toggle":
@@ -80,7 +80,7 @@ class ModerationConfigActionsMixin:
                 next_enabled = not bool(entry.get("enabled", True))
                 set_command_enabled(settings, command_key, next_enabled)
                 await session.commit()
-            await self._show_command_config_detail(update, context, chat_id, command_key)
+            await self._show_command_config_detail(update, context, chat_id, command_key=command_key)
             return
 
         if op == "alias":
@@ -91,8 +91,8 @@ class ModerationConfigActionsMixin:
                 context,
                 update.effective_user.id,
                 chat_id,
-                ConversationStateType.command_config_alias_input.value,
-                {"target_chat_id": chat_id, "command_key": command_key},
+                state_type=ConversationStateType.command_config_alias_input.value,
+                payload={"target_chat_id": chat_id, "command_key": command_key},
             )
             await self.message_helper.safe_edit(
                 update,
@@ -109,5 +109,5 @@ class ModerationConfigActionsMixin:
                 settings = await get_chat_settings(session, chat_id)
                 set_command_alias(settings, command_key, None)
                 await session.commit()
-            await self._show_command_config_detail(update, context, chat_id, command_key)
+            await self._show_command_config_detail(update, context, chat_id, command_key=command_key)
             return

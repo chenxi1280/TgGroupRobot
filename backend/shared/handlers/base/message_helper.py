@@ -23,7 +23,7 @@ class MessageHelper:
         update: Update,
         text: str,
         reply_markup=None,
-        parse_mode: str | None = None,
+        *, parse_mode: str | None = None,
         show_alert: bool = False,
     ) -> bool:
         """安全编辑消息（用于 callback）
@@ -94,7 +94,7 @@ class MessageHelper:
         update: Update,
         text: str,
         reply_markup=None,
-        parse_mode: str | None = None,
+        *, parse_mode: str | None = None,
     ) -> bool:
         """安全回复消息
 
@@ -126,7 +126,7 @@ class MessageHelper:
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
         text: str,
-        reply_markup=None,
+        *, reply_markup=None,
         parse_mode: str | None = None,
     ) -> bool:
         """安全发送消息

@@ -42,7 +42,7 @@ class BannedWordMenuHandler(BaseHandler):
             return
 
         # 群组场景：显示菜单
-        await self._handle_group_chat(update, context, target_chat_id, chat)
+        await self._handle_group_chat(update, context, target_chat_id, chat=chat)
 
     async def _handle_private_chat(
         self,
@@ -60,7 +60,7 @@ class BannedWordMenuHandler(BaseHandler):
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         target_chat_id: int,
-        chat,
+        *, chat,
     ) -> None:
         """处理群组场景 - 显示菜单"""
         # 获取数据

@@ -259,7 +259,7 @@ class WelcomeService:
                 if message is None:
                     continue
                 sent_any = True
-                await WelcomeService._apply_delete_strategy(session, welcome, message.message_id, context, chat_id)
+                await WelcomeService._apply_delete_strategy(session, welcome, message.message_id, context=context, chat_id=chat_id)
         return sent_any
 
     @staticmethod
@@ -276,16 +276,16 @@ class WelcomeService:
         session: AsyncSession,
         welcome: WelcomeMessage,
         message_id: int,
-        context: ContextTypes.DEFAULT_TYPE,
+        *, context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
     ) -> None:
-        await apply_welcome_delete_strategy(session, welcome, message_id, context, chat_id)
+        await apply_welcome_delete_strategy(session, welcome, message_id, context=context, chat_id=chat_id)
 
     @staticmethod
     async def _delete_later(
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
         message_id: int,
-        delay: int,
+        *, delay: int,
     ) -> None:
-        await delete_welcome_later(context, chat_id, message_id, delay)
+        await delete_welcome_later(context, chat_id, message_id, delay=delay)

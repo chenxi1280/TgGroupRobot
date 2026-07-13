@@ -10,7 +10,7 @@ class GameAdminControllerMixin:
         context: ContextTypes.DEFAULT_TYPE,
         db: Database,
         chat_id: int,
-        field: str | None,
+        *, field: str | None,
         enabled: bool,
     ) -> None:
         try:
@@ -164,7 +164,7 @@ class GameAdminControllerMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        round_id: int,
+        *, round_id: int,
     ) -> None:
         async with context.application.bot_data["db"].session_factory() as session:
             rounds = await list_recent_game_rounds(session, chat_id, limit=50)
@@ -240,7 +240,7 @@ class GameAdminControllerMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        callback_data: CallbackParser,
+        *, callback_data: CallbackParser,
     ) -> None:
         action = callback_data.get(1)
         db: Database = context.application.bot_data["db"]
@@ -251,7 +251,7 @@ class GameAdminControllerMixin:
             await self._show_game_rounds(update, context, chat_id)
             return
         if action == "detail":
-            await self._show_game_round_detail(update, context, chat_id, callback_data.get_int(3, default=0))
+            await self._show_game_round_detail(update, context, chat_id, round_id=callback_data.get_int(3, default=0))
             return
         if action == "help":
             await self._show_game_help(update, context, chat_id)
@@ -304,18 +304,18 @@ class GameAdminControllerMixin:
                 enabled = callback_data.get(4) == "1"
                 await update_game_setting(session, chat_id, **{f"{field}_enabled": enabled})
                 await session.commit()
-                await self._sync_game_panel_after_toggle(context, db, chat_id, field, enabled)
+                await self._sync_game_panel_after_toggle(context, db, chat_id, field=field, enabled=enabled)
                 await self._show_game_menu(update, context, chat_id)
                 return
             if action == "rake":
                 sub = callback_data.get(3)
                 if sub == "ratio":
-                    await self._start_text_input_state(context, update.effective_user.id, update.effective_user.id, "game_wait_rake_ratio", {"target_chat_id": chat_id})
+                    await self._start_text_input_state(context, update.effective_user.id, update.effective_user.id, state_type="game_wait_rake_ratio", payload={"target_chat_id": chat_id})
                     await session.commit()
                     await self.message_helper.safe_edit(update, "🎮 游戏 | 抽水比例\n\n请输入抽水比例\n例如：0.1 就是抽水10%", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"gm:home:{chat_id}")]]))
                     return
                 if sub == "owner":
-                    await self._start_text_input_state(context, update.effective_user.id, update.effective_user.id, "game_wait_rake_owner", {"target_chat_id": chat_id})
+                    await self._start_text_input_state(context, update.effective_user.id, update.effective_user.id, state_type="game_wait_rake_owner", payload={"target_chat_id": chat_id})
                     await session.commit()
                     await self.message_helper.safe_edit(update, "🎮 游戏 | 抽水归属\n\n请输入用户名或用户ID，发送“清空”可注销抽水归属。", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"gm:home:{chat_id}")]]))
                     return
@@ -324,7 +324,7 @@ class GameAdminControllerMixin:
                 if sub == "toggle":
                     await update_game_setting(session, chat_id, auto_schedule_enabled=callback_data.get(4) == "1")
                 elif sub == "start_time":
-                    await self._start_text_input_state(context, update.effective_user.id, update.effective_user.id, "game_wait_auto_start_time", {"target_chat_id": chat_id})
+                    await self._start_text_input_state(context, update.effective_user.id, update.effective_user.id, state_type="game_wait_auto_start_time", payload={"target_chat_id": chat_id})
                     await session.commit()
                     sample_text = next_top_of_hour_hhmm()
                     await self.message_helper.safe_edit(
@@ -339,7 +339,7 @@ class GameAdminControllerMixin:
                     )
                     return
                 elif sub == "stop_time":
-                    await self._start_text_input_state(context, update.effective_user.id, update.effective_user.id, "game_wait_auto_stop_time", {"target_chat_id": chat_id})
+                    await self._start_text_input_state(context, update.effective_user.id, update.effective_user.id, state_type="game_wait_auto_stop_time", payload={"target_chat_id": chat_id})
                     await session.commit()
                     sample_text = next_top_of_hour_hhmm(hours_offset=8)
                     await self.message_helper.safe_edit(

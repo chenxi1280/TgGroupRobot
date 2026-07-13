@@ -63,7 +63,7 @@ class CoreMenuDispatchMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        callback_data: CallbackParser,
+        *, callback_data: CallbackParser,
     ) -> None:
         """处理菜单操作"""
         menu_action = callback_data.get(2)
@@ -88,7 +88,7 @@ class CoreMenuDispatchMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        callback_data: CallbackParser,
+        *, callback_data: CallbackParser,
     ) -> None:
         feature_key = callback_data.get(3)
         redirect_map = {
@@ -132,7 +132,7 @@ class CoreMenuDispatchMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        callback_data: CallbackParser,
+        *, callback_data: CallbackParser,
     ) -> None:
         """处理开关切换操作"""
         field = callback_data.get(3) if callback_data.length() >= 4 else callback_data.get(2)

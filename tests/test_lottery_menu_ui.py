@@ -443,7 +443,7 @@ async def test_lottery_wizard_group_confirm_does_not_echo_preset_winners():
         async def commit(self):
             return None
 
-    await _reply_preset_confirm(update, _Session(), state, state.state_data)
+    await _reply_preset_confirm(update, _Session(), state, data=state.state_data)
 
     assert replies
     assert "抽奖名称：公开抽奖" in replies[-1]["text"]
@@ -762,7 +762,7 @@ def test_lottery_join_errors_explain_recovery_actions():
 
 def test_manual_draw_keyboards_keep_target_chat_scope():
     participants = [SimpleNamespace(user_id=11, user_info=None)]
-    prize_markup = manual_draw_prize_keyboard(-1001, 55, 0, "大奖吗", participants)
+    prize_markup = manual_draw_prize_keyboard(-1001, 55, 0, prize_name="大奖吗", participants=participants)
     prize_callbacks = {
         button.text: button.callback_data
         for row in prize_markup.inline_keyboard
@@ -787,7 +787,7 @@ def test_manual_draw_summary_keyboard_marks_string_state_keys():
         -1001,
         55,
         [{"name": prize_name, "quantity": 1}],
-        {"0": {"name": "Alice", "user_id": 99, "prize_name": prize_name}},
+        winners={"0": {"name": "Alice", "user_id": 99, "prize_name": prize_name}},
     )
     assert markup.inline_keyboard[0][0].text == f"✅ {prize_name} - Alice"
 
@@ -866,7 +866,7 @@ async def test_lottery_wizard_collects_common_full_draw_fields():
     update = SimpleNamespace(effective_message=_Message())
     session = _Session()
 
-    await _handle_lottery_wizard_message(update, SimpleNamespace(), session, state, "春季抽奖|好运连连")
+    await _handle_lottery_wizard_message(update, SimpleNamespace(), session, state=state, text="春季抽奖|好运连连")
     assert state.state_data["step"] == "prize_name"
     assert state.state_data["title"] == "春季抽奖"
     assert "本步只输入奖品名称，不要带中奖人数" in replies[-1]["text"]
@@ -878,13 +878,13 @@ async def test_lottery_wizard_collects_common_full_draw_fields():
     ]
     assert first_prompt_buttons == ["🔙 返回上级", "❌ 取消配置"]
 
-    await _handle_lottery_wizard_message(update, SimpleNamespace(), session, state, "1USDT")
+    await _handle_lottery_wizard_message(update, SimpleNamespace(), session, state=state, text="1USDT")
     assert state.state_data["step"] == "prize_quantity"
     assert "本步只输入「1USDT」的中奖人数/份数，不要再输入奖品名称" in replies[-1]["text"]
     assert "格式：正整数" in replies[-1]["text"]
     assert "完整示例：1" in replies[-1]["text"]
 
-    await _handle_lottery_wizard_message(update, SimpleNamespace(), session, state, "1")
+    await _handle_lottery_wizard_message(update, SimpleNamespace(), session, state=state, text="1")
     assert state.state_data["step"] == "prize_action"
     assert state.state_data["prizes"] == [{"name": "1USDT", "quantity": 1, "points_reward": 0}]
     assert "如果还有别的奖品，点击“添加下一个奖品”" in replies[-1]["text"]
@@ -892,7 +892,7 @@ async def test_lottery_wizard_collects_common_full_draw_fields():
     assert replies[-1]["reply_markup"] is not None
 
     state.state_data["step"] = "draw_param"
-    await _handle_lottery_wizard_message(update, SimpleNamespace(), session, state, "100")
+    await _handle_lottery_wizard_message(update, SimpleNamespace(), session, state=state, text="100")
     assert state.state_data["step"] == "preset_confirm"
     assert "内定中奖人：未设置" in replies[-1]["text"]
     assert replies[-1]["reply_markup"] is not None
@@ -934,22 +934,22 @@ async def test_subscribe_lottery_wizard_prompts_prize_before_subscribe_target(mo
     update = SimpleNamespace(effective_message=_Message())
     session = _Session()
 
-    await _handle_lottery_wizard_message(update, SimpleNamespace(), session, state, "关注后抽奖")
+    await _handle_lottery_wizard_message(update, SimpleNamespace(), session, state=state, text="关注后抽奖")
     assert state.state_data["step"] == "prize_name"
     assert "本步只输入奖品名称，不要带中奖人数" in replies[-1]["text"]
     assert "本步只输入本次抽奖要求关注的频道/群组" not in replies[-1]["text"]
     assert "下一步: 填写中奖人数/份数" in replies[-1]["text"]
 
-    await _handle_lottery_wizard_message(update, SimpleNamespace(), session, state, "1USDT")
-    await _handle_lottery_wizard_message(update, SimpleNamespace(), session, state, "1")
+    await _handle_lottery_wizard_message(update, SimpleNamespace(), session, state=state, text="1USDT")
+    await _handle_lottery_wizard_message(update, SimpleNamespace(), session, state=state, text="1")
     state.state_data["step"] = "draw_param"
-    await _handle_lottery_wizard_message(update, SimpleNamespace(), session, state, "100")
+    await _handle_lottery_wizard_message(update, SimpleNamespace(), session, state=state, text="100")
 
     assert state.state_data["step"] == "subscribe_targets"
     assert "本步只输入本次抽奖要求关注的频道/群组" in replies[-1]["text"]
     assert "下一步: 确认配置并发布" in replies[-1]["text"]
 
-    await _handle_lottery_wizard_message(update, SimpleNamespace(), session, state, "@channel_a")
+    await _handle_lottery_wizard_message(update, SimpleNamespace(), session, state=state, text="@channel_a")
 
     assert state.state_data["step"] == "preset_confirm"
     assert state.state_data["subscribe_targets"] == [
@@ -987,8 +987,8 @@ async def test_lottery_wizard_collects_multiple_prize_tiers():
     update = SimpleNamespace(effective_message=_Message())
     session = _Session()
 
-    await _handle_lottery_wizard_message(update, SimpleNamespace(), session, state, "二等奖")
-    await _handle_lottery_wizard_message(update, SimpleNamespace(), session, state, "2")
+    await _handle_lottery_wizard_message(update, SimpleNamespace(), session, state=state, text="二等奖")
+    await _handle_lottery_wizard_message(update, SimpleNamespace(), session, state=state, text="2")
 
     assert state.state_data["step"] == "prize_action"
     assert state.state_data["prizes"] == [
@@ -1025,7 +1025,7 @@ async def test_lottery_wizard_time_deadline_prompt_uses_copyable_next_day_exampl
             return None
 
     update = SimpleNamespace(effective_message=_Message())
-    await _reply_next_prompt(update, _Session(), state, state.state_data, "draw_param")
+    await _reply_next_prompt(update, _Session(), state, data=state.state_data, next_step="draw_param")
 
     prompt = replies[0]
     assert "格式：YYYY-MM-DD HH:MM" in prompt["text"]
@@ -1069,7 +1069,7 @@ async def test_lottery_wizard_commits_next_step_before_sending_prompt():
     data["pending_prize_name"] = "1USDT"
 
     with pytest.raises(NetworkError):
-        await _reply_next_prompt(update, session, state, data, "prize_quantity")
+        await _reply_next_prompt(update, session, state, data=data, next_step="prize_quantity")
 
     assert events == [("commit", 1), ("reply", 1)]
     assert state.state_data["step"] == "prize_quantity"
@@ -1106,8 +1106,8 @@ async def test_lottery_wizard_rejects_too_many_preset_winners():
         SimpleNamespace(effective_message=_Message()),
         SimpleNamespace(),
         _Session(),
-        state,
-        "123,456",
+        state=state,
+        text="123,456",
     )
 
     assert any("内定中奖人数不能超过中奖人数" in text for text in replies)
@@ -1143,8 +1143,8 @@ async def test_lottery_wizard_rejects_duplicate_prize_name():
         SimpleNamespace(effective_message=_Message()),
         SimpleNamespace(),
         _Session(),
-        state,
-        "1USDT",
+        state=state,
+        text="1USDT",
     )
 
     assert any("奖品名称不能重复：1USDT" in text for text in replies)
@@ -1186,8 +1186,8 @@ async def test_lottery_wizard_accepts_assigned_preset_winner(monkeypatch):
         SimpleNamespace(effective_message=_Message()),
         SimpleNamespace(bot=None),
         _Session(),
-        state,
-        "一等奖: 12345\n二等奖: @alice",
+        state=state,
+        text="一等奖: 12345\n二等奖: @alice",
     )
 
     assert state.state_data["step"] == "preset_confirm"
@@ -1231,8 +1231,8 @@ async def test_lottery_wizard_requires_prize_assignment_for_multiple_prizes():
         SimpleNamespace(effective_message=_Message()),
         SimpleNamespace(bot=None),
         _Session(),
-        state,
-        "@yangyuyan",
+        state=state,
+        text="@yangyuyan",
     )
 
     assert any("多个奖品时，请逐个奖品设置内定中奖人" in text for text in replies)
@@ -1271,8 +1271,8 @@ async def test_lottery_wizard_rejects_malformed_assigned_preset_winner():
         SimpleNamespace(effective_message=_Message()),
         SimpleNamespace(bot=None),
         _Session(),
-        state,
-        "1ustd @yangyuyan",
+        state=state,
+        text="1ustd @yangyuyan",
     )
 
     assert any("内定中奖奖品不存在：1ustd" in text for text in replies)
@@ -1311,8 +1311,8 @@ async def test_lottery_wizard_requires_colon_for_assigned_preset_winner():
         SimpleNamespace(effective_message=_Message()),
         SimpleNamespace(bot=None),
         _Session(),
-        state,
-        "1USDT @yangyuyan",
+        state=state,
+        text="1USDT @yangyuyan",
     )
 
     assert any("指定奖品请使用格式：1USDT: 用户" in text for text in replies)
@@ -1338,7 +1338,7 @@ async def test_lottery_wizard_resolves_preset_username_from_db():
         SimpleNamespace(effective_message=SimpleNamespace(entities=[])),
         SimpleNamespace(bot=None),
         _Session(),
-        "@alice",
+        value="@alice",
     )
 
     assert ids == [789]
@@ -1352,7 +1352,7 @@ async def test_lottery_wizard_resolves_preset_text_mention_entity():
         SimpleNamespace(effective_message=SimpleNamespace(text="Alice", entities=[entity])),
         SimpleNamespace(bot=None),
         SimpleNamespace(),
-        "Alice",
+        value="Alice",
     )
 
     assert ids == [321]
@@ -1377,7 +1377,7 @@ async def test_lottery_wizard_reports_unresolved_preset_username():
             SimpleNamespace(effective_message=SimpleNamespace(entities=[])),
             SimpleNamespace(bot=None),
             _Session(),
-            "@missinguser",
+            value="@missinguser",
         )
 
 
@@ -2174,7 +2174,7 @@ async def test_join_lottery_converts_unique_conflict_to_already_joined():
 
     session = _Session()
 
-    result = await lottery_service_participation.join_lottery(session, 55, 123, 0)
+    result = await lottery_service_participation.join_lottery(session, 55, 123, points_balance=0)
 
     assert result.success is False
     assert result.reason == "already_joined"

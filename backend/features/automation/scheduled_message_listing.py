@@ -26,7 +26,7 @@ class ScheduledMessageListMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         target_chat_id: int,
-        page: int = 0,
+        *, page: int = 0,
     ) -> None:
         if not await self._check_permission(update, context, target_chat_id):
             await self.message_helper.safe_edit(update, text="❌ 需要管理员权限")
@@ -104,7 +104,7 @@ class ScheduledMessageListMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         target_chat_id: int,
-        task_id: str,
+        *, task_id: str,
         toast: str | None = None,
     ) -> None:
         if not await self._check_permission(update, context, target_chat_id):

@@ -13,7 +13,7 @@ def chat_group_list_keyboard(
     chats: list[tuple[int, str, bool]],
     current_chat_id: int | None = None,
     page: int = 0,
-    page_size: int = 8,
+    *, page_size: int = 8,
 ) -> InlineKeyboardMarkup:
     """群组列表键盘
 
@@ -39,7 +39,7 @@ def chat_group_list_keyboard(
         builder.add_button(label, "select", chat_id)
 
     # 添加分页导航
-    builder.add_pagination(page, len(chats), page_size, "list")
+    builder.add_pagination(page, len(chats), page_size, list_action="list")
 
     # 添加刷新按钮
     builder.add_button("🔄 刷新列表", "refresh")

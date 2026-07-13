@@ -52,7 +52,7 @@ class AuctionAdminControllerMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        page: int = 0,
+        *, page: int = 0,
     ) -> None:
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
@@ -101,7 +101,7 @@ class AuctionAdminControllerMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        auction_id: int,
+        *, auction_id: int,
     ) -> None:
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
@@ -138,7 +138,7 @@ class AuctionAdminControllerMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        callback_data: CallbackParser,
+        *, callback_data: CallbackParser,
     ) -> None:
         action = callback_data.get(1)
         db: Database = context.application.bot_data["db"]
@@ -146,10 +146,10 @@ class AuctionAdminControllerMixin:
             await self._show_auction_menu(update, context, chat_id)
             return
         if action == "list":
-            await self._show_auction_list(update, context, chat_id, callback_data.get_int_optional(3) or 0)
+            await self._show_auction_list(update, context, chat_id, page=callback_data.get_int_optional(3) or 0)
             return
         if action == "detail":
-            await self._show_auction_detail(update, context, chat_id, callback_data.get_int(3))
+            await self._show_auction_detail(update, context, chat_id, auction_id=callback_data.get_int(3))
             return
 
         async with db.session_factory() as session:

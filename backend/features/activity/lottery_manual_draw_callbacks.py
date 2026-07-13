@@ -73,7 +73,7 @@ async def manual_draw_select_prize_callback_impl(
     await handler.message_helper.safe_edit(
         update,
         text=f"🎁 选择中奖人\n\n奖项: {prize_name}\n参与人数: {len(participants)}\n\n请选择中奖者：",
-        reply_markup=manual_draw_prize_keyboard(target_chat_id, lottery_id, prize_index, prize_name, participants),
+        reply_markup=manual_draw_prize_keyboard(target_chat_id, lottery_id, prize_index, prize_name=prize_name, participants=participants),
     )
 
 
@@ -133,7 +133,7 @@ async def manual_draw_select_winner_callback_impl(
     await handler.message_helper.safe_edit(
         update,
         text=f"✅ 已选择中奖人\n\n奖项: {prize_name}\n中奖人: {winner_name}\n\n请继续选择其他奖项或完成开奖。",
-        reply_markup=manual_draw_summary_keyboard_with_winners(target_chat_id, lottery_id, prizes, winners),
+        reply_markup=manual_draw_summary_keyboard_with_winners(target_chat_id, lottery_id, prizes, winners=winners),
     )
 
 
@@ -289,7 +289,7 @@ async def manual_draw_winner_page_callback_impl(
     await handler.message_helper.safe_edit(
         update,
         text=f"🎁 选择中奖人\n\n奖项: {prize_name}\n参与人数: {len(participants)}\n\n请选择中奖者：",
-        reply_markup=manual_draw_prize_keyboard(target_chat_id, lottery_id, prize_index, prize_name, participants, page),
+        reply_markup=manual_draw_prize_keyboard(target_chat_id, lottery_id, prize_index, prize_name=prize_name, participants=participants, page=page),
     )
 
 
@@ -331,7 +331,7 @@ async def manual_draw_menu_callback_impl(
         await handler.message_helper.safe_edit(
             update,
             text=f"📋 手动选择中奖人\n\n抽奖: {lottery.title}\n已选择: {len(winners)}/{len(prizes)} 个奖项",
-            reply_markup=manual_draw_summary_keyboard_with_winners(target_chat_id, lottery_id, prizes, winners),
+            reply_markup=manual_draw_summary_keyboard_with_winners(target_chat_id, lottery_id, prizes, winners=winners),
         )
     else:
         await handler.message_helper.safe_edit(

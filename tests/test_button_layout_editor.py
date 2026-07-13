@@ -123,11 +123,11 @@ def test_button_layout_editor_move_supports_horizontal_and_vertical() -> None:
         [{"text": "C", "url": "https://c.com"}],
     ])
 
-    grid, row_index, col_index, changed = ButtonLayoutEditorService.move_button(grid, 0, 1, "down")
+    grid, row_index, col_index, changed = ButtonLayoutEditorService.move_button(grid, 0, 1, direction="down")
     assert changed is True
     assert (row_index, col_index) == (1, 1)
 
-    grid, row_index, col_index, changed = ButtonLayoutEditorService.move_button(grid, 1, 1, "left")
+    grid, row_index, col_index, changed = ButtonLayoutEditorService.move_button(grid, 1, 1, direction="left")
     assert changed is True
     assert (row_index, col_index) == (1, 0)
     assert ButtonLayoutEditorService.get_cell(grid, 1, 0) == {"text": "B", "url": "https://b.com"}
@@ -136,7 +136,7 @@ def test_button_layout_editor_move_supports_horizontal_and_vertical() -> None:
 def test_button_layout_editor_move_boundary_is_noop() -> None:
     grid = ButtonLayoutEditorService.to_grid([[{"text": "A", "url": "https://a.com"}]])
 
-    next_grid, row_index, col_index, changed = ButtonLayoutEditorService.move_button(grid, 0, 0, "left")
+    next_grid, row_index, col_index, changed = ButtonLayoutEditorService.move_button(grid, 0, 0, direction="left")
 
     assert changed is False
     assert (row_index, col_index) == (0, 0)
@@ -273,7 +273,7 @@ async def test_button_layout_editor_input_persists_complete_buttons(monkeypatch,
 
     monkeypatch.setattr(button_layout_editor.PermissionPolicyService, "require_manage", fake_require_manage)
 
-    await handle_button_layout_editor_input(update, context, session, state, "新按钮")
+    await handle_button_layout_editor_input(update, context, session, state=state, message_text="新按钮")
 
     assert saved == [[{"text": "新按钮", "url": "https://t.me/demo"}]]
     assert shown and shown[0].module_type == module_type
@@ -326,6 +326,6 @@ async def test_button_layout_editor_input_saves_auto_reply_text_trigger(monkeypa
     async def fake_commit():
         return None
 
-    await handle_button_layout_editor_input(update, context, SimpleNamespace(commit=fake_commit), state, "签到")
+    await handle_button_layout_editor_input(update, context, SimpleNamespace(commit=fake_commit), state=state, message_text="签到")
 
     assert saved == [[{"text": "签到", "action_type": "text_trigger", "payload": "签到"}]]

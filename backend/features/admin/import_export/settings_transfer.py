@@ -112,7 +112,7 @@ class SettingsTransferAdminMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        callback_data: CallbackParser,
+        *, callback_data: CallbackParser,
     ) -> None:
         op = callback_data.get(3)
         state = _get_import_state(context, update.effective_user.id, chat_id, mode="import")
@@ -153,7 +153,7 @@ class SettingsTransferAdminMixin:
             else:
                 modules.add(key)
             state["modules"] = list(modules)
-            await self._handle_import_settings(update, context, chat_id, CallbackParser.parse(f"adm:import:{chat_id}:pick_modules"))
+            await self._handle_import_settings(update, context, chat_id, callback_data=CallbackParser.parse(f"adm:import:{chat_id}:pick_modules"))
             return
 
         if op == "select_all":
@@ -199,7 +199,7 @@ class SettingsTransferAdminMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        callback_data: CallbackParser,
+        *, callback_data: CallbackParser,
     ) -> None:
         op = callback_data.get(3)
         state = _get_import_state(context, update.effective_user.id, chat_id, mode="clone")
@@ -240,7 +240,7 @@ class SettingsTransferAdminMixin:
             else:
                 modules.add(key)
             state["modules"] = list(modules)
-            await self._handle_clone_settings(update, context, chat_id, CallbackParser.parse(f"adm:clone:{chat_id}:pick_modules"))
+            await self._handle_clone_settings(update, context, chat_id, callback_data=CallbackParser.parse(f"adm:clone:{chat_id}:pick_modules"))
             return
 
         if op == "select_all":

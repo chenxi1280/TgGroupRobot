@@ -36,7 +36,7 @@ def _is_adjust_mode(value) -> bool:
     return value in {"add", "deduct"}
 
 
-async def _resolve_adjust_target(module, session, message, raw_value: str) -> tuple[int, str, bool] | None:
+async def _resolve_adjust_target(module, session, message, *, raw_value: str) -> tuple[int, str, bool] | None:
     forwarded_user = _forwarded_user(message)
     if forwarded_user is not None:
         target_user_id = int(forwarded_user.id)
@@ -63,7 +63,7 @@ async def _prompt_custom_points_amount(
     module,
     session,
     update,
-    context,
+    *, context,
     state,
     item,
     target_chat_id: int,
@@ -79,7 +79,7 @@ async def _prompt_custom_points_amount(
     )
     parts = message_text.strip().split(maxsplit=2)
     raw_target = parts[0] if parts else ""
-    resolved = await _resolve_adjust_target(module, session, update.effective_message, raw_target)
+    resolved = await _resolve_adjust_target(module, session, update.effective_message, raw_value=raw_target)
     if resolved is None:
         await update.effective_message.reply_text("未找到该用户，请输入用户ID、已记录的用户名，或转发成员消息。")
         return
@@ -90,8 +90,8 @@ async def _prompt_custom_points_amount(
             module,
             session,
             update,
-            context,
-            item,
+            context=context,
+            item=item,
             target_chat_id=target_chat_id,
             user_id=user_id,
             target_user_id=target_user_id,
@@ -129,9 +129,9 @@ async def _apply_custom_points_adjustment(
     module,
     session,
     update,
-    context,
+    *, context,
     item,
-    *,
+
     target_chat_id: int,
     user_id: int,
     target_user_id: int,
@@ -180,7 +180,7 @@ async def _apply_custom_points_adjustment(
         f"已为用户 {target_label} {action_text} {abs(delta)} {item.name}，当前余额 {balance}。"
     )
     if context is not None:
-        await admin_handler_instance()._show_custom_point_detail(update, context, target_chat_id, item.id)
+        await admin_handler_instance()._show_custom_point_detail(update, context, target_chat_id, type_id=item.id)
     return True
 
 
@@ -188,9 +188,9 @@ async def handle_custom_points_input(
     update,
     context,
     session,
-    state,
+    *, state,
     message_text: str,
-    *,
+
     target_chat_id: int,
 ) -> bool:
     if update.effective_user is None or update.effective_message is None:
@@ -257,13 +257,13 @@ async def handle_custom_points_input(
                 module,
                 session,
                 update,
-                context,
-                state,
-                item,
-                target_chat_id,
-                user_id,
-                mode,
-                message_text,
+                context=context,
+                state=state,
+                item=item,
+                target_chat_id=target_chat_id,
+                user_id=user_id,
+                mode=mode,
+                raw_message_text=message_text,
             )
             return True
 
@@ -283,8 +283,8 @@ async def handle_custom_points_input(
             module,
             session,
             update,
-            context,
-            item,
+            context=context,
+            item=item,
             target_chat_id=target_chat_id,
             user_id=user_id,
             target_user_id=target_user_id_value,
@@ -297,5 +297,5 @@ async def handle_custom_points_input(
 
     await clear_points_state(session, target_chat_id=target_chat_id, user_id=user_id)
     await session.commit()
-    await admin_handler_instance()._show_custom_point_detail(update, context, target_chat_id, item.id)
+    await admin_handler_instance()._show_custom_point_detail(update, context, target_chat_id, type_id=item.id)
     return True

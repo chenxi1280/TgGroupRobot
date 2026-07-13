@@ -203,7 +203,7 @@ async def test_list_nearby_teachers_orders_by_distance_and_formats_fuzzy_text(mo
         _FakeSession(),
         -1001,
         31.2304,
-        121.4738,
+        longitude=121.4738,
         only_open_course=True,
         limit=10,
     )
@@ -269,7 +269,7 @@ async def test_list_nearby_teachers_filters_condition_then_orders_by_distance(mo
         session,
         -1001,
         31.2304,
-        121.4738,
+        longitude=121.4738,
         only_open_course=False,
         keyword="500左右",
         limit=10,
@@ -1068,11 +1068,11 @@ async def test_process_garage_features_handles_weekly_car_review_rank(monkeypatc
         SimpleNamespace(application=SimpleNamespace(bot_data={})),
         db,
         SimpleNamespace(id=-1001, title="测试群"),
-        SimpleNamespace(id=42),
-        SimpleNamespace(message_id=9, location=None, reply_to_message=None),
-        "本周出击排行",
-        SimpleNamespace(garage_limit_enabled=False),
-        False,
+        user=SimpleNamespace(id=42),
+        message=SimpleNamespace(message_id=9, location=None, reply_to_message=None),
+        message_text="本周出击排行",
+        settings=SimpleNamespace(garage_limit_enabled=False),
+        is_admin=False,
     )
 
     assert handled is True
@@ -1120,11 +1120,11 @@ async def test_process_garage_features_car_review_does_not_steal_sign_in_text(mo
         SimpleNamespace(application=SimpleNamespace(bot_data={})),
         db,
         SimpleNamespace(id=-1001, title="测试群"),
-        SimpleNamespace(id=42),
-        SimpleNamespace(message_id=9, location=None, reply_to_message=None),
-        "签到",
-        SimpleNamespace(garage_limit_enabled=False),
-        False,
+        user=SimpleNamespace(id=42),
+        message=SimpleNamespace(message_id=9, location=None, reply_to_message=None),
+        message_text="签到",
+        settings=SimpleNamespace(garage_limit_enabled=False),
+        is_admin=False,
     )
 
     assert handled is False
@@ -1191,11 +1191,11 @@ async def test_process_garage_features_exact_lookup_replies_teacher_reviews(monk
         SimpleNamespace(application=SimpleNamespace(bot_data={})),
         db,
         SimpleNamespace(id=-1001, title="测试群"),
-        SimpleNamespace(id=42),
-        SimpleNamespace(message_id=9, location=None, reply_to_message=None),
-        "@teacher77",
-        SimpleNamespace(garage_limit_enabled=False),
-        False,
+        user=SimpleNamespace(id=42),
+        message=SimpleNamespace(message_id=9, location=None, reply_to_message=None),
+        message_text="@teacher77",
+        settings=SimpleNamespace(garage_limit_enabled=False),
+        is_admin=False,
     )
 
     assert handled is True
@@ -1259,11 +1259,11 @@ async def test_process_garage_features_handles_nearby_command(monkeypatch):
         SimpleNamespace(application=SimpleNamespace(bot_data={})),
         db,
         SimpleNamespace(id=-1001, title="测试群"),
-        SimpleNamespace(id=42),
-        SimpleNamespace(message_id=9, location=None, reply_to_message=None),
-        "附近",
-        SimpleNamespace(garage_limit_enabled=False),
-        False,
+        user=SimpleNamespace(id=42),
+        message=SimpleNamespace(message_id=9, location=None, reply_to_message=None),
+        message_text="附近",
+        settings=SimpleNamespace(garage_limit_enabled=False),
+        is_admin=False,
     )
 
     assert handled is True
@@ -1317,11 +1317,11 @@ async def test_process_garage_features_nearby_uses_only_open_setting(monkeypatch
         SimpleNamespace(application=SimpleNamespace(bot_data={})),
         db,
         SimpleNamespace(id=-1001, title="测试群"),
-        SimpleNamespace(id=42),
-        SimpleNamespace(message_id=9, location=None, reply_to_message=None),
-        "附近",
-        SimpleNamespace(garage_limit_enabled=False),
-        False,
+        user=SimpleNamespace(id=42),
+        message=SimpleNamespace(message_id=9, location=None, reply_to_message=None),
+        message_text="附近",
+        settings=SimpleNamespace(garage_limit_enabled=False),
+        is_admin=False,
     )
 
     assert handled is True
@@ -1372,11 +1372,11 @@ async def test_process_garage_features_tag_search_uses_only_open_setting(monkeyp
         SimpleNamespace(application=SimpleNamespace(bot_data={})),
         db,
         SimpleNamespace(id=-1001, title="测试群"),
-        SimpleNamespace(id=42),
-        SimpleNamespace(message_id=9, location=None, reply_to_message=None),
-        "老师搜索 标签",
-        SimpleNamespace(garage_limit_enabled=False),
-        False,
+        user=SimpleNamespace(id=42),
+        message=SimpleNamespace(message_id=9, location=None, reply_to_message=None),
+        message_text="老师搜索 标签",
+        settings=SimpleNamespace(garage_limit_enabled=False),
+        is_admin=False,
     )
 
     assert handled is True
@@ -1444,11 +1444,11 @@ async def test_process_garage_features_bare_keyword_runs_tag_search_when_matched
         SimpleNamespace(application=SimpleNamespace(bot_data={})),
         db,
         SimpleNamespace(id=-1001, title="测试群"),
-        SimpleNamespace(id=42),
-        SimpleNamespace(message_id=9, location=None, reply_to_message=None),
-        "整形",
-        SimpleNamespace(garage_limit_enabled=False),
-        False,
+        user=SimpleNamespace(id=42),
+        message=SimpleNamespace(message_id=9, location=None, reply_to_message=None),
+        message_text="整形",
+        settings=SimpleNamespace(garage_limit_enabled=False),
+        is_admin=False,
     )
 
     assert handled is True
@@ -1497,11 +1497,11 @@ async def test_process_garage_features_bare_keyword_ignores_no_match(monkeypatch
         SimpleNamespace(application=SimpleNamespace(bot_data={})),
         db,
         SimpleNamespace(id=-1001, title="测试群"),
-        SimpleNamespace(id=42),
-        SimpleNamespace(message_id=9, location=None, reply_to_message=None),
-        "没命中的普通聊天",
-        SimpleNamespace(garage_limit_enabled=False),
-        False,
+        user=SimpleNamespace(id=42),
+        message=SimpleNamespace(message_id=9, location=None, reply_to_message=None),
+        message_text="没命中的普通聊天",
+        settings=SimpleNamespace(garage_limit_enabled=False),
+        is_admin=False,
     )
 
     assert handled is False
@@ -1569,11 +1569,11 @@ async def test_process_garage_features_tag_search_falls_back_to_all_certified_wh
         SimpleNamespace(application=SimpleNamespace(bot_data={})),
         db,
         SimpleNamespace(id=-1001, title="测试群"),
-        SimpleNamespace(id=42),
-        SimpleNamespace(message_id=9, location=None, reply_to_message=None),
-        "老师搜索 500左右",
-        SimpleNamespace(garage_limit_enabled=False),
-        False,
+        user=SimpleNamespace(id=42),
+        message=SimpleNamespace(message_id=9, location=None, reply_to_message=None),
+        message_text="老师搜索 500左右",
+        settings=SimpleNamespace(garage_limit_enabled=False),
+        is_admin=False,
     )
 
     assert handled is True
@@ -1641,11 +1641,11 @@ async def test_process_garage_features_teacher_search_nearby_condition_runs_near
         SimpleNamespace(application=SimpleNamespace(bot_data={})),
         db,
         SimpleNamespace(id=-1001, title="测试群"),
-        SimpleNamespace(id=42),
-        SimpleNamespace(message_id=9, location=None, reply_to_message=None),
-        "老师搜索 附近+500左右",
-        SimpleNamespace(garage_limit_enabled=False),
-        False,
+        user=SimpleNamespace(id=42),
+        message=SimpleNamespace(message_id=9, location=None, reply_to_message=None),
+        message_text="老师搜索 附近+500左右",
+        settings=SimpleNamespace(garage_limit_enabled=False),
+        is_admin=False,
     )
 
     assert handled is True
@@ -1702,11 +1702,11 @@ async def test_process_garage_features_nearby_condition_command_runs_nearby(monk
         SimpleNamespace(application=SimpleNamespace(bot_data={})),
         db,
         SimpleNamespace(id=-1001, title="测试群"),
-        SimpleNamespace(id=42),
-        SimpleNamespace(message_id=9, location=None, reply_to_message=None),
-        "附近 500左右",
-        SimpleNamespace(garage_limit_enabled=False),
-        False,
+        user=SimpleNamespace(id=42),
+        message=SimpleNamespace(message_id=9, location=None, reply_to_message=None),
+        message_text="附近 500左右",
+        settings=SimpleNamespace(garage_limit_enabled=False),
+        is_admin=False,
     )
 
     assert handled is True
@@ -1770,11 +1770,11 @@ async def test_process_garage_features_tag_search_displays_status_and_profile_st
         SimpleNamespace(application=SimpleNamespace(bot_data={})),
         db,
         SimpleNamespace(id=-1001, title="测试群"),
-        SimpleNamespace(id=42),
-        SimpleNamespace(message_id=9, location=None, reply_to_message=None),
-        "老师搜索 teacher_empty",
-        SimpleNamespace(garage_limit_enabled=False),
-        False,
+        user=SimpleNamespace(id=42),
+        message=SimpleNamespace(message_id=9, location=None, reply_to_message=None),
+        message_text="老师搜索 teacher_empty",
+        settings=SimpleNamespace(garage_limit_enabled=False),
+        is_admin=False,
     )
 
     assert handled is True
@@ -1822,11 +1822,11 @@ async def test_process_garage_features_car_review_submit_entry_returns_private_l
         SimpleNamespace(application=SimpleNamespace(bot_data={}), bot=SimpleNamespace(username="test_bot")),
         db,
         SimpleNamespace(id=-1001, title="测试群"),
-        SimpleNamespace(id=42),
-        SimpleNamespace(message_id=9, location=None, reply_to_message=None),
-        "提交车评",
-        SimpleNamespace(garage_limit_enabled=False),
-        False,
+        user=SimpleNamespace(id=42),
+        message=SimpleNamespace(message_id=9, location=None, reply_to_message=None),
+        message_text="提交车评",
+        settings=SimpleNamespace(garage_limit_enabled=False),
+        is_admin=False,
     )
 
     assert handled is True
@@ -1869,12 +1869,12 @@ async def test_private_car_review_submit_teacher_input_enters_body_state(monkeyp
         ),
         SimpleNamespace(),
         session,
-        SimpleNamespace(
+        state=SimpleNamespace(
             chat_id=42,
             state_type=review_submit.TEACHER_STATE,
             state_data={"target_chat_id": -1001},
         ),
-        "@teacher77",
+        message_text="@teacher77",
     )
 
     assert states == [
@@ -1933,12 +1933,12 @@ async def test_private_car_review_submit_body_creates_pending_report_and_notifie
         ),
         SimpleNamespace(),
         session,
-        SimpleNamespace(
+        state=SimpleNamespace(
             chat_id=42,
             state_type=review_submit.BODY_STATE,
             state_data={"target_chat_id": -1001, "teacher_user_id": 77},
         ),
-        "服务不错",
+        message_text="服务不错",
     )
 
     assert created[0]["chat_id"] == -1001
@@ -2009,15 +2009,15 @@ async def test_process_garage_features_submits_car_review_pending_admin_review(m
         SimpleNamespace(application=SimpleNamespace(bot_data={})),
         db,
         SimpleNamespace(id=-1001, title="测试群"),
-        SimpleNamespace(id=42, first_name="Author", last_name=None, username=None),
-        SimpleNamespace(
+        user=SimpleNamespace(id=42, first_name="Author", last_name=None, username=None),
+        message=SimpleNamespace(
             message_id=12,
             location=None,
             reply_to_message=SimpleNamespace(from_user=SimpleNamespace(id=77)),
         ),
-        "提交报告 很棒",
-        SimpleNamespace(garage_limit_enabled=False),
-        False,
+        message_text="提交报告 很棒",
+        settings=SimpleNamespace(garage_limit_enabled=False),
+        is_admin=False,
     )
 
     assert handled is True
@@ -2065,11 +2065,11 @@ async def test_process_garage_features_respects_nearby_search_switch(monkeypatch
         SimpleNamespace(application=SimpleNamespace(bot_data={})),
         db,
         SimpleNamespace(id=-1001, title="测试群"),
-        SimpleNamespace(id=42),
-        SimpleNamespace(message_id=9, location=None, reply_to_message=None),
-        "附近",
-        SimpleNamespace(garage_limit_enabled=False),
-        False,
+        user=SimpleNamespace(id=42),
+        message=SimpleNamespace(message_id=9, location=None, reply_to_message=None),
+        message_text="附近",
+        settings=SimpleNamespace(garage_limit_enabled=False),
+        is_admin=False,
     )
 
     assert handled is True
@@ -2118,11 +2118,11 @@ async def test_process_garage_features_nearby_without_location_prompts_private_u
         SimpleNamespace(application=SimpleNamespace(bot_data={}), bot=SimpleNamespace(username="TestBot")),
         db,
         SimpleNamespace(id=-1001, title="测试群"),
-        SimpleNamespace(id=42),
-        SimpleNamespace(message_id=9, location=None, venue=None, reply_to_message=None),
-        "附近",
-        SimpleNamespace(garage_limit_enabled=False),
-        False,
+        user=SimpleNamespace(id=42),
+        message=SimpleNamespace(message_id=9, location=None, venue=None, reply_to_message=None),
+        message_text="附近",
+        settings=SimpleNamespace(garage_limit_enabled=False),
+        is_admin=False,
     )
 
     assert handled is True
@@ -2169,11 +2169,11 @@ async def test_process_garage_features_footer_button_shows_teacher_search_guide(
         SimpleNamespace(application=SimpleNamespace(bot_data={})),
         db,
         SimpleNamespace(id=-1001, title="测试群"),
-        SimpleNamespace(id=42),
-        SimpleNamespace(message_id=9, location=None, venue=None, reply_to_message=None),
-        "老师搜索",
-        SimpleNamespace(garage_limit_enabled=False),
-        False,
+        user=SimpleNamespace(id=42),
+        message=SimpleNamespace(message_id=9, location=None, venue=None, reply_to_message=None),
+        message_text="老师搜索",
+        settings=SimpleNamespace(garage_limit_enabled=False),
+        is_admin=False,
     )
 
     assert handled is True
@@ -2220,11 +2220,11 @@ async def test_process_garage_features_does_not_steal_sign_in_text(monkeypatch):
         SimpleNamespace(application=SimpleNamespace(bot_data={})),
         db,
         SimpleNamespace(id=-1001, title="测试群"),
-        SimpleNamespace(id=42),
-        SimpleNamespace(message_id=9, location=None, venue=None, reply_to_message=None),
-        "签到",
-        SimpleNamespace(garage_limit_enabled=False),
-        False,
+        user=SimpleNamespace(id=42),
+        message=SimpleNamespace(message_id=9, location=None, venue=None, reply_to_message=None),
+        message_text="签到",
+        settings=SimpleNamespace(garage_limit_enabled=False),
+        is_admin=False,
     )
 
     assert handled is False
@@ -2273,11 +2273,11 @@ async def test_process_garage_features_respects_tag_search_switch(monkeypatch):
         SimpleNamespace(application=SimpleNamespace(bot_data={})),
         db,
         SimpleNamespace(id=-1001, title="测试群"),
-        SimpleNamespace(id=42),
-        SimpleNamespace(message_id=9, location=None, reply_to_message=None),
-        "老师搜索 标签",
-        SimpleNamespace(garage_limit_enabled=False),
-        False,
+        user=SimpleNamespace(id=42),
+        message=SimpleNamespace(message_id=9, location=None, reply_to_message=None),
+        message_text="老师搜索 标签",
+        settings=SimpleNamespace(garage_limit_enabled=False),
+        is_admin=False,
     )
 
     assert handled is True
@@ -2329,16 +2329,16 @@ async def test_process_garage_features_records_shared_venue_location(monkeypatch
         SimpleNamespace(application=SimpleNamespace(bot_data={})),
         db,
         SimpleNamespace(id=-1001, title="测试群"),
-        SimpleNamespace(id=42),
-        SimpleNamespace(
+        user=SimpleNamespace(id=42),
+        message=SimpleNamespace(
             message_id=9,
             location=None,
             venue=SimpleNamespace(location=SimpleNamespace(latitude=31.2, longitude=121.4)),
             reply_to_message=None,
         ),
-        "",
-        SimpleNamespace(garage_limit_enabled=False),
-        False,
+        message_text="",
+        settings=SimpleNamespace(garage_limit_enabled=False),
+        is_admin=False,
     )
 
     assert handled is True
@@ -2395,11 +2395,11 @@ async def test_process_garage_features_blocks_teacher_without_location(monkeypat
         SimpleNamespace(application=SimpleNamespace(bot_data={}), bot=SimpleNamespace(username="TestBot")),
         db,
         SimpleNamespace(id=-1001, title="测试群"),
-        SimpleNamespace(id=42),
-        SimpleNamespace(message_id=9, location=None, venue=None, reply_to_message=None),
-        "普通发言",
-        SimpleNamespace(garage_limit_enabled=False),
-        False,
+        user=SimpleNamespace(id=42),
+        message=SimpleNamespace(message_id=9, location=None, venue=None, reply_to_message=None),
+        message_text="普通发言",
+        settings=SimpleNamespace(garage_limit_enabled=False),
+        is_admin=False,
     )
 
     assert handled is True
@@ -2458,11 +2458,11 @@ async def test_process_garage_features_force_location_does_not_block_explicit_ch
         SimpleNamespace(application=SimpleNamespace(bot_data={})),
         db,
         SimpleNamespace(id=-1001, title="测试群"),
-        SimpleNamespace(id=42),
-        SimpleNamespace(message_id=9, location=None, venue=None, reply_to_message=None),
-        "开课",
-        SimpleNamespace(garage_limit_enabled=False),
-        False,
+        user=SimpleNamespace(id=42),
+        message=SimpleNamespace(message_id=9, location=None, venue=None, reply_to_message=None),
+        message_text="开课",
+        settings=SimpleNamespace(garage_limit_enabled=False),
+        is_admin=False,
     )
 
     assert handled is True
@@ -2506,11 +2506,11 @@ async def test_process_garage_features_force_location_exempts_admin(monkeypatch)
         SimpleNamespace(application=SimpleNamespace(bot_data={})),
         db,
         SimpleNamespace(id=-1001, title="测试群"),
-        SimpleNamespace(id=42),
-        SimpleNamespace(message_id=9, location=None, venue=None, reply_to_message=None),
-        "普通发言",
-        SimpleNamespace(garage_limit_enabled=False),
-        True,
+        user=SimpleNamespace(id=42),
+        message=SimpleNamespace(message_id=9, location=None, venue=None, reply_to_message=None),
+        message_text="普通发言",
+        settings=SimpleNamespace(garage_limit_enabled=False),
+        is_admin=True,
     )
 
     assert handled is False
@@ -2553,11 +2553,11 @@ async def test_process_garage_features_keyword_attendance_mode_ignores_normal_te
         SimpleNamespace(application=SimpleNamespace(bot_data={})),
         db,
         SimpleNamespace(id=-1001, title="测试群"),
-        SimpleNamespace(id=42),
-        SimpleNamespace(message_id=9, location=None, venue=None, reply_to_message=None),
-        "普通发言",
-        SimpleNamespace(garage_limit_enabled=False),
-        False,
+        user=SimpleNamespace(id=42),
+        message=SimpleNamespace(message_id=9, location=None, venue=None, reply_to_message=None),
+        message_text="普通发言",
+        settings=SimpleNamespace(garage_limit_enabled=False),
+        is_admin=False,
     )
 
     assert handled is False
@@ -2600,15 +2600,15 @@ async def test_process_garage_features_certified_teacher_reacts_on_normal_text(m
         SimpleNamespace(application=SimpleNamespace(bot_data={}), bot=_Bot()),
         db,
         SimpleNamespace(id=-1001, title="测试群"),
-        SimpleNamespace(id=42, username="teacher42", first_name="老师", last_name=None),
-        SimpleNamespace(message_id=9, location=None, venue=None, reply_to_message=None),
-        "普通发言",
-        SimpleNamespace(
+        user=SimpleNamespace(id=42, username="teacher42", first_name="老师", last_name=None),
+        message=SimpleNamespace(message_id=9, location=None, venue=None, reply_to_message=None),
+        message_text="普通发言",
+        settings=SimpleNamespace(
             garage_limit_enabled=False,
             garage_auth_enabled=True,
             garage_auth_badge="🚗",
         ),
-        False,
+        is_admin=False,
     )
 
     assert handled is False
@@ -2659,15 +2659,15 @@ async def test_process_garage_features_certified_teacher_reacts_on_media_without
         SimpleNamespace(application=SimpleNamespace(bot_data={}), bot=_Bot()),
         db,
         SimpleNamespace(id=-1001, title="测试群"),
-        SimpleNamespace(id=42, username="teacher42", first_name="老师", last_name=None),
-        SimpleNamespace(message_id=9, photo=[object()], location=None, venue=None, reply_to_message=None),
-        "",
-        SimpleNamespace(
+        user=SimpleNamespace(id=42, username="teacher42", first_name="老师", last_name=None),
+        message=SimpleNamespace(message_id=9, photo=[object()], location=None, venue=None, reply_to_message=None),
+        message_text="",
+        settings=SimpleNamespace(
             garage_limit_enabled=False,
             garage_auth_enabled=True,
             garage_auth_badge="🚗",
         ),
-        False,
+        is_admin=False,
     )
 
     assert handled is False
@@ -2722,11 +2722,11 @@ async def test_process_garage_features_keyword_checkin_marks_attendance(monkeypa
         SimpleNamespace(application=SimpleNamespace(bot_data={})),
         db,
         SimpleNamespace(id=-1001, title="测试群"),
-        SimpleNamespace(id=42),
-        SimpleNamespace(message_id=9, location=None, venue=None, reply_to_message=None),
-        "开课打卡",
-        SimpleNamespace(garage_limit_enabled=False),
-        False,
+        user=SimpleNamespace(id=42),
+        message=SimpleNamespace(message_id=9, location=None, venue=None, reply_to_message=None),
+        message_text="开课打卡",
+        settings=SimpleNamespace(garage_limit_enabled=False),
+        is_admin=False,
     )
 
     assert handled is True
@@ -2784,11 +2784,11 @@ async def test_process_garage_features_keyword_checkin_accepts_linked_attendance
         SimpleNamespace(application=SimpleNamespace(bot_data={})),
         db,
         SimpleNamespace(id=-2002, title="打卡群"),
-        SimpleNamespace(id=42),
-        SimpleNamespace(message_id=9, location=None, venue=None, reply_to_message=None),
-        "开课",
-        SimpleNamespace(garage_limit_enabled=False),
-        False,
+        user=SimpleNamespace(id=42),
+        message=SimpleNamespace(message_id=9, location=None, venue=None, reply_to_message=None),
+        message_text="开课",
+        settings=SimpleNamespace(garage_limit_enabled=False),
+        is_admin=False,
     )
 
     assert handled is True
@@ -2843,11 +2843,11 @@ async def test_process_garage_features_fixed_full_and_rest_keywords(monkeypatch)
             SimpleNamespace(application=SimpleNamespace(bot_data={})),
             db,
             SimpleNamespace(id=-1001, title="测试群"),
-            SimpleNamespace(id=42),
-            SimpleNamespace(message_id=idx, location=None, venue=None, reply_to_message=None),
-            text,
-            SimpleNamespace(garage_limit_enabled=False),
-            False,
+            user=SimpleNamespace(id=42),
+            message=SimpleNamespace(message_id=idx, location=None, venue=None, reply_to_message=None),
+            message_text=text,
+            settings=SimpleNamespace(garage_limit_enabled=False),
+            is_admin=False,
         )
         assert handled is True
 
@@ -2896,11 +2896,11 @@ async def test_process_garage_features_message_attendance_mode_marks_normal_text
         SimpleNamespace(application=SimpleNamespace(bot_data={})),
         db,
         SimpleNamespace(id=-1001, title="测试群"),
-        SimpleNamespace(id=42),
-        SimpleNamespace(message_id=9, location=None, venue=None, reply_to_message=None),
-        "普通发言",
-        SimpleNamespace(garage_limit_enabled=False),
-        False,
+        user=SimpleNamespace(id=42),
+        message=SimpleNamespace(message_id=9, location=None, venue=None, reply_to_message=None),
+        message_text="普通发言",
+        settings=SimpleNamespace(garage_limit_enabled=False),
+        is_admin=False,
     )
 
     assert handled is False

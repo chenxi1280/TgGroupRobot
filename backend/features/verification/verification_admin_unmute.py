@@ -56,7 +56,7 @@ async def try_admin_manual_unmute_impl(
         settings = await get_chat_settings(session, chat.id)
         await mark_challenge_released(session, chat.id, target_user_id)
         await session.commit()
-    await unrestrict_and_notify(context, chat.id, target_user_id, settings.language)
+    await unrestrict_and_notify(context, chat.id, target_user_id, language=settings.language)
     try:
         await message.reply_text(
             f"✅ 管理员解封完成\n管理员: {actor.mention_html()}\n用户: {user_mention_html(target_user_id)}\n方式: 文本解封",

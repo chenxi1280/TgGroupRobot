@@ -42,13 +42,13 @@ async def banned_word_config_handler_impl(update: Update, context: ContextTypes.
     user = update.effective_user
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
-        state, target_chat_id = await _load_banned_word_state(session, db, chat.type, chat.id, user.id)
+        state, target_chat_id = await _load_banned_word_state(session, db, chat.type, chat_id=chat.id, user_id=user.id)
         if state is None or state.state_type != ConversationStateType.banned_word_add.value:
             await session.commit()
             return
 
         if state.state_data.get("step") == "config":
-            await _parse_banned_word_config(update, session, state, text)
+            await _parse_banned_word_config(update, session, state, text=text)
         else:
             await session.commit()
 
@@ -129,7 +129,7 @@ async def banned_word_check_handler_impl(update: Update, context: ContextTypes.D
             log.warning("ban_user_failed", chat_id=chat.id, user_id=user.id, error=str(exc))
 
 
-async def _load_banned_word_state(session, db: Database, chat_type: str, chat_id: int, user_id: int):
+async def _load_banned_word_state(session, db: Database, chat_type: str, *, chat_id: int, user_id: int):
     if chat_type != "private":
         return await get_user_state(session, chat_id=chat_id, user_id=user_id), chat_id
 
@@ -142,7 +142,7 @@ async def _load_banned_word_state(session, db: Database, chat_type: str, chat_id
     return state, target_chat_id
 
 
-async def _parse_banned_word_config(update: Update, session, state: object, text: str) -> None:
+async def _parse_banned_word_config(update: Update, session, state: object, *, text: str) -> None:
     try:
         config = _parse_banned_word_config_text(text)
         target_chat_id = state.state_data.get("target_chat_id") or update.effective_chat.id

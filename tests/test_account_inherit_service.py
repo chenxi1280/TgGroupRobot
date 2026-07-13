@@ -141,8 +141,8 @@ async def test_handle_account_inherit_input_consumes_token_and_returns_home(monk
         async def reply_text(self, text, **kwargs):
             self.replies.append(text)
 
-    async def fake_consume_token(session, chat_id, new_user_id, token):
-        calls["consume"] = (chat_id, new_user_id, token)
+    async def fake_consume_token(session, chat_id, new_user_id, *, plain_token):
+        calls["consume"] = (chat_id, new_user_id, plain_token)
         return {"main_points": 12, "custom_points": [{"type_id": 3, "balance": 5}]}
 
     async def fake_clear_user_state(session, *, chat_id, user_id):
@@ -167,8 +167,8 @@ async def test_handle_account_inherit_input_consumes_token_and_returns_home(monk
         update,
         SimpleNamespace(),
         session,
-        state,
-        "  token-abc  ",
+        state=state,
+        message_text="  token-abc  ",
     )
 
     assert calls["consume"] == (-100123, 888, "token-abc")

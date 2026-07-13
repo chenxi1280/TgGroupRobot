@@ -53,7 +53,7 @@ async def lottery_mode_menu_callback_impl(update: Update, context: ContextTypes.
     lottery_type = decode_lottery_type(cb.get(3, "invite") or "invite")
     if target_chat_id is None:
         return
-    await handler.show_mode_menu(update, context, target_chat_id, lottery_type)
+    await handler.show_mode_menu(update, context, target_chat_id, lottery_type=lottery_type)
 
 
 async def lottery_draw_condition_callback_impl(update: Update, context: ContextTypes.DEFAULT_TYPE, *, handler) -> None:
@@ -67,7 +67,7 @@ async def lottery_draw_condition_callback_impl(update: Update, context: ContextT
     selection_mode = decode_selection_mode(cb.get(4, "threshold_random") or "threshold_random")
     if target_chat_id is None:
         return
-    await handler.show_draw_condition_menu(update, context, target_chat_id, lottery_type, selection_mode)
+    await handler.show_draw_condition_menu(update, context, target_chat_id, lottery_type=lottery_type, selection_mode=selection_mode)
 
 
 async def lottery_list_callback_impl(update: Update, context: ContextTypes.DEFAULT_TYPE, *, handler) -> None:
@@ -95,7 +95,7 @@ async def lottery_detail_callback_impl(update: Update, context: ContextTypes.DEF
     lottery_id = cb.get_int_optional(3)
     if target_chat_id is None or lottery_id is None:
         return
-    await handler.show_activity_detail(update, context, target_chat_id, lottery_id)
+    await handler.show_activity_detail(update, context, target_chat_id, lottery_id=lottery_id)
 
 
 async def lottery_settings_callback_impl(update: Update, context: ContextTypes.DEFAULT_TYPE, *, handler) -> None:

@@ -470,7 +470,7 @@ async def test_group_text_trigger_falls_back_to_teacher_search(monkeypatch):
     monkeypatch.setattr(text_trigger_runtime, "_try_points_text_trigger", fake_points_trigger)
     monkeypatch.setattr(text_trigger_runtime, "_try_teacher_search_trigger", fake_teacher_trigger)
 
-    handled = await text_trigger_runtime.try_group_text_trigger(update, SimpleNamespace(), -1001, "附近")
+    handled = await text_trigger_runtime.try_group_text_trigger(update, SimpleNamespace(), -1001, payload="附近")
 
     assert handled is True
     assert calls == [("points", 42, "附近"), ("teacher", -1001, "附近")]
@@ -519,7 +519,7 @@ async def test_group_text_trigger_handles_invite_rank(monkeypatch):
     )
     context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": SimpleNamespace(session_factory=_SessionFactory())}))
 
-    handled = await text_trigger_runtime.try_group_text_trigger(update, context, -1001, "邀请排行")
+    handled = await text_trigger_runtime.try_group_text_trigger(update, context, -1001, payload="邀请排行")
 
     assert handled is True
     assert "邀请排行榜" in replies[0]
@@ -546,7 +546,7 @@ async def test_group_text_trigger_handles_game_member_command(monkeypatch):
         effective_message=SimpleNamespace(text="黑杰克规则"),
     )
 
-    handled = await text_trigger_runtime.try_group_text_trigger(update, SimpleNamespace(), -1001, "黑杰克规则")
+    handled = await text_trigger_runtime.try_group_text_trigger(update, SimpleNamespace(), -1001, payload="黑杰克规则")
 
     assert handled is True
     assert calls == ["黑杰克规则"]
@@ -623,7 +623,7 @@ async def test_group_text_trigger_handles_teacher_rest_event_in_message_attendan
     )
     context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": SimpleNamespace(session_factory=_SessionFactory())}))
 
-    handled = await text_trigger_runtime._try_garage_text_trigger(update, context, -1001, "休息")
+    handled = await text_trigger_runtime._try_garage_text_trigger(update, context, -1001, payload="休息")
 
     assert handled is True
     assert calls == [("attendance", "rest")]
@@ -680,7 +680,7 @@ async def test_bottom_button_text_trigger_resolves_configured_event(monkeypatch)
     )
     context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": SimpleNamespace(session_factory=_SessionFactory())}))
 
-    handled = await text_trigger_runtime.try_bottom_button_text_trigger(update, context, -1001, "排行榜")
+    handled = await text_trigger_runtime.try_bottom_button_text_trigger(update, context, -1001, button_text="排行榜")
 
     assert handled is True
     assert calls == [
@@ -744,7 +744,7 @@ async def test_bottom_button_custom_trigger_can_fall_through_to_auto_reply(monke
     )
     context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": SimpleNamespace(session_factory=_SessionFactory())}))
 
-    handled = await text_trigger_runtime.try_bottom_button_text_trigger(update, context, -1001, "帮助")
+    handled = await text_trigger_runtime.try_bottom_button_text_trigger(update, context, -1001, button_text="帮助")
 
     assert handled is True
     assert calls == [("commit", None), ("trigger", "帮助"), ("auto_reply", "帮助")]
@@ -804,7 +804,7 @@ async def test_bottom_button_event_dispatches_resolved_text_to_legacy_handlers(m
     )
     context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": SimpleNamespace(session_factory=_SessionFactory())}))
 
-    handled = await text_trigger_runtime.try_bottom_button_text_trigger(update, context, -1001, "BJ玩法")
+    handled = await text_trigger_runtime.try_bottom_button_text_trigger(update, context, -1001, button_text="BJ玩法")
 
     assert handled is True
     assert calls == [("commit", None), ("points", "黑杰克规则"), ("game_text", "黑杰克规则")]
@@ -862,7 +862,7 @@ async def test_bottom_button_custom_payload_event_key_resolves_to_points_mall(mo
     )
     context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": SimpleNamespace(session_factory=_SessionFactory())}))
 
-    handled = await text_trigger_runtime.try_bottom_button_text_trigger(update, context, -1001, "积分商城")
+    handled = await text_trigger_runtime.try_bottom_button_text_trigger(update, context, -1001, button_text="积分商城")
 
     assert handled is True
     assert calls == [("commit", None), ("points", "积分商城")]
@@ -897,7 +897,7 @@ async def test_engagement_trigger_does_not_create_reward_for_unmatched_payload()
     )
     context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": SimpleNamespace(session_factory=_SessionFactory())}))
 
-    handled = await text_trigger_runtime._try_engagement_reward_trigger(update, context, -1001, "帮助")
+    handled = await text_trigger_runtime._try_engagement_reward_trigger(update, context, -1001, payload="帮助")
 
     assert handled is False
     assert calls == [("get", -1001), ("commit", None)]
@@ -945,7 +945,7 @@ async def test_bottom_button_enable_generates_runtime_message_immediately(monkey
         update,
         context,
         -1001,
-        bottom_button_admin.CallbackParser.parse("btm:toggle:-1001:1"),
+        callback_data=bottom_button_admin.CallbackParser.parse("btm:toggle:-1001:1"),
     )
 
     assert calls[0] == ("setting", -1001, {"enabled": True})
@@ -1021,7 +1021,7 @@ async def test_bottom_button_event_selection_saves_and_syncs_when_enabled(monkey
         update,
         context,
         -1001,
-        bottom_button_admin.CallbackParser.parse("btm:button:-1001:event:7:points.rank"),
+        callback_data=bottom_button_admin.CallbackParser.parse("btm:button:-1001:event:7:points.rank"),
     )
 
     assert calls[0] == ("update_layout", -1001, (7, "排行榜", "points.rank", "event"))
@@ -1079,7 +1079,7 @@ async def test_bottom_button_add_layout_syncs_when_enabled(monkeypatch):
         update,
         context,
         -1001,
-        bottom_button_admin.CallbackParser.parse("btm:layout:-1001:add:1:1"),
+        callback_data=bottom_button_admin.CallbackParser.parse("btm:layout:-1001:add:1:1"),
     )
 
     assert calls[0] == ("add", -1001, (1, 1))
@@ -1131,7 +1131,7 @@ async def test_bottom_button_disable_does_not_generate_runtime_message(monkeypat
         update,
         context,
         -1001,
-        bottom_button_admin.CallbackParser.parse("btm:toggle:-1001:0"),
+        callback_data=bottom_button_admin.CallbackParser.parse("btm:toggle:-1001:0"),
     )
 
     assert calls == ["setting", "commit", "menu"]
@@ -1179,8 +1179,8 @@ async def test_bottom_button_text_input_syncs_when_enabled(monkeypatch):
         update,
         SimpleNamespace(),
         _Session(),
-        state,
-        "签到",
+        state=state,
+        message_text="签到",
         target_chat_id=-1001,
     )
 

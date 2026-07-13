@@ -57,7 +57,7 @@ async def test_check_member_profile_sends_notice_and_updates_stored_user():
         updated_at=dt.datetime(2026, 1, 1, tzinfo=dt.UTC),
     )
 
-    changed = await _check_member_profile(app, object(), _settings(), member, stored_user)
+    changed = await _check_member_profile(app, object(), _settings(), member=member, stored_user=stored_user)
 
     assert changed is True
     assert bot.get_member_calls == [(-100123, 42)]
@@ -93,7 +93,7 @@ async def test_check_member_profile_marks_left_member_inactive_without_notice():
         updated_at=dt.datetime(2026, 1, 1, tzinfo=dt.UTC),
     )
 
-    changed = await _check_member_profile(app, object(), _settings(), member, stored_user)
+    changed = await _check_member_profile(app, object(), _settings(), member=member, stored_user=stored_user)
 
     assert changed is False
     assert bot.sent == []

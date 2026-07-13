@@ -148,8 +148,8 @@ async def lottery_message_handler(update: Update, context: ContextTypes.DEFAULT_
     await lottery_message_handler_impl(update, context, parse_config_fn=_parse_lottery_config)
 
 
-async def _parse_lottery_config(update: Update, context: ContextTypes.DEFAULT_TYPE, session, state: object, text: str) -> None:
-    await parse_lottery_config_impl(update, context, session, state, text)
+async def _parse_lottery_config(update: Update, context: ContextTypes.DEFAULT_TYPE, session, *, state: object, text: str) -> None:
+    await parse_lottery_config_impl(update, context, session, state=state, text=text)
 
 
 async def join_lottery_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

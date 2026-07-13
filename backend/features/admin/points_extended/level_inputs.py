@@ -16,9 +16,9 @@ async def handle_points_level_input(
     update,
     context,
     session,
-    state,
+    *, state,
     message_text: str,
-    *,
+
     target_chat_id: int,
 ) -> bool:
     if update.effective_user is None or update.effective_message is None:
@@ -69,5 +69,5 @@ async def handle_points_level_input(
 
     await clear_points_state(session, target_chat_id=target_chat_id, user_id=user_id)
     await session.commit()
-    await admin_handler_instance()._show_points_level_detail(update, context, target_chat_id, level.id)
+    await admin_handler_instance()._show_points_level_detail(update, context, target_chat_id, level_id=level.id)
     return True

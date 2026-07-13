@@ -61,8 +61,8 @@ def build_moderation_notice(
     title: str,
     user_text: str,
     rule_text: str | None,
-    action_label: str,
-    *,
+    *, action_label: str,
+
     fallback_reason: str = "",
     extra_lines: list[str] | None = None,
 ) -> str:
@@ -81,7 +81,7 @@ async def should_exempt_admin(
     context: ContextTypes.DEFAULT_TYPE,
     chat_id: int,
     user_id: int | None,
-    exempt_admin: bool,
+    *, exempt_admin: bool,
 ) -> bool:
     """统一管理员豁免逻辑：群管理员或 Bot 全局管理员都视为豁免对象。"""
     if not exempt_admin or user_id is None:
@@ -106,8 +106,8 @@ async def resolve_effective_action(
     context: ContextTypes.DEFAULT_TYPE,
     chat_id: int,
     user_id: int,
-    requested_action: str,
-    *,
+    *, requested_action: str,
+
     sender_chat_id: int | None = None,
 ) -> ModerationActionResolution:
     """把配置里的处罚动作收敛成机器人能实际执行的动作。"""
@@ -189,7 +189,7 @@ async def check_text_and_record(
     session,
     settings: ChatSettings,
     chat_id: int,
-    user_id: int,
+    *, user_id: int,
     message_id: int | None,
     text: str,
 ) -> tuple[bool, str]:

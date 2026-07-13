@@ -293,9 +293,9 @@ async def test_banned_word_full_punishment_deletes_warns_mutes_and_notices(monke
             expires_at=dt.datetime.now(dt.UTC) + dt.timedelta(days=7),
         )
 
-    async def fake_resolve_effective_action(context, chat_id: int, user_id: int, action: str, **kwargs):
-        calls.append(("resolve_action", (chat_id, user_id, action)))
-        return SimpleNamespace(action=action)
+    async def fake_resolve_effective_action(context, chat_id: int, user_id: int, *, requested_action: str, **kwargs):
+        calls.append(("resolve_action", (chat_id, user_id, requested_action)))
+        return SimpleNamespace(action=requested_action)
 
     async def fake_execute(context, **kwargs):
         calls.append(("execute", kwargs))
@@ -360,8 +360,8 @@ async def test_garbage_punishment_tracks_failed_delete_separately_from_other_act
     async def fake_delete_many(context, *, chat_id: int, message_ids: list[int]):
         return SimpleNamespace(applied=False)
 
-    async def fake_resolve_effective_action(context, chat_id: int, user_id: int, action: str, **kwargs):
-        return SimpleNamespace(action=action)
+    async def fake_resolve_effective_action(context, chat_id: int, user_id: int, *, requested_action: str, **kwargs):
+        return SimpleNamespace(action=requested_action)
 
     async def fake_execute(context, **kwargs):
         return SimpleNamespace(applied=True)
@@ -408,8 +408,8 @@ async def test_garbage_punishment_records_and_returns_when_action_api_fails(monk
     )
     recorded: list[dict[str, object]] = []
 
-    async def fake_resolve_effective_action(context, chat_id: int, user_id: int, action: str, **kwargs):
-        return SimpleNamespace(action=action)
+    async def fake_resolve_effective_action(context, chat_id: int, user_id: int, *, requested_action: str, **kwargs):
+        return SimpleNamespace(action=requested_action)
 
     async def fake_execute(context, **kwargs):
         raise RuntimeError("missing mute permission")

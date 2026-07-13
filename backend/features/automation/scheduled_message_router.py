@@ -103,7 +103,7 @@ class ScheduledMessageRouter(BaseRouter):
 
             log.info("scheduled_message_calling_handler", target_chat_id=target_chat_id)
             await _scheduled_message_handler.handle_fsm_input(
-                update, context, target_chat_id, target_user_id, update.effective_message.text
+                update, context, target_chat_id, user_id=target_user_id, text=update.effective_message.text
             )
 
         # FSM 媒体处理器（处理图片、视频等）
@@ -147,7 +147,7 @@ class ScheduledMessageRouter(BaseRouter):
                 target_user_id = update.effective_user.id
 
             await _scheduled_message_handler.handle_media_input(
-                update, context, target_chat_id, target_user_id
+                update, context, target_chat_id, user_id=target_user_id
             )
 
         # 注意：配置消息已被 MessageDispatcher 的 PrivateConfigHandler 统一处理

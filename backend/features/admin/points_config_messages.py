@@ -55,8 +55,8 @@ async def handle_points_config_message(update, context: ContextTypes.DEFAULT_TYP
                     session,
                     chat_id,
                     update.effective_user.id,
-                    -amount,
-                    PointsTxnType.penalty.value,
+                    amount=-amount,
+                    txn_type=PointsTxnType.penalty.value,
                     reason=f"转让给 {target_user.id}: {reason}",
                 )
                 if not ok:
@@ -66,8 +66,8 @@ async def handle_points_config_message(update, context: ContextTypes.DEFAULT_TYP
                     session,
                     chat_id,
                     target_user.id,
-                    amount,
-                    PointsTxnType.reward.value,
+                    amount=amount,
+                    txn_type=PointsTxnType.reward.value,
                     reason=f"来自 {update.effective_user.id} 的积分转让: {reason}",
                 )
             elif field in {"admin_add", "admin_deduct"}:
@@ -90,8 +90,8 @@ async def handle_points_config_message(update, context: ContextTypes.DEFAULT_TYP
                     session,
                     chat_id,
                     target_user.id,
-                    signed_amount,
-                    PointsTxnType.admin_adjust.value,
+                    amount=signed_amount,
+                    txn_type=PointsTxnType.admin_adjust.value,
                     reason=reason,
                 )
                 if not ok:

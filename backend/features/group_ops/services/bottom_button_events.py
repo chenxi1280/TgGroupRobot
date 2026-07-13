@@ -99,7 +99,7 @@ async def _resolve_car_review_rank(session: AsyncSession, chat_id: int, event_ke
     return None
 
 
-def _text_event(key: str, label: str, category: str, default_button_text: str, trigger_text: str) -> BottomButtonEvent:
+def _text_event(key: str, label: str, category: str, *, default_button_text: str, trigger_text: str) -> BottomButtonEvent:
     async def resolve(_session: AsyncSession, _chat_id: int, _event_key: str) -> str | None:
         return trigger_text
 
@@ -107,28 +107,28 @@ def _text_event(key: str, label: str, category: str, default_button_text: str, t
 
 
 STATIC_BOTTOM_BUTTON_EVENTS: tuple[BottomButtonEvent, ...] = (
-    _text_event("points.sign", "签到", "points", "签到", "签到"),
+    _text_event("points.sign", "签到", "points", default_button_text="签到", trigger_text="签到"),
     BottomButtonEvent("points.balance", "我的积分", "points", "我的积分", _resolve_points_alias),
     BottomButtonEvent("points.rank", "积分排行榜", "points", "排行榜", _resolve_points_alias),
     BottomButtonEvent("points.mall", "积分商城", "points", "商城", _resolve_points_mall),
-    _text_event("teacher.search", "老师搜索", "teacher", "老师搜索", "老师搜索"),
-    _text_event("teacher.nearby", "附近老师", "teacher", "附近", "附近"),
-    _text_event("teacher.open_courses", "开课老师", "teacher", "开课老师", "开课老师"),
+    _text_event("teacher.search", "老师搜索", "teacher", default_button_text="老师搜索", trigger_text="老师搜索"),
+    _text_event("teacher.nearby", "附近老师", "teacher", default_button_text="附近", trigger_text="附近"),
+    _text_event("teacher.open_courses", "开课老师", "teacher", default_button_text="开课老师", trigger_text="开课老师"),
     BottomButtonEvent("teacher.attendance.open", "开课打卡", "teacher", "开课打卡", _resolve_teacher_attendance),
     BottomButtonEvent("teacher.attendance.full", "满课", "teacher", "满课", _resolve_teacher_attendance),
     BottomButtonEvent("teacher.attendance.rest", "休息", "teacher", "休息", _resolve_teacher_attendance),
-    _text_event("invite.link", "我的邀请链接", "invite", "邀请", "邀请"),
-    _text_event("invite.stats", "邀请统计", "invite", "邀请统计", "邀请统计"),
-    _text_event("invite.rank", "邀请排行榜", "invite", "邀请排行", "邀请排行"),
+    _text_event("invite.link", "我的邀请链接", "invite", default_button_text="邀请", trigger_text="邀请"),
+    _text_event("invite.stats", "邀请统计", "invite", default_button_text="邀请统计", trigger_text="邀请统计"),
+    _text_event("invite.rank", "邀请排行榜", "invite", default_button_text="邀请排行", trigger_text="邀请排行"),
     BottomButtonEvent("engagement.reward", "水群奖励", "activity", "水群奖励", _resolve_engagement_reward),
-    _text_event("guess.entry", "竞猜入口", "activity", "竞猜", "竞猜"),
-    _text_event("game.k3.panel", "快3面板", "game", "快3", "快3"),
-    _text_event("game.k3.rules", "快3规则", "game", "快3规则", "快3规则"),
-    _text_event("game.k3.stats", "快3统计", "game", "快3统计", "快3统计"),
-    _text_event("game.blackjack.panel", "黑杰克面板", "game", "黑杰克", "黑杰克"),
-    _text_event("game.blackjack.rules", "黑杰克规则", "game", "黑杰克规则", "黑杰克规则"),
-    _text_event("game.blackjack.stats", "黑杰克统计", "game", "黑杰克统计", "黑杰克统计"),
-    _text_event("car_review.submit", "提交车评", "car_review", "提交车评", "提交车评"),
+    _text_event("guess.entry", "竞猜入口", "activity", default_button_text="竞猜", trigger_text="竞猜"),
+    _text_event("game.k3.panel", "快3面板", "game", default_button_text="快3", trigger_text="快3"),
+    _text_event("game.k3.rules", "快3规则", "game", default_button_text="快3规则", trigger_text="快3规则"),
+    _text_event("game.k3.stats", "快3统计", "game", default_button_text="快3统计", trigger_text="快3统计"),
+    _text_event("game.blackjack.panel", "黑杰克面板", "game", default_button_text="黑杰克", trigger_text="黑杰克"),
+    _text_event("game.blackjack.rules", "黑杰克规则", "game", default_button_text="黑杰克规则", trigger_text="黑杰克规则"),
+    _text_event("game.blackjack.stats", "黑杰克统计", "game", default_button_text="黑杰克统计", trigger_text="黑杰克统计"),
+    _text_event("car_review.submit", "提交车评", "car_review", default_button_text="提交车评", trigger_text="提交车评"),
     BottomButtonEvent("car_review.rank", "车评排行", "car_review", "车评排行", _resolve_car_review_rank),
     BottomButtonEvent("car_review.week_rank", "本周车评排行", "car_review", "本周车评", _resolve_car_review_rank),
     BottomButtonEvent("car_review.month_rank", "本月车评排行", "car_review", "本月车评", _resolve_car_review_rank),

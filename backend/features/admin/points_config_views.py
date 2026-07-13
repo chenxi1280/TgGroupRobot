@@ -50,8 +50,8 @@ async def show_rule_page(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     chat_id: int,
-    rule_type: str,
-    *,
+    *, rule_type: str,
+
     changed: bool = False,
     get_chat_settings_func=get_chat_settings,
     safe_edit_func=safe_edit_message,
@@ -95,8 +95,8 @@ async def handle_view(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     chat_id: int,
-    feature: str,
-    *,
+    *, feature: str,
+
     get_chat_settings_func=get_chat_settings,
     safe_edit_func=safe_edit_message,
     show_points_home_func=show_points_home,
@@ -275,9 +275,9 @@ async def handle_todo(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     chat_id: int,
-    feature: str,
+    *, feature: str,
     edit_handler,
-    *,
+
     safe_edit_func=safe_edit_message,
     get_chat_settings_func=get_chat_settings,
 ):
@@ -305,9 +305,9 @@ async def handle_todo(
             update,
             context,
             chat_id,
-            action[1],
+            feature=action[1],
             get_chat_settings_func=get_chat_settings_func,
             safe_edit_func=safe_edit_func,
         )
         return None
-    return await edit_handler(update, context, chat_id, action[1])
+    return await edit_handler(update, context, chat_id, field=action[1])

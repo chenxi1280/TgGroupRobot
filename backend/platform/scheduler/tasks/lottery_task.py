@@ -211,7 +211,7 @@ class LotteryTask(ScheduledTask):
             for lottery in lotteries:
                 try:
                     if lottery.draw_time > now:
-                        await self._send_due_reminder(app, session, lottery, now)
+                        await self._send_due_reminder(app, session, lottery, now=now)
                         continue
                     await self._draw_due_lottery(
                         app,
@@ -229,7 +229,7 @@ class LotteryTask(ScheduledTask):
                     await session.rollback()
                     continue
 
-    async def _send_due_reminder(self, app, session, lottery, now: dt.datetime) -> None:
+    async def _send_due_reminder(self, app, session, lottery, *, now: dt.datetime) -> None:
         locked_lottery = await _lock_pending_lottery(session, lottery.__class__, lottery.id)
         if locked_lottery is None or not _is_time_deadline_lottery(locked_lottery):
             return

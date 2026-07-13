@@ -42,7 +42,7 @@ async def test_publish_created_solitaire_rolls_back_when_group_send_fails(monkey
         update,
         context,
         session,
-        result,
+        result=result,
         target_chat_id=-1001,
         state_chat_id=99,
         user_id=42,

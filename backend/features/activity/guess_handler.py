@@ -26,7 +26,7 @@ async def _delete_source_if_needed(
     context: ContextTypes.DEFAULT_TYPE,
     chat_id: int,
     message_id: int,
-    delete_mode: str,
+    *, delete_mode: str,
 ) -> None:
     if delete_mode != "delete":
         return
@@ -72,7 +72,7 @@ async def guess_message_handler(update: Update, context: ContextTypes.DEFAULT_TY
                 reply_to_message_id=message_id,
                 parse_mode="Markdown",
             )
-            await _delete_source_if_needed(context, chat_id, message_id, setting.delete_message_mode)
+            await _delete_source_if_needed(context, chat_id, message_id, delete_mode=setting.delete_message_mode)
             return True
         if len(parts) < 3:
             await session.commit()
@@ -82,7 +82,7 @@ async def guess_message_handler(update: Update, context: ContextTypes.DEFAULT_TY
                 text=f"格式错误，请发送：{event.command_keyword} 选项 积分",
                 reply_to_message_id=message_id,
             )
-            await _delete_source_if_needed(context, chat_id, message_id, setting.delete_message_mode)
+            await _delete_source_if_needed(context, chat_id, message_id, delete_mode=setting.delete_message_mode)
             return True
         option_key = parts[1]
         try:
@@ -95,7 +95,7 @@ async def guess_message_handler(update: Update, context: ContextTypes.DEFAULT_TY
                 text="下注积分必须是整数。",
                 reply_to_message_id=message_id,
             )
-            await _delete_source_if_needed(context, chat_id, message_id, setting.delete_message_mode)
+            await _delete_source_if_needed(context, chat_id, message_id, delete_mode=setting.delete_message_mode)
             return True
         try:
             await ensure_user(
@@ -121,7 +121,7 @@ async def guess_message_handler(update: Update, context: ContextTypes.DEFAULT_TY
                 text=f"❌ {exc}",
                 reply_to_message_id=message_id,
             )
-            await _delete_source_if_needed(context, chat_id, message_id, setting.delete_message_mode)
+            await _delete_source_if_needed(context, chat_id, message_id, delete_mode=setting.delete_message_mode)
             return True
         await session.commit()
         await PublishService.reply(
@@ -130,5 +130,5 @@ async def guess_message_handler(update: Update, context: ContextTypes.DEFAULT_TY
             text=f"✅ 已下注：{option_key} / {amount} 积分",
             reply_to_message_id=message_id,
         )
-        await _delete_source_if_needed(context, chat_id, message_id, setting.delete_message_mode)
+        await _delete_source_if_needed(context, chat_id, message_id, delete_mode=setting.delete_message_mode)
         return True

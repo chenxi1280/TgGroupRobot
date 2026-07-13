@@ -155,9 +155,9 @@ async def create_or_join_k3_round(
     session: AsyncSession,
     chat_id: int,
     user_id: int,
-    guess: str,
+    *, guess: str,
     bet_points: int,
-    *,
+
     points_chat_id: int | None = None,
 ) -> tuple[GameRound, GameParticipant]:
     normalized_guess = normalize_k3_guess(guess)
@@ -275,8 +275,8 @@ async def settle_k3_round(session: AsyncSession, round_id: int) -> dict | None:
                 session,
                 points_chat_id,
                 participant.user_id,
-                payout,
-                PointsTxnType.reward.value,
+                amount=payout,
+                txn_type=PointsTxnType.reward.value,
                 reason=f"快三开奖：{label}",
             )
             winners.append(
@@ -293,8 +293,8 @@ async def settle_k3_round(session: AsyncSession, round_id: int) -> dict | None:
                 session,
                 points_chat_id,
                 setting.rake_owner_user_id,
-                rake_amount,
-                PointsTxnType.reward.value,
+                amount=rake_amount,
+                txn_type=PointsTxnType.reward.value,
                 reason="快三抽水",
             )
     await session.flush()

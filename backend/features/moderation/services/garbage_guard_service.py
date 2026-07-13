@@ -115,7 +115,7 @@ async def notify_garbage_action_failure(
     context: ContextTypes.DEFAULT_TYPE,
     chat_id: int,
     rule_id: str,
-    detail: str,
+    *, detail: str,
 ) -> None:
     bot_data = getattr(getattr(context, "application", None), "bot_data", None)
     cache_key = (chat_id, rule_id)
@@ -149,7 +149,7 @@ async def delete_garbage_message_fallback(
     context: ContextTypes.DEFAULT_TYPE,
     chat_id: int,
     message: Message,
-    rule_id: str,
+    *, rule_id: str,
     detail: str,
 ) -> bool:
     try:
@@ -171,7 +171,7 @@ async def delete_garbage_message_fallback(
             detail=detail,
             error=str(exc),
         )
-        await notify_garbage_action_failure(context, chat_id, rule_id, detail)
+        await notify_garbage_action_failure(context, chat_id, rule_id, detail=detail)
         return False
 
 
@@ -195,22 +195,22 @@ async def handle_garbage_result_fallback(
     fallback_succeeded = False
     fallback_failed = False
     if delete_failed and delete_message_enabled:
-        fallback_succeeded = await delete_garbage_message_fallback(context, chat_id, message, rule_id, detail)
+        fallback_succeeded = await delete_garbage_message_fallback(context, chat_id, message, rule_id=rule_id, detail=detail)
         fallback_failed = not fallback_succeeded
         fallback_attempted = True
     if not bool(getattr(result, "applied", False)):
         if delete_message_enabled and not fallback_attempted:
-            fallback_succeeded = await delete_garbage_message_fallback(context, chat_id, message, rule_id, detail)
+            fallback_succeeded = await delete_garbage_message_fallback(context, chat_id, message, rule_id=rule_id, detail=detail)
             fallback_failed = not fallback_succeeded
             fallback_attempted = True
         elif not fallback_attempted:
-            await notify_garbage_action_failure(context, chat_id, rule_id, detail)
+            await notify_garbage_action_failure(context, chat_id, rule_id, detail=detail)
             return
 
     delete_only_recovered = fallback_succeeded and not escalation_failed
     if escalation_failed or (not bool(getattr(result, "applied", False)) and not delete_only_recovered):
         if not fallback_failed:
-            await notify_garbage_action_failure(context, chat_id, rule_id, detail)
+            await notify_garbage_action_failure(context, chat_id, rule_id, detail=detail)
 
 
 async def execute_garbage_action_safely(
@@ -374,7 +374,7 @@ async def apply_garbage_punishment(
                 context,
                 chat_id,
                 target_user_id,
-                "kick",
+                requested_action="kick",
                 sender_chat_id=sender_chat_id,
             )
             result = await execute_garbage_action_safely(
@@ -397,7 +397,7 @@ async def apply_garbage_punishment(
                 context,
                 chat_id,
                 target_user_id,
-                "mute",
+                requested_action="mute",
                 sender_chat_id=sender_chat_id,
             )
             result = await execute_garbage_action_safely(
@@ -439,7 +439,7 @@ async def apply_garbage_punishment(
                 title,
                 target_label,
                 detail,
-                action_label,
+                action_label=action_label,
                 extra_lines=[warning_text] if warning_text else None,
             )
         await send_temporary_notice(

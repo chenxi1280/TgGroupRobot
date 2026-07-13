@@ -47,7 +47,7 @@ async def _process_alliance_reply_ban(
     context: ContextTypes.DEFAULT_TYPE,
     db: Database,
     chat,
-    user,
+    *, user,
     message,
     message_text: str,
 ) -> bool:
@@ -129,7 +129,7 @@ async def _process_alliance_joint_ban(
     context: ContextTypes.DEFAULT_TYPE,
     db: Database,
     chat,
-    user,
+    *, user,
     message,
 ) -> bool:
     async with db.session_factory() as session:
@@ -173,7 +173,7 @@ async def _process_banned_word_check(
     context: ContextTypes.DEFAULT_TYPE,
     db: Database,
     chat,
-    user,
+    *, user,
     message,
     message_text: str,
     settings=None,
@@ -309,7 +309,7 @@ async def _process_auto_reply(
     context: ContextTypes.DEFAULT_TYPE,
     db: Database,
     chat,
-    message,
+    *, message,
     message_text: str,
 ) -> bool:
     log.info(

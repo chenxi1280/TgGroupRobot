@@ -21,7 +21,7 @@ async def admin_command_impl(update: Update, context: ContextTypes.DEFAULT_TYPE)
             return
 
     if chat.type != "private":
-        await _handle_group_admin_command(update, context, chat, user)
+        await _handle_group_admin_command(update, context, chat, user=user)
         return
 
     await _handle_private_admin_command(update, context, user)
@@ -31,7 +31,7 @@ async def show_private_admin_menu_impl(update: Update, context: ContextTypes.DEF
     await admin_runtime._show_main_menu(update, context, chat_id)
 
 
-async def _handle_group_admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE, chat, user) -> None:
+async def _handle_group_admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE, chat, *, user) -> None:
     try:
         is_admin = await is_user_admin(context, chat.id, user.id)
     except TelegramError as exc:

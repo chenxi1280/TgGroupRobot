@@ -150,8 +150,8 @@ async def _start_teacher_self_state(
         context,
         update.effective_user.id,
         update.effective_user.id,
-        state_type,
-        {"target_chat_id": chat_id},
+        state_type=state_type,
+        payload={"target_chat_id": chat_id},
     )
     await admin_handler_instance().message_helper.safe_edit(
         update,
@@ -228,7 +228,7 @@ async def handle_teacher_self_input(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session,
-    state,
+    *, state,
     message_text: str,
 ) -> None:
     if update.effective_user is None or update.effective_message is None:

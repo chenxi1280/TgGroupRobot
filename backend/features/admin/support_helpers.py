@@ -172,7 +172,7 @@ def _resolve_private_scoped_target_chat_id(cb: CallbackParser) -> int | None:
     return None
 
 
-def _get_import_state(context: ContextTypes.DEFAULT_TYPE, user_id: int, chat_id: int, mode: str) -> dict:
+def _get_import_state(context: ContextTypes.DEFAULT_TYPE, user_id: int, chat_id: int, *, mode: str) -> dict:
     key = f"import_settings:{mode}"
     state = context.user_data.get(key)
     if not isinstance(state, dict) or state.get("owner_id") != user_id or state.get("mode") != mode:

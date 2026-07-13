@@ -185,7 +185,7 @@ class GarageForwardAdminMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        callback_data: CallbackParser,
+        *, callback_data: CallbackParser,
     ) -> None:
         from backend.platform.db.schema.models.enums import ConversationStateType
         from backend.features.garage.services.garage_forward_service import GarageForwardService
@@ -262,8 +262,8 @@ class GarageForwardAdminMixin:
                 context,
                 update.effective_user.id,
                 chat_id,
-                ConversationStateType.garage_forward_keyword_input.value,
-                {"target_chat_id": chat_id},
+                state_type=ConversationStateType.garage_forward_keyword_input.value,
+                payload={"target_chat_id": chat_id},
             )
             await self.message_helper.safe_edit(
                 update,
@@ -277,8 +277,8 @@ class GarageForwardAdminMixin:
                 context,
                 update.effective_user.id,
                 chat_id,
-                ConversationStateType.garage_forward_buttons_input.value,
-                {"target_chat_id": chat_id},
+                state_type=ConversationStateType.garage_forward_buttons_input.value,
+                payload={"target_chat_id": chat_id},
             )
             await self.message_helper.safe_edit(
                 update,
@@ -354,8 +354,8 @@ class GarageForwardAdminMixin:
                 context,
                 update.effective_user.id,
                 chat_id,
-                ConversationStateType.garage_forward_source_input.value,
-                {"target_chat_id": chat_id},
+                state_type=ConversationStateType.garage_forward_source_input.value,
+                payload={"target_chat_id": chat_id},
             )
             await self.message_helper.safe_edit(
                 update,

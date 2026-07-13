@@ -50,7 +50,7 @@ class SolitaireHandler(BaseHandler):
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         target_chat_id: int,
-        chat_title: str | None = None,
+        *, chat_title: str | None = None,
     ) -> None:
         text = f"📋 [{chat_title or target_chat_id}] 接龙管理\n\n管理群内接龙活动"
         await self.message_helper.safe_edit(update, text=text, reply_markup=solitaire_menu_keyboard(target_chat_id))
@@ -60,7 +60,7 @@ class SolitaireHandler(BaseHandler):
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         target_chat_id: int,
-        page: int = 0,
+        *, page: int = 0,
     ) -> None:
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
@@ -105,7 +105,7 @@ class SolitaireHandler(BaseHandler):
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         solitaire_id: int,
-        target_chat_id: int,
+        *, target_chat_id: int,
     ) -> None:
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:

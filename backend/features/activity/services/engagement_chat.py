@@ -31,7 +31,7 @@ async def update_chat_reward(session: AsyncSession, chat_id: int, **updates) -> 
 
 async def increase_message_count(session: AsyncSession, chat_id: int, user_id: int) -> EngagementChatStat:
     biz_date = now_utc().date()
-    stat = await get_or_create_chat_stat(session, chat_id, user_id, biz_date)
+    stat = await get_or_create_chat_stat(session, chat_id, user_id, biz_date=biz_date)
     stat.message_count += 1
     stat.updated_at = now_utc()
     await session.flush()
@@ -96,7 +96,7 @@ async def get_recent_chat_reward_claims(session: AsyncSession, chat_id: int, lim
     return rows
 
 
-async def get_chat_reward_top_users(session: AsyncSession, chat_id: int, days: int = 7, limit: int = 5) -> list[dict]:
+async def get_chat_reward_top_users(session: AsyncSession, chat_id: int, days: int = 7, *, limit: int = 5) -> list[dict]:
     start_date = now_utc().date() - dt.timedelta(days=max(days - 1, 0))
     stmt = (
         select(
@@ -132,14 +132,14 @@ async def try_claim_chat_reward(session: AsyncSession, chat_id: int, user_id: in
     if not reward.enabled:
         return None
     today = now_utc().date()
-    stat = await get_or_create_chat_stat(session, chat_id, user_id, today)
+    stat = await get_or_create_chat_stat(session, chat_id, user_id, biz_date=today)
     if stat.reward_claimed:
         raise ValidationError("今天已经领取过水群奖励了。")
     if stat.message_count < reward.daily_message_target:
         raise ValidationError(f"今日发言数还未达标，当前 {stat.message_count}/{reward.daily_message_target}。")
 
     yesterday = today - dt.timedelta(days=1)
-    prev = await get_or_create_chat_stat(session, chat_id, user_id, yesterday)
+    prev = await get_or_create_chat_stat(session, chat_id, user_id, biz_date=yesterday)
     previous_streak = prev.streak_days if prev.reward_claimed else 0
     streak = previous_streak + 1
     if reward.after_7d_mode == "reset" and streak > 7:
@@ -155,13 +155,13 @@ async def try_claim_chat_reward(session: AsyncSession, chat_id: int, user_id: in
     stat.rewarded_points = points
     stat.updated_at = now_utc()
     if points > 0:
-        await ensure_user(session, user_id, None, None, None, None)
+        await ensure_user(session, user_id, None, first_name=None, last_name=None, language_code=None)
         await change_points(
             session,
             chat_id,
             user_id,
-            points,
-            PointsTxnType.reward.value,
+            amount=points,
+            txn_type=PointsTxnType.reward.value,
             reason="水群激励奖励",
         )
     await session.flush()

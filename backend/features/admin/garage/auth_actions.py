@@ -10,7 +10,7 @@ class GarageAuthActionsMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        callback_data: CallbackParser,
+        *, callback_data: CallbackParser,
     ) -> None:
         from backend.platform.db.schema.models.enums import ConversationStateType
         from backend.features.garage.services.garage_features_service import GarageAuthService
@@ -36,8 +36,8 @@ class GarageAuthActionsMixin:
                 context,
                 update.effective_user.id,
                 chat_id,
-                ConversationStateType.garage_badge_input.value,
-                {"target_chat_id": chat_id},
+                state_type=ConversationStateType.garage_badge_input.value,
+                payload={"target_chat_id": chat_id},
             )
             await self.message_helper.safe_edit(
                 update,
@@ -48,15 +48,15 @@ class GarageAuthActionsMixin:
         if action == "teacher":
             sub = callback_data.get(2)
             if sub == "list":
-                await self._show_garage_teacher_list_menu(update, context, chat_id, callback_data.get_int_optional(4) or 0)
+                await self._show_garage_teacher_list_menu(update, context, chat_id, page=callback_data.get_int_optional(4) or 0)
                 return
             if sub == "add":
                 await self._start_text_input_state(
                     context,
                     update.effective_user.id,
                     chat_id,
-                    ConversationStateType.garage_teacher_input.value,
-                    {"target_chat_id": chat_id},
+                    state_type=ConversationStateType.garage_teacher_input.value,
+                    payload={"target_chat_id": chat_id},
                 )
                 await self.message_helper.safe_edit(
                     update,
@@ -72,7 +72,7 @@ class GarageAuthActionsMixin:
                 async with db.session_factory() as session:
                     await GarageAuthService.remove_teacher(session, chat_id, user_id)
                     await session.commit()
-                await self._show_garage_teacher_list_menu(update, context, chat_id, 0)
+                await self._show_garage_teacher_list_menu(update, context, chat_id, page=0)
                 return
         if action == "limit":
             sub = callback_data.get(2)
@@ -106,8 +106,8 @@ class GarageAuthActionsMixin:
                     context,
                     update.effective_user.id,
                     chat_id,
-                    state,
-                    {"target_chat_id": chat_id},
+                    state_type=state,
+                    payload={"target_chat_id": chat_id},
                 )
                 prompt = "🚗 车库认证 | 时间间隔\n\n👉 请输入限制时间间隔（秒）："
                 if sub == "max":
@@ -137,15 +137,15 @@ class GarageAuthActionsMixin:
         if action == "wl":
             sub = callback_data.get(2)
             if sub == "list":
-                await self._show_garage_whitelist_menu(update, context, chat_id, callback_data.get_int_optional(4) or 0)
+                await self._show_garage_whitelist_menu(update, context, chat_id, page=callback_data.get_int_optional(4) or 0)
                 return
             if sub == "add":
                 await self._start_text_input_state(
                     context,
                     update.effective_user.id,
                     chat_id,
-                    ConversationStateType.garage_whitelist_input.value,
-                    {"target_chat_id": chat_id},
+                    state_type=ConversationStateType.garage_whitelist_input.value,
+                    payload={"target_chat_id": chat_id},
                 )
                 await self.message_helper.safe_edit(
                     update,
@@ -161,7 +161,7 @@ class GarageAuthActionsMixin:
                 async with db.session_factory() as session:
                     await GarageAuthService.remove_whitelist(session, chat_id, user_id)
                     await session.commit()
-                await self._show_garage_whitelist_menu(update, context, chat_id, 0)
+                await self._show_garage_whitelist_menu(update, context, chat_id, page=0)
                 return
         if action == "summary":
             sub = callback_data.get(2)

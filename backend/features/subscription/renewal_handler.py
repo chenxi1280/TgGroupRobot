@@ -87,8 +87,8 @@ async def start_renewal_card_input(
             session,
             chat_id,
             update.effective_user.id,
-            ConversationStateType.renewal_card_input.value,
-            {"target_chat_id": chat_id},
+            state_type=ConversationStateType.renewal_card_input.value,
+            state_data={"target_chat_id": chat_id},
         )
         await session.commit()
 
@@ -173,7 +173,7 @@ async def handle_renewal_card_input(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session,
-    state,
+    *, state,
     message_text: str,
 ) -> None:
     if update.effective_user is None or update.effective_message is None:
@@ -197,7 +197,7 @@ async def renewal_code_message_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session,
-    state,
+    *, state,
     message_text: str,
 ) -> None:
-    await handle_renewal_card_input(update, context, session, state, message_text)
+    await handle_renewal_card_input(update, context, session, state=state, message_text=message_text)

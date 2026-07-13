@@ -61,7 +61,7 @@ class EngagementAdminEggActionsMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        callback_data: CallbackParser,
+        *, callback_data: CallbackParser,
         session,
     ) -> None:
         sub = callback_data.get(3)
@@ -75,8 +75,8 @@ class EngagementAdminEggActionsMixin:
                 context,
                 update.effective_user.id,
                 update.effective_user.id,
-                "engagement_wait_egg_template",
-                {"target_chat_id": chat_id},
+                state_type="engagement_wait_egg_template",
+                payload={"target_chat_id": chat_id},
             )
             await session.commit()
             await self.message_helper.safe_edit(
@@ -94,7 +94,7 @@ class EngagementAdminEggActionsMixin:
             if event_id is None:
                 await self._show_engagement_egg_list(update, context, chat_id)
                 return
-            await self._show_engagement_egg(update, context, chat_id, event_id)
+            await self._show_engagement_egg(update, context, chat_id, event_id=event_id)
             return
         if sub == "history":
             await session.commit()
@@ -113,7 +113,7 @@ class EngagementAdminEggActionsMixin:
             elif not enabled and event.status != "finished":
                 event.status = "idle"
             await session.commit()
-            await self._show_engagement_egg(update, context, chat_id, event.id)
+            await self._show_engagement_egg(update, context, chat_id, event_id=event.id)
             return
         if sub == "status":
             event = await get_egg_event(session, chat_id, callback_data.get_int(4))
@@ -127,7 +127,7 @@ class EngagementAdminEggActionsMixin:
             elif target_status == "idle":
                 event.status = "idle"
             await session.commit()
-            await self._show_engagement_egg(update, context, chat_id, event.id)
+            await self._show_engagement_egg(update, context, chat_id, event_id=event.id)
             return
         if sub == "template":
             event_id = callback_data.get_int(4)
@@ -136,8 +136,8 @@ class EngagementAdminEggActionsMixin:
                 context,
                 update.effective_user.id,
                 update.effective_user.id,
-                "engagement_wait_egg_template",
-                {"target_chat_id": chat_id, "event_id": event_id},
+                state_type="engagement_wait_egg_template",
+                payload={"target_chat_id": chat_id, "event_id": event_id},
             )
             await session.commit()
             await self.message_helper.safe_edit(
@@ -190,7 +190,7 @@ class EngagementAdminEggActionsMixin:
                     f"🎁 当前命中奖励：{reward_summary}"
                 ),
             )
-            await self._show_engagement_egg(update, context, chat_id, event.id)
+            await self._show_engagement_egg(update, context, chat_id, event_id=event.id)
             return
         if sub == "reset":
             event = await get_egg_event(session, chat_id, callback_data.get_int(4))
@@ -208,7 +208,7 @@ class EngagementAdminEggActionsMixin:
             event.status = "idle"
             event.published_clue_count = 0
             await session.commit()
-            await self._show_engagement_egg(update, context, chat_id, event.id)
+            await self._show_engagement_egg(update, context, chat_id, event_id=event.id)
             return
         await session.commit()
         await self._show_engagement_egg_list(update, context, chat_id)

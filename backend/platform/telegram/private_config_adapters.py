@@ -28,7 +28,7 @@ def update_context_handler(module_path: str, func_name: str) -> ConfigHandler:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         session: AsyncSession,
-        state: Any,
+        *, state: Any,
         message_text: str,
     ) -> None:
         del session, state, message_text
@@ -43,7 +43,7 @@ def full_args_handler(module_path: str, func_name: str) -> ConfigHandler:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         session: AsyncSession,
-        state: Any,
+        *, state: Any,
         message_text: str,
     ) -> None:
         func = _resolve_attr(module_path, func_name)
@@ -56,7 +56,7 @@ async def handle_invite_link_config(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session: AsyncSession,
-    state: Any,
+    *, state: Any,
     message_text: str,
 ) -> None:
     invite_link_create_name_message = _resolve_attr(
@@ -72,14 +72,14 @@ async def handle_invite_link_config(
         await invite_link_create_name_message(update, context)
         return
 
-    await handle_invite_link_config_input(update, context, session, state, message_text)
+    await handle_invite_link_config_input(update, context, session, state=state, message_text=message_text)
 
 
 async def handle_quick_publish_input(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session: AsyncSession,
-    state: Any,
+    *, state: Any,
     message_text: str,
 ) -> None:
     if update.effective_user is None or update.effective_message is None:
@@ -160,7 +160,7 @@ async def scheduled_message_text_input(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session: AsyncSession,
-    state: Any,
+    *, state: Any,
     message_text: str,
 ) -> None:
     del session
@@ -176,8 +176,8 @@ async def scheduled_message_text_input(
         update,
         context,
         target_chat_id,
-        update.effective_user.id,
-        message_text,
+        user_id=update.effective_user.id,
+        text=message_text,
     )
 
 
@@ -185,7 +185,7 @@ async def scheduled_message_media_input(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session: AsyncSession,
-    state: Any,
+    *, state: Any,
     message_text: str,
 ) -> None:
     del session, message_text
@@ -201,7 +201,7 @@ async def scheduled_message_media_input(
         update,
         context,
         target_chat_id,
-        update.effective_user.id,
+        user_id=update.effective_user.id,
     )
 
 
@@ -209,20 +209,20 @@ async def nearby_text_input(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session: AsyncSession,
-    state: Any,
+    *, state: Any,
     message_text: str,
 ) -> None:
     nearby_handler = _resolve_attr("backend.features.nearby.nearby_handler", "_nearby_handler")
-    await nearby_handler.handle_fsm_text_input(update, context, session, state, message_text)
+    await nearby_handler.handle_fsm_text_input(update, context, session, state=state, message_text=message_text)
 
 
 async def nearby_location_input(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session: AsyncSession,
-    state: Any,
+    *, state: Any,
     message_text: str,
 ) -> None:
     del message_text
     nearby_handler = _resolve_attr("backend.features.nearby.nearby_handler", "_nearby_handler")
-    await nearby_handler.handle_fsm_location_input(update, context, session, state)
+    await nearby_handler.handle_fsm_location_input(update, context, session, state=state)

@@ -46,7 +46,7 @@ async def invite_link_cover_callback(update: Update, context: ContextTypes.DEFAU
         return
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
-        await set_user_state(session, update.effective_user.id, update.effective_user.id, "invite_link_cover_input", {"target_chat_id": target_chat_id})
+        await set_user_state(session, update.effective_user.id, update.effective_user.id, state_type="invite_link_cover_input", state_data={"target_chat_id": target_chat_id})
         await session.commit()
     await _invite_link_handler.message_helper.safe_edit(
         update,
@@ -66,7 +66,7 @@ async def invite_link_text_callback(update: Update, context: ContextTypes.DEFAUL
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
         settings = await get_chat_settings(session, target_chat_id)
-        await set_user_state(session, update.effective_user.id, update.effective_user.id, "invite_link_text_input", {"target_chat_id": target_chat_id})
+        await set_user_state(session, update.effective_user.id, update.effective_user.id, state_type="invite_link_text_input", state_data={"target_chat_id": target_chat_id})
         await session.commit()
     await _invite_link_handler.message_helper.safe_edit(
         update,

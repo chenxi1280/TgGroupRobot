@@ -239,8 +239,8 @@ async def test_start_text_input_state_preserves_private_selected_chat(monkeypatc
         context,
         42,
         -1001,
-        "teacher_delegate_target_input",
-        {"target_chat_id": -1001},
+        state_type="teacher_delegate_target_input",
+        payload={"target_chat_id": -1001},
     )
 
     assert ("clear", 42, 42) not in calls
@@ -347,7 +347,7 @@ async def test_conversation_state_service_start_update_get_clear(monkeypatch):
     monkeypatch.setattr("backend.platform.state.conversation_state_service.ServiceBase._update_entity", fake_update)
     monkeypatch.setattr("backend.platform.state.conversation_state_service.ServiceBase._delete_entity", fake_delete)
 
-    created = await ConversationStateService.start(session, -1001, 42, "state_a", {"a": 1})
+    created = await ConversationStateService.start(session, -1001, 42, state_type="state_a", state_data={"a": 1})
     lookup["state"] = created
 
     assert created.state_type == "state_a"
@@ -395,6 +395,6 @@ async def test_legacy_state_wrappers_delegate(monkeypatch):
     monkeypatch.setattr("backend.platform.state.conversation_state_service.ConversationStateService.get", fake_get)
     monkeypatch.setattr("backend.platform.state.conversation_state_service.ConversationStateService.clear", fake_clear)
 
-    assert await ConversationStateService.start(session, -1001, 42, "x") is state
+    assert await ConversationStateService.start(session, -1001, 42, state_type="x") is state
     assert await ConversationStateService.get(session, -1001, 42) is state
     assert await ConversationStateService.clear(session, -1001, 42) is None

@@ -90,19 +90,19 @@ class NearbyHandler:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         session: AsyncSession,
-        state,
+        *, state,
         message_text: str,
     ) -> None:
-        await handle_fsm_text_input_action(update, context, session, state, message_text)
+        await handle_fsm_text_input_action(update, context, session, state=state, message_text=message_text)
 
     async def handle_fsm_location_input(
         self,
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         session: AsyncSession,
-        state,
+        *, state,
     ) -> None:
-        await handle_fsm_location_input_action(update, context, session, state)
+        await handle_fsm_location_input_action(update, context, session, state=state)
 
     async def _show_mydata_panel(
         self,
@@ -117,34 +117,34 @@ class NearbyHandler:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         target_chat_id: int,
-        page: int,
+        *, page: int,
     ) -> None:
-        await show_nearby_list(update, context, target_chat_id, page)
+        await show_nearby_list(update, context, target_chat_id, page=page)
 
     async def _show_member_detail(
         self,
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         target_chat_id: int,
-        target_user_id: int,
+        *, target_user_id: int,
         back_page: int,
     ) -> None:
-        await show_member_detail(update, context, target_chat_id, target_user_id, back_page)
+        await show_member_detail(update, context, target_chat_id, target_user_id=target_user_id, back_page=back_page)
 
     async def _start_edit_state(
         self,
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         db: Database,
-        target_chat_id: int,
+        *, target_chat_id: int,
         field: str,
     ) -> None:
         await start_edit_state_action(
             update,
             context,
             db,
-            target_chat_id,
-            field,
+            target_chat_id=target_chat_id,
+            field=field,
             reply_or_edit_func=self._reply_or_edit,
         )
 
@@ -153,13 +153,13 @@ class NearbyHandler:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         db: Database,
-        target_chat_id: int,
+        *, target_chat_id: int,
     ) -> None:
         await toggle_visible_action(
             update,
             context,
             db,
-            target_chat_id,
+            target_chat_id=target_chat_id,
             show_mydata_panel_func=self._show_mydata_panel,
         )
 
@@ -168,15 +168,15 @@ class NearbyHandler:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         db: Database,
-        target_chat_id: int,
+        *, target_chat_id: int,
         step: str,
     ) -> None:
         await handle_clear_action(
             update,
             context,
             db,
-            target_chat_id,
-            step,
+            target_chat_id=target_chat_id,
+            step=step,
             reply_or_edit_func=self._reply_or_edit,
             show_mydata_panel_func=self._show_mydata_panel,
         )
@@ -186,9 +186,9 @@ class NearbyHandler:
         update: Update,
         text: str,
         reply_markup=None,
-        parse_mode: str | None = None,
+        *, parse_mode: str | None = None,
     ) -> None:
-        await reply_or_edit(update, text, reply_markup, parse_mode)
+        await reply_or_edit(update, text, reply_markup, parse_mode=parse_mode)
 
     async def _bind_group_context(self, db: Database, chat: Chat, user: User) -> None:
         """确保群与用户存在，并将该群设置为当前管理群。"""

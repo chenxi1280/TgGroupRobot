@@ -200,7 +200,7 @@ async def test_handle_points_extended_input_clears_invalid_custom_point_state(mo
         chat_id=42,
     )
 
-    await handle_points_extended_input(update, context, session, state, "hello")
+    await handle_points_extended_input(update, context, session, state=state, message_text="hello")
 
     assert clear_calls == [(-1001, 42), (42, 42)]
     assert session.commits == 1
@@ -254,7 +254,7 @@ async def test_handle_points_extended_input_auto_sets_custom_rank_command(monkey
         chat_id=42,
     )
 
-    await handle_points_extended_input(update, context, session, state, "斗气")
+    await handle_points_extended_input(update, context, session, state=state, message_text="斗气")
 
     assert updates == [{"name": "斗气", "rank_command": "斗气排行"}]
     assert clear_calls == [(-1001, 42), (42, 42)]
@@ -302,7 +302,7 @@ async def test_handle_points_extended_input_prompts_amount_after_username(monkey
         chat_id=42,
     )
 
-    await handle_points_extended_input(update, context, session, state, "settingbother")
+    await handle_points_extended_input(update, context, session, state=state, message_text="settingbother")
 
     assert replies == ["增加积分\n\nsettingbother => 0\n\n👉 输入数量："]
     assert state_updates == [
@@ -375,7 +375,7 @@ async def test_handle_points_extended_input_prompts_amount_after_forwarded_user(
         chat_id=42,
     )
 
-    await handle_points_extended_input(update, context, session, state, "")
+    await handle_points_extended_input(update, context, session, state=state, message_text="")
 
     assert replies == ["扣除积分\n\n@bob => 3\n\n👉 输入数量："]
     assert ensured_users == [
@@ -443,7 +443,7 @@ async def test_handle_points_extended_input_does_not_use_forwarded_message_text_
         chat_id=42,
     )
 
-    await handle_points_extended_input(update, context, session, state, "原消息 20")
+    await handle_points_extended_input(update, context, session, state=state, message_text="原消息 20")
 
     assert deltas == []
     assert replies == ["增加积分\n\n@bob => 0\n\n👉 输入数量："]
@@ -487,7 +487,7 @@ async def test_handle_points_extended_input_clears_invalid_adjust_mode_before_ta
         chat_id=42,
     )
 
-    await handle_points_extended_input(update, context, session, state, "@bob")
+    await handle_points_extended_input(update, context, session, state=state, message_text="@bob")
 
     assert clear_calls == [(-1001, 42), (42, 42)]
     assert session.commits == 1
@@ -531,7 +531,7 @@ async def test_handle_points_extended_input_clears_invalid_cached_target(monkeyp
         chat_id=42,
     )
 
-    await handle_points_extended_input(update, context, session, state, "20")
+    await handle_points_extended_input(update, context, session, state=state, message_text="20")
 
     assert clear_calls == [(-1001, 42), (42, 42)]
     assert session.commits == 1
@@ -597,7 +597,7 @@ async def test_handle_points_extended_input_supports_custom_point_deduct(monkeyp
         chat_id=42,
     )
 
-    await handle_points_extended_input(update, context, session, state, "@alice 20 管理员扣分")
+    await handle_points_extended_input(update, context, session, state=state, message_text="@alice 20 管理员扣分")
 
     assert resolved_users == ["@alice"]
     assert ensured_users == [12345]
@@ -658,7 +658,7 @@ async def test_handle_points_extended_input_updates_mall_cover(monkeypatch):
         chat_id=99,
     )
 
-    await handle_points_extended_input(update, context, session, state, "")
+    await handle_points_extended_input(update, context, session, state=state, message_text="")
 
     assert updates == [{"cover_media_type": "photo", "cover_file_id": "photo-file"}]
     assert clear_calls == [(-2002, 99), (99, 99)]
@@ -732,7 +732,7 @@ async def test_handle_points_extended_input_rejects_zero_level_threshold(monkeyp
         chat_id=42,
     )
 
-    await handle_points_extended_input(update, context, session, state, "0")
+    await handle_points_extended_input(update, context, session, state=state, message_text="0")
 
     assert update_calls == []
     assert any("必须大于 0" in text for text in replies)
@@ -803,7 +803,7 @@ async def test_handle_points_level_add_returns_to_list(monkeypatch):
     context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(session)}))
     cb = CallbackParser.parse("adm:lvl:-1001:add")
 
-    await admin_handler._admin_handler._handle_points_level(update, context, -1001, cb)
+    await admin_handler._admin_handler._handle_points_level(update, context, -1001, callback_data=cb)
 
     assert created == [-1001]
     assert menu_calls == [-1001]
@@ -836,7 +836,7 @@ async def test_handle_points_level_prevents_deleting_last_level(monkeypatch):
     context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(_FakeSession())}))
     cb = CallbackParser.parse("adm:lvl:-1001:delete:5")
 
-    await admin_handler._admin_handler._handle_points_level(update, context, -1001, cb)
+    await admin_handler._admin_handler._handle_points_level(update, context, -1001, callback_data=cb)
 
     assert alerts == ["至少保留一个等级，无法删除"]
     assert detail_calls == [(-1001, 5)]
@@ -855,7 +855,7 @@ async def test_handle_points_mall_preview_routes_to_preview_page(monkeypatch):
     context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(_FakeSession())}))
     cb = CallbackParser.parse("adm:mall:-1001:product:preview:7")
 
-    await admin_handler._admin_handler._handle_points_mall(update, context, -1001, cb)
+    await admin_handler._admin_handler._handle_points_mall(update, context, -1001, callback_data=cb)
 
     assert preview_calls == [(-1001, 7)]
 
@@ -877,7 +877,7 @@ async def test_handle_custom_points_clear_confirm_renders_confirmation(monkeypat
     context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(_FakeSession())}))
     cb = CallbackParser.parse("adm:cpt:-1001:clear_confirm:7")
 
-    await admin_handler._admin_handler._handle_custom_points(update, context, -1001, cb)
+    await admin_handler._admin_handler._handle_custom_points(update, context, -1001, callback_data=cb)
 
     assert rendered
     assert "确认后将把此积分类型下所有用户余额清空" in rendered[0]
@@ -900,7 +900,7 @@ async def test_handle_custom_points_delete_confirm_renders_confirmation(monkeypa
     context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(_FakeSession())}))
     cb = CallbackParser.parse("adm:cpt:-1001:delete_confirm:7")
 
-    await admin_handler._admin_handler._handle_custom_points(update, context, -1001, cb)
+    await admin_handler._admin_handler._handle_custom_points(update, context, -1001, callback_data=cb)
 
     assert rendered
     assert "确认后将删除该积分类型及其全部余额记录" in rendered[0]
@@ -938,7 +938,7 @@ async def test_handle_points_extended_input_reports_validation_error_for_duplica
         chat_id=42,
     )
 
-    await handle_points_extended_input(update, context, session, state, "重复排行")
+    await handle_points_extended_input(update, context, session, state=state, message_text="重复排行")
 
     assert replies == ["该排行指令已存在，请更换一个指令。"]
 
@@ -975,7 +975,7 @@ async def test_handle_points_extended_input_reports_validation_error_for_duplica
         chat_id=42,
     )
 
-    await handle_points_extended_input(update, context, session, state, "10")
+    await handle_points_extended_input(update, context, session, state=state, message_text="10")
 
     assert replies == ["该积分门槛已存在，请重新设置。"]
 
@@ -1068,7 +1068,7 @@ async def test_handle_points_mall_orders_routes_with_product_scope(monkeypatch):
     context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(_FakeSession())}))
     cb = CallbackParser.parse("adm:mall:-1001:orders:7")
 
-    await admin_handler._admin_handler._handle_points_mall(update, context, -1001, cb)
+    await admin_handler._admin_handler._handle_points_mall(update, context, -1001, callback_data=cb)
 
     assert calls == [(-1001, 7, "all")]
 
@@ -1086,7 +1086,7 @@ async def test_handle_points_mall_orders_status_short_code(monkeypatch):
     context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(_FakeSession())}))
     cb = CallbackParser.parse("adm:mall:-1001:orders_status:c:7")
 
-    await admin_handler._admin_handler._handle_points_mall(update, context, -1001, cb)
+    await admin_handler._admin_handler._handle_points_mall(update, context, -1001, callback_data=cb)
 
     assert calls == [(-1001, 7, "created")]
 
@@ -1149,7 +1149,7 @@ async def test_handle_points_extended_input_rejects_zero_mall_price(monkeypatch)
         chat_id=42,
     )
 
-    await handle_points_extended_input(update, context, session, state, "0")
+    await handle_points_extended_input(update, context, session, state=state, message_text="0")
 
     assert replies == ["所需积分必须大于 0。"]
 
@@ -1190,7 +1190,7 @@ async def test_handle_points_extended_input_rejects_non_member_fulfiller(monkeyp
         chat_id=42,
     )
 
-    await handle_points_extended_input(update, context, session, state, "@not_member")
+    await handle_points_extended_input(update, context, session, state=state, message_text="@not_member")
 
     assert replies == ["发放人员必须是当前群组成员。"]
 

@@ -12,18 +12,18 @@ log = structlog.get_logger(__name__)
 
 class AdminRouter(BaseRouter):
     """管理功能路由器"""
-    
+
     @property
     def name(self) -> str:
         return "admin"
-    
+
     def register(self, app: Application) -> None:
         log.debug(f"Registering {self.name} router")
-        
+
         # 命令处理器
         app.add_handler(CommandHandler("admin", admin_callback))
         app.add_handler(CommandHandler("inherit", account_inherit_command))
-        
+
         # 回调处理器（管理后台与联盟/车库转发）
         app.add_handler(CallbackQueryHandler(button_layout_editor_callback, pattern=r"^btned:"))
         app.add_handler(CallbackQueryHandler(teacher_self_callback, pattern=r"^teacher:"))
@@ -32,5 +32,5 @@ class AdminRouter(BaseRouter):
 
         # 频道消息处理器（车库转发）
         app.add_handler(MessageHandler(filters.ChatType.CHANNEL, garage_forward_channel_post_handler))
-        
+
         log.debug(f"{self.name} router registered successfully")

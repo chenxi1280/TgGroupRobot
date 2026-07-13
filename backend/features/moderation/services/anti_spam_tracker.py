@@ -20,7 +20,7 @@ class AntiSpamTracker:
         chat_id: int,
         user_id: int,
         message_id: int,
-        text_norm: str,
+        *, text_norm: str,
         max_messages: int,
         time_window_seconds: int,
     ) -> tuple[bool, list[int], str]:

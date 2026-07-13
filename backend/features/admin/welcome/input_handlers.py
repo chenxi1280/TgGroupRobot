@@ -22,7 +22,7 @@ async def handle_welcome_input(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session,
-    state,
+    *, state,
     message_text: str,
 ) -> None:
     from backend.platform.state.state_service import clear_private_input_state, clear_user_state
@@ -88,4 +88,4 @@ async def handle_welcome_input(
     if target_chat_id != update.effective_user.id:
         await clear_private_input_state(session, update.effective_user.id)
     await session.commit()
-    await _admin_handler_instance()._show_welcome_detail_menu(update, context, target_chat_id, welcome_id)
+    await _admin_handler_instance()._show_welcome_detail_menu(update, context, target_chat_id, welcome_id=welcome_id)

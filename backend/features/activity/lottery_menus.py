@@ -110,7 +110,7 @@ class LotteryMenuMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         target_chat_id: int,
-        lottery_type: str,
+        *, lottery_type: str,
     ) -> None:
         text = "\n".join(
             [
@@ -131,7 +131,7 @@ class LotteryMenuMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         target_chat_id: int,
-        lottery_type: str,
+        *, lottery_type: str,
         selection_mode: str,
     ) -> None:
         mode_label = "🏆 排名入围随机" if selection_mode == "ranking_random" else "🎯 达标随机"
@@ -155,7 +155,7 @@ class LotteryMenuMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         target_chat_id: int,
-        status: str = "all",
+        *, status: str = "all",
         lottery_type: str = "all",
         page: int = 0,
         page_size: int = 6,
@@ -263,7 +263,7 @@ class LotteryMenuMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         target_chat_id: int,
-        lottery_id: int,
+        *, lottery_id: int,
     ) -> None:
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:

@@ -668,7 +668,7 @@ async def test_manual_warning_stops_and_fallback_deletes_when_actions_fail(monke
     async def fake_get_chat_settings(session, chat_id):
         return settings
 
-    async def fake_should_exempt_admin(context, chat_id, user_id, default):
+    async def fake_should_exempt_admin(context, chat_id, user_id, *, exempt_admin):
         return user_id == update.effective_user.id
 
     async def fake_ensure_chat(*args, **kwargs):
@@ -711,7 +711,7 @@ async def test_quick_reply_mute_uses_configured_reply_keyword(monkeypatch):
     async def fake_get_chat_settings(session, chat_id):
         return settings
 
-    async def fake_should_exempt_admin(context, chat_id, user_id, default):
+    async def fake_should_exempt_admin(context, chat_id, user_id, *, exempt_admin):
         return user_id == update.effective_user.id
 
     async def fake_ensure_chat(*args, **kwargs):
@@ -758,7 +758,7 @@ async def test_quick_reply_kick_accepts_uppercase_configured_keyword(monkeypatch
     async def fake_get_chat_settings(session, chat_id):
         return settings
 
-    async def fake_should_exempt_admin(context, chat_id, user_id, default):
+    async def fake_should_exempt_admin(context, chat_id, user_id, *, exempt_admin):
         return user_id == update.effective_user.id
 
     async def fake_ensure_chat(*args, **kwargs):
@@ -963,8 +963,8 @@ async def test_explicit_flood_uses_garbage_guard_threshold_and_stops_on_failed_a
         async def add_message(self, *args, **kwargs):
             return None
 
-        async def check_flood(self, chat_id, actor_id, max_messages, window_seconds):
-            checked_args.append((max_messages, window_seconds))
+        async def check_flood(self, chat_id, actor_id, max_messages, *, time_window_seconds):
+            checked_args.append((max_messages, time_window_seconds))
             return SimpleNamespace(is_flooding=True, message_count=4, time_span=3.2, action="none")
 
         async def get_and_clear_messages(self, chat_id, actor_id):

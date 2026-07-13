@@ -10,7 +10,7 @@ class ModerationControlActionsMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        callback_data: CallbackParser,
+        *, callback_data: CallbackParser,
     ) -> None:
         from backend.platform.db.schema.models.enums import ControlPermissionPolicy
 
@@ -32,7 +32,7 @@ class ModerationControlActionsMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        callback_data: CallbackParser,
+        *, callback_data: CallbackParser,
     ) -> None:
         from backend.platform.db.schema.models.enums import ConversationStateType, GroupLockDeleteNoticeMode
 
@@ -103,8 +103,8 @@ class ModerationControlActionsMixin:
                 context,
                 update.effective_user.id,
                 chat_id,
-                state_type,
-                {"target_chat_id": chat_id},
+                state_type=state_type,
+                payload={"target_chat_id": chat_id},
             )
             if arg in {"open_time", "close_time"}:
                 sample_text = next_top_of_hour_hhmm(hours_offset=0 if arg == "open_time" else 8)
@@ -136,7 +136,7 @@ class ModerationControlActionsMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        callback_data: CallbackParser,
+        *, callback_data: CallbackParser,
     ) -> None:
         from backend.platform.db.schema.models.enums import ConversationStateType
 
@@ -177,8 +177,8 @@ class ModerationControlActionsMixin:
                 context,
                 update.effective_user.id,
                 chat_id,
-                ConversationStateType.rename_monitor_text_input.value,
-                {"target_chat_id": chat_id},
+                state_type=ConversationStateType.rename_monitor_text_input.value,
+                payload={"target_chat_id": chat_id},
             )
             await self.message_helper.safe_edit(
                 update,

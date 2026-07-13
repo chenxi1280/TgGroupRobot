@@ -128,7 +128,7 @@ async def engagement_message_handler(update: Update, context: ContextTypes.DEFAU
             session,
             update.effective_chat.id,
             update.effective_user.id,
-            text,
+            answer=text,
         )
         if not reserved_text_command and text == reward.command_keyword:
             try:

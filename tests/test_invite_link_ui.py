@@ -79,7 +79,7 @@ async def test_invite_link_show_menu_uses_shared_message_panel(monkeypatch):
     update = SimpleNamespace()
     context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}))
 
-    await _invite_link_handler.show_menu(update, context, -1001, "测试群")
+    await _invite_link_handler.show_menu(update, context, -1001, chat_title="测试群")
 
     rows = [[button.text for button in row] for row in rendered["keyboard"]]
     assert "🔗 邀请链接生成" in rendered["text"]

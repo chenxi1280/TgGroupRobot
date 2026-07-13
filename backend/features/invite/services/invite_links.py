@@ -42,7 +42,7 @@ async def create_invite_link(
     session: AsyncSession,
     chat_id: int,
     created_by_user_id: int,
-    bot: Bot,
+    *, bot: Bot,
     name: str | None = None,
     member_limit: int | None = None,
     expire_date: dt.datetime | None = None,
@@ -87,7 +87,7 @@ async def create_user_invite_link(
     session: AsyncSession,
     bot: Bot,
     chat_id: int,
-    user_id: int,
+    *, user_id: int,
     name: str | None = None,
 ) -> tuple[bool, InviteLink | None, str | None]:
     """用户创建邀请链接（使用群组配置）"""

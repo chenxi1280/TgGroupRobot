@@ -61,7 +61,7 @@ class ModerationConfigMenusMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        command_key: str,
+        *, command_key: str,
     ) -> None:
         db: Database = context.application.bot_data["db"]
         await self._set_current_chat(db, update.effective_user.id, chat_id)

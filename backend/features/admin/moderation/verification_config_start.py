@@ -9,7 +9,7 @@ class VerificationConfigStartMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         target_chat_id: int,
-        callback_data: CallbackParser | None = None,
+        *, callback_data: CallbackParser | None = None,
     ) -> None:
         from backend.platform.db.schema.models.enums import ConversationStateType
         from backend.platform.state.state_service import clear_user_state, set_user_state

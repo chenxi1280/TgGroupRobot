@@ -86,8 +86,8 @@ async def test_alliance_reply_ban_uses_team_command(monkeypatch) -> None:
         context,
         context.application.bot_data["db"],
         SimpleNamespace(id=-1001, type="supergroup", title="Test Group"),
-        SimpleNamespace(id=7),
-        SimpleNamespace(
+        user=SimpleNamespace(id=7),
+        message=SimpleNamespace(
             reply_to_message=SimpleNamespace(
                 message_id=41,
                 from_user=SimpleNamespace(id=456),
@@ -95,7 +95,7 @@ async def test_alliance_reply_ban_uses_team_command(monkeypatch) -> None:
             ),
             reply_text=_reply_noop,
         ),
-        "team",
+        message_text="team",
     )
 
     assert handled is True
@@ -115,9 +115,9 @@ async def test_alliance_reply_ban_ignores_old_t_command(monkeypatch) -> None:
         context,
         context.application.bot_data["db"],
         SimpleNamespace(id=-1001, type="supergroup", title="Test Group"),
-        SimpleNamespace(id=7),
-        SimpleNamespace(reply_to_message=SimpleNamespace(from_user=SimpleNamespace(id=456))),
-        "t",
+        user=SimpleNamespace(id=7),
+        message=SimpleNamespace(reply_to_message=SimpleNamespace(from_user=SimpleNamespace(id=456))),
+        message_text="t",
     )
 
     assert handled is False
@@ -280,8 +280,8 @@ async def test_unified_group_handler_bottom_button_event_runs_before_auto_reply(
     async def fake_is_admin(context, chat_id: int, user_id: int):
         return False
 
-    async def fake_bottom_button_trigger(update, context, chat_id: int, message_text: str):
-        bottom_button_calls.append((chat_id, message_text))
+    async def fake_bottom_button_trigger(update, context, chat_id: int, *, button_text: str):
+        bottom_button_calls.append((chat_id, button_text))
         return True
 
     async def forbidden_auto_reply(*args, **kwargs):
@@ -328,8 +328,8 @@ async def test_unified_group_handler_bottom_button_runs_before_garage_features(m
     async def fake_is_admin(context, chat_id: int, user_id: int):
         return False
 
-    async def fake_bottom_button_trigger(update, context, chat_id: int, message_text: str):
-        bottom_button_calls.append((chat_id, message_text))
+    async def fake_bottom_button_trigger(update, context, chat_id: int, *, button_text: str):
+        bottom_button_calls.append((chat_id, button_text))
         return True
 
     async def forbidden_garage(*args, **kwargs):
@@ -651,10 +651,10 @@ async def test_banned_word_explicit_guard_falls_back_to_message_delete_when_exec
         context,
         db,
         SimpleNamespace(id=-1001, type="supergroup", title="Test Group"),
-        _User(),
-        message,
-        "违禁词测试",
-        settings,
+        user=_User(),
+        message=message,
+        message_text="违禁词测试",
+        settings=settings,
     )
 
     assert handled is True
@@ -711,10 +711,10 @@ async def test_banned_word_explicit_guard_deletes_sender_chat_messages(monkeypat
         context,
         db,
         SimpleNamespace(id=-1001, type="supergroup", title="Test Group"),
-        _SenderActor(),
-        _Message(),
-        "违禁词测试",
-        settings,
+        user=_SenderActor(),
+        message=_Message(),
+        message_text="违禁词测试",
+        settings=settings,
     )
 
     assert handled is True
@@ -772,10 +772,10 @@ async def test_banned_word_explicit_guard_notifies_when_all_actions_fail(monkeyp
         context,
         db,
         SimpleNamespace(id=-1001, type="supergroup", title="Test Group"),
-        _User(),
-        _Message(),
-        "违禁词测试",
-        settings,
+        user=_User(),
+        message=_Message(),
+        message_text="违禁词测试",
+        settings=settings,
     )
 
     assert handled is True

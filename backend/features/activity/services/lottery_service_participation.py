@@ -15,7 +15,7 @@ async def can_join_lottery(
     session: AsyncSession,
     lottery: Lottery,
     user_id: int,
-    user_points: int,
+    *, user_points: int,
     member_joined_at: dt.datetime | None = None,
 ) -> JoinResult:
     if lottery.status != "pending":
@@ -87,14 +87,14 @@ async def join_lottery(
     session: AsyncSession,
     lottery_id: int,
     user_id: int,
-    points_balance: int,
+    *, points_balance: int,
     member_joined_at: dt.datetime | None = None,
 ) -> JoinResult:
     result = await session.execute(select(Lottery).where(Lottery.id == lottery_id).with_for_update())
     lottery = result.scalar_one_or_none()
     if not lottery:
         return JoinResult(success=False, reason="lottery_not_found")
-    result = await can_join_lottery(session, lottery, user_id, points_balance, member_joined_at)
+    result = await can_join_lottery(session, lottery, user_id, user_points=points_balance, member_joined_at=member_joined_at)
     if not result.success:
         return result
     session.add(LotteryParticipant(lottery_id=lottery_id, user_id=user_id, points_balance=points_balance))

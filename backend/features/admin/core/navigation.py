@@ -30,7 +30,7 @@ class CoreNavigationMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int | None = None,
-        callback_data: CallbackParser | None = None,
+        *, callback_data: CallbackParser | None = None,
     ) -> None:
         """处理切换群组操作"""
         db: Database = context.application.bot_data["db"]
@@ -44,7 +44,7 @@ class CoreNavigationMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        callback_data: CallbackParser | None = None,
+        *, callback_data: CallbackParser | None = None,
     ) -> None:
         """处理选择群组操作"""
         db: Database = context.application.bot_data["db"]
@@ -56,7 +56,7 @@ class CoreNavigationMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int | None = None,
-        callback_data: CallbackParser | None = None,
+        *, callback_data: CallbackParser | None = None,
     ) -> None:
         """处理返回主菜单操作"""
         db: Database = context.application.bot_data["db"]
@@ -71,7 +71,7 @@ class CoreNavigationMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        callback_data: CallbackParser | None = None,
+        *, callback_data: CallbackParser | None = None,
     ) -> None:
         """处理返回指定群组菜单操作"""
         await self._show_main_menu(update, context, chat_id)

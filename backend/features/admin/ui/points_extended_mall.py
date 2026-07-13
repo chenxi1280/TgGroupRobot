@@ -77,7 +77,7 @@ def points_mall_product_detail_keyboard(product, chat_id: int) -> InlineKeyboard
     )
 
 
-def points_mall_orders_keyboard(chat_id: int, orders=None, product_id: int | None = None, status: str = "all", status_counts: dict[str, int] | None = None) -> InlineKeyboardMarkup:
+def points_mall_orders_keyboard(chat_id: int, orders=None, product_id: int | None = None, *, status: str = "all", status_counts: dict[str, int] | None = None) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
     counts = status_counts or {}
     normalized_status = status if status in {"all", "created", "fulfilled", "canceled", "refunded"} else "all"

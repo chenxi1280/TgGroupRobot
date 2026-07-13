@@ -244,7 +244,7 @@ async def _build_private_home_markup(
     return InlineKeyboardMarkup(rows) if rows else None
 
 
-async def _send_guide_message(update: Update, context: ContextTypes.DEFAULT_TYPE, chat, user) -> None:
+async def _send_guide_message(update: Update, context: ContextTypes.DEFAULT_TYPE, chat, *, user) -> None:
     """发送群组引导消息（共享逻辑）
 
     Args:
@@ -389,7 +389,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await session.commit()
 
     # 发送引导消息
-    await _send_guide_message(update, context, chat, user)
+    await _send_guide_message(update, context, chat, user=user)
 
 
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -478,7 +478,7 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             )
     else:
         # 群聊发送引导消息
-        await _send_guide_message(update, context, chat, user)
+        await _send_guide_message(update, context, chat, user=user)
 
 
 async def private_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

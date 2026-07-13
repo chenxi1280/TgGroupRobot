@@ -39,7 +39,7 @@ def auto_reply_list_keyboard(
     rules: list,
     chat_id: int | None = None,
     page: int = 0,
-    page_size: int = 8,
+    *, page_size: int = 8,
     total_count: int | None = None,
 ) -> InlineKeyboardMarkup:
     """自动回复规则列表键盘

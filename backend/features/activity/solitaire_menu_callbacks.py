@@ -45,7 +45,7 @@ async def solitaire_menu_callback(update: Update, context: ContextTypes.DEFAULT_
         await _solitaire_handler.message_helper.safe_edit(update, "仅管理员可使用此功能")
         return
 
-    await _solitaire_handler.show_menu(update, context, chat.id, chat.title)
+    await _solitaire_handler.show_menu(update, context, chat.id, chat_title=chat.title)
 
 
 async def solitaire_list_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -65,7 +65,7 @@ async def solitaire_list_callback(update: Update, context: ContextTypes.DEFAULT_
     )
     if target_chat_id is None:
         return
-    await _solitaire_handler.show_list(update, context, target_chat_id, page)
+    await _solitaire_handler.show_list(update, context, target_chat_id, page=page)
 
 
 async def solitaire_stats_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

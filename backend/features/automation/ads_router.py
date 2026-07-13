@@ -32,14 +32,14 @@ log = structlog.get_logger(__name__)
 
 class AdsRouter(BaseRouter):
     """广告功能路由器"""
-    
+
     @property
     def name(self) -> str:
         return "ads"
-    
+
     def register(self, app: Application) -> None:
         log.debug(f"Registering {self.name} router")
-        
+
         # 回调处理器
         app.add_handler(CallbackQueryHandler(ads_create_start_callback, pattern=r"^ads:create(?::|$)"))
         app.add_handler(CallbackQueryHandler(ads_cancel_callback, pattern=r"^ads:cancel:"))
@@ -63,12 +63,12 @@ class AdsRouter(BaseRouter):
         app.add_handler(CallbackQueryHandler(ads_history_callback, pattern=r"^ads:history:"))
         app.add_handler(CallbackQueryHandler(ads_delivery_operation_callback, pattern=r"^ads:delivery:"))
         app.add_handler(CallbackQueryHandler(ads_pool_callback, pattern=r"^ads:(pool|pool_toggle):"))
-        
+
         # 注意：配置消息已被 MessageDispatcher 的 PrivateConfigHandler 统一处理
         # 此 MessageHandler 已移除，避免重复处理
         # app.add_handler(
         #     MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND, ads_create_config_message),
         #     group=1
         # )
-        
+
         log.debug(f"{self.name} router registered successfully")

@@ -11,7 +11,7 @@ async def create_lottery(
     session: AsyncSession,
     chat_id: int,
     created_by_user_id: int,
-    title: str,
+    *, title: str,
     draw_time,
     prizes: list[dict],
     description: str | None = None,
@@ -75,7 +75,7 @@ async def get_chat_lotteries(
     session: AsyncSession,
     chat_id: int,
     status: str | None = None,
-    lottery_type: str | None = None,
+    *, lottery_type: str | None = None,
 ) -> list[Lottery]:
     stmt = select(Lottery).where(Lottery.chat_id == chat_id)
     if status:

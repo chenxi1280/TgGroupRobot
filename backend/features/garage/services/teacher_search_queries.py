@@ -395,8 +395,8 @@ class TeacherSearchQueryMixin:
         session: AsyncSession,
         chat_id: int,
         latitude: float,
-        longitude: float,
-        *,
+        *, longitude: float,
+
         only_open_course: bool = True,
         keyword: str | None = None,
         limit: int = 10,
@@ -414,7 +414,7 @@ class TeacherSearchQueryMixin:
                 continue
             if keyword and not _teacher_keyword_matches(profile, user, keyword):
                 continue
-            distance = haversine_distance_km(latitude, longitude, float(profile.latitude), float(profile.longitude))
+            distance = haversine_distance_km(latitude, longitude, float(profile.latitude), lon2=float(profile.longitude))
             items.append(
                 {
                     "profile": profile,

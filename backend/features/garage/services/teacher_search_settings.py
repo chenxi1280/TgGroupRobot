@@ -162,7 +162,7 @@ class TeacherSearchSettingsMixin:
         session: AsyncSession,
         chat_id: int,
         kind: str,
-        keyword: str,
+        *, keyword: str,
     ) -> TeacherSearchSetting:
         field_map = {
             "open": ("attendance_open_keyword", "开课词"),

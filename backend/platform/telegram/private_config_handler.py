@@ -27,7 +27,7 @@ class PrivateConfigHandler:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         session: AsyncSession,
-        state: Any,
+        *, state: Any,
         message_text: str,
     ) -> None:
         """处理私聊配置消息
@@ -53,23 +53,23 @@ class PrivateConfigHandler:
         handler = self._config_handlers.get(state_type)
 
         if handler:
-            await self._execute_handler(handler, update, context, session, state, message_text, state_type)
+            await self._execute_handler(handler, update, context, session=session, state=state, message_text=message_text, state_type=state_type)
         else:
-            await self._handle_unknown_state(update, session, state, state_type)
+            await self._handle_unknown_state(update, session, state, state_type=state_type)
 
     async def _execute_handler(
         self,
         handler: ConfigHandler,
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
-        session: AsyncSession,
+        *, session: AsyncSession,
         state: Any,
         message_text: str,
         state_type: str,
     ) -> None:
         """执行配置处理器，包含统一错误处理"""
         try:
-            await handler(update, context, session, state, message_text)
+            await handler(update, context, session, state=state, message_text=message_text)
         except Exception as e:
             log.exception("private_config_handler_error", state_type=state_type, error=str(e))
             await self._send_error_message(update, f"配置处理出错: {str(e)}")
@@ -79,7 +79,7 @@ class PrivateConfigHandler:
         update: Update,
         session: AsyncSession,
         state: Any,
-        state_type: str,
+        *, state_type: str,
     ) -> None:
         """处理未知状态类型"""
         log.warning("private_config_handler_unknown_state", state_type=state_type)
@@ -105,7 +105,7 @@ class PrivateConfigHandler:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         session: AsyncSession,
-        state: Any,
+        *, state: Any,
         message_text: str,
     ) -> None:
-        await handle_quick_publish_input(update, context, session, state, message_text)
+        await handle_quick_publish_input(update, context, session, state=state, message_text=message_text)

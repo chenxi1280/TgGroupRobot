@@ -140,7 +140,7 @@ class PermissionPolicyService:
         context: ContextTypes.DEFAULT_TYPE | None,
         chat_id: int,
         user_id: int,
-        capability: str = "manage",
+        *, capability: str = "manage",
     ) -> bool:
         decision = await cls.evaluate(context, chat_id, user_id, capability=capability)
         return decision.allowed
@@ -151,7 +151,7 @@ class PermissionPolicyService:
         context: ContextTypes.DEFAULT_TYPE | None,
         chat_id: int,
         user_id: int,
-        capability: str = "manage",
+        *, capability: str = "manage",
     ) -> PermissionDecision:
         if is_bot_admin_user(user_id, context):
             return PermissionDecision(True, "bot_admin")
@@ -187,7 +187,7 @@ class PermissionPolicyService:
         context: ContextTypes.DEFAULT_TYPE | None,
         chat_id: int,
         user_id: int,
-        capability: str = "manage",
+        *, capability: str = "manage",
     ) -> tuple[bool, str | None]:
         """返回 (allowed, short_error_text)，方便 handler 统一短提示。"""
         decision = await cls.evaluate(context, chat_id, user_id, capability=capability)

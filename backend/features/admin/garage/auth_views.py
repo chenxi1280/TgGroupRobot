@@ -152,7 +152,7 @@ class GarageAuthViewsMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        page: int = 0,
+        *, page: int = 0,
     ) -> None:
         from backend.features.garage.services.garage_features_service import GarageAuthService
 
@@ -190,7 +190,7 @@ class GarageAuthViewsMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        page: int = 0,
+        *, page: int = 0,
     ) -> None:
         from backend.features.garage.services.garage_features_service import GarageAuthService
 

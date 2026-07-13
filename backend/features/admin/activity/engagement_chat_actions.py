@@ -9,7 +9,7 @@ class EngagementAdminChatActionsMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        callback_data: CallbackParser,
+        *, callback_data: CallbackParser,
         session,
     ) -> None:
         sub = callback_data.get(3)
@@ -87,8 +87,8 @@ class EngagementAdminChatActionsMixin:
                 context,
                 update.effective_user.id,
                 update.effective_user.id,
-                state_map[sub],
-                {"target_chat_id": chat_id},
+                state_type=state_map[sub],
+                payload={"target_chat_id": chat_id},
             )
             await session.commit()
             await self.message_helper.safe_edit(

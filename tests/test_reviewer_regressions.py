@@ -31,7 +31,7 @@ async def test_group_dispatcher_short_circuits_business_handlers_when_core_stops
     chat = SimpleNamespace(id=-1001)
     user = SimpleNamespace(id=42)
 
-    await dispatcher.handle(update, context, chat, user, "hello")
+    await dispatcher.handle(update, context, chat, user=user, message_text="hello")
 
     assert calls == ["core"]
 
@@ -73,7 +73,7 @@ async def test_group_lock_schedule_disabled_does_not_apply_permissions():
         group_lock_phrase_enabled=False,
     )
 
-    handled = await _process_group_lock_controls(context, chat, user, message, settings, False, "hello")
+    handled = await _process_group_lock_controls(context, chat, user, message=message, settings=settings, is_admin=False, message_text="hello")
 
     assert handled is False
     assert calls == []
@@ -108,7 +108,7 @@ async def test_group_lock_phrase_requires_promote_members():
         group_lock_close_phrase="关群了",
     )
 
-    handled = await _process_group_lock_controls(context, chat, user, message, settings, True, "关群了")
+    handled = await _process_group_lock_controls(context, chat, user, message=message, settings=settings, is_admin=True, message_text="关群了")
 
     assert handled is False
     assert calls == []

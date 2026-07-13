@@ -22,7 +22,7 @@ async def publish_auction(
     end_at: dt.datetime,
 ) -> AuctionItem:
     await ModuleSettingsService.ensure(session, chat_id=chat_id, user_id=creator_user_id)
-    await ensure_user(session, creator_user_id, None, None, None, None)
+    await ensure_user(session, creator_user_id, None, first_name=None, last_name=None, language_code=None)
     item = AuctionItem(
         chat_id=chat_id,
         creator_user_id=creator_user_id,

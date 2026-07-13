@@ -28,7 +28,7 @@ STATUS_LABELS = {
 
 
 class ScheduledMessageOperationsMixin:
-    async def show_occurrence_history(self, update, context, chat_id: int, task_key: str) -> None:
+    async def show_occurrence_history(self, update, context, chat_id: int, *, task_key: str) -> None:
         if not await self._check_permission(update, context, chat_id):
             await self.message_helper.safe_edit(update, text="❌ 需要管理员权限")
             return
@@ -54,11 +54,11 @@ class ScheduledMessageOperationsMixin:
             await self.message_helper.safe_edit(update, text="❌ 需要管理员权限")
             return
         try:
-            task_key = await self._apply_operation(context, chat_id, occurrence_id, action)
+            task_key = await self._apply_operation(context, chat_id, occurrence_id, action=action)
         except Exception as exc:
             await self.message_helper.safe_edit(update, text=f"❌ {build_public_error_text(exc)}")
             return
-        await self.show_occurrence_history(update, context, chat_id, task_key)
+        await self.show_occurrence_history(update, context, chat_id, task_key=task_key)
 
     async def confirm_uncertain_replay(self, update, context, *, chat_id: int, occurrence_id: int) -> None:
         text = "⚠️ 该次发送结果未知，重放可能产生重复消息。\n\n确认仍要人工重放吗？"
@@ -68,7 +68,7 @@ class ScheduledMessageOperationsMixin:
         )], [InlineKeyboardButton("取消", callback_data=f"sm:list:{chat_id}:0")]])
         await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
 
-    async def _apply_operation(self, context, chat_id: int, occurrence_id: int, action: str) -> str:
+    async def _apply_operation(self, context, chat_id: int, occurrence_id: int, *, action: str) -> str:
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
             if action == "retry":

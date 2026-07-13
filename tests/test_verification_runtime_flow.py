@@ -208,8 +208,8 @@ async def test_invite_notify_sends_for_new_invite_even_without_points_award(monk
         context,
         _InviteSession(),
         SimpleNamespace(id=-100123, title="测试群"),
-        _member(),
-        settings,
+        member=_member(),
+        settings=settings,
     )
 
     assert link.member_count == 1

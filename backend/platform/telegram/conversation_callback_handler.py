@@ -17,10 +17,10 @@ class PerUserConversationCallbackHandler(BaseHandler):
     def check_update(self, update: object) -> bool | object | None:
         return self._delegate.check_update(update)
 
-    async def handle_update(self, update, application, check_result, context) -> Any:
+    async def handle_update(self, update, application, check_result, *, context) -> Any:
         return await self._delegate.handle_update(
             update,
             application,
             check_result,
-            context,
+            context=context,
         )

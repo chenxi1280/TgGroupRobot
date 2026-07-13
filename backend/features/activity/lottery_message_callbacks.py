@@ -65,7 +65,7 @@ async def lottery_create_start_impl(
             )
             return
 
-        await handler.start_create_flow(update, context, target_chat_id, lottery_type, selection_mode, draw_trigger)
+        await handler.start_create_flow(update, context, target_chat_id, lottery_type=lottery_type, selection_mode=selection_mode, draw_trigger=draw_trigger)
         log.info("lottery_create_start_success")
     except Exception as exc:
         log.exception("lottery_create_start_error", error=str(exc))
@@ -107,10 +107,10 @@ async def lottery_message_handler_impl(
         return
 
 
-async def parse_lottery_config_impl(update: Update, context: ContextTypes.DEFAULT_TYPE, session, state: object, text: str) -> None:
+async def parse_lottery_config_impl(update: Update, context: ContextTypes.DEFAULT_TYPE, session, *, state: object, text: str) -> None:
     from backend.features.activity.lottery_creation import parse_lottery_config_message
 
-    await parse_lottery_config_message(update, context, session, state, text)
+    await parse_lottery_config_message(update, context, session, state=state, text=text)
 
 
 async def join_lottery_callback_impl(update: Update, context: ContextTypes.DEFAULT_TYPE, *, handler) -> None:

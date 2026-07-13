@@ -272,7 +272,7 @@ class AdsHandler(BaseHandler):
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         target_chat_id: int,
-        page: int = 0,
+        *, page: int = 0,
     ) -> None:
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
@@ -296,7 +296,7 @@ class AdsHandler(BaseHandler):
             reply_markup=ads_manage_keyboard(target_chat_id, current_item, page=current_page, total_pages=total_pages),
         )
 
-    async def show_detail(self, update: Update, context: ContextTypes.DEFAULT_TYPE, target_chat_id: int, item_id: int) -> None:
+    async def show_detail(self, update: Update, context: ContextTypes.DEFAULT_TYPE, target_chat_id: int, *, item_id: int) -> None:
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
             item = await get_rotation_item(session, item_id)
@@ -311,7 +311,7 @@ class AdsHandler(BaseHandler):
             reply_markup=ads_item_detail_keyboard(target_chat_id, item, rule),
         )
 
-    async def show_time_range(self, update: Update, context: ContextTypes.DEFAULT_TYPE, target_chat_id: int, item_id: int) -> None:
+    async def show_time_range(self, update: Update, context: ContextTypes.DEFAULT_TYPE, target_chat_id: int, *, item_id: int) -> None:
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
             item = await get_rotation_item(session, item_id)
@@ -552,7 +552,7 @@ async def ads_list_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     target_chat_id = await _resolve_ads_target_chat_id(update, context)
     if target_chat_id is None:
         return
-    await _ads_handler.show_list(update, context, target_chat_id, page)
+    await _ads_handler.show_list(update, context, target_chat_id, page=page)
 
 
 async def ads_stats_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -813,7 +813,7 @@ async def ads_item_time_callback(update: Update, context: ContextTypes.DEFAULT_T
     target_chat_id = await _resolve_ads_target_chat_id(update, context)
     if target_chat_id is None:
         return
-    await _ads_handler.show_time_range(update, context, target_chat_id, item_id)
+    await _ads_handler.show_time_range(update, context, target_chat_id, item_id=item_id)
 
 
 async def ads_cleanup_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

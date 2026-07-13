@@ -12,7 +12,7 @@ async def _process_rename_monitor(
     context: ContextTypes.DEFAULT_TYPE,
     chat,
     user,
-    settings,
+    *, settings,
     old_username: str | None,
     old_name: str,
 ) -> bool:

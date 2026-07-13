@@ -97,8 +97,8 @@ async def test_force_subscribe_normalizes_username_and_t_me_targets() -> None:
         _context(bot),
         _chat(),
         _user(),
-        message,
-        _settings(force_subscribe_bound_channel_2="https://t.me/channel_b"),
+        message=message,
+        settings=_settings(force_subscribe_bound_channel_2="https://t.me/channel_b"),
     )
 
     assert allowed is True
@@ -115,8 +115,8 @@ async def test_force_subscribe_rejects_legacy_numeric_target_without_blocking_me
         _context(bot),
         _chat(),
         _user(),
-        message,
-        _settings(force_subscribe_bound_channel_1="-100456"),
+        message=message,
+        settings=_settings(force_subscribe_bound_channel_1="-100456"),
     )
 
     assert allowed is True
@@ -134,8 +134,8 @@ async def test_force_subscribe_any_mode_allows_one_matching_target() -> None:
         _context(bot),
         _chat(),
         _user(),
-        message,
-        _settings(
+        message=message,
+        settings=_settings(
             force_subscribe_bound_channel_2="http://t.me/channel_b",
             force_subscribe_check_mode="any",
         ),
@@ -155,8 +155,8 @@ async def test_force_subscribe_deletes_and_warns_unsubscribed_member() -> None:
         _context(bot),
         _chat(),
         _user(),
-        message,
-        _settings(force_subscribe_not_subscribed_action="delete_and_warn"),
+        message=message,
+        settings=_settings(force_subscribe_not_subscribed_action="delete_and_warn"),
     )
 
     assert allowed is False
@@ -175,8 +175,8 @@ async def test_force_subscribe_mutes_and_warns_unsubscribed_member() -> None:
         _context(bot),
         _chat(),
         _user(),
-        _Message(),
-        _settings(force_subscribe_not_subscribed_action="mute"),
+        message=_Message(),
+        settings=_settings(force_subscribe_not_subscribed_action="mute"),
     )
 
     assert allowed is False
@@ -195,8 +195,8 @@ async def test_force_subscribe_all_mode_skips_inaccessible_target_when_valid_tar
         _context(bot),
         _chat(),
         _user(),
-        message,
-        _settings(
+        message=message,
+        settings=_settings(
             force_subscribe_bound_channel_2="@channel_b",
             force_subscribe_check_mode="all",
             force_subscribe_not_subscribed_action="delete_only",
@@ -218,8 +218,8 @@ async def test_force_subscribe_bare_username_is_config_issue_and_does_not_block(
         _context(bot),
         _chat(),
         _user(),
-        message,
-        _settings(force_subscribe_bound_channel_1="TgMgtPrd_bot"),
+        message=message,
+        settings=_settings(force_subscribe_bound_channel_1="TgMgtPrd_bot"),
     )
 
     assert allowed is True
@@ -237,8 +237,8 @@ async def test_force_subscribe_valid_target_still_blocks_unsubscribed_member() -
         _context(bot),
         _chat(),
         _user(),
-        message,
-        _settings(force_subscribe_not_subscribed_action="delete_only"),
+        message=message,
+        settings=_settings(force_subscribe_not_subscribed_action="delete_only"),
     )
 
     assert allowed is False
@@ -255,8 +255,8 @@ async def test_force_subscribe_config_issue_notifies_bot_admin_privately() -> No
         _context(bot, bot_admin_ids="7001"),
         _chat(),
         _user(),
-        message,
-        _settings(force_subscribe_bound_channel_1="TgMgtPrd_bot"),
+        message=message,
+        settings=_settings(force_subscribe_bound_channel_1="TgMgtPrd_bot"),
     )
 
     assert allowed is True
@@ -275,8 +275,8 @@ async def test_force_subscribe_restricted_member_with_is_member_true_is_allowed(
         _context(bot),
         _chat(),
         _user(),
-        _Message(),
-        _settings(),
+        message=_Message(),
+        settings=_settings(),
     )
 
     assert allowed is True

@@ -13,13 +13,13 @@ def _find_env_file() -> Path | None:
     # backend/platform/config/core/settings.py -> 项目根目录
     config_dir = Path(__file__).parent
     project_root = config_dir.parents[3]
-    
+
     # 按优先级查找
     for filename in [".env", "env"]:
         env_path = project_root / filename
         if env_path.exists():
             return env_path
-    
+
     return None
 
 
@@ -84,12 +84,12 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     # 查找 env 文件
     env_file = _find_env_file()
-    
+
     # 如果找到 env 文件，使用 load_dotenv 加载它到环境变量
     if env_file:
         # 加载 env 文件到环境变量，这样 Settings 就可以从环境变量读取
         load_dotenv(env_file, override=True)
-    
+
     # 尝试创建 Settings 实例（会从环境变量读取）
     try:
         return Settings()
@@ -98,20 +98,20 @@ def get_settings() -> Settings:
         for error in e.errors():
             error_loc = error.get("loc", ())
             error_type = error.get("type", "")
-            
+
             # 兼容不同的 loc 格式（元组或列表）
             loc_tuple = tuple(error_loc) if error_loc else ()
-            
+
             if loc_tuple == ("bot_token",) and error_type == "missing":
                 config_dir = Path(__file__).parent
                 project_root = config_dir.parent.parent.parent
                 env_file = _find_env_file()
                 example_file = project_root / "config" / "env.example"
-                
+
                 error_msg = "\n" + "=" * 60 + "\n"
                 error_msg += "配置错误：缺少必需的 BOT_TOKEN\n"
                 error_msg += "=" * 60 + "\n\n"
-                
+
                 if env_file is None:
                     error_msg += f"未找到环境配置文件（.env 或 env）。\n"
                     error_msg += f"请参考示例文件创建：{example_file}\n\n"
@@ -124,14 +124,14 @@ def get_settings() -> Settings:
                     error_msg += f"环境配置文件存在：{env_file}\n"
                     error_msg += f"但缺少 BOT_TOKEN 配置。\n"
                     error_msg += f"请在文件中添加：BOT_TOKEN=你的机器人令牌\n\n"
-                
+
                 error_msg += "如何获取 BOT_TOKEN：\n"
                 error_msg += "1. 在 Telegram 中搜索 @BotFather\n"
                 error_msg += "2. 发送 /newbot 命令创建新机器人\n"
                 error_msg += "3. 按照提示完成创建后，BotFather 会提供 BOT_TOKEN\n"
                 error_msg += "=" * 60 + "\n"
-                
+
                 raise ValueError(error_msg) from e
-        
+
         # 其他错误直接抛出
         raise

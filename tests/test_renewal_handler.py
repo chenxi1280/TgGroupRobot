@@ -97,7 +97,7 @@ async def test_renewal_code_message_handler_clears_state_and_reports_success(mon
     monkeypatch.setattr(renewal_handler, "_show_menu", fake_show)
     monkeypatch.setattr(renewal_handler, "redeem_renewal_card", fake_redeem)
 
-    await renewal_handler.renewal_code_message_handler(update, context, object(), state, "ABC123")
+    await renewal_handler.renewal_code_message_handler(update, context, object(), state=state, message_text="ABC123")
 
     assert calls == [(-1001, 42)]
     assert shown == [-1001]
@@ -130,7 +130,7 @@ async def test_renewal_code_message_handler_reports_failed_redeem(monkeypatch) -
     monkeypatch.setattr(renewal_handler, "_show_menu", fake_show)
     monkeypatch.setattr(renewal_handler, "redeem_renewal_card", fake_redeem)
 
-    await renewal_handler.renewal_code_message_handler(update, context, object(), state, "ABC123")
+    await renewal_handler.renewal_code_message_handler(update, context, object(), state=state, message_text="ABC123")
 
     assert clears == [(-1001, 42)]
     assert shown == [-1001]

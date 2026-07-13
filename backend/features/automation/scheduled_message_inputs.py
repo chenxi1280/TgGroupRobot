@@ -26,7 +26,7 @@ class ScheduledMessageInputMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         target_chat_id: int,
-        user_id: int,
+        *, user_id: int,
         text: str,
     ) -> None:
         log.info(
@@ -158,7 +158,7 @@ class ScheduledMessageInputMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         target_chat_id: int,
-        user_id: int,
+        *, user_id: int,
     ) -> None:
         if update.effective_message is None:
             return
@@ -199,7 +199,7 @@ class ScheduledMessageInputMixin:
                 return
 
             try:
-                await ScheduledMessageService.update_task_media(session, task_id, media_type, file_id)
+                await ScheduledMessageService.update_task_media(session, task_id, media_type, media_file_id=file_id)
                 await ConversationStateService.clear(session, state_chat_id, user_id)
                 await session.commit()
             except Exception as exc:

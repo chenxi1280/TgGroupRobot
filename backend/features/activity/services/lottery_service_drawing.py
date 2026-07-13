@@ -86,7 +86,7 @@ async def create_lottery_winner(
     session: AsyncSession,
     lottery_id: int,
     user_id: int,
-    prize_name: str,
+    *, prize_name: str,
     prize_index: int,
     points_reward: int = 0,
 ) -> LotteryWinner:
@@ -151,7 +151,7 @@ async def perform_random_draw(
             prize = _pop_prize_slot_by_name(remaining_prizes, prize_name)
             if prize is None:
                 continue
-            await ensure_user(session, user_id, None, None, None, None)
+            await ensure_user(session, user_id, None, first_name=None, last_name=None, language_code=None)
             winner = LotteryWinner(
                 lottery_id=lottery.id,
                 user_id=user_id,
@@ -172,7 +172,7 @@ async def perform_random_draw(
             if user_id in used_user_ids:
                 continue
             prize = remaining_prizes.pop(0)
-            await ensure_user(session, user_id, None, None, None, None)
+            await ensure_user(session, user_id, None, first_name=None, last_name=None, language_code=None)
             winner = LotteryWinner(
                 lottery_id=lottery.id,
                 user_id=user_id,
@@ -232,9 +232,9 @@ async def distribute_lottery_rewards(session: AsyncSession, lottery: Lottery, wi
                 session,
                 lottery.chat_id,
                 winner.user_id,
-                winner.points_reward,
-                PointsTxnType.lottery_win.value,
-                f"抽奖【{lottery.title}】中奖奖励",
+                amount=winner.points_reward,
+                txn_type=PointsTxnType.lottery_win.value,
+                reason=f"抽奖【{lottery.title}】中奖奖励",
             )
             if not success:
                 log.error(

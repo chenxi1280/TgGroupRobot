@@ -20,7 +20,7 @@ async def handle_new_member_limit_input(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session,
-    state,
+    *, state,
     message_text: str,
 ) -> None:
     if update.effective_user is None or update.effective_message is None:
@@ -60,7 +60,7 @@ async def handle_night_mode_input(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session,
-    state,
+    *, state,
     message_text: str,
 ) -> None:
     if update.effective_user is None or update.effective_message is None:
@@ -127,7 +127,7 @@ async def handle_command_config_input(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session,
-    state,
+    *, state,
     message_text: str,
 ) -> None:
     if update.effective_user is None or update.effective_message is None:
@@ -147,4 +147,4 @@ async def handle_command_config_input(
 
     await clear_admin_input_state(session, target_chat_id=target_chat_id, user_id=update.effective_user.id)
     await session.commit()
-    await admin_handler_instance()._show_command_config_detail(update, context, target_chat_id, command_key)
+    await admin_handler_instance()._show_command_config_detail(update, context, target_chat_id, command_key=command_key)

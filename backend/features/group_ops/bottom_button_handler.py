@@ -46,7 +46,7 @@ async def bottom_button_runtime_callback(update: Update, context: ContextTypes.D
         return
 
     try:
-        handled = await try_group_text_trigger(update, context, chat_id, payload)
+        handled = await try_group_text_trigger(update, context, chat_id, payload=payload)
     except Exception as exc:
         log.warning(
             "bottom_button_text_trigger_failed",

@@ -89,7 +89,7 @@ async def join_solitaire_callback(update: Update, context: ContextTypes.DEFAULT_
             return
 
         username = user.username or user.first_name or f"用户{user_id}"
-        result = await join_solitaire(session, solitaire_id, user_id, username, content="✅ 已参与")
+        result = await join_solitaire(session, solitaire_id, user_id, username=username, content="✅ 已参与")
         await session.commit()
 
         if result.success:
@@ -207,7 +207,7 @@ async def solitaire_join_message_handler(update: Update, context: ContextTypes.D
             )
         )
         if existing_result.scalar_one_or_none():
-            result = await update_entry(session, target_solitaire.id, user.id, message.text)
+            result = await update_entry(session, target_solitaire.id, user.id, content=message.text)
             if result.success:
                 await session.commit()
                 solitaire = await get_solitaire(session, target_solitaire.id)
@@ -226,7 +226,7 @@ async def solitaire_join_message_handler(update: Update, context: ContextTypes.D
         else:
             display_name = f"用户{user.id}"
 
-        result = await join_solitaire(session, target_solitaire.id, user.id, display_name, message.text)
+        result = await join_solitaire(session, target_solitaire.id, user.id, username=display_name, content=message.text)
         if result.success:
             await session.commit()
             async with db.session_factory() as new_session:

@@ -78,7 +78,7 @@ class AdsHandler(BaseHandler):
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         target_chat_id: int,
-        page: int = 0,
+        *, page: int = 0,
     ) -> None:
         """显示轮播广告列表"""
         db: Database = context.application.bot_data["db"]

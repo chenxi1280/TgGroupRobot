@@ -78,7 +78,7 @@ async def create_or_replace_challenge(
     session: AsyncSession,
     chat_id: int,
     user_id: int,
-    ttl_seconds: int,
+    *, ttl_seconds: int,
     verification_type: str = VerificationMode.button.value,
 ) -> VerificationChallenge:
     """
@@ -165,7 +165,7 @@ async def solve_by_token_scoped(
     session: AsyncSession,
     token: str,
     expected_chat_id: int | None = None,
-    expected_user_id: int | None = None,
+    *, expected_user_id: int | None = None,
 ) -> VerificationChallenge | None:
     """
     通过 token 验证（带 chat/user 归属校验）
@@ -212,7 +212,7 @@ async def solve_by_answer(
     session: AsyncSession,
     chat_id: int,
     user_id: int,
-    answer: str,
+    *, answer: str,
 ) -> VerificationChallenge | None:
     """
     通过答案验证（数学题/验证码模式）

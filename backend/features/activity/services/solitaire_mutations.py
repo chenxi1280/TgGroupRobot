@@ -22,7 +22,7 @@ async def create_solitaire(
     session: AsyncSession,
     chat_id: int,
     created_by_user_id: int,
-    title: str,
+    *, title: str,
     description: str | None = None,
     max_participants: int | None = None,
     points_required: int | None = None,
@@ -84,7 +84,7 @@ async def join_solitaire(
     session: AsyncSession,
     solitaire_id: int,
     user_id: int,
-    username: str | None,
+    *, username: str | None,
     content: str,
 ) -> JoinResult:
     """
@@ -158,7 +158,7 @@ async def update_entry(
     session: AsyncSession,
     solitaire_id: int,
     user_id: int,
-    content: str,
+    *, content: str,
 ) -> JoinResult:
     """
     更新参与内容

@@ -229,7 +229,7 @@ class TeacherSearchViewsMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        source_chat_id: int,
+        *, source_chat_id: int,
     ) -> None:
         from backend.platform.db.schema.models.core import TgChat
         from backend.features.garage.services.garage_features_service import TeacherSearchService
@@ -341,7 +341,7 @@ class TeacherSearchViewsMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        page: int = 0,
+        *, page: int = 0,
     ) -> None:
         from backend.features.garage.services.garage_features_service import GarageAuthService, TeacherSearchService
         from backend.features.garage.services.teacher_search_queries import teacher_attendance_status_label

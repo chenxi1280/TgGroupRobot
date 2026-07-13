@@ -86,7 +86,7 @@ class GarageAuthService:
         session: AsyncSession,
         storage_chat_id: int,
         user_id: int,
-        operator_user_id: int | None,
+        *, operator_user_id: int | None,
     ) -> GarageCertifiedTeacher:
         result = await session.execute(
             select(GarageCertifiedTeacher).where(
@@ -172,21 +172,21 @@ class GarageAuthService:
         session: AsyncSession,
         chat_id: int,
         operator_user_id: int,
-        raw: str,
+        *, raw: str,
     ) -> GarageCertifiedTeacher:
         user = await _resolve_user(session, raw)
         pool_chat_id = await GarageAuthService._get_teacher_pool_chat_id(session, chat_id)
-        return await GarageAuthService._upsert_teacher_for_chat(session, pool_chat_id, user.id, operator_user_id)
+        return await GarageAuthService._upsert_teacher_for_chat(session, pool_chat_id, user.id, operator_user_id=operator_user_id)
 
     @staticmethod
     async def add_teacher_by_user_id(
         session: AsyncSession,
         chat_id: int,
         user_id: int,
-        operator_user_id: int | None,
+        *, operator_user_id: int | None,
     ) -> GarageCertifiedTeacher:
         pool_chat_id = await GarageAuthService._get_teacher_pool_chat_id(session, chat_id)
-        return await GarageAuthService._upsert_teacher_for_chat(session, pool_chat_id, user_id, operator_user_id)
+        return await GarageAuthService._upsert_teacher_for_chat(session, pool_chat_id, user_id, operator_user_id=operator_user_id)
 
     @staticmethod
     async def remove_teacher(session: AsyncSession, chat_id: int, user_id: int) -> bool:
@@ -208,7 +208,7 @@ class GarageAuthService:
                 session,
                 pool_chat_id,
                 row.user_id,
-                row.certified_by_user_id or operator_user_id,
+                operator_user_id=row.certified_by_user_id or operator_user_id,
             )
             merged_count += 1
         return merged_count
@@ -230,7 +230,7 @@ class GarageAuthService:
                 session,
                 chat_id,
                 row.user_id,
-                row.certified_by_user_id or operator_user_id,
+                operator_user_id=row.certified_by_user_id or operator_user_id,
             )
         for row in local_rows:
             if row.user_id not in effective_user_ids:
@@ -256,7 +256,7 @@ class GarageAuthService:
         session: AsyncSession,
         chat_id: int,
         operator_user_id: int,
-        raw: str,
+        *, raw: str,
     ) -> GarageSpeechWhitelist:
         user = await _resolve_user(session, raw)
         result = await session.execute(

@@ -66,7 +66,7 @@ class AutoReplyMenuHandler(BaseHandler):
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         target_chat_id: int,
-        chat,
+        *, chat,
     ) -> None:
         """处理群组场景 - 显示菜单"""
         # 获取数据

@@ -13,7 +13,7 @@ async def handle_bottom_button_input(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session,
-    state,
+    *, state,
     message_text: str,
 ) -> None:
     from backend.platform.state.state_service import clear_user_state
@@ -30,8 +30,8 @@ async def handle_bottom_button_input(
         update,
         context,
         session,
-        state,
-        message_text,
+        state=state,
+        message_text=message_text,
         target_chat_id=target_chat_id,
     ):
         await update.effective_message.reply_text("当前底部按钮配置状态不支持该输入，请重新进入配置页面。")
@@ -41,7 +41,7 @@ async def handle_game_input(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session,
-    state,
+    *, state,
     message_text: str,
 ) -> None:
     from backend.platform.state.state_service import clear_user_state
@@ -57,8 +57,8 @@ async def handle_game_input(
         update,
         context,
         session,
-        state,
-        message_text,
+        state=state,
+        message_text=message_text,
         target_chat_id=target_chat_id,
     ):
         await update.effective_message.reply_text("当前游戏配置状态不支持该输入，请重新进入配置页面。")
@@ -68,7 +68,7 @@ async def handle_guess_input(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session,
-    state,
+    *, state,
     message_text: str,
 ) -> None:
     from backend.platform.state.state_service import clear_user_state, set_user_state
@@ -84,8 +84,8 @@ async def handle_guess_input(
         update,
         context,
         session,
-        state,
-        message_text,
+        state=state,
+        message_text=message_text,
         target_chat_id=target_chat_id,
     ):
         await update.effective_message.reply_text("当前竞猜配置状态不支持该输入，请重新进入配置页面。")
@@ -95,7 +95,7 @@ async def handle_engagement_input(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     session,
-    state,
+    *, state,
     message_text: str,
 ) -> None:
     if update.effective_user is None or update.effective_message is None:
@@ -109,8 +109,8 @@ async def handle_engagement_input(
         update,
         context,
         session,
-        state,
-        message_text,
+        state=state,
+        message_text=message_text,
         target_chat_id=target_chat_id,
     ):
         await update.effective_message.reply_text("当前促活工具配置状态不支持该输入，请重新进入配置页面。")

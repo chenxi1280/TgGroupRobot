@@ -143,7 +143,7 @@ class VerificationViewsMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        mode: str,
+        *, mode: str,
     ) -> None:
         if mode == "math":
             await self._show_verification_math_detail(update, context, chat_id)

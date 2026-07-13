@@ -18,9 +18,9 @@ async def handle_guess_admin_input(
     update,
     context,
     session,
-    state,
+    *, state,
     message_text: str,
-    *,
+
     target_chat_id: int,
 ) -> bool:
     if update.effective_user is None or update.effective_message is None:
@@ -112,7 +112,7 @@ async def handle_guess_admin_input(
 
     await _save_draft()
     await session.commit()
-    await admin_handler_instance()._show_guess_create_menu(update, context, target_chat_id, draft)
+    await admin_handler_instance()._show_guess_create_menu(update, context, target_chat_id, draft=draft)
     return True
 
 

@@ -121,7 +121,7 @@ class ConversationStateService:
         session: AsyncSession,
         chat_id: int,
         user_id: int,
-        state_type: str,
+        *, state_type: str,
         state_data: dict | None = None,
         expire_at: dt.datetime | None = None,
     ) -> ConversationState:
@@ -234,7 +234,7 @@ async def set_user_state(
     session: AsyncSession,
     chat_id: int,
     user_id: int,
-    state_type: str,
+    *, state_type: str,
     state_data: dict | None = None,
     expire_at: dt.datetime | None = None,
 ) -> ConversationState:
@@ -242,8 +242,8 @@ async def set_user_state(
         session,
         chat_id,
         user_id,
-        state_type,
-        state_data,
+        state_type=state_type,
+        state_data=state_data,
         expire_at=expire_at,
     )
 

@@ -77,7 +77,7 @@ class PointsOverviewViewsMixin:
         async with db.session_factory() as session:
             item = await PointsExtendedService.create_custom_point_type(session, chat_id, update.effective_user.id)
             await session.commit()
-        await self._show_custom_point_detail(update, context, chat_id, item.id)
+        await self._show_custom_point_detail(update, context, chat_id, type_id=item.id)
 
     async def _show_points_level_menu(
         self,
@@ -139,4 +139,4 @@ class PointsOverviewViewsMixin:
         async with db.session_factory() as session:
             level = await PointsExtendedService.create_level(session, chat_id)
             await session.commit()
-        await self._show_points_level_detail(update, context, chat_id, level.id)
+        await self._show_points_level_detail(update, context, chat_id, level_id=level.id)
