@@ -1003,6 +1003,15 @@ CREATE TABLE IF NOT EXISTS bot.verification_challenges (
     question TEXT,                                               -- 验证问题（数学题等）
     answer VARCHAR(64),                                          -- 答案
     timeout_handled BOOLEAN NOT NULL DEFAULT FALSE,              -- 超时是否已处理（防止重复处理）
+    timeout_status VARCHAR(32) NOT NULL DEFAULT 'pending',       -- 超时执行状态
+    timeout_action VARCHAR(16),                                  -- 本次超时动作快照
+    timeout_attempts INTEGER NOT NULL DEFAULT 0,                  -- 已创建执行次数
+    timeout_next_retry_at TIMESTAMPTZ,                            -- 下次允许重试时间
+    timeout_lease_until TIMESTAMPTZ,                              -- worker 租约截止时间
+    timeout_send_started_at TIMESTAMPTZ,                          -- Telegram 调用开始时间
+    timeout_last_error TEXT,                                     -- 最近错误
+    timeout_completed_at TIMESTAMPTZ,                             -- 终态完成时间
+    timeout_replay_of_attempt_id INTEGER,                         -- 管理员确认重放的来源 attempt
     created_at TIMESTAMPTZ NOT NULL,                              -- 记录创建时间（带时区）
     CONSTRAINT fk_verification_challenges_chat_id FOREIGN KEY (chat_id) 
         REFERENCES bot.tg_chats(id) ON DELETE CASCADE,                -- 外键约束：删除群组时级联删除验证记录
@@ -1022,6 +1031,8 @@ COMMENT ON COLUMN bot.verification_challenges.verification_type IS '验证类型
 COMMENT ON COLUMN bot.verification_challenges.question IS '验证问题，用于数学题模式等';
 COMMENT ON COLUMN bot.verification_challenges.answer IS '验证答案，用于验证用户输入';
 COMMENT ON COLUMN bot.verification_challenges.timeout_handled IS '超时是否已处理标志，用于防止定时任务重复处理超时验证';
+COMMENT ON COLUMN bot.verification_challenges.timeout_status IS '超时执行状态：pending/processing/retryable_failed/succeeded/permanent_failed/uncertain/cancelled';
+COMMENT ON COLUMN bot.verification_challenges.timeout_replay_of_attempt_id IS '管理员确认重放时关联的原执行记录 ID';
 COMMENT ON COLUMN bot.verification_challenges.created_at IS '验证记录创建时间';
 
 -- 创建索引以优化查询性能
@@ -1029,6 +1040,31 @@ CREATE INDEX IF NOT EXISTS ix_verification_challenges_chat_id ON bot.verificatio
 CREATE INDEX IF NOT EXISTS ix_verification_challenges_user_id ON bot.verification_challenges(user_id);
 CREATE INDEX IF NOT EXISTS ix_verification_challenges_token ON bot.verification_challenges(token);
 CREATE INDEX IF NOT EXISTS ix_verification_challenges_expires_at ON bot.verification_challenges(expires_at);
+CREATE INDEX IF NOT EXISTS ix_verification_timeout_due ON bot.verification_challenges(timeout_status, timeout_next_retry_at, timeout_lease_until);
+
+-- 验证超时执行历史：每次实际调用或显式重放保留独立记录
+CREATE TABLE IF NOT EXISTS bot.verification_timeout_attempts (
+    id SERIAL PRIMARY KEY,
+    challenge_id INTEGER NOT NULL,
+    attempt_no INTEGER NOT NULL,
+    status VARCHAR(32) NOT NULL,
+    action VARCHAR(16) NOT NULL,
+    lease_until TIMESTAMPTZ,
+    send_started_at TIMESTAMPTZ,
+    error_code VARCHAR(64),
+    error_message TEXT,
+    completed_at TIMESTAMPTZ,
+    replay_of_id INTEGER,
+    created_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT fk_verification_timeout_attempt_challenge FOREIGN KEY (challenge_id)
+        REFERENCES bot.verification_challenges(id) ON DELETE CASCADE,
+    CONSTRAINT fk_verification_timeout_attempt_replay FOREIGN KEY (replay_of_id)
+        REFERENCES bot.verification_timeout_attempts(id) ON DELETE SET NULL,
+    CONSTRAINT uq_verification_timeout_attempt_no UNIQUE (challenge_id, attempt_no)
+);
+
+CREATE INDEX IF NOT EXISTS ix_verification_timeout_attempt_status_created
+    ON bot.verification_timeout_attempts(status, created_at);
 
 -- ============================================
 -- 10. 订阅套餐表 (subscription_plans)

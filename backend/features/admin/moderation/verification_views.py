@@ -92,6 +92,7 @@ class VerificationViewsMixin:
             [InlineKeyboardButton("👻 垃圾拦截", callback_data=f"adm:vfy_home:{chat_id}:spam")],
             [InlineKeyboardButton("🛡️ 进群自助审核", callback_data=f"adm:vfy_home:{chat_id}:self_review")],
             [InlineKeyboardButton("🚧 禁止批量进群", callback_data=f"adm:vfy_home:{chat_id}:burst")],
+            [InlineKeyboardButton("⚠️ 超时失败任务", callback_data=f"adm:vfy_home:{chat_id}:timeouts")],
             [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
         ]
         keyboard = InlineKeyboardMarkup(buttons)

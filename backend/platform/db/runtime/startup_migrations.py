@@ -170,6 +170,25 @@ GAME_SETTINGS_COMPAT_SQL: tuple[str, ...] = (
     "ALTER TABLE bot.game_settings ADD COLUMN IF NOT EXISTS points_source_chat_id BIGINT",
 )
 
+VERIFICATION_CHALLENGES_COMPAT_SQL: tuple[str, ...] = (
+    "ALTER TABLE bot.verification_challenges ADD COLUMN IF NOT EXISTS timeout_status VARCHAR(32) NOT NULL DEFAULT 'pending'",
+    "ALTER TABLE bot.verification_challenges ADD COLUMN IF NOT EXISTS timeout_action VARCHAR(16)",
+    "ALTER TABLE bot.verification_challenges ADD COLUMN IF NOT EXISTS timeout_attempts INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE bot.verification_challenges ADD COLUMN IF NOT EXISTS timeout_next_retry_at TIMESTAMPTZ",
+    "ALTER TABLE bot.verification_challenges ADD COLUMN IF NOT EXISTS timeout_lease_until TIMESTAMPTZ",
+    "ALTER TABLE bot.verification_challenges ADD COLUMN IF NOT EXISTS timeout_send_started_at TIMESTAMPTZ",
+    "ALTER TABLE bot.verification_challenges ADD COLUMN IF NOT EXISTS timeout_last_error TEXT",
+    "ALTER TABLE bot.verification_challenges ADD COLUMN IF NOT EXISTS timeout_completed_at TIMESTAMPTZ",
+    "ALTER TABLE bot.verification_challenges ADD COLUMN IF NOT EXISTS timeout_replay_of_attempt_id INTEGER",
+    """
+    UPDATE bot.verification_challenges
+    SET timeout_status = 'succeeded',
+        timeout_completed_at = COALESCE(timeout_completed_at, created_at)
+    WHERE timeout_handled = TRUE
+      AND timeout_status <> 'succeeded'
+    """.strip(),
+)
+
 RENEWAL_CARD_KEYS_COMPAT_SQL: tuple[str, ...] = (
     "ALTER TABLE bot.renewal_card_keys ADD COLUMN IF NOT EXISTS batch_id INTEGER REFERENCES bot.renewal_card_key_batches(id) ON DELETE SET NULL",
     "ALTER TABLE bot.renewal_card_keys ADD COLUMN IF NOT EXISTS card_code_plain VARCHAR(128)",
@@ -191,6 +210,7 @@ COMPATIBILITY_MIGRATIONS: dict[str, tuple[str, ...]] = {
     "scheduled_message_tasks": SCHEDULED_MESSAGE_COMPAT_SQL,
     "ad_campaigns": AD_CAMPAIGNS_COMPAT_SQL,
     "game_settings": GAME_SETTINGS_COMPAT_SQL,
+    "verification_challenges": VERIFICATION_CHALLENGES_COMPAT_SQL,
     "renewal_card_keys": RENEWAL_CARD_KEYS_COMPAT_SQL,
 }
 

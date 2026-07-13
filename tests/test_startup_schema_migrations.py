@@ -55,6 +55,8 @@ async def test_run_startup_schema_migrations_executes_known_compat_patches(monke
         "scheduled_message_tasks",
         "ad_campaigns",
         "game_settings",
+        "verification_challenges",
+        "verification_timeout_attempts",
     })
     engine = FakeEngine(inspector)
 
@@ -78,6 +80,11 @@ async def test_run_startup_schema_migrations_executes_known_compat_patches(monke
     assert any("CREATE UNIQUE INDEX IF NOT EXISTS uq_smt_short_id ON bot.scheduled_message_tasks(short_id)" in sql for sql in executed_sql)
     assert any("ALTER TABLE bot.ad_campaigns ADD COLUMN IF NOT EXISTS sort_order" in sql for sql in executed_sql)
     assert any("ALTER TABLE bot.game_settings ADD COLUMN IF NOT EXISTS points_source_chat_id" in sql for sql in executed_sql)
+    assert any("ALTER TABLE bot.verification_challenges ADD COLUMN IF NOT EXISTS timeout_status" in sql for sql in executed_sql)
+    assert any("ADD COLUMN IF NOT EXISTS timeout_replay_of_attempt_id" in sql for sql in executed_sql)
+    assert any("UPDATE bot.verification_challenges SET timeout_status = 'succeeded'" in sql for sql in executed_sql)
+    assert any("CREATE INDEX IF NOT EXISTS ix_verification_timeout_due" in sql for sql in executed_sql)
+    assert any("CREATE UNIQUE INDEX IF NOT EXISTS uq_verification_timeout_attempt_no" in sql for sql in executed_sql)
 
 
 @pytest.mark.asyncio
@@ -128,3 +135,13 @@ def test_init_sql_adds_compat_columns_before_column_comments() -> None:
     assert ("chat_settings", "verification_cover_media_type") in checked_columns
     assert ("ad_campaigns", "buttons") in checked_columns
     assert ("scheduled_message_tasks", "short_id") in checked_columns
+
+
+def test_init_sql_contains_verification_timeout_state_and_attempt_history() -> None:
+    init_sql = (PROJECT_ROOT / "sql" / "init.sql").read_text(encoding="utf-8")
+
+    assert "timeout_status VARCHAR(32) NOT NULL DEFAULT 'pending'" in init_sql
+    assert "timeout_replay_of_attempt_id INTEGER" in init_sql
+    assert "CREATE TABLE IF NOT EXISTS bot.verification_timeout_attempts" in init_sql
+    assert "CONSTRAINT uq_verification_timeout_attempt_no" in init_sql
+    assert "CREATE INDEX IF NOT EXISTS ix_verification_timeout_due" in init_sql

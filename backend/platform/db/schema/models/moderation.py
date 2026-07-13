@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import datetime as dt
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.platform.db.runtime.base import Base
+from backend.platform.delivery import DeliveryStatus
 from backend.platform.db.schema.models.enums import (
     AutoReplyMatchType,
     BannedWordMatchType,
@@ -54,6 +55,12 @@ class VerificationChallenge(Base):
     __tablename__ = "verification_challenges"
     __table_args__ = (
         UniqueConstraint("chat_id", "user_id", name="uq_verification_active"),
+        Index(
+            "ix_verification_timeout_due",
+            "timeout_status",
+            "timeout_next_retry_at",
+            "timeout_lease_until",
+        ),
         {"schema": "bot"},
     )
 
@@ -67,6 +74,59 @@ class VerificationChallenge(Base):
     question: Mapped[str | None] = mapped_column(Text, nullable=True)
     answer: Mapped[str | None] = mapped_column(String(64), nullable=True)
     timeout_handled: Mapped[bool] = mapped_column(Boolean, default=False)
+    timeout_status: Mapped[str] = mapped_column(
+        String(32),
+        default=DeliveryStatus.pending.value,
+        server_default=DeliveryStatus.pending.value,
+    )
+    timeout_action: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    timeout_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    timeout_next_retry_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    timeout_lease_until: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    timeout_send_started_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    timeout_last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    timeout_completed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    timeout_replay_of_attempt_id: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC))
+
+
+class VerificationTimeoutAttempt(Base):
+    __tablename__ = "verification_timeout_attempts"
+    __table_args__ = (
+        UniqueConstraint(
+            "challenge_id",
+            "attempt_no",
+            name="uq_verification_timeout_attempt_no",
+        ),
+        Index(
+            "ix_verification_timeout_attempt_status_created",
+            "status",
+            "created_at",
+        ),
+        {"schema": "bot"},
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    challenge_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("bot.verification_challenges.id", ondelete="CASCADE"),
+    )
+    attempt_no: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(32))
+    action: Mapped[str] = mapped_column(String(16))
+    lease_until: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    send_started_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    completed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    replay_of_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("bot.verification_timeout_attempts.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC))
 
 

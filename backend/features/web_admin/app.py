@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from io import BytesIO
 from pathlib import Path
-from typing import AsyncIterator
-
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
@@ -17,7 +15,6 @@ from backend.features.web_admin.announcement_service import (
 from backend.features.web_admin.auth_service import (
     SESSION_COOKIE_NAME,
     append_audit,
-    get_account_by_session_token,
     hash_password,
     login_admin,
     logout_session,
@@ -35,6 +32,9 @@ from backend.features.web_admin.card_service import (
     rows_for_export,
     void_cards,
 )
+from backend.features.web_admin.dependencies import admin_session as _session
+from backend.features.web_admin.dependencies import current_admin as _current_admin
+from backend.features.web_admin.verification_timeout_router import router as verification_timeout_router
 from backend.platform.config.core.settings import Settings
 from backend.platform.db.runtime.session import Database
 from backend.platform.db.schema.models.core import AdminAccount, AdminAuditLog, AppSetting
@@ -103,23 +103,6 @@ PLATFORM_CONFIG_KEYS = {
 }
 
 
-async def _session(request: Request) -> AsyncIterator[AsyncSession]:
-    db: Database = request.app.state.db
-    async with db.session_factory() as session:
-        yield session
-
-
-async def _current_admin(
-    request: Request,
-    session: AsyncSession = Depends(_session),
-) -> AdminAccount:
-    token = request.cookies.get(SESSION_COOKIE_NAME)
-    account = await get_account_by_session_token(session, token)
-    if account is None:
-        raise HTTPException(status_code=401, detail="请先登录后台")
-    return account
-
-
 def _ok(data=None, message: str = "ok") -> dict:
     return {"success": True, "message": message, "data": data}
 
@@ -150,6 +133,7 @@ def create_admin_web_app(db: Database, settings: Settings) -> FastAPI:
     app = FastAPI(title="TgGroupRobot Admin", docs_url=None, redoc_url=None)
     app.state.db = db
     app.state.settings = settings
+    app.include_router(verification_timeout_router)
 
     @app.get("/admin", response_class=HTMLResponse)
     @app.get("/admin/", response_class=HTMLResponse)

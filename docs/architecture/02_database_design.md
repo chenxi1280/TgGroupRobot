@@ -90,8 +90,26 @@
 - `token` VARCHAR(64)
 - `expires_at` TIMESTAMPTZ
 - `solved` BOOL
+- `timeout_status` VARCHAR(32)：`pending / processing / retryable_failed / succeeded / permanent_failed / uncertain / cancelled`
+- `timeout_action` VARCHAR(16)
+- `timeout_attempts` INT
+- `timeout_next_retry_at / timeout_lease_until / timeout_send_started_at / timeout_completed_at` TIMESTAMPTZ
+- `timeout_last_error` TEXT
+- `timeout_replay_of_attempt_id` INT
 - `created_at` TIMESTAMPTZ
 - UNIQUE(`chat_id`,`user_id`)
+
+### `verification_timeout_attempts`
+- `id` INT PK
+- `challenge_id` INT FK -> `verification_challenges.id`
+- `attempt_no` INT，与 `challenge_id` 组成唯一键
+- `status` VARCHAR(32)
+- `action` VARCHAR(16)
+- `lease_until / send_started_at / completed_at / created_at` TIMESTAMPTZ
+- `error_code` VARCHAR(64)
+- `error_message` TEXT
+- `replay_of_id` INT FK -> `verification_timeout_attempts.id`
+- 用途：追加保存每次 Telegram 调用与管理员确认重放证据，不覆盖不确定结果。
 
 ### `subscription_plans`
 - `id` INT PK
@@ -150,7 +168,6 @@
 - **群 + 用户** 0/1 **验证挑战**（`verification_challenges`）
 - **群** 0/1 **订阅**（`chat_subscriptions`）指向 **套餐**（`subscription_plans`）
 - **群** 1:N **广告活动**（`ad_campaigns`）
-
 
 
 

@@ -32,6 +32,7 @@ from backend.platform.db.schema.models.moderation import (  # noqa: F401
     ModerationWarning,
     ModerationViolation,
     VerificationChallenge,
+    VerificationTimeoutAttempt,
 )
 from backend.platform.db.schema.models.points import (  # noqa: F401
     CustomPointAccount,

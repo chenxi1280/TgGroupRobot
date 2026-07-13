@@ -193,7 +193,48 @@ def _full_tables() -> dict[str, dict]:
             },
             "uniques": [{"name": "uq_moderation_warnings_chat_user", "column_names": ["chat_id", "user_id"]}],
         },
-        "verification_challenges": {"columns": {"id", "chat_id", "user_id", "token", "expires_at", "solved", "verification_type", "question", "answer", "timeout_handled", "created_at"}},
+        "verification_challenges": {
+            "columns": {
+                "id", "chat_id", "user_id", "token", "expires_at", "solved",
+                "verification_type", "question", "answer", "timeout_handled",
+                "timeout_status", "timeout_action", "timeout_attempts",
+                "timeout_next_retry_at", "timeout_lease_until",
+                "timeout_send_started_at", "timeout_last_error",
+                "timeout_completed_at", "created_at",
+                "timeout_replay_of_attempt_id",
+            },
+            "indexes": [
+                {
+                    "name": "ix_verification_timeout_due",
+                    "column_names": [
+                        "timeout_status",
+                        "timeout_next_retry_at",
+                        "timeout_lease_until",
+                    ],
+                    "unique": False,
+                },
+            ],
+        },
+        "verification_timeout_attempts": {
+            "columns": {
+                "id", "challenge_id", "attempt_no", "status", "action",
+                "lease_until", "send_started_at", "error_code", "error_message",
+                "completed_at", "replay_of_id", "created_at",
+            },
+            "indexes": [
+                {
+                    "name": "ix_verification_timeout_attempt_status_created",
+                    "column_names": ["status", "created_at"],
+                    "unique": False,
+                },
+            ],
+            "uniques": [
+                {
+                    "name": "uq_verification_timeout_attempt_no",
+                    "column_names": ["challenge_id", "attempt_no"],
+                },
+            ],
+        },
         "admin_accounts": {
             "columns": {
                 "id", "username", "password_hash", "display_name", "status",

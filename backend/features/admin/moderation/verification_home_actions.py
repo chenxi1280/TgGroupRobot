@@ -32,6 +32,15 @@ class VerificationHomeActionsMixin:
         if section == "burst":
             await self._handle_join_burst_guard_action(update, context, chat_id, action, key, db)
             return
+        if section == "timeouts":
+            await self._handle_verification_timeout_action(
+                update,
+                context,
+                chat_id=chat_id,
+                action=action,
+                challenge_key=key,
+            )
+            return
 
         await self._show_verification_menu(update, context, chat_id)
 

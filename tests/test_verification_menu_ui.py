@@ -5,7 +5,11 @@ from types import SimpleNamespace
 import pytest
 
 from backend.features.admin import admin_handler
-from backend.features.admin.moderation import verification_home_actions, verification_views
+from backend.features.admin.moderation import (
+    verification_home_actions,
+    verification_timeout_operations,
+    verification_views,
+)
 from backend.shared.callback_parser import CallbackParser
 
 
@@ -34,7 +38,7 @@ class _FakeDb:
 
 
 @pytest.mark.asyncio
-async def test_verification_menu_shows_four_top_level_entries(monkeypatch):
+async def test_verification_menu_shows_timeout_operations_entry(monkeypatch):
     rendered: dict[str, object] = {}
 
     async def fake_set_current_chat(*args, **kwargs):
@@ -73,11 +77,56 @@ async def test_verification_menu_shows_four_top_level_entries(monkeypatch):
         ["👻 垃圾拦截"],
         ["🛡️ 进群自助审核"],
         ["🚧 禁止批量进群"],
+        ["⚠️ 超时失败任务"],
         ["🔙 返回"],
     ]
     assert "进群验证 - 新人未通过验证则进行限制" in rendered["text"]
     assert "进群验证：简单加减法" in rendered["text"]
     assert "进群自助审核：启动" in rendered["text"]
+
+
+@pytest.mark.asyncio
+async def test_verification_timeout_page_lists_retry_cancel_and_replay_actions(monkeypatch):
+    rendered: dict[str, object] = {}
+    show = getattr(admin_handler._admin_handler, "_show_verification_timeout_tasks", None)
+
+    assert show is not None
+
+    async def fake_list(session, filters):
+        return (
+            SimpleNamespace(
+                id=7,
+                user_id=99,
+                status="permanent_failed",
+                action="mute",
+                attempts=2,
+                last_error="telegram_forbidden",
+            ),
+            SimpleNamespace(
+                id=8,
+                user_id=100,
+                status="uncertain",
+                action="kick",
+                attempts=1,
+                last_error="network",
+            ),
+        )
+
+    async def fake_safe_edit(update, text, reply_markup):
+        rendered["text"] = text
+        rendered["keyboard"] = reply_markup.inline_keyboard
+
+    monkeypatch.setattr(verification_timeout_operations, "list_timeout_tasks", fake_list)
+    monkeypatch.setattr(admin_handler._admin_handler.message_helper, "safe_edit", fake_safe_edit)
+
+    update = SimpleNamespace()
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(_FakeSession())}))
+    await show(update, context, chat_id=-1001)
+
+    callback_rows = [[button.callback_data for button in row] for row in rendered["keyboard"]]
+    assert ["adm:vfy_home:-1001:timeouts:retry:7", "adm:vfy_home:-1001:timeouts:cancel:7"] in callback_rows
+    assert ["adm:vfy_home:-1001:timeouts:replay:8", "adm:vfy_home:-1001:timeouts:cancel:8"] in callback_rows
+    assert "telegram_forbidden" in rendered["text"]
 
 
 @pytest.mark.asyncio

@@ -184,6 +184,22 @@ REQUIRED_INDEXES: tuple[RequiredIndex, ...] = (
         unique=True,
     ),
     RequiredIndex(
+        table_name="verification_challenges",
+        index_name="ix_verification_timeout_due",
+        columns=("timeout_status", "timeout_next_retry_at", "timeout_lease_until"),
+    ),
+    RequiredIndex(
+        table_name="verification_timeout_attempts",
+        index_name="uq_verification_timeout_attempt_no",
+        columns=("challenge_id", "attempt_no"),
+        unique=True,
+    ),
+    RequiredIndex(
+        table_name="verification_timeout_attempts",
+        index_name="ix_verification_timeout_attempt_status_created",
+        columns=("status", "created_at"),
+    ),
+    RequiredIndex(
         table_name="engagement_chat_stats",
         index_name="uq_engagement_chat_stats_daily",
         columns=("chat_id", "user_id", "biz_date"),

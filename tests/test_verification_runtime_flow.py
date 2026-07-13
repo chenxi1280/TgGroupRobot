@@ -463,40 +463,25 @@ async def test_math_wrong_answer_keeps_challenge_when_punishment_fails(monkeypat
 
 
 @pytest.mark.asyncio
-async def test_timeout_none_unrestricts_and_releases_challenge(monkeypatch):
-    challenge = SimpleNamespace(
-        verification_type="math",
-        question="1 + 1 = ?",
-        chat_id=-100123,
-        user_id=99,
-        solved=False,
-        timeout_handled=False,
+async def test_timeout_scheduler_delegates_to_reliable_worker(monkeypatch):
+    calls: list[str] = []
+
+    class _Worker:
+        async def run(self):
+            calls.append("run")
+            return SimpleNamespace(claimed=0, succeeded=0, failed=0, recovered=0)
+
+    monkeypatch.setattr(
+        verification_timeout_task,
+        "_build_timeout_worker",
+        lambda app: _Worker(),
+        raising=False,
     )
-    settings = _settings(verification_timeout_action="none")
-    restrict_calls: list[dict] = []
 
-    async def fake_expired(session):
-        return [challenge]
-
-    async def fake_get_chat_settings(session, chat_id: int):
-        return settings
-
-    class _BotWithRestrict:
-        async def restrict_chat_member(self, **kwargs):
-            restrict_calls.append(kwargs)
-
-    monkeypatch.setattr(verification_timeout_task, "get_expired_challenges", fake_expired)
-    monkeypatch.setattr(verification_timeout_task, "get_chat_settings", fake_get_chat_settings)
-
-    app = SimpleNamespace(bot_data={"db": _Db()}, bot=_BotWithRestrict())
-
+    app = SimpleNamespace(bot_data={"db": _Db()}, bot=_Bot())
     await verification_timeout_task.check_verification_timeouts(app)
 
-    assert challenge.solved is True
-    assert challenge.timeout_handled is True
-    assert restrict_calls[0]["chat_id"] == -100123
-    assert restrict_calls[0]["user_id"] == 99
-    assert restrict_calls[0]["permissions"].can_send_messages is True
+    assert calls == ["run"]
 
 
 async def _async_append(target: list[str], value: str) -> None:
