@@ -21,6 +21,42 @@ from backend.shared.ui.message_config_panel import (
 _FORMAT_TASK_DETAIL_THRESHOLD_23 = 23
 
 
+def _task_detail_footer(task: ScheduledMessageTask, *, has_payload: bool) -> list[str]:
+    period = (
+        "全天"
+        if task.day_start_hour == 0 and task.day_end_hour == _FORMAT_TASK_DETAIL_THRESHOLD_23
+        else f"{task.day_start_hour:02d}:00-{task.day_end_hour:02d}:00"
+    )
+    lines = [
+        f"⚙️ 状态: {'✅ 启用' if task.enabled else '❌ 关闭'}",
+        f"📌 置顶: {'✅ 启用' if task.pin_message else '❌ 关闭'}",
+        f"🧹 删除上条: {'✅ 启用' if task.delete_previous else '❌ 关闭'}",
+        f"🕐 时段: {period}",
+    ]
+    if task.next_run_at:
+        lines.append(f"⏭️ 下次: {format_timestamp(task.next_run_at)}")
+    lines.extend(format_completion_lines(
+        [("文本或封面", has_payload)],
+        next_step="预览效果 → 启用",
+        test_step="到目标群确认定时发送结果",
+    ))
+    return lines
+
+
+def _task_detail_fields(task: ScheduledMessageTask, *, title: str, has_media: bool) -> list[PanelField]:
+    start_text = format_timestamp(task.start_at) if task.start_at else WAITING_VALUE
+    end_text = format_timestamp(task.end_at) if task.end_at else WAITING_VALUE
+    return [
+        PanelField("📮", "标题备注", title),
+        PanelField("🏞️", "封面设置", media_status(has_media=has_media, media_type=task.media_type)),
+        PanelField("📄", "文本内容", summarize_text(task.text, limit=180)),
+        PanelField("⭕", "设置按钮", button_status(task.buttons)),
+        PanelField("⏰", "开始时间", start_text),
+        PanelField("⏰", "结束时间", end_text),
+        PanelField("⌛", "重复间隔", get_interval_description(task.repeat_interval_min)),
+    ]
+
+
 
 class ScheduledMessageListMixin:
     async def show_list(
@@ -142,38 +178,9 @@ class ScheduledMessageListMixin:
             title_value = WAITING_VALUE
         has_media = task.media_type != "none" and bool(task.media_file_id)
         has_text = bool(str(task.text or "").strip())
-        start_text = format_timestamp(task.start_at) if task.start_at else WAITING_VALUE
-        end_text = format_timestamp(task.end_at) if task.end_at else WAITING_VALUE
-        period_text = "全天" if task.day_start_hour == 0 and task.day_end_hour == _FORMAT_TASK_DETAIL_THRESHOLD_23 else (
-            f"{task.day_start_hour:02d}:00-{task.day_end_hour:02d}:00"
-        )
-        footer = [
-            f"⚙️ 状态: {'✅ 启用' if task.enabled else '❌ 关闭'}",
-            f"📌 置顶: {'✅ 启用' if task.pin_message else '❌ 关闭'}",
-            f"🧹 删除上条: {'✅ 启用' if task.delete_previous else '❌ 关闭'}",
-            f"🕐 时段: {period_text}",
-        ]
-        if task.next_run_at:
-            footer.append(f"⏭️ 下次: {format_timestamp(task.next_run_at)}")
-        footer.extend(
-            format_completion_lines(
-                [("文本或封面", has_text or has_media)],
-                next_step="预览效果 → 启用",
-                test_step="到目标群确认定时发送结果",
-            )
-        )
-
         return format_panel(
             "⏱️ 定时消息",
-            [
-                PanelField("📮", "标题备注", title_value),
-                PanelField("🏞️", "封面设置", media_status(has_media=has_media, media_type=task.media_type)),
-                PanelField("📄", "文本内容", summarize_text(task.text, limit=180)),
-                PanelField("⭕", "设置按钮", button_status(task.buttons)),
-                PanelField("⏰", "开始时间", start_text),
-                PanelField("⏰", "结束时间", end_text),
-                PanelField("⌛", "重复间隔", get_interval_description(task.repeat_interval_min)),
-            ],
-            footer=footer,
+            _task_detail_fields(task, title=title_value, has_media=has_media),
+            footer=_task_detail_footer(task, has_payload=has_text or has_media),
             toast=toast,
         )

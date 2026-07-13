@@ -13,6 +13,37 @@ from backend.platform.db.schema.models.scheduled_message import ScheduledMessage
 from backend.shared.services.base import ValidationError
 from backend.shared.time_helper import calculate_next_run_time
 
+_RECALCULATE_KEYS = {"repeat_interval_min", "day_start_hour", "day_end_hour", "start_at"}
+
+
+async def _new_short_id(session: AsyncSession) -> str:
+    while True:
+        short_id = secrets.token_hex(4)
+        result = await session.execute(select(ScheduledMessageTask).where(ScheduledMessageTask.short_id == short_id))
+        if result.scalar_one_or_none() is None:
+            return short_id
+
+
+def _apply_task_updates(task: ScheduledMessageTask, updates: dict[str, Any], nullable_fields: set[str]) -> None:
+    for key, value in updates.items():
+        if not hasattr(task, key):
+            continue
+        if value is None and key not in nullable_fields:
+            continue
+        setattr(task, key, value)
+
+
+def _build_task(*, short_id: str, chat_id: int, creator_id: int, title: str, values: dict[str, Any]) -> ScheduledMessageTask:
+    return ScheduledMessageTask(
+        task_id=uuid.uuid4(), short_id=short_id, chat_id=chat_id,
+        created_by_user_id=creator_id, title=title.strip(), enabled=values["enabled"],
+        repeat_interval_min=values["repeat_interval_min"], day_start_hour=values["day_start_hour"],
+        day_end_hour=values["day_end_hour"], start_at=values["start_at"], end_at=values["end_at"],
+        text=values["text"], parse_mode=values["parse_mode"], media_type=values["media_type"],
+        media_file_id=values["media_file_id"], buttons=values["buttons"],
+        delete_previous=values["delete_previous"], pin_message=values["pin_message"],
+    )
+
 
 class ScheduledMessageMutationMixin:
     """定时消息服务的创建、更新与执行状态变更。"""
@@ -55,33 +86,18 @@ class ScheduledMessageMutationMixin:
         raw_buttons = kwargs.get("buttons", [])
         buttons = cls.normalize_buttons_config(raw_buttons) if raw_buttons else []
 
-        while True:
-            short_id = secrets.token_hex(4)
-            existing_task = await session.execute(
-                select(ScheduledMessageTask).where(ScheduledMessageTask.short_id == short_id)
-            )
-            if not existing_task.scalar_one_or_none():
-                break
-
-        task = ScheduledMessageTask(
-            task_id=uuid.uuid4(),
-            short_id=short_id,
-            chat_id=chat_id,
-            created_by_user_id=created_by_user_id,
-            title=title.strip(),
-            enabled=enabled,
-            repeat_interval_min=repeat_interval_min,
-            day_start_hour=day_start_hour,
-            day_end_hour=day_end_hour,
-            start_at=start_at,
-            end_at=end_at,
-            text=text,
-            parse_mode=kwargs.get("parse_mode", "HTML"),
-            media_type=media_type,
-            media_file_id=media_file_id,
-            buttons=buttons,
-            delete_previous=kwargs.get("delete_previous", True),
-            pin_message=kwargs.get("pin_message", False),
+        values = {
+            "enabled": enabled, "repeat_interval_min": repeat_interval_min,
+            "day_start_hour": day_start_hour, "day_end_hour": day_end_hour,
+            "start_at": start_at, "end_at": end_at, "text": text,
+            "parse_mode": kwargs.get("parse_mode", "HTML"), "media_type": media_type,
+            "media_file_id": media_file_id, "buttons": buttons,
+            "delete_previous": kwargs.get("delete_previous", True),
+            "pin_message": kwargs.get("pin_message", False),
+        }
+        task = _build_task(
+            short_id=await _new_short_id(session), chat_id=chat_id,
+            creator_id=created_by_user_id, title=title, values=values,
         )
         task.next_run_at = calculate_next_run_time(task)
 
@@ -98,12 +114,7 @@ class ScheduledMessageMutationMixin:
     ) -> ScheduledMessageTask:
         task = await cls.get_task_by_id_or_404(session, task_id)
 
-        for key, value in kwargs.items():
-            if not hasattr(task, key):
-                continue
-            if value is None and key not in cls._NULLABLE_UPDATE_FIELDS:
-                continue
-            setattr(task, key, value)
+        _apply_task_updates(task, kwargs, cls._NULLABLE_UPDATE_FIELDS)
 
         if "day_start_hour" in kwargs or "day_end_hour" in kwargs:
             cls.validate_day_period(task.day_start_hour, task.day_end_hour)
@@ -115,8 +126,7 @@ class ScheduledMessageMutationMixin:
         if task.enabled and not cls.has_sendable_content(task):
             task.enabled = False
 
-        recalculate_keys = ["repeat_interval_min", "day_start_hour", "day_end_hour", "start_at"]
-        if any(key in kwargs for key in recalculate_keys):
+        if _RECALCULATE_KEYS.intersection(kwargs):
             now_timestamp = int(dt.datetime.now(dt.UTC).timestamp())
             task.next_run_at = calculate_next_run_time(task, now_timestamp)
 
