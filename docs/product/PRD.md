@@ -1,7 +1,7 @@
 # TgGroupRobot PRD 入口与代码对接索引
 
-> 版本：v1.1
-> 日期：2026-06-30
+> 版本：v1.2
+> 日期：2026-07-14
 > 状态：当前产品基线入口
 
 本文档作为后续维护的 PRD 入口，避免引用空文件导致产品、架构、问题清单三套文档断开。
@@ -14,7 +14,7 @@
 | 当前功能状态 | [06_feature_truth_table.md](../setup/06_feature_truth_table.md) | 当前实现基线；`已闭环` 表示主链路可用且已有基础回归测试 |
 | 架构总览 | [code_structure_index.md](../architecture/code_structure_index.md) | 面向维护者的模块结构、运行链路、测试归类和架构模式 |
 | 逐文件索引 | [code_file_inventory.md](../architecture/code_file_inventory.md) | 机器辅助生成的逐文件职责、类/方法、函数和常量索引 |
-| 待解决问题 | [pending_issues.md](./pending_issues.md) | 已闭环之下的深度能力缺口、平台风险和文档同步事项 |
+| 闭环审计 | [pending_issues.md](./pending_issues.md) | 2026-07-14 全量可靠性、操作、数据流与工程质量闭环证据 |
 
 ## 2. PRD 与代码模块映射
 
@@ -42,7 +42,15 @@
 - 代码结构以 `docs/architecture/code_structure_index.md` 和 `docs/architecture/code_file_inventory.md` 为准。
 - ORM 模型当前权威路径为 `backend/platform/db/schema/models/`。
 - `tests/` 当前是平铺结构，不存在 `tests/features/<domain>/` 目录。
-- “已闭环”不等于完整版能力全部完成；深度能力、批量运营、边界测试和平台债务见 `pending_issues.md`。
+- `pending_issues.md` 保留历史文件名，但当前内容是闭环审计；批准范围内没有未完成项。
+
+## 4. 工程质量与交付门禁
+
+- 生产 Python 全量执行 `scripts/quality_metrics.py`，文件、函数、嵌套、位置参数、圈复杂度和魔法比较数字必须全部为 0 项违规。
+- Ruff 覆盖 `main.py`、`backend/`、`scripts/`、`tests/` 的明确正确性规则；未定义名称、重复字典键、无效控制流和未使用局部变量会阻断 CI。
+- mypy 覆盖 `main.py`、`backend/`、`scripts/` 的全量文件，并检查已注解及未注解函数体。动态 Mixin、星号聚合导出和第三方框架收窄产生的已知类别在配置中显式列出，不以文件白名单规避检查。
+- CI 固定执行 compileall、质量指标、Ruff、mypy 和 `pytest -W error`；任一失败不得进入镜像构建和生产发布阶段。
+- 后端回归测试使用 60 秒硬超时，不保留未解释 warning。
 ## 定时消息可靠执行
 
 - 每个计划发送时间必须先生成唯一执行实例，唯一键为 `task_id + scheduled_for`；同一实例不得因多进程调度或重启而重复创建。

@@ -86,14 +86,14 @@ main.py
 - 将 `settings` 和 `db` 注入 `app.bot_data`
 - 注册命令、功能 Router、通用消息处理器和错误处理器
 
-启动前会先执行启动迁移和 schema gate：
+启动前会先执行版本迁移和 schema gate：
 
 ```text
-run_startup_schema_migrations()
+migrate_database(engine)
 validate_database_schema()
 ```
 
-这样可以在 Bot 开始接收 Telegram update 之前发现数据库结构漂移。
+无 `alembic_version` 的历史库先显式执行一次 legacy bootstrap 并 stamp baseline；之后统一升级到唯一 head。迁移或结构校验任一步失败都会阻断 Bot 接收 update。
 
 ## 4. Handler 注册与执行顺序
 
@@ -365,7 +365,6 @@ Web 后台复用同一个 `Database`，但会话通过 FastAPI dependency 独立
 - `DATABASE_URL`
 - `PROXY_URL`
 - `LOG_LEVEL` / `LOG_FORMAT`
-- `STARTUP_SCHEMA_MIGRATIONS_ENABLED`
 - `SCHEDULER_RUN_IMMEDIATELY`
 - `SCHEDULER_INITIAL_STAGGER_SECONDS`
 - `BOT_ADMIN_IDS`
@@ -388,12 +387,12 @@ Web 后台复用同一个 `Database`，但会话通过 FastAPI dependency 独立
 新增一个功能时，优先按以下顺序落地：
 
 1. 在 `backend/features/<domain>/` 下新增 Router、handler、service、ui。
-2. 如果需要持久化，先增加 ORM 模型和启动迁移/schema gate。
+2. 如果需要持久化，先增加 ORM 模型、Alembic revision 和 schema gate 契约。
 3. 在 `backend/app/router_registry.py` 注册 Router。
 4. 如果涉及群消息，接入群消息 pipeline 或明确 handler group。
 5. 如果涉及私聊输入，使用 scoped conversation state，并携带目标 `chat_id`。
 6. 补充 focused pytest，至少覆盖按钮回调、私聊输入状态和群运行时主链路。
-7. 同步 README、功能真值表和用户手册数据。
+7. 同步 PRD、功能真值表、数据库设计和用户手册数据。
 
 关键原则：
 

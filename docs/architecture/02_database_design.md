@@ -158,12 +158,15 @@
 - `points_* / sign_in_logs / moderation_violations / verification_challenges / ad_campaigns` 均通过 `chat_id` 关联群
 - `garage_forward_retry_queue.message_map_id` -> `garage_forward_message_map.id`，来源事件唯一键同时约束消息映射和执行记录
 
-## 3) 索引建议
+## 3) 关键索引契约
 
-- 高频查询：`chat_id`、`user_id` 组合索引（已在迁移里加了核心索引）
-- `verification_challenges.token`、`expires_at`
-- `garage_forward_retry_queue(status,next_retry_at,lease_until)` 用于租约恢复和到期认领
-- 积分流水按 `chat_id/user_id/created_at` 可加复合索引（后续迭代）
+- `verification_challenges(timeout_status, timeout_next_retry_at, timeout_lease_until)` 用于到期认领和租约恢复。
+- `verification_timeout_attempts(challenge_id, attempt_no)` 唯一，保证追加尝试顺序。
+- `garage_forward_retry_queue(chat_id, source_channel_id, source_message_id)` 唯一，保证来源事件幂等。
+- `garage_forward_retry_queue(status, next_retry_at, lease_until)` 用于到期认领。
+- `scheduled_message_logs(run_key)` 唯一，`status/next_retry_at/lease_until` 支撑执行队列。
+- `ad_rotation_history(dispatch_key)` 唯一，`status/next_retry_at/lease_until` 支撑广告派发队列。
+- 上述索引、唯一约束、类型、nullable、server default 和外键删除策略均由 Schema Gate 校验。
 
 ## 4) 数据增长与性能优化建议
 
@@ -184,6 +187,5 @@
 - **群** 0/1 **订阅**（`chat_subscriptions`）指向 **套餐**（`subscription_plans`）
 - **群** 1:N **广告活动**（`ad_campaigns`）
 - **来源消息 + 目标群** 1:1 **车库消息映射**，1:1 **车库投递执行记录**
-
 
 
