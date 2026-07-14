@@ -13,7 +13,7 @@ MAX_NESTING_DEPTH = 3
 MAX_POSITIONAL_PARAMETERS = 3
 MAX_CYCLOMATIC_COMPLEXITY = 10
 ALLOWED_COMPARISON_NUMBERS = frozenset({-1, 0, 1})
-FUNCTION_NODES = (ast.FunctionDef, ast.AsyncFunctionDef)
+FunctionNode = ast.FunctionDef | ast.AsyncFunctionDef
 NESTING_NODES = (ast.If, ast.For, ast.AsyncFor, ast.While, ast.Try, ast.With, ast.AsyncWith, ast.Match)
 
 
@@ -28,7 +28,7 @@ class MetricViolation:
         return f"{self.path}:{self.line}: {self.rule} {self.detail}"
 
 
-def _function_line_count(node: ast.AST, lines: list[str]) -> int:
+def _function_line_count(node: FunctionNode, lines: list[str]) -> int:
     end_line = getattr(node, "end_lineno", getattr(node, "lineno", 1))
     return sum(bool(line.strip()) for line in lines[node.lineno - 1:end_line])
 
@@ -101,7 +101,9 @@ def _magic_comparison_values(node: ast.Compare) -> list[tuple[int, int | float]]
     return values
 
 
-def _function_violations(path: Path, node: ast.AST, lines: list[str]) -> list[MetricViolation]:
+def _function_violations(
+    path: Path, node: FunctionNode, lines: list[str]
+) -> list[MetricViolation]:
     name = getattr(node, "name", "<function>")
     visitor = _FunctionMetricVisitor(node)
     visitor.visit(node)
@@ -131,7 +133,7 @@ def inspect_python_file(path: Path) -> list[MetricViolation]:
         violations.append(MetricViolation(path, 1, "QF000", f"file lines {len(lines)} > {MAX_FILE_LINES}"))
     tree = ast.parse(source, filename=str(path))
     for node in ast.walk(tree):
-        if isinstance(node, FUNCTION_NODES):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             violations.extend(_function_violations(path, node, lines))
     return violations
 

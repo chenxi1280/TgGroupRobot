@@ -63,7 +63,6 @@ def t(lang: str | None, key: str, **kwargs: object) -> str:
     try:
         return template.format(**kwargs)
     except Exception as exc:
-        log.warning("string_format_failed", locale=locale, key=key, error=str(exc))
+        log.warning("string_format_failed", locale=lang, key=key, error=str(exc))
         return template
-
 

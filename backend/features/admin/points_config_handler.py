@@ -40,7 +40,7 @@ class PointsConfigHandler(BaseHandler):
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         target_chat_id: int,
-    ) -> None:
+    ) -> int | None:
         """处理积分配置回调"""
         q = update.callback_query
         await q.answer()
@@ -161,7 +161,7 @@ class PointsConfigHandler(BaseHandler):
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
         *, field: str,
-    ) -> None:
+    ) -> int:
         """处理数值编辑 - 进入对话状态"""
         # 保存编辑状态
         context.user_data["points_edit_field"] = field
@@ -286,6 +286,7 @@ async def points_config_callback(update: Update, context: ContextTypes.DEFAULT_T
     # 如果返回了 WAIT_VALUE，返回 ConversationHandler 继续
     if result == WAIT_VALUE:
         return result
+    return None
 
 
 async def points_config_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int | None:

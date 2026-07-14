@@ -72,7 +72,7 @@ class LotteryResponse:
         Returns:
             str: 格式化后的创建成功消息
         """
-        text = f"✅ 抽奖创建成功！\n\n"
+        text = "✅ 抽奖创建成功！\n\n"
         text += f"📢 标题: {lottery.title}\n"
         text += f"🎯 抽奖ID: {lottery.id}\n"
 
@@ -94,7 +94,7 @@ class LotteryResponse:
         Returns:
             str: 格式化后的抽奖公告
         """
-        text = f"🎁【抽奖活动】\n\n"
+        text = "🎁【抽奖活动】\n\n"
         text += f"📢 {lottery.title}\n"
 
         if lottery.description:
@@ -159,7 +159,7 @@ class LotteryResponse:
         status_emoji = LotteryResponse._get_status_emoji(lottery.status)
         status_text = LotteryResponse._get_status_text(lottery.status)
 
-        text = f"📋 抽奖详情\n\n"
+        text = "📋 抽奖详情\n\n"
         text += f"📢 标题: {lottery.title}\n"
         text += f"🆔 ID: {lottery.id}\n"
         text += f"📊 状态: {status_emoji} {status_text}\n"

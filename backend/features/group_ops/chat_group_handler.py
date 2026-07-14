@@ -43,9 +43,9 @@ async def chat_group_list_callback(update: Update, context: ContextTypes.DEFAULT
         )
         return
 
-    text = f"📋 群组列表\n\n"
+    text = "📋 群组列表\n\n"
     text += f"共 {len(chats)} 个群组\n"
-    text += f"请选择要管理的群组："
+    text += "请选择要管理的群组："
 
     await q.edit_message_text(
         text,
@@ -110,9 +110,9 @@ async def chat_group_refresh_callback(update: Update, context: ContextTypes.DEFA
         )
         return
 
-    text = f"📋 群组列表\n\n"
+    text = "📋 群组列表\n\n"
     text += f"共 {len(chats)} 个群组\n"
-    text += f"列表已刷新，请选择要管理的群组："
+    text += "列表已刷新，请选择要管理的群组："
 
     await q.edit_message_text(
         text,

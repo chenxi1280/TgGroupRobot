@@ -16,13 +16,6 @@ async def _handle_noop(update: Update, context) -> None:
         await update.callback_query.answer()
 
 
-_CALLBACK_PATTERNS = (
-    r"^sm:list:", r"^sm:add:", r"^sm:open:", r"^sm:set:", r"^sm:edit:",
-    r"^sm:preview:", r"^sm:(history|occ_retry|occ_cancel|occ_replay_confirm|occ_replay_do):",
-    r"^sm:del_confirm:", r"^sm:del_do:", r"^sm:del_cancel:",
-)
-
-
 class ScheduledMessageRouter(BaseRouter):
     """定时消息任务功能路由器"""
 
@@ -31,6 +24,14 @@ class ScheduledMessageRouter(BaseRouter):
         return "scheduled_message"
 
     def register(self, app: Application) -> None:
-        for pattern in _CALLBACK_PATTERNS:
-            app.add_handler(CallbackQueryHandler(sm_callback_handler, pattern=pattern))
+        app.add_handler(
+            CallbackQueryHandler(
+                sm_callback_handler,
+                pattern=(
+                    r"^sm:(?:list|add|open|set|edit|preview|history|occ_retry|"
+                    r"occ_cancel|occ_replay_confirm|occ_replay_do|del_confirm|"
+                    r"del_do|del_cancel):"
+                ),
+            )
+        )
         app.add_handler(CallbackQueryHandler(_handle_noop, pattern=r"^_noop$"))

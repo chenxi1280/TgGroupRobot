@@ -124,6 +124,8 @@ CALLBACK_HELPER_ARG_INDEXES = {
 CALLBACK_HELPER_KEYWORDS = {
     "left_callback",
     "right_callback",
+    "scoped",
+    "unscoped",
 }
 
 
@@ -255,16 +257,24 @@ def backend_source_text() -> str:
     )
 
 
+def _template_text_pattern(value: str) -> str:
+    parts = re.split(r"(\{[A-Za-z_][A-Za-z0-9_]*\})", value)
+    return "".join(
+        r"[^:]+" if re.fullmatch(r"\{[A-Za-z_][A-Za-z0-9_]*\}", part) else re.escape(part)
+        for part in parts
+    )
+
+
 def expression_to_pattern(node: ast.AST) -> tuple[str, str] | None:
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
-        return re.escape(node.value), node.value
+        return _template_text_pattern(node.value), node.value
 
     if isinstance(node, ast.JoinedStr):
         pattern = ""
         raw = ""
         for value in node.values:
             if isinstance(value, ast.Constant) and isinstance(value.value, str):
-                pattern += re.escape(value.value)
+                pattern += _template_text_pattern(value.value)
                 raw += value.value
             elif isinstance(value, ast.FormattedValue):
                 pattern += r"[^:]+"
@@ -288,6 +298,18 @@ def expression_to_pattern(node: ast.AST) -> tuple[str, str] | None:
 
 
 def expression_to_patterns(node: ast.AST) -> list[tuple[str, str]]:
+    if isinstance(node, ast.Dict):
+        return [
+            pattern
+            for value in node.values
+            for pattern in expression_to_patterns(value)
+        ]
+    if isinstance(node, (ast.List, ast.Set, ast.Tuple)):
+        return [
+            pattern
+            for element in node.elts
+            for pattern in expression_to_patterns(element)
+        ]
     if isinstance(node, ast.IfExp):
         return [
             pattern

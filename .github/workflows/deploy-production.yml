@@ -43,9 +43,12 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
+          python -m pip install -r requirements-dev.txt
           python -m compileall -q main.py backend scripts
-          python -m pytest
+          python scripts/quality_metrics.py
+          python -m ruff check main.py backend scripts tests
+          python -m mypy
+          timeout 60s python -m pytest -W error
 
   build-images:
     runs-on: ubuntu-latest

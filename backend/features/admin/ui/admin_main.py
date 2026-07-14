@@ -6,7 +6,6 @@ from __future__ import annotations
 
 from backend.features.admin.ui.admin_main_keyboards import (
     admin_main_menu,
-    back_button,
     create_group_selection_keyboard,
     create_guide_keyboard,
     toggle_menu,
@@ -20,4 +19,3 @@ from backend.features.admin.ui.admin_verification_keyboards import (
     verification_mode_menu,
     verification_timeout_action_menu,
 )
-

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from telegram import Update
+from telegram import InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from backend.features.moderation.auto_reply_common import (

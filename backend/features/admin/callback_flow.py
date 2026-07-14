@@ -50,7 +50,7 @@ async def _handle_group_admin_menu(
         await session.commit()
         await admin_runtime.message_helper.safe_edit(
             callback, "开关设置：",
-            reply_markup=toggle_menu(get_settings_toggle_rows(settings), back_to="main"),
+            reply_markup=toggle_menu(get_settings_toggle_rows(settings)),
         )
         return True
     if menu != "verification":
@@ -70,7 +70,7 @@ async def _handle_group_admin_toggle(callback, *, session, settings, cb) -> bool
     await session.commit()
     await admin_runtime.message_helper.safe_edit(
         callback, "开关设置：",
-        reply_markup=toggle_menu(get_settings_toggle_rows(settings), back_to="main"),
+        reply_markup=toggle_menu(get_settings_toggle_rows(settings)),
     )
     return True
 

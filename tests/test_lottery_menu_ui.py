@@ -794,7 +794,6 @@ def test_manual_draw_summary_keyboard_marks_string_state_keys():
 
 @pytest.mark.asyncio
 async def test_lottery_create_start_routes_short_codes_to_config_flow(monkeypatch):
-    rendered: dict[str, object] = {}
     called: dict[str, object] = {}
 
     async def fake_is_user_admin(context, chat_id: int, user_id: int):

@@ -1,4 +1,17 @@
-"""统一任务调度器核心"""
+"""统一任务调度器核心。
+
+生命周期边界：
+- ``Scheduler.start()`` 为每个 ``enabled`` 任务创建独立 ``asyncio.Task``，
+  按 ``interval`` 秒轮询执行 ``ScheduledTask.run()``。
+- ``Scheduler.stop()`` 取消所有 ``asyncio.Task`` 并等待退出。
+- ``ScheduledTask.run()`` 内部捕获 ``execute()`` 抛出的异常，按
+  ``max_consecutive_failures`` 自动暂停连续失败的任务。
+- 调度器在 schema gate 通过后启动（见 ``app/runtime.py``），确保任务
+  执行时库结构已就绪。
+
+子类只需实现 ``execute(app)``，不应自行捕获所有异常——``run()`` 已统一
+记录 ``error`` + ``exc_info`` 并重置 ``error_count``。
+"""
 
 from __future__ import annotations
 
@@ -22,6 +35,7 @@ class ScheduledTask(ABC):
         self,
         name: str,
         interval: int,  # 执行间隔（秒）
+        *,
         enabled: bool = True,
         max_consecutive_failures: int = 10,  # 连续失败多少次后暂停任务
     ):
@@ -40,8 +54,11 @@ class ScheduledTask(ABC):
         self.max_consecutive_failures = max_consecutive_failures
 
         # 运行状态
-        self.last_run = None  # 上次运行时间
-        self.next_run = None  # 下次运行时间
+        self.last_run: dt.datetime | None = None  # 上次运行时间
+        self.next_run: dt.datetime | None = None  # 下次运行时间
+        self.last_success_at: dt.datetime | None = None
+        self.last_failure_at: dt.datetime | None = None
+        self.last_error: str | None = None
         self.error_count = 0  # 连续失败次数
         self.total_runs = 0  # 总运行次数
         self.total_errors = 0  # 总错误次数
@@ -87,32 +104,41 @@ class ScheduledTask(ABC):
         try:
             log.debug("task_started", task_name=self.name)
             await self.execute(app)
-            self.last_run = start_time
-            self.total_runs += 1
-            self.error_count = 0  # 重置连续失败计数
-
-            duration = (dt.datetime.now(dt.timezone.utc) - start_time).total_seconds()
-            log.debug(
-                "task_completed",
-                task_name=self.name,
-                duration=duration,
-                total_runs=self.total_runs,
-            )
-        except Exception as e:
-            self.error_count += 1
-            self.total_errors += 1
-            duration = (dt.datetime.now(dt.timezone.utc) - start_time).total_seconds()
-            log.error(
-                "task_failed",
-                task_name=self.name,
-                error=str(e),
-                error_count=self.error_count,
-                total_errors=self.total_errors,
-                duration=duration,
-                exc_info=True,
-            )
+            self._record_success(start_time)
+        except Exception as exc:
+            self._record_failure(start_time, exc)
         finally:
             self.is_running = False
+
+    def _record_success(self, start_time: dt.datetime) -> None:
+        finished_at = dt.datetime.now(dt.timezone.utc)
+        self.last_run = start_time
+        self.last_success_at = finished_at
+        self.last_error = None
+        self.total_runs += 1
+        self.error_count = 0
+        log.debug(
+            "task_completed",
+            task_name=self.name,
+            duration=(finished_at - start_time).total_seconds(),
+            total_runs=self.total_runs,
+        )
+
+    def _record_failure(self, start_time: dt.datetime, error: Exception) -> None:
+        finished_at = dt.datetime.now(dt.timezone.utc)
+        self.last_failure_at = finished_at
+        self.last_error = str(error)
+        self.error_count += 1
+        self.total_errors += 1
+        log.error(
+            "task_failed",
+            task_name=self.name,
+            error=str(error),
+            error_count=self.error_count,
+            total_errors=self.total_errors,
+            duration=(finished_at - start_time).total_seconds(),
+            exc_info=True,
+        )
 
     def get_status(self) -> dict:
         """获取任务状态"""
@@ -122,6 +148,13 @@ class ScheduledTask(ABC):
             "interval": self.interval,
             "is_running": self.is_running,
             "last_run": self.last_run.isoformat() if self.last_run else None,
+            "last_success_at": (
+                self.last_success_at.isoformat() if self.last_success_at else None
+            ),
+            "last_failure_at": (
+                self.last_failure_at.isoformat() if self.last_failure_at else None
+            ),
+            "last_error": self.last_error,
             "total_runs": self.total_runs,
             "total_errors": self.total_errors,
             "consecutive_errors": self.error_count,
@@ -191,7 +224,9 @@ class Scheduler:
         for index, task in enumerate(self.tasks.values()):
             if task.enabled:
                 initial_delay = index * self.initial_stagger_seconds
-                async_task = asyncio.create_task(self._run_task_loop(task, initial_delay=initial_delay))
+                async_task = asyncio.create_task(
+                    self._run_task_loop(task, initial_delay=initial_delay)
+                )
                 self._task_tasks[task.name] = async_task
 
     async def stop(self) -> None:
@@ -215,15 +250,21 @@ class Scheduler:
         self._task_tasks.clear()
         log.info("scheduler_stopped")
 
-    async def _run_task_loop(self, task: ScheduledTask, *, initial_delay: float = 0.0) -> None:
+    async def _run_task_loop(
+        self, task: ScheduledTask, *, initial_delay: float = 0.0
+    ) -> None:
         """
         运行任务循环
 
         Args:
             task: 要运行的任务
         """
-        first_delay = initial_delay if self.run_immediately else task.interval + initial_delay
-        task.next_run = dt.datetime.now(dt.timezone.utc) + dt.timedelta(seconds=first_delay)
+        first_delay = (
+            initial_delay if self.run_immediately else task.interval + initial_delay
+        )
+        task.next_run = dt.datetime.now(dt.timezone.utc) + dt.timedelta(
+            seconds=first_delay
+        )
 
         while self.running:
             try:
@@ -233,7 +274,9 @@ class Scheduler:
                     await task.run(self.app)
 
                     # 计算下次执行时间
-                    task.next_run = dt.datetime.now(dt.timezone.utc) + dt.timedelta(seconds=task.interval)
+                    task.next_run = dt.datetime.now(dt.timezone.utc) + dt.timedelta(
+                        seconds=task.interval
+                    )
 
                 # 睡眠一段时间再检查
                 await asyncio.sleep(1)
@@ -265,7 +308,9 @@ class Scheduler:
         task = self.tasks[task_name]
         await task.run(self.app)
         # 重置下次执行时间
-        task.next_run = dt.datetime.now(dt.timezone.utc) + dt.timedelta(seconds=task.interval)
+        task.next_run = dt.datetime.now(dt.timezone.utc) + dt.timedelta(
+            seconds=task.interval
+        )
 
     def get_status(self) -> dict:
         """获取调度器状态"""

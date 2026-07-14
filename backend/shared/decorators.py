@@ -120,7 +120,6 @@ def require_admin_permission(
             if update.effective_user is None or update.effective_chat is None:
                 return None
 
-            user = update.effective_user
             chat = update.effective_chat
 
             # 如果只允许私聊

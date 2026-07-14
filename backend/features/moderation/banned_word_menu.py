@@ -18,6 +18,10 @@ from backend.features.moderation.services.banned_word_service import (
     toggle_banned_word,
     CreateResult,
 )
+from backend.features.moderation.banned_word_common import (
+    get_action_label,
+    get_match_type_label,
+)
 from backend.shared.services.chat_service import ensure_chat, get_chat_settings
 from backend.platform.state.state_service import clear_user_state, get_user_state, set_user_state
 from backend.shared.services.permission_service import is_user_admin
@@ -133,8 +137,8 @@ class BannedWordMenuHandler(BaseHandler):
             str: 格式化后的违禁词项文本
         """
         status = "🟢" if word.is_active else "🔴"
-        match_type_label = _get_match_type_label(word.match_type)
-        action_label = _get_action_label(word.action)
+        match_type_label = get_match_type_label(word.match_type)
+        action_label = get_action_label(word.action)
         notify_label = "📢" if word.notify else "🔇"
 
         text = f"{status} [{word.id}] {word.word[:30]}\n"

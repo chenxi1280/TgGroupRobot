@@ -4,7 +4,6 @@
 """
 from backend.features.admin.ui.admin_main import (
     admin_main_menu,
-    back_button,
     create_group_selection_keyboard,
     create_guide_keyboard,
     format_admin_main_menu_text,
@@ -28,7 +27,6 @@ from backend.features.admin.ui.points import points_config_keyboard
 __all__ = [
     # Admin main
     "admin_main_menu",
-    "back_button",
     "toggle_menu",
     "verification_mode_menu",
     "create_group_selection_keyboard",

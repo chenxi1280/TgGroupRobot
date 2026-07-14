@@ -17,11 +17,6 @@ TASK_CONFIG = {
         "enabled": True,
         "max_consecutive_failures": 10,
     },
-    "message": {
-        "interval": 60,  # 1分钟
-        "enabled": True,
-        "max_consecutive_failures": 10,
-    },
     "cleanup": {
         "interval": 300,  # 5分钟
         "enabled": True,

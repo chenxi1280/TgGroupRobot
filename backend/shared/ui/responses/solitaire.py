@@ -68,7 +68,7 @@ class SolitaireResponse:
         Returns:
             str: 格式化后的创建成功消息
         """
-        text = f"✅ 接龙创建成功！\n\n"
+        text = "✅ 接龙创建成功！\n\n"
         text += f"📢 标题: {solitaire.title}\n"
         text += f"🎯 接龙ID: {solitaire.id}\n"
 
@@ -92,7 +92,7 @@ class SolitaireResponse:
         Returns:
             str: 格式化后的接龙公告
         """
-        text = f"📋【接龙活动】\n\n"
+        text = "📋【接龙活动】\n\n"
         text += f"📢 {solitaire.title}\n"
 
         if solitaire.description:
@@ -158,7 +158,7 @@ class SolitaireResponse:
         status_emoji = SolitaireResponse._get_status_emoji(solitaire.status)
         status_text = SolitaireResponse._get_status_text(solitaire.status)
 
-        text = f"📋 接龙详情\n\n"
+        text = "📋 接龙详情\n\n"
         text += f"📢 标题: {solitaire.title}\n"
         text += f"🆔 ID: {solitaire.id}\n"
         text += f"📊 状态: {status_emoji} {status_text}\n"

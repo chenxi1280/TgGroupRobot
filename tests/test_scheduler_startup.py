@@ -18,6 +18,11 @@ class _RecordingTask(ScheduledTask):
         self.calls.append(self.name)
 
 
+class _FailingTask(ScheduledTask):
+    async def execute(self, app) -> None:
+        raise RuntimeError("delivery batch failed")
+
+
 @pytest.mark.asyncio
 async def test_scheduler_defers_first_run_by_default() -> None:
     calls: list[str] = []
@@ -54,3 +59,27 @@ async def test_scheduler_staggers_initial_runs() -> None:
         assert second.next_run - first.next_run >= dt.timedelta(seconds=1.9)
     finally:
         await scheduler.stop()
+
+
+@pytest.mark.asyncio
+async def test_task_status_records_latest_success() -> None:
+    task = _RecordingTask("success", interval=60, calls=[])
+
+    await task.run(SimpleNamespace())
+
+    status = task.get_status()
+    assert status["last_success_at"] is not None
+    assert status["last_failure_at"] is None
+    assert status["last_error"] is None
+
+
+@pytest.mark.asyncio
+async def test_task_status_records_latest_failure() -> None:
+    task = _FailingTask(name="failure", interval=60)
+
+    await task.run(SimpleNamespace())
+
+    status = task.get_status()
+    assert status["last_success_at"] is None
+    assert status["last_failure_at"] is not None
+    assert status["last_error"] == "delivery batch failed"

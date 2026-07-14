@@ -40,8 +40,6 @@ class BannedWordToggleHandler(BaseHandler):
         target_chat_id: int,
     ) -> None:
         """处理违禁词状态切换"""
-        from backend.shared.callback_parser import CallbackParser
-
         q = update.callback_query
 
         # 解析违禁词 ID
@@ -117,7 +115,7 @@ class BannedWordToggleHandler(BaseHandler):
         Returns:
             str: 格式化后的列表文本
         """
-        text = f"📋 违禁词列表\n\n"
+        text = "📋 违禁词列表\n\n"
 
         if words:
             active_count = sum(1 for w in words if w.is_active)

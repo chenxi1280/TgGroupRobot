@@ -41,6 +41,7 @@ async def _handle_guess_setting_input(flow: _GuessInput, context) -> bool:
     if flow.state_type not in {"guess_wait_rake_ratio", "guess_wait_rake_owner"}:
         return False
     try:
+        updates: dict[str, str | int | None]
         if flow.state_type == "guess_wait_rake_ratio":
             updates = {"rake_ratio": parse_guess_ratio(flow.value)}
         else:

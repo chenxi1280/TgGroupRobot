@@ -23,6 +23,7 @@ async def _exit_invalid_level_state(
 
 
 async def _apply_level_input(update, *, service, session, state_type: str, level, text: str) -> bool:
+    changes: dict[str, str | int]
     if state_type == "points_level_name_input":
         if not text:
             await update.effective_message.reply_text("等级名称不能为空。")
