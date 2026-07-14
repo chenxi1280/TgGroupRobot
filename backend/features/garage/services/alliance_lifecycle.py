@@ -97,17 +97,7 @@ class AllianceLifecycleMixin:
         if await cls.get_member(session, chat_id) is not None:
             raise ValidationError("当前群已在联盟中，请先退出后再加入。")
 
-        code_hash = cls.hash_invite_code(invite_code)
-        result = await session.execute(
-            select(GroupAlliance)
-            .where(GroupAlliance.invite_code_hash == code_hash)
-            .with_for_update()
-        )
-        alliance = result.scalar_one_or_none()
-        if alliance is None:
-            raise ValidationError("联盟邀请码无效。")
-        if alliance.invite_code_expire_at and alliance.invite_code_expire_at <= dt.datetime.now(dt.UTC):
-            raise ValidationError("联盟邀请码已过期。")
+        alliance = await cls._lock_alliance_by_invite_code(session, invite_code)
 
         count_result = await session.execute(
             select(func.count(GroupAllianceMember.id)).where(
@@ -141,6 +131,20 @@ class AllianceLifecycleMixin:
             payload={"joined": True},
         )
         await session.flush()
+        return alliance
+
+    @classmethod
+    async def _lock_alliance_by_invite_code(cls, session: AsyncSession, invite_code: str) -> GroupAlliance:
+        result = await session.execute(
+            select(GroupAlliance)
+            .where(GroupAlliance.invite_code_hash == cls.hash_invite_code(invite_code))
+            .with_for_update()
+        )
+        alliance = result.scalar_one_or_none()
+        if alliance is None:
+            raise ValidationError("联盟邀请码无效。")
+        if alliance.invite_code_expire_at and alliance.invite_code_expire_at <= dt.datetime.now(dt.UTC):
+            raise ValidationError("联盟邀请码已过期。")
         return alliance
 
     @classmethod

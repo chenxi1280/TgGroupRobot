@@ -149,26 +149,38 @@ def _teacher_score_matches(profile: TeacherProfileView, normalized_keyword: str)
     return int(getattr(profile, "review_count", 0) or 0) > 0 and float(getattr(profile, "avg_score", 0.0) or 0.0) >= threshold
 
 
+def _teacher_identity_parts(user: TgUser | None) -> list[str]:
+    if user is None:
+        return ["", "", "", "", ""]
+    first_name = user.first_name or ""
+    last_name = user.last_name or ""
+    return [user.username or "", first_name, last_name, first_name + last_name, " ".join(filter(None, (first_name, last_name)))]
+
+
+def _teacher_source_parts(profile: TeacherProfileView) -> list[str]:
+    return [
+        getattr(profile, "source_username", None) or "",
+        getattr(profile, "source_channel_title", None) or "",
+        getattr(profile, "source_raw_text", None) or "",
+    ]
+
+
 def _teacher_keyword_parts(profile: TeacherProfileView, user: TgUser | None) -> list[str]:
-    first_name = (user.first_name or "") if user else ""
-    last_name = (user.last_name or "") if user else ""
     return [
         str(profile.user_id),
         profile.region_text or "",
         profile.price_text or "",
         " ".join(profile.labels or []),
-        f"{float(getattr(profile, 'avg_score', 0.0) or 0.0):g}分"
-        if int(getattr(profile, "review_count", 0) or 0)
-        else "",
-        user.username or "" if user else "",
-        first_name,
-        last_name,
-        "".join([first_name, last_name]),
-        " ".join(part for part in [first_name, last_name] if part),
-        getattr(profile, "source_username", None) or "",
-        getattr(profile, "source_channel_title", None) or "",
-        getattr(profile, "source_raw_text", None) or "",
+        _teacher_score_part(profile),
+        *_teacher_identity_parts(user),
+        *_teacher_source_parts(profile),
     ]
+
+
+def _teacher_score_part(profile: TeacherProfileView) -> str:
+    if not int(getattr(profile, "review_count", 0) or 0):
+        return ""
+    return f"{float(getattr(profile, 'avg_score', 0.0) or 0.0):g}分"
 
 
 def _keyword_numbers_match(parts: list[str], normalized_keyword: str) -> bool:
