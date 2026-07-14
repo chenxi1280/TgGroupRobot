@@ -12,6 +12,51 @@ from backend.platform.db.schema.models.core import PointsAccount, PointsMallOrde
 from backend.platform.db.schema.models.enums import PointsTxnType
 
 
+async def _lock_redeemable_product(session, chat_id: int, product_id: int):
+    result = await session.execute(
+        select(PointsMallProduct)
+        .where(PointsMallProduct.chat_id == chat_id, PointsMallProduct.product_id == product_id)
+        .with_for_update()
+    )
+    product = result.scalar_one_or_none()
+    if product is None:
+        return None, "商品不存在"
+    if product.status != "on_sale":
+        return None, "商品未上架"
+    if product.stock_left <= 0:
+        return None, "商品库存不足"
+    return product, None
+
+
+async def _ensure_points_account(session, chat_id: int, user_id: int) -> PointsAccount:
+    result = await session.execute(
+        select(PointsAccount)
+        .where(PointsAccount.chat_id == chat_id, PointsAccount.user_id == user_id)
+        .with_for_update()
+    )
+    account = result.scalar_one_or_none()
+    if account is None:
+        account = PointsAccount(chat_id=chat_id, user_id=user_id, balance=0)
+        session.add(account)
+        await session.flush()
+    return account
+
+
+async def _create_redeem_order(session, product, *, chat_id: int, buyer_user_id: int) -> PointsMallOrder:
+    order = PointsMallOrder(
+        chat_id=chat_id, product_id=product.product_id, buyer_user_id=buyer_user_id,
+        price_points=product.price_points, quantity=1, order_status="created", operator_user_id=None,
+    )
+    session.add(order)
+    await session.flush()
+    session.add(PointsMallOrderLog(
+        order_id=order.order_id, action="redeem",
+        payload={"product_id": product.product_id, "buyer_user_id": buyer_user_id, "price_points": product.price_points},
+    ))
+    await session.flush()
+    return order
+
+
 class PointsMallProductsMixin:
     @staticmethod
     async def list_products(session: AsyncSession, chat_id: int) -> list[PointsMallProduct]:
@@ -75,25 +120,16 @@ class PointsMallProductsMixin:
         cover_media_type: str | None | Any = UNSET,
         cover_file_id: str | None | Any = UNSET,
     ) -> PointsMallProduct:
-        if name is not UNSET:
-            product.name = name
-        if price_points is not UNSET:
-            product.price_points = price_points
-        if limit_per_user is not UNSET:
-            product.limit_per_user = limit_per_user
-        if stock_total is not UNSET:
-            product.stock_total = stock_total
-        if stock_left is not UNSET:
-            product.stock_left = stock_left
-        if fulfiller_user_id is not UNSET:
-            product.fulfiller_user_id = fulfiller_user_id
-        if description is not UNSET:
-            product.description = description
-        if sort_weight is not UNSET:
-            product.sort_weight = sort_weight
-        if cover_media_type is not UNSET or cover_file_id is not UNSET:
-            product.cover_media_type = cover_media_type
-            product.cover_file_id = cover_file_id
+        updates = {
+            "name": name, "price_points": price_points, "limit_per_user": limit_per_user,
+            "stock_total": stock_total, "stock_left": stock_left,
+            "fulfiller_user_id": fulfiller_user_id, "description": description,
+            "sort_weight": sort_weight, "cover_media_type": cover_media_type,
+            "cover_file_id": cover_file_id,
+        }
+        for field, value in updates.items():
+            if value is not UNSET:
+                setattr(product, field, value)
         product.updated_at = dt.datetime.now(dt.UTC)
         await session.flush()
         return product
@@ -134,29 +170,10 @@ class PointsMallProductsMixin:
         product_id: int,
         buyer_user_id: int,
     ) -> tuple[bool, str, PointsMallOrder | None]:
-        result = await session.execute(
-            select(PointsMallProduct)
-            .where(PointsMallProduct.chat_id == chat_id, PointsMallProduct.product_id == product_id)
-            .with_for_update()
-        )
-        product = result.scalar_one_or_none()
+        product, error = await _lock_redeemable_product(session, chat_id, product_id)
         if product is None:
-            return False, "商品不存在", None
-        if product.status != "on_sale":
-            return False, "商品未上架", None
-        if product.stock_left <= 0:
-            return False, "商品库存不足", None
-
-        account_result = await session.execute(
-            select(PointsAccount)
-            .where(PointsAccount.chat_id == chat_id, PointsAccount.user_id == buyer_user_id)
-            .with_for_update()
-        )
-        account = account_result.scalar_one_or_none()
-        if account is None:
-            account = PointsAccount(chat_id=chat_id, user_id=buyer_user_id, balance=0)
-            session.add(account)
-            await session.flush()
+            return False, error, None
+        await _ensure_points_account(session, chat_id, buyer_user_id)
 
         if product.limit_per_user:
             used = await cls.count_user_product_orders(
@@ -184,29 +201,9 @@ class PointsMallProductsMixin:
             product.status = "off_sale"
         product.updated_at = dt.datetime.now(dt.UTC)
 
-        order = PointsMallOrder(
-            chat_id=chat_id,
-            product_id=product.product_id,
-            buyer_user_id=buyer_user_id,
-            price_points=product.price_points,
-            quantity=1,
-            order_status="created",
-            operator_user_id=None,
+        order = await _create_redeem_order(
+            session, product, chat_id=chat_id, buyer_user_id=buyer_user_id,
         )
-        session.add(order)
-        await session.flush()
-        session.add(
-            PointsMallOrderLog(
-                order_id=order.order_id,
-                action="redeem",
-                payload={
-                    "product_id": product.product_id,
-                    "buyer_user_id": buyer_user_id,
-                    "price_points": product.price_points,
-                },
-            )
-        )
-        await session.flush()
         return True, "兑换成功", order
 
     @staticmethod

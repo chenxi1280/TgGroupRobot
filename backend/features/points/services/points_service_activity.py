@@ -37,6 +37,60 @@ async def _get_or_create_daily_stats(
     return stats
 
 
+async def _has_signed(session, chat_id: int, user_id: int, *, sign_date: dt.date) -> bool:
+    result = await session.execute(select(SignInLog).where(and_(
+        SignInLog.chat_id == chat_id,
+        SignInLog.user_id == user_id,
+        SignInLog.sign_date == sign_date,
+    )))
+    return result.scalar_one_or_none() is not None
+
+
+async def _update_sign_streak(session, chat_id: int, user_id: int, *, today: dt.date) -> UserDailyStats:
+    stats = await _get_or_create_daily_stats(session, chat_id, user_id, stat_date=today)
+    signed_yesterday = await _has_signed(
+        session, chat_id, user_id, sign_date=today - dt.timedelta(days=1),
+    )
+    stats.consecutive_sign_days = stats.consecutive_sign_days + 1 if signed_yesterday else 1
+    return stats
+
+
+def _consecutive_bonus(streak: int, *, required_days: int, bonus_points: int) -> int:
+    if required_days <= 0 or bonus_points <= 0 or streak < required_days:
+        return 0
+    return bonus_points if streak % required_days == 0 else 0
+
+
+async def _already_signed_result(session, chat_id: int, user_id: int, *, today: dt.date) -> SignResult:
+    balance = await get_balance(session, chat_id, user_id)
+    stats = await _get_or_create_daily_stats(session, chat_id, user_id, stat_date=today)
+    return SignResult(
+        success=False, balance=balance, consecutive_days=stats.consecutive_sign_days,
+        bonus_points=0, reason="already_signed",
+    )
+
+
+async def _add_sign_log(session, *, chat_id: int, user_id: int, today: dt.date, awarded: int) -> None:
+    session.add(SignInLog(
+        chat_id=chat_id, user_id=user_id, sign_date=today, points_awarded=awarded,
+    ))
+    await session.flush()
+
+
+async def _award_sign_points(session, chat_id: int, user_id: int, *, points: int, bonus: int, streak: int):
+    success, balance = await change_points(
+        session, chat_id=chat_id, user_id=user_id, amount=points,
+        txn_type=PointsTxnType.sign_in.value, reason="签到奖励",
+    )
+    if bonus > 0:
+        await change_points(
+            session, chat_id=chat_id, user_id=user_id, amount=bonus,
+            txn_type=PointsTxnType.sign_in_consecutive.value,
+            reason=f"连续签到{streak}天奖励",
+        )
+    return success, balance
+
+
 async def sign_in(
     session: AsyncSession,
     chat_id: int,
@@ -46,97 +100,36 @@ async def sign_in(
     consecutive_bonus: int = 0,
 ) -> SignResult:
     today = dt.datetime.now(dt.UTC).date()
-    yesterday = today - dt.timedelta(days=1)
+    if await _has_signed(session, chat_id, user_id, sign_date=today):
+        return await _already_signed_result(session, chat_id, user_id, today=today)
 
-    res = await session.execute(
-        select(SignInLog).where(
-            and_(
-                SignInLog.chat_id == chat_id,
-                SignInLog.user_id == user_id,
-                SignInLog.sign_date == today,
-            )
-        )
-    )
-    if res.scalar_one_or_none() is not None:
-        bal = await get_balance(session, chat_id, user_id)
-        stats = await _get_or_create_daily_stats(session, chat_id, user_id, stat_date=today)
-        return SignResult(
-            success=False,
-            balance=bal,
-            consecutive_days=stats.consecutive_sign_days,
-            bonus_points=0,
-            reason="already_signed",
-        )
+    stats = await _update_sign_streak(session, chat_id, user_id, today=today)
+    streak = stats.consecutive_sign_days
+    bonus = _consecutive_bonus(streak, required_days=consecutive_days, bonus_points=consecutive_bonus)
 
-    stats = await _get_or_create_daily_stats(session, chat_id, user_id, stat_date=today)
-    yesterday_sign = await session.execute(
-        select(SignInLog).where(
-            and_(
-                SignInLog.chat_id == chat_id,
-                SignInLog.user_id == user_id,
-                SignInLog.sign_date == yesterday,
-            )
-        )
-    )
-    if yesterday_sign.scalar_one_or_none() is not None:
-        stats.consecutive_sign_days += 1
-    else:
-        stats.consecutive_sign_days = 1
-
-    total_points = points
-    bonus = 0
-    if (
-        consecutive_days > 0
-        and consecutive_bonus > 0
-        and stats.consecutive_sign_days >= consecutive_days
-        and stats.consecutive_sign_days % consecutive_days == 0
-    ):
-        bonus = consecutive_bonus
-        total_points += bonus
-
-    sign_log = SignInLog(
-        chat_id=chat_id,
-        user_id=user_id,
-        sign_date=today,
-        points_awarded=total_points,
-    )
-    session.add(sign_log)
     try:
-        await session.flush()
+        await _add_sign_log(
+            session, chat_id=chat_id, user_id=user_id, today=today, awarded=points + bonus,
+        )
     except IntegrityError:
         await session.rollback()
         bal = await get_balance(session, chat_id, user_id)
         return SignResult(
             success=False,
             balance=bal,
-            consecutive_days=stats.consecutive_sign_days,
+            consecutive_days=streak,
             bonus_points=0,
             reason="already_signed",
         )
 
-    success, balance = await change_points(
-        session,
-        chat_id=chat_id,
-        user_id=user_id,
-        amount=points,
-        txn_type=PointsTxnType.sign_in.value,
-        reason="签到奖励",
+    success, balance = await _award_sign_points(
+        session, chat_id, user_id, points=points, bonus=bonus, streak=streak,
     )
-
-    if bonus > 0:
-        await change_points(
-            session,
-            chat_id=chat_id,
-            user_id=user_id,
-            amount=bonus,
-            txn_type=PointsTxnType.sign_in_consecutive.value,
-            reason=f"连续签到{stats.consecutive_sign_days}天奖励",
-        )
 
     return SignResult(
         success=success,
         balance=balance,
-        consecutive_days=stats.consecutive_sign_days,
+        consecutive_days=streak,
         bonus_points=bonus,
     )
 

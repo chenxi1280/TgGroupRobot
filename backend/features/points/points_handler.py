@@ -42,8 +42,6 @@ from backend.features.points.services.points_service import (
     sign_in,
 )
 from backend.shared.services.user_service import ensure_user
-from backend.shared.services.publish_service import PublishService
-from backend.platform.telegram.errors import answer_callback_query_safely, mark_callback_query_answered
 _SHOULD_SEND_LEVEL_BLOCK_NOTICE_THRESHOLD_1000 = 1000
 _SHOULD_SEND_LEVEL_BLOCK_NOTICE_THRESHOLD_60 = 60
 
@@ -363,17 +361,24 @@ def get_points_alias_handler() -> PointsAliasHandler:
     return _points_alias_handler
 
 
+def _media_level_permission(message) -> str | None:
+    permission_fields = {
+        "allow_sticker": ("sticker",),
+        "allow_audio": ("audio", "voice"),
+        "allow_video": ("video",),
+        "allow_photo": ("photo",),
+        "allow_document": ("document",),
+    }
+    for permission, fields in permission_fields.items():
+        if any(getattr(message, field, None) for field in fields):
+            return permission
+    return None
+
+
 def _required_level_permission(message) -> str | None:
-    if message.sticker:
-        return "allow_sticker"
-    if message.audio or message.voice:
-        return "allow_audio"
-    if message.video:
-        return "allow_video"
-    if message.photo:
-        return "allow_photo"
-    if message.document:
-        return "allow_document"
+    media_permission = _media_level_permission(message)
+    if media_permission is not None:
+        return media_permission
     text = message.text or message.caption or ""
     entities = list(message.entities or []) + list(message.caption_entities or [])
     has_mention = any(entity.type in {"mention", "text_mention"} for entity in entities)

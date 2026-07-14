@@ -6,6 +6,29 @@ from telegram.ext import ContextTypes
 from backend.platform.db.runtime.session import Database
 
 
+async def _ensure_points_actor(session, chat, user, *, ensure_chat_func, ensure_user_func) -> None:
+    await ensure_chat_func(session, chat_id=chat.id, chat_type=chat.type, title=chat.title)
+    await ensure_user_func(
+        session,
+        user_id=user.id,
+        username=user.username,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        language_code=user.language_code,
+    )
+
+
+def _format_sign_message(result, settings, *, success_formatter, already_formatter) -> str:
+    if result.success:
+        return success_formatter(
+            points=settings.sign_points,
+            balance=result.balance,
+            consecutive_days=result.consecutive_days,
+            bonus_points=result.bonus_points,
+        )
+    return already_formatter(balance=result.balance, consecutive_days=result.consecutive_days)
+
+
 async def handle_sign_in_action(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -28,14 +51,12 @@ async def handle_sign_in_action(
     user = update.effective_user
 
     async with db.session_factory() as session:
-        await ensure_chat_func(session, chat_id=chat.id, chat_type=chat.type, title=chat.title)
-        await ensure_user_func(
+        await _ensure_points_actor(
             session,
-            user_id=user.id,
-            username=user.username,
-            first_name=user.first_name,
-            last_name=user.last_name,
-            language_code=user.language_code,
+            chat,
+            user,
+            ensure_chat_func=ensure_chat_func,
+            ensure_user_func=ensure_user_func,
         )
         settings = await get_chat_settings_func(session, chat.id)
         if not settings.sign_enabled:
@@ -53,18 +74,12 @@ async def handle_sign_in_action(
         )
         await session.commit()
 
-    if result.success:
-        msg = format_sign_in_success_message_func(
-            points=settings.sign_points,
-            balance=result.balance,
-            consecutive_days=result.consecutive_days,
-            bonus_points=result.bonus_points,
-        )
-    else:
-        msg = format_sign_in_already_message_func(
-            balance=result.balance,
-            consecutive_days=result.consecutive_days,
-        )
+    msg = _format_sign_message(
+        result,
+        settings,
+        success_formatter=format_sign_in_success_message_func,
+        already_formatter=format_sign_in_already_message_func,
+    )
     await update.effective_message.reply_text(msg)
 
 
@@ -90,14 +105,12 @@ async def handle_balance_action(
     user = update.effective_user
 
     async with db.session_factory() as session:
-        await ensure_chat_func(session, chat_id=chat.id, chat_type=chat.type, title=chat.title)
-        await ensure_user_func(
+        await _ensure_points_actor(
             session,
-            user_id=user.id,
-            username=user.username,
-            first_name=user.first_name,
-            last_name=user.last_name,
-            language_code=user.language_code,
+            chat,
+            user,
+            ensure_chat_func=ensure_chat_func,
+            ensure_user_func=ensure_user_func,
         )
         await get_chat_settings_func(session, chat.id)
         balance = await get_balance_func(session, chat.id, user.id)
