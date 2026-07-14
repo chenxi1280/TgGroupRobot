@@ -43,18 +43,39 @@ def collect_join_spam_signals(user) -> list[str]:
         if part and part.strip()
     ).strip()
     haystack = f"{username} {full_name}".strip()
-    signals: list[str] = []
-    if not username:
-        signals.append("no_username")
-    if len(full_name) >= _COLLECT_JOIN_SPAM_SIGNALS_THRESHOLD_18:
-        signals.append("long_name")
-    if sum(char.isdigit() for char in haystack) >= _COLLECT_JOIN_SPAM_SIGNALS_THRESHOLD_5:
-        signals.append("many_digits")
-    if re.search(r"(.)\1{4,}", haystack):
-        signals.append("repeated_chars")
-    if JOIN_SPAM_KEYWORD_RE.search(haystack):
-        signals.append("promo_keyword")
-    return signals
+    checks = {
+        "no_username": not username,
+        "long_name": len(full_name) >= _COLLECT_JOIN_SPAM_SIGNALS_THRESHOLD_18,
+        "many_digits": sum(map(str.isdigit, haystack)) >= _COLLECT_JOIN_SPAM_SIGNALS_THRESHOLD_5,
+        "repeated_chars": re.search(r"(.)\1{4,}", haystack) is not None,
+        "promo_keyword": JOIN_SPAM_KEYWORD_RE.search(haystack) is not None,
+    }
+    return [name for name, matched in checks.items() if matched]
+
+
+async def _apply_burst_actions(context, chat, members: list, *, settings) -> None:
+    for user in members:
+        try:
+            await apply_join_guard_action(
+                context,
+                chat.id,
+                user.id,
+                mute=bool(getattr(settings, "join_burst_mute_enabled", False)),
+                kick=bool(getattr(settings, "join_burst_kick_enabled", False)),
+                mute_seconds=int(getattr(settings, "verification_mute_duration", 86400) or 86400),
+            )
+        except Exception as exc:
+            log.warning("join_burst_guard_action_failed", chat_id=chat.id, user_id=user.id, error=str(exc))
+
+
+async def _send_burst_notice(context, chat, members: list, *, recent_count: int) -> None:
+    names = "、".join((member.first_name or member.username or str(member.id)) for member in members[:5])
+    await send_temporary_notice(
+        context,
+        chat.id,
+        f"🚪 检测到批量进群，{recent_count} 人在时间窗口内加入。\n本批处理：{names}",
+        delete_after_seconds=60,
+    )
 
 
 async def upsert_chat_member_join(session, chat_id: int, user) -> None:
@@ -184,26 +205,9 @@ async def handle_join_burst_guard(context: ContextTypes.DEFAULT_TYPE, session, c
     threshold = int(getattr(settings, "join_burst_threshold_count", 10) or 10)
     if recent_count < threshold:
         return False
-    for user in members:
-        try:
-            await apply_join_guard_action(
-                context,
-                chat.id,
-                user.id,
-                mute=bool(getattr(settings, "join_burst_mute_enabled", False)),
-                kick=bool(getattr(settings, "join_burst_kick_enabled", False)),
-                mute_seconds=int(getattr(settings, "verification_mute_duration", 86400) or 86400),
-            )
-        except Exception as exc:
-            log.warning("join_burst_guard_action_failed", chat_id=chat.id, user_id=user.id, error=str(exc))
+    await _apply_burst_actions(context, chat, members, settings=settings)
     if getattr(settings, "join_burst_tip_mode", "tip_and_delete") != "no_tip":
-        names = "、".join((member.first_name or member.username or str(member.id)) for member in members[:5])
-        await send_temporary_notice(
-            context,
-            chat.id,
-            f"🚪 检测到批量进群，{recent_count} 人在时间窗口内加入。\n本批处理：{names}",
-            delete_after_seconds=60,
-        )
+        await _send_burst_notice(context, chat, members, recent_count=recent_count)
     return True
 
 
