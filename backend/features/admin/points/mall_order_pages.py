@@ -17,6 +17,18 @@ def _normalize_order_status(status: str) -> str:
     return status if status in _ORDER_STATUSES else "all"
 
 
+def _format_orders_page(orders: list, *, product_id: int | None, status: str, summary: str) -> str:
+    title = "🧾 管理订单" if product_id is None else f"🧾 管理订单 | 商品 {product_id}"
+    lines = [title, f"当前筛选：{_ORDER_STATUS_NAMES.get(status, '全部')}", summary, ""]
+    for order in orders:
+        lines.extend([
+            f"订单#{order.order_id}｜商品 {order.product_id}", f"用户：{order.buyer_user_id}",
+            f"积分：{order.price_points}｜数量：{order.quantity}", f"状态：{order.order_status}", "",
+        ])
+    lines.append(f"{len(orders)} 条数据，第 1 页/共 1 页")
+    return "\n".join(lines)
+
+
 class PointsMallOrderPagesMixin:
     async def _show_points_mall_orders_page(
         self,
@@ -44,24 +56,9 @@ class PointsMallOrderPagesMixin:
             )
             await session.commit()
         summary = _format_order_status_summary(status_counts)
-        if orders:
-            title = "🧾 管理订单" if product_id is None else f"🧾 管理订单 | 商品 {product_id}"
-            lines = [title, f"当前筛选：{_ORDER_STATUS_NAMES.get(normalized_status, '全部')}", summary, ""]
-            for order in orders:
-                lines.extend(
-                    [
-                        f"订单#{order.order_id}｜商品 {order.product_id}",
-                        f"用户：{order.buyer_user_id}",
-                        f"积分：{order.price_points}｜数量：{order.quantity}",
-                        f"状态：{order.order_status}",
-                        "",
-                    ]
-                )
-            lines.append(f"{len(orders)} 条数据，第 1 页/共 1 页")
-            text = "\n".join(lines)
-        else:
-            title = "🧾 管理订单" if product_id is None else f"🧾 管理订单 | 商品 {product_id}"
-            text = f"{title}\n当前筛选：{_ORDER_STATUS_NAMES.get(normalized_status, '全部')}\n{summary}\n\n0 条数据，第 1 页/共 1 页"
+        text = _format_orders_page(
+            orders, product_id=product_id, status=normalized_status, summary=summary,
+        )
         await self.message_helper.safe_edit(
             update,
             text=text,

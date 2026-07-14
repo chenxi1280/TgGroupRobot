@@ -3,6 +3,34 @@ from __future__ import annotations
 from backend.features.admin.support import *
 
 
+def _command_detail_text(command_key: str, entry: dict, definition: dict | None) -> tuple[str, bool]:
+    label = definition["label"] if definition else command_key
+    enabled = bool(entry.get("enabled", True))
+    alias_allowed = definition is None or definition.get("allow_alias", True)
+    alias_line = f"别名: {entry.get('alias') or '未设置'}\n" if alias_allowed else ""
+    help_text = "你可以设置别名（无需输入 /），或关闭该命令。" if alias_allowed else "该入口为固定中文触发词，只支持启停。"
+    text = (
+        f"⌨️ 命令配置 | {label}\n\n状态: {'✅ 启用' if enabled else '❌ 关闭'}\n"
+        f"{alias_line}\n{help_text}"
+    )
+    return text, alias_allowed
+
+
+def _command_detail_rows(chat_id: int, command_key: str, *, enabled: bool, alias_allowed: bool):
+    rows = [[
+        InlineKeyboardButton("⚙️ 状态：", callback_data=f"adm:gcmd:{chat_id}:detail:{command_key}"),
+        InlineKeyboardButton("✅ 启用" if enabled else "启用", callback_data=f"adm:gcmd:{chat_id}:toggle:{command_key}"),
+        InlineKeyboardButton("关闭" if enabled else "❌ 关闭", callback_data=f"adm:gcmd:{chat_id}:toggle:{command_key}"),
+    ]]
+    if alias_allowed:
+        rows.extend([
+            [InlineKeyboardButton("✏️ 设置别名", callback_data=f"adm:gcmd:{chat_id}:alias:{command_key}")],
+            [InlineKeyboardButton("🧹 清空别名", callback_data=f"adm:gcmd:{chat_id}:clear_alias:{command_key}")],
+        ])
+    rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:gcmd:{chat_id}")])
+    return rows
+
+
 class ModerationConfigMenusMixin:
     async def _show_command_config_menu(
         self,
@@ -74,31 +102,11 @@ class ModerationConfigMenusMixin:
         if entry is None:
             await answer_callback_query_safely(update, "未识别的命令配置项，请返回后重试", show_alert=True)
             return
-        definition = next((item for item in list_command_definitions() if item["key"] == command_key), None)
-        label = definition["label"] if definition else command_key
+        definitions = {item["key"]: item for item in list_command_definitions()}
+        definition = definitions.get(command_key)
         enabled = bool(entry.get("enabled", True))
-        alias = entry.get("alias") or "未设置"
-        alias_line = f"别名: {alias}\n" if not definition or definition.get("allow_alias", True) else ""
-        help_text = "你可以设置别名（无需输入 /），或关闭该命令。" if alias_line else "该入口为固定中文触发词，只支持启停。"
-        text = (
-            f"⌨️ 命令配置 | {label}\n\n"
-            f"状态: {'✅ 启用' if enabled else '❌ 关闭'}\n"
-            f"{alias_line}\n"
-            f"{help_text}"
-        )
-        rows = [
-            [
-                InlineKeyboardButton("⚙️ 状态：", callback_data=f"adm:gcmd:{chat_id}:detail:{command_key}"),
-                InlineKeyboardButton("✅ 启用" if enabled else "启用", callback_data=f"adm:gcmd:{chat_id}:toggle:{command_key}"),
-                InlineKeyboardButton("关闭" if enabled else "❌ 关闭", callback_data=f"adm:gcmd:{chat_id}:toggle:{command_key}"),
-            ],
-        ]
-        if not definition or definition.get("allow_alias", True):
-            rows.extend([
-                [InlineKeyboardButton("✏️ 设置别名", callback_data=f"adm:gcmd:{chat_id}:alias:{command_key}")],
-                [InlineKeyboardButton("🧹 清空别名", callback_data=f"adm:gcmd:{chat_id}:clear_alias:{command_key}")],
-            ])
-        rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:gcmd:{chat_id}")])
+        text, alias_allowed = _command_detail_text(command_key, entry, definition)
+        rows = _command_detail_rows(chat_id, command_key, enabled=enabled, alias_allowed=alias_allowed)
         keyboard = InlineKeyboardMarkup(rows)
         await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
 

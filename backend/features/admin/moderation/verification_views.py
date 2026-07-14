@@ -1,6 +1,60 @@
 from __future__ import annotations
 
 from backend.features.admin.support import *
+
+
+def _self_review_labels(settings) -> dict[str, object]:
+    check_mode = getattr(settings, "force_subscribe_check_mode", "all")
+    force_action = getattr(settings, "force_subscribe_not_subscribed_action", "delete_and_warn")
+    return {
+        "timeout": JOIN_SELF_REVIEW_ACTION_LABELS.get(settings.join_self_review_timeout_action, settings.join_self_review_timeout_action),
+        "wrong": JOIN_SELF_REVIEW_ACTION_LABELS.get(settings.join_self_review_wrong_action, settings.join_self_review_wrong_action),
+        "force_enabled": bool(getattr(settings, "force_subscribe_enabled", False)),
+        "channel1": getattr(settings, "force_subscribe_bound_channel_1", None) or "未绑定",
+        "channel2": getattr(settings, "force_subscribe_bound_channel_2", None) or "未绑定",
+        "check_mode": "全部频道/群组" if check_mode == "all" else "任一频道/群组",
+        "force_action": {
+            "delete_and_warn": "删除消息并提示", "delete_only": "仅删除消息",
+            "warn_only": "仅提示", "mute": "禁言并提示",
+        }.get(force_action, force_action),
+    }
+
+
+def _self_review_lines(settings, labels: dict[str, object]) -> list[str]:
+    return [
+        "📝 进群验证 | 自助审核", "",
+        f"📌 状态：{'✅ 开启' if settings.join_self_review_enabled else '❌ 关闭'}",
+        f"⏱️ 超时：{settings.join_self_review_timeout_seconds} 秒",
+        f"⌛ 超时策略：{labels['timeout']}", f"❓ 答错策略：{labels['wrong']}", "",
+        f"📣 强制关注：{'✅ 开启' if labels['force_enabled'] else '❌ 关闭'}",
+        f"📡 频道/群组1：{labels['channel1']}", f"📡 频道/群组2：{labels['channel2']}",
+        f"🎯 关注判定：{labels['check_mode']}", f"🚫 未关注处理：{labels['force_action']}",
+    ]
+
+
+def _self_review_keyboard(settings, chat_id: int, labels: dict[str, object]) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✅ 状态" if settings.join_self_review_enabled else "❌ 状态", callback_data=f"adm:vfy_home:{chat_id}:self_review:toggle:enabled"),
+            InlineKeyboardButton(f"⏱️ 超时 {settings.join_self_review_timeout_seconds}s", callback_data=f"adm:vfy_home:{chat_id}:self_review:cycle:timeout"),
+        ],
+        [InlineKeyboardButton(str(labels["timeout"]), callback_data=f"adm:vfy_home:{chat_id}:self_review:cycle:timeout_action")],
+        [InlineKeyboardButton(str(labels["wrong"]), callback_data=f"adm:vfy_home:{chat_id}:self_review:cycle:wrong_action")],
+        [
+            InlineKeyboardButton("📣 关注 ✅" if labels["force_enabled"] else "📣 关注 ❌", callback_data=f"adm:vfy_home:{chat_id}:self_review:fs_toggle:enabled"),
+            InlineKeyboardButton(f"🎯 {labels['check_mode']}", callback_data=f"adm:vfy_home:{chat_id}:self_review:fs_cycle:check_mode"),
+        ],
+        [
+            InlineKeyboardButton("📡 频道/群组1", callback_data=f"adm:vfy_home:{chat_id}:self_review:fs_input:channel1"),
+            InlineKeyboardButton("📡 频道/群组2", callback_data=f"adm:vfy_home:{chat_id}:self_review:fs_input:channel2"),
+        ],
+        [
+            InlineKeyboardButton(f"🚫 {labels['force_action']}", callback_data=f"adm:vfy_home:{chat_id}:self_review:fs_cycle:action"),
+            InlineKeyboardButton("📝 提示文案", callback_data=f"adm:vfy_home:{chat_id}:self_review:fs_input:text"),
+        ],
+        [InlineKeyboardButton("👀 预览关注提示", callback_data=f"adm:vfy_home:{chat_id}:self_review:fs_preview")],
+        [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:verification:{chat_id}")],
+    ])
 _DURATION_LABEL_THRESHOLD_3600 = 3600
 _DURATION_LABEL_THRESHOLD_60 = 60
 _DURATION_LABEL_THRESHOLD_86400 = 86400
@@ -331,66 +385,9 @@ class VerificationViewsMixin:
             settings = await get_chat_settings(session, chat_id)
             await session.commit()
 
-        timeout_action_label = JOIN_SELF_REVIEW_ACTION_LABELS.get(
-            settings.join_self_review_timeout_action,
-            settings.join_self_review_timeout_action,
-        )
-        wrong_action_label = JOIN_SELF_REVIEW_ACTION_LABELS.get(
-            settings.join_self_review_wrong_action,
-            settings.join_self_review_wrong_action,
-        )
-        force_sub_enabled = bool(getattr(settings, "force_subscribe_enabled", False))
-        ch1 = getattr(settings, "force_subscribe_bound_channel_1", None) or "未绑定"
-        ch2 = getattr(settings, "force_subscribe_bound_channel_2", None) or "未绑定"
-        check_mode = getattr(settings, "force_subscribe_check_mode", "all")
-        check_mode_label = "全部频道/群组" if check_mode == "all" else "任一频道/群组"
-        force_action = getattr(settings, "force_subscribe_not_subscribed_action", "delete_and_warn")
-        force_action_label = {
-            "delete_and_warn": "删除消息并提示",
-            "delete_only": "仅删除消息",
-            "warn_only": "仅提示",
-            "mute": "禁言并提示",
-        }.get(force_action, force_action)
-        lines = [
-            "📝 进群验证 | 自助审核",
-            "",
-            f"📌 状态：{'✅ 开启' if settings.join_self_review_enabled else '❌ 关闭'}",
-            f"⏱️ 超时：{settings.join_self_review_timeout_seconds} 秒",
-            f"⌛ 超时策略：{timeout_action_label}",
-            f"❓ 答错策略：{wrong_action_label}",
-            "",
-            f"📣 强制关注：{'✅ 开启' if force_sub_enabled else '❌ 关闭'}",
-            f"📡 频道/群组1：{ch1}",
-            f"📡 频道/群组2：{ch2}",
-            f"🎯 关注判定：{check_mode_label}",
-            f"🚫 未关注处理：{force_action_label}",
-        ]
-        keyboard = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("✅ 状态" if settings.join_self_review_enabled else "❌ 状态", callback_data=f"adm:vfy_home:{chat_id}:self_review:toggle:enabled"),
-                InlineKeyboardButton(f"⏱️ 超时 {settings.join_self_review_timeout_seconds}s", callback_data=f"adm:vfy_home:{chat_id}:self_review:cycle:timeout"),
-            ],
-            [
-                InlineKeyboardButton(timeout_action_label, callback_data=f"adm:vfy_home:{chat_id}:self_review:cycle:timeout_action"),
-            ],
-            [
-                InlineKeyboardButton(wrong_action_label, callback_data=f"adm:vfy_home:{chat_id}:self_review:cycle:wrong_action"),
-            ],
-            [
-                InlineKeyboardButton("📣 关注 ✅" if force_sub_enabled else "📣 关注 ❌", callback_data=f"adm:vfy_home:{chat_id}:self_review:fs_toggle:enabled"),
-                InlineKeyboardButton(f"🎯 {check_mode_label}", callback_data=f"adm:vfy_home:{chat_id}:self_review:fs_cycle:check_mode"),
-            ],
-            [
-                InlineKeyboardButton("📡 频道/群组1", callback_data=f"adm:vfy_home:{chat_id}:self_review:fs_input:channel1"),
-                InlineKeyboardButton("📡 频道/群组2", callback_data=f"adm:vfy_home:{chat_id}:self_review:fs_input:channel2"),
-            ],
-            [
-                InlineKeyboardButton(f"🚫 {force_action_label}", callback_data=f"adm:vfy_home:{chat_id}:self_review:fs_cycle:action"),
-                InlineKeyboardButton("📝 提示文案", callback_data=f"adm:vfy_home:{chat_id}:self_review:fs_input:text"),
-            ],
-            [InlineKeyboardButton("👀 预览关注提示", callback_data=f"adm:vfy_home:{chat_id}:self_review:fs_preview")],
-            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:verification:{chat_id}")],
-        ])
+        labels = _self_review_labels(settings)
+        lines = _self_review_lines(settings, labels)
+        keyboard = _self_review_keyboard(settings, chat_id, labels)
         await self.message_helper.safe_edit(update, "\n".join(lines), reply_markup=keyboard)
 
     async def _show_join_burst_guard_menu(

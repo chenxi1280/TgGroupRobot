@@ -40,6 +40,29 @@ def _seconds_label(seconds: int) -> str:
     return f"{seconds}秒"
 
 
+def _configured_effect(actions: list[str]) -> str:
+    if actions == ["删除消息"]:
+        return "当前效果: 只删除消息，不会警告/禁言/提示。"
+    if actions:
+        return f"当前效果: {' + '.join(actions)}。"
+    return "当前效果: 规则已开启，但未配置任何处罚动作。"
+
+
+def _effect_option_rows(rule: dict, *, delete: bool, warn: bool, mute: bool, kick: bool, notice: bool) -> list[str]:
+    warn_label = f"启动，警告{int(rule.get('warn_threshold', 3) or 3)}次" if warn else "关闭"
+    mute_label = f"启动，{_seconds_label(int(rule.get('mute_seconds', 3600) or 3600))}" if mute else "关闭"
+    notice_label = f"启动，{int(rule.get('notice_delete_seconds', 10) or 10)}秒后删除" if notice else "关闭"
+    rows = [
+        f"删除消息: {'启动' if delete else '关闭'}",
+        f"警告成员: {warn_label}",
+        f"禁言成员: {mute_label}",
+    ]
+    if kick:
+        rows.append("踢出成员: 启动")
+    rows.append(f"提示消息: {notice_label}")
+    return rows
+
+
 def _rule_effect_summary(rule: dict) -> list[str]:
     if not bool(rule.get("enabled")):
         return [
@@ -50,83 +73,64 @@ def _rule_effect_summary(rule: dict) -> list[str]:
             "提示消息: 关闭",
         ]
 
-    action_parts: list[str] = []
     delete_enabled = bool(rule.get("delete_message"))
     warn_enabled = bool(rule.get("warn_enabled"))
     mute_enabled = bool(rule.get("mute_enabled"))
     kick_enabled = bool(rule.get("kick_enabled"))
     notice_enabled = bool(rule.get("notice_enabled"))
 
-    if delete_enabled:
-        action_parts.append("删除消息")
-    if warn_enabled:
-        action_parts.append("警告成员")
-    if mute_enabled:
-        action_parts.append("禁言成员")
-    if kick_enabled:
-        action_parts.append("踢出成员")
-    if notice_enabled:
-        action_parts.append("提示消息")
-
-    if action_parts == ["删除消息"]:
-        effect = "当前效果: 只删除消息，不会警告/禁言/提示。"
-    elif action_parts:
-        effect = f"当前效果: {' + '.join(action_parts)}。"
-    else:
-        effect = "当前效果: 规则已开启，但未配置任何处罚动作。"
-
-    warn_label = f"启动，警告{int(rule.get('warn_threshold', 3) or 3)}次" if warn_enabled else "关闭"
-    mute_label = f"启动，{_seconds_label(int(rule.get('mute_seconds', 3600) or 3600))}" if mute_enabled else "关闭"
-    notice_label = (
-        f"启动，{int(rule.get('notice_delete_seconds', 10) or 10)}秒后删除"
-        if notice_enabled
-        else "关闭"
+    action_flags = (
+        (delete_enabled, "删除消息"), (warn_enabled, "警告成员"),
+        (mute_enabled, "禁言成员"), (kick_enabled, "踢出成员"),
+        (notice_enabled, "提示消息"),
     )
+    action_parts = [label for enabled, label in action_flags if enabled]
 
-    rows = [
-        effect,
-        f"删除消息: {'启动' if delete_enabled else '关闭'}",
-        f"警告成员: {warn_label}",
-        f"禁言成员: {mute_label}",
+    return [
+        _configured_effect(action_parts),
+        *_effect_option_rows(
+            rule, delete=delete_enabled, warn=warn_enabled, mute=mute_enabled,
+            kick=kick_enabled, notice=notice_enabled,
+        ),
     ]
-    if kick_enabled:
-        rows.append("踢出成员: 启动")
-    rows.append(f"提示消息: {notice_label}")
-    return rows
 
 
 def _rule_trigger_summary(rule_id: str, rule: dict, banned_word_count: int = 0) -> str:
-    if rule_id == "banned_words":
-        return f"实际触发条件: 包含/模糊匹配，命中词库后触发（当前 {banned_word_count} 个词）"
-    if rule_id == "long_message":
-        return f"实际触发条件: 达到或超过 {int(rule.get('message_max_length', 100) or 100)} 字触发"
-    if rule_id == "long_name":
-        return f"实际触发条件: 昵称超过 {int(rule.get('name_max_length', 20) or 20)} 字触发"
-    if rule_id == "flood":
-        return (
-            "实际触发条件: "
-            f"{int(rule.get('seconds', 5) or 5)} 秒内达到 {int(rule.get('messages', 5) or 5)} 条触发"
-        )
-    if rule_id == "spam_user":
-        checks = []
-        if bool(rule.get("check_no_username")):
-            checks.append("无用户名")
-        if bool(rule.get("check_foreign_name")):
-            checks.append("外文昵称")
-        return f"实际触发条件: {' / '.join(checks) if checks else '未选择检测项'}"
-    if rule_id == "block_links":
-        return "实际触发条件: 消息包含链接"
-    if rule_id == "block_buttons":
-        return "实际触发条件: 消息包含按钮"
-    if rule_id == "block_forwards":
-        return "实际触发条件: 用户转发或引用外部消息"
-    if rule_id == "manual_warning":
-        return "实际触发条件: 管理员回复 warn 或 警告"
-    if rule_id == "leave_ban":
-        return "实际触发条件: 成员离开群组"
+    dynamic = _dynamic_trigger_summary(rule_id, rule, banned_word_count)
+    if dynamic is not None:
+        return dynamic
+    static_summaries = {
+        "block_links": "实际触发条件: 消息包含链接",
+        "block_buttons": "实际触发条件: 消息包含按钮",
+        "block_forwards": "实际触发条件: 用户转发或引用外部消息",
+        "manual_warning": "实际触发条件: 管理员回复 warn 或 警告",
+        "leave_ban": "实际触发条件: 成员离开群组",
+    }
     if rule_id == "quick_reply_actions":
         return quick_reply_trigger_summary(rule)
-    return "实际触发条件: 固定检测"
+    return static_summaries.get(rule_id, "实际触发条件: 固定检测")
+
+
+def _dynamic_trigger_summary(rule_id: str, rule: dict, banned_word_count: int) -> str | None:
+    if rule_id == "banned_words":
+        return f"实际触发条件: 包含/模糊匹配，命中词库后触发（当前 {banned_word_count} 个词）"
+    summaries = {
+        "long_message": f"实际触发条件: 达到或超过 {int(rule.get('message_max_length', 100) or 100)} 字触发",
+        "long_name": f"实际触发条件: 昵称超过 {int(rule.get('name_max_length', 20) or 20)} 字触发",
+        "flood": (
+            f"实际触发条件: {int(rule.get('seconds', 5) or 5)} 秒内达到 "
+            f"{int(rule.get('messages', 5) or 5)} 条触发"
+        ),
+        "spam_user": _spam_user_trigger_summary(rule),
+    }
+    return summaries.get(rule_id)
+
+
+def _spam_user_trigger_summary(rule: dict) -> str:
+    flags = (("check_no_username", "无用户名"), ("check_foreign_name", "外文昵称"))
+    checks = [label for field, label in flags if rule.get(field)]
+    description = " / ".join(checks) if checks else "未选择检测项"
+    return f"实际触发条件: {description}"
 
 
 def _rule_button_text(settings, rule_id: str) -> str:

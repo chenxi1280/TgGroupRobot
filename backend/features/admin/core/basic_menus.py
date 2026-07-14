@@ -3,6 +3,48 @@ from __future__ import annotations
 from backend.features.admin.support import *
 
 
+async def _load_group_stats(session, chat_id: int) -> dict[str, object]:
+    import datetime as dt
+    from sqlalchemy import func, select
+    from backend.features.invite.services.invite_stats import get_link_stats
+    from backend.platform.db.schema.models.chat import ChatMember
+    from backend.platform.db.schema.models.core import InviteTracking, ModerationViolation
+    from backend.platform.db.schema.models.points import PointsTransaction, UserDailyStats
+
+    models = {
+        "member_count": ChatMember,
+        "invite_count": InviteTracking,
+        "points_txn_count": PointsTransaction,
+        "violation_count": ModerationViolation,
+    }
+    counts = {}
+    for key, model in models.items():
+        counts[key] = (await session.execute(
+            select(func.count(model.id)).where(model.chat_id == chat_id)
+        )).scalar() or 0
+    since_date = dt.datetime.now(dt.UTC).date() - dt.timedelta(days=6)
+    recent = await session.execute(select(
+        func.coalesce(func.sum(UserDailyStats.message_points_earned), 0),
+        func.coalesce(func.sum(UserDailyStats.invites_count), 0),
+    ).where(UserDailyStats.chat_id == chat_id, UserDailyStats.stat_date >= since_date))
+    counts["recent_message_points"], counts["recent_invites"] = recent.one()
+    counts["link_stats"] = await get_link_stats(session, chat_id)
+    return counts
+
+
+def _format_group_stats(chat_title: str, stats: dict[str, object]) -> str:
+    links = stats["link_stats"]
+    return "\n".join([
+        f"📊 群组统计 | {chat_title}", "", f"成员数量: {stats['member_count']}",
+        f"邀请加入: {stats['invite_count']}", f"积分流水: {stats['points_txn_count']}",
+        f"违规记录: {stats['violation_count']}", "",
+        f"近7日发言积分: {stats['recent_message_points']}", f"近7日邀请人数: {stats['recent_invites']}",
+        "", "邀请链接概览：", f"• 总链接数: {links['total']}",
+        f"• 激活中: {links['active']} | 已撤销: {links['revoked']} | 已过期: {links['expired']}",
+        f"• 统计成员: {links['total_members']}",
+    ])
+
+
 class CoreBasicMenusMixin:
     async def _show_lottery_menu(
         self,
@@ -75,62 +117,14 @@ class CoreBasicMenusMixin:
         chat_id: int,
     ) -> None:
         """显示群组统计摘要"""
-        import datetime as dt
-        from sqlalchemy import func, select
-
-        from backend.features.invite.services.invite_stats import get_link_stats
-        from backend.platform.db.schema.models.chat import ChatMember
-        from backend.platform.db.schema.models.core import InviteTracking, ModerationViolation
-        from backend.platform.db.schema.models.points import PointsTransaction, UserDailyStats
-
         db: Database = context.application.bot_data["db"]
         await self._set_current_chat(db, update.effective_user.id, chat_id)
         async with db.session_factory() as session:
-            member_count = (await session.execute(
-                select(func.count(ChatMember.id)).where(ChatMember.chat_id == chat_id)
-            )).scalar() or 0
-            invite_count = (await session.execute(
-                select(func.count(InviteTracking.id)).where(InviteTracking.chat_id == chat_id)
-            )).scalar() or 0
-            points_txn_count = (await session.execute(
-                select(func.count(PointsTransaction.id)).where(PointsTransaction.chat_id == chat_id)
-            )).scalar() or 0
-            violation_count = (await session.execute(
-                select(func.count(ModerationViolation.id)).where(ModerationViolation.chat_id == chat_id)
-            )).scalar() or 0
-            since_date = dt.datetime.now(dt.UTC).date() - dt.timedelta(days=6)
-            recent_stats = await session.execute(
-                select(
-                    func.coalesce(func.sum(UserDailyStats.message_points_earned), 0),
-                    func.coalesce(func.sum(UserDailyStats.invites_count), 0),
-                ).where(
-                    UserDailyStats.chat_id == chat_id,
-                    UserDailyStats.stat_date >= since_date,
-                )
-            )
-            recent_message_points, recent_invites = recent_stats.one()
-            link_stats = await get_link_stats(session, chat_id)
+            stats = await _load_group_stats(session, chat_id)
             await session.commit()
 
         chat_title = await self._get_chat_title(db, chat_id)
-        text = "\n".join(
-            [
-                f"📊 群组统计 | {chat_title}",
-                "",
-                f"成员数量: {member_count}",
-                f"邀请加入: {invite_count}",
-                f"积分流水: {points_txn_count}",
-                f"违规记录: {violation_count}",
-                "",
-                f"近7日发言积分: {recent_message_points}",
-                f"近7日邀请人数: {recent_invites}",
-                "",
-                "邀请链接概览：",
-                f"• 总链接数: {link_stats['total']}",
-                f"• 激活中: {link_stats['active']} | 已撤销: {link_stats['revoked']} | 已过期: {link_stats['expired']}",
-                f"• 统计成员: {link_stats['total_members']}",
-            ]
-        )
+        text = _format_group_stats(chat_title, stats)
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
         ])

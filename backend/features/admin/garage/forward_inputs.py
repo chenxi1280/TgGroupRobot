@@ -23,8 +23,6 @@ async def handle_garage_forward_input(
     *, state,
     message_text: str,
 ) -> None:
-    from backend.features.garage.services.garage_forward_service import GarageForwardService
-
     if update.effective_user is None or update.effective_message is None:
         return
 
@@ -151,25 +149,7 @@ async def _handle_source_input(
         await update.effective_message.reply_text("来源频道不能为空。")
         return
 
-    source_channel_id: int | None = None
-    source_name: str | None = None
-    remote_chat = None
-    if raw_value.lstrip("-").isdigit():
-        source_channel_id = int(raw_value)
-        try:
-            remote_chat = await context.bot.get_chat(source_channel_id)
-        except Exception as exc:
-            log.warning("garage_forward_source_lookup_failed", raw_value=raw_value, error=str(exc))
-            remote_chat = None
-    else:
-        try:
-            remote_chat = await context.bot.get_chat(raw_value)
-        except Exception as exc:
-            log.warning("garage_forward_source_lookup_failed", raw_value=raw_value, error=str(exc))
-            remote_chat = None
-        if remote_chat is not None:
-            source_channel_id = int(remote_chat.id)
-            source_name = remote_chat.title or remote_chat.username
+    source_channel_id, source_name, remote_chat = await _resolve_source_chat(context, raw_value)
 
     if source_channel_id is None:
         await update.effective_message.reply_text("无法识别该频道，请输入频道 ID、用户名或可解析链接。")
@@ -190,3 +170,15 @@ async def _handle_source_input(
     await session.commit()
     await update.effective_message.reply_text("已添加来源频道。")
     await admin_handler_instance()._show_garage_forward_prompt(update, context, target_chat_id)
+
+
+async def _resolve_source_chat(context, raw_value: str):
+    lookup_value = int(raw_value) if raw_value.lstrip("-").isdigit() else raw_value
+    try:
+        remote_chat = await context.bot.get_chat(lookup_value)
+    except Exception as exc:
+        log.warning("garage_forward_source_lookup_failed", raw_value=raw_value, error=str(exc))
+        return None, None, None
+    source_id = int(remote_chat.id)
+    source_name = remote_chat.title or remote_chat.username
+    return source_id, source_name, remote_chat
