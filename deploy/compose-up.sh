@@ -111,8 +111,8 @@ compose pull bot
 echo "==> Ensuring application database exists"
 bash "$SCRIPT_DIR/ensure-database.sh"
 
-echo "==> Applying project schema"
-bash "$SCRIPT_DIR/apply-schema.sh"
+echo "==> Migrating and validating application database"
+compose run --rm --no-deps bot python -m backend.platform.db.init_db
 
 echo "==> Pulling docs-site static artifact image"
 docker pull "$TGGROUPROBOT_DOCS_SITE_IMAGE"

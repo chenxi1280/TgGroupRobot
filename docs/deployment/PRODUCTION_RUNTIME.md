@@ -65,8 +65,8 @@ TGGROUPROBOT_DOCS_STATIC_BASE_DIR=/data/infra/www/robot.telema.cn
 1. `deploy/ensure-database.sh` 从 `DATABASE_URL` 解析连接信息
 2. 使用业务账号连接维护库 `postgres`
 3. 如果 `tggrouprobot` 数据库不存在，则先创建
-4. `deploy/apply-schema.sh` 在目标库执行项目内 `sql/init.sql`
-5. 再启动 `tggrouprobot-bot`
+4. 使用本次发布的 bot 镜像运行 Alembic 迁移；未纳管历史库会先执行一次兼容引导并建立版本基线
+5. Schema Gate 校验数据库结构完整后，再启动 `tggrouprobot-bot`
 
 ## 4. 当前真实挂载
 
