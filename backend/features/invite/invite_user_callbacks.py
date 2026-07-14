@@ -192,16 +192,49 @@ async def user_invite_menu_callback(update: Update, context: ContextTypes.DEFAUL
     await show_user_invite_menu(update, context, chat_id, user_id=user.id)
 
 
-async def user_invite_create_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
-        return
-    q = update.callback_query
-    user = update.effective_user
-    cb = CallbackParser.parse(q.data or "")
-    chat_id = cb.get_int_optional(3)
-    if chat_id is None or chat_id == 0:
+async def _invite_callback_args(update: Update):
+    if update.callback_query is None or update.effective_user is None:
+        return None
+    chat_id = CallbackParser.parse(update.callback_query.data or "").get_int_optional(3)
+    if chat_id in (None, 0):
         await answer_callback_query_safely(update, "无效的群组ID", show_alert=True)
+        return None
+    return update.callback_query, update.effective_user, chat_id
+
+
+async def _deliver_created_invite(update, context, *, chat_id: int, user_id: int, success: bool, link, text: str) -> None:
+    await update.callback_query.answer()
+    mark_callback_query_answered(update)
+    if success and link:
+        await show_user_invite_menu(update, context, chat_id, user_id=user_id)
+        await context.bot.send_message(chat_id=user_id, text=text)
         return
+    await update.callback_query.edit_message_text(text)
+    await show_user_invite_menu(update, context, chat_id, user_id=user_id)
+
+
+def _format_user_links(links: list) -> str:
+    lines = [f"🔗 我的邀请链接\n\n共 {len(links)} 个链接", ""]
+    for link in links[:5]:
+        status = "🟢" if link.status == InviteLinkStatus.active.value else "🔴"
+        limit = f" / {link.member_limit}" if link.member_limit else ""
+        lines.extend([f"{status} {link.name or '未命名'}", f"   成员: {link.member_count}{limit}", ""])
+    return "\n".join(lines)
+
+
+def _format_invite_rank(leaderboard: list, user_rank: int | None) -> str:
+    lines = ["🏆 邀请排行榜（前10名）", ""]
+    lines.extend(f"{index}. {username or f'用户{uid}'} - {count} 人" for index, (uid, count, username) in enumerate(leaderboard, 1))
+    if user_rank:
+        lines.extend(["", f"你的排名: 第 {user_rank} 名"])
+    return "\n".join(lines)
+
+
+async def user_invite_create_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    args = await _invite_callback_args(update)
+    if args is None:
+        return
+    q, user, chat_id = args
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
@@ -220,31 +253,17 @@ async def user_invite_create_callback(update: Update, context: ContextTypes.DEFA
             message_text = f"❌ {error or '创建失败'}"
         await session.commit()
 
-    if success and link:
-        await q.answer()
-        mark_callback_query_answered(update)
-        await show_user_invite_menu(update, context, chat_id, user_id=user.id)
-        await context.bot.send_message(
-            chat_id=user.id,
-            text=message_text,
-        )
-    else:
-        await q.answer()
-        mark_callback_query_answered(update)
-        await q.edit_message_text(message_text)
-        await show_user_invite_menu(update, context, chat_id, user_id=user.id)
+    await _deliver_created_invite(
+        update, context, chat_id=chat_id, user_id=user.id,
+        success=success, link=link, text=message_text,
+    )
 
 
 async def user_invite_list_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
+    args = await _invite_callback_args(update)
+    if args is None:
         return
-    q = update.callback_query
-    user = update.effective_user
-    cb = CallbackParser.parse(q.data or "")
-    chat_id = cb.get_int_optional(3)
-    if chat_id is None or chat_id == 0:
-        await answer_callback_query_safely(update, "无效的群组ID", show_alert=True)
-        return
+    q, user, chat_id = args
 
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
@@ -260,33 +279,19 @@ async def user_invite_list_callback(update: Update, context: ContextTypes.DEFAUL
         )
         return
 
-    text = f"🔗 我的邀请链接\n\n共 {len(links)} 个链接\n\n"
-    for link in links[:5]:
-        status_emoji = "🟢" if link.status == InviteLinkStatus.active.value else "🔴"
-        text += f"{status_emoji} {link.name or '未命名'}\n"
-        text += f"   成员: {link.member_count}"
-        if link.member_limit:
-            text += f" / {link.member_limit}"
-        text += "\n\n"
-
     await q.answer()
     mark_callback_query_answered(update)
     await q.edit_message_text(
-        text,
+        _format_user_links(links),
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"inv:user:menu:{chat_id}")]]),
     )
 
 
 async def user_invite_rank_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
+    args = await _invite_callback_args(update)
+    if args is None:
         return
-    q = update.callback_query
-    user = update.effective_user
-    cb = CallbackParser.parse(q.data or "")
-    chat_id = cb.get_int_optional(3)
-    if chat_id is None or chat_id == 0:
-        await answer_callback_query_safely(update, "无效的群组ID", show_alert=True)
-        return
+    q, user, chat_id = args
 
     from backend.features.invite.services.invite_service import get_invite_leaderboard, get_user_rank
 
@@ -305,15 +310,9 @@ async def user_invite_rank_callback(update: Update, context: ContextTypes.DEFAUL
         )
         return
 
-    text = "🏆 邀请排行榜（前10名）\n\n"
-    for i, (uid, count, username) in enumerate(leaderboard, 1):
-        text += f"{i}. {username or f'用户{uid}'} - {count} 人\n"
-    if user_rank:
-        text += f"\n你的排名: 第 {user_rank} 名"
-
     await q.answer()
     mark_callback_query_answered(update)
     await q.edit_message_text(
-        text,
+        _format_invite_rank(leaderboard, user_rank),
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"inv:user:menu:{chat_id}")]]),
     )

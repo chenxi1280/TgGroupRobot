@@ -15,6 +15,26 @@ def _toggle_labels(enabled: bool) -> tuple[str, str]:
     return ("✅ 启动", "关闭") if enabled else ("启动", "❌ 关闭")
 
 
+def _scoped_callback(chat_id: int | None, *, scoped: str, unscoped: str) -> str:
+    return scoped.format(chat_id=chat_id) if chat_id else unscoped
+
+
+def _invite_menu_callbacks(chat_id: int | None) -> dict[str, str]:
+    definitions = {
+        "home": ("inv:home:{chat_id}", "inv:menu"),
+        "enable": ("inv:toggle:enabled:{chat_id}:1", "inv:toggle:enabled"),
+        "disable": ("inv:toggle:enabled:{chat_id}:0", "inv:toggle:enabled"),
+        "remind_on": ("inv:toggle:remind:{chat_id}:1", "inv:toggle:remind"),
+        "remind_off": ("inv:toggle:remind:{chat_id}:0", "inv:toggle:remind"),
+        "relay": ("inv:mode:{chat_id}:relay", "inv:mode:relay"),
+        "direct": ("inv:mode:{chat_id}:direct", "inv:mode:direct"),
+    }
+    return {
+        key: _scoped_callback(chat_id, scoped=scoped, unscoped=unscoped)
+        for key, (scoped, unscoped) in definitions.items()
+    }
+
+
 def invite_link_menu_keyboard(
     chat_id: int | None = None,
     *,
@@ -25,31 +45,28 @@ def invite_link_menu_keyboard(
     text_configured: bool = False,
     button_rows: int = 0,
 ) -> InlineKeyboardMarkup:
-    """邀请链接管理主菜单
-
-    Args:
-        chat_id: 群组 ID，用于在私聊中操作群组时指定目标群组
-    """
+    """构建邀请链接管理主菜单。"""
     enabled_on, enabled_off = _toggle_labels(enabled)
     remind_on, remind_off = _toggle_labels(remind_enabled)
     back_button = create_back_button(chat_id, "main")
+    callbacks = _invite_menu_callbacks(chat_id)
     relay_label = "✅ 中转" if mode == "relay" else "中转"
     direct_label = "✅ 直接" if mode == "direct" else "直接"
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("状态:", callback_data=f"inv:home:{chat_id}" if chat_id else "inv:menu"),
-            InlineKeyboardButton(enabled_on, callback_data=f"inv:toggle:enabled:{chat_id}:1" if chat_id else "inv:toggle:enabled"),
-            InlineKeyboardButton(enabled_off, callback_data=f"inv:toggle:enabled:{chat_id}:0" if chat_id else "inv:toggle:enabled"),
+            InlineKeyboardButton("状态:", callback_data=callbacks["home"]),
+            InlineKeyboardButton(enabled_on, callback_data=callbacks["enable"]),
+            InlineKeyboardButton(enabled_off, callback_data=callbacks["disable"]),
         ],
         [
-            InlineKeyboardButton("邀请提醒:", callback_data=f"inv:home:{chat_id}" if chat_id else "inv:menu"),
-            InlineKeyboardButton(remind_on, callback_data=f"inv:toggle:remind:{chat_id}:1" if chat_id else "inv:toggle:remind"),
-            InlineKeyboardButton(remind_off, callback_data=f"inv:toggle:remind:{chat_id}:0" if chat_id else "inv:toggle:remind"),
+            InlineKeyboardButton("邀请提醒:", callback_data=callbacks["home"]),
+            InlineKeyboardButton(remind_on, callback_data=callbacks["remind_on"]),
+            InlineKeyboardButton(remind_off, callback_data=callbacks["remind_off"]),
         ],
         [
-            InlineKeyboardButton("模式:", callback_data=f"inv:home:{chat_id}" if chat_id else "inv:menu"),
-            InlineKeyboardButton(relay_label, callback_data=f"inv:mode:{chat_id}:relay" if chat_id else "inv:mode:relay"),
-            InlineKeyboardButton(direct_label, callback_data=f"inv:mode:{chat_id}:direct" if chat_id else "inv:mode:direct"),
+            InlineKeyboardButton("模式:", callback_data=callbacks["home"]),
+            InlineKeyboardButton(relay_label, callback_data=callbacks["relay"]),
+            InlineKeyboardButton(direct_label, callback_data=callbacks["direct"]),
         ],
         [
             action_button("设置封面", f"inv:cover:{chat_id}" if chat_id else "inv:cover", configured=has_cover),
@@ -66,6 +83,33 @@ def invite_link_menu_keyboard(
         [InlineKeyboardButton("📤 导出数据", callback_data=f"inv:export:{chat_id}" if chat_id else "inv:export")],
         [back_button],
     ])
+
+
+def _invite_link_button(link, chat_id: int | None) -> InlineKeyboardButton:
+    status_icon = StatusIcons.for_invite_links().get(link.status)
+    name = link.name or "未命名"
+    limit = format_range(link.member_count, link.member_limit) if link.member_limit else f"({link.member_count})"
+    callback = _scoped_callback(
+        chat_id,
+        scoped=f"inv:detail:{link.id}:{{chat_id}}",
+        unscoped=f"inv:detail:{link.id}",
+    )
+    return InlineKeyboardButton(f"{status_icon} {name} {limit}", callback_data=callback)
+
+
+def _invite_page_navigation(links: list, chat_id: int | None, page: int, *, end_idx: int) -> list[InlineKeyboardButton]:
+    buttons: list[InlineKeyboardButton] = []
+    if page > 0:
+        callback = _scoped_callback(
+            chat_id, scoped=f"inv:list:{page - 1}:{{chat_id}}", unscoped=f"inv:list:{page - 1}",
+        )
+        buttons.append(InlineKeyboardButton("⬅️ 上一页", callback_data=callback))
+    if end_idx < len(links):
+        callback = _scoped_callback(
+            chat_id, scoped=f"inv:list:{page + 1}:{{chat_id}}", unscoped=f"inv:list:{page + 1}",
+        )
+        buttons.append(InlineKeyboardButton("下一页 ➡️", callback_data=callback))
+    return buttons
 
 
 def invite_link_list_keyboard(
@@ -87,25 +131,9 @@ def invite_link_list_keyboard(
     end_idx = start_idx + page_size
 
     for link in links[start_idx:end_idx]:
-        # 使用 StatusIcons 获取状态图标
-        icon_set = StatusIcons.for_invite_links()
-        status_icon = icon_set.get(link.status)
+        buttons.append([_invite_link_button(link, chat_id)])
 
-        name = link.name or "未命名"
-        limit = format_range(link.member_count, link.member_limit) if link.member_limit else f"({link.member_count})"
-        label = f"{status_icon} {name} {limit}"
-
-        callback = f"inv:detail:{link.id}:{chat_id}" if chat_id else f"inv:detail:{link.id}"
-        buttons.append([InlineKeyboardButton(label, callback_data=callback)])
-
-    # 分页导航
-    nav_buttons = []
-    if page > 0:
-        callback = f"inv:list:{page-1}:{chat_id}" if chat_id else f"inv:list:{page-1}"
-        nav_buttons.append(InlineKeyboardButton("⬅️ 上一页", callback_data=callback))
-    if end_idx < len(links):
-        callback = f"inv:list:{page+1}:{chat_id}" if chat_id else f"inv:list:{page+1}"
-        nav_buttons.append(InlineKeyboardButton("下一页 ➡️", callback_data=callback))
+    nav_buttons = _invite_page_navigation(links, chat_id, page, end_idx=end_idx)
 
     if nav_buttons:
         buttons.append(nav_buttons)
