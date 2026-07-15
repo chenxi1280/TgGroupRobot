@@ -8,6 +8,9 @@ from sqlalchemy.engine import make_url
 from backend.platform.db.runtime import database_migrations
 
 
+ALEMBIC_VERSION_NUM_MAX_LENGTH = 32
+
+
 def test_build_config_accepts_percent_encoded_credentials() -> None:
     url = make_url(
         "postgresql+psycopg://app_user:p%40ssword@postgres:5432/tggrouprobot"
@@ -94,7 +97,7 @@ def test_reliability_revisions_form_linear_chain_and_have_downgrades() -> None:
         "0001_legacy_baseline",
         "0002_verification_reliability",
         "0003_garage_forward_reliability",
-        "0004_scheduled_message_reliability",
+        "0004_scheduled_reliability",
         "0005_ad_rotation_reliability",
     ]
     assert [revision.down_revision for revision in revisions] == [
@@ -102,6 +105,15 @@ def test_reliability_revisions_form_linear_chain_and_have_downgrades() -> None:
         "0001_legacy_baseline",
         "0002_verification_reliability",
         "0003_garage_forward_reliability",
-        "0004_scheduled_message_reliability",
+        "0004_scheduled_reliability",
     ]
     assert all(callable(revision.downgrade) for revision in revisions)
+
+
+def test_revision_identifiers_fit_alembic_version_table() -> None:
+    revisions = database_migrations.load_revision_modules()
+
+    assert all(
+        len(revision.revision) <= ALEMBIC_VERSION_NUM_MAX_LENGTH
+        for revision in revisions
+    )

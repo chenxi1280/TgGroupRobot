@@ -6,7 +6,7 @@ from pathlib import Path
 from alembic import op
 
 revision = "0005_ad_rotation_reliability"
-down_revision = "0004_scheduled_message_reliability"
+down_revision = "0004_scheduled_reliability"
 branch_labels = None
 depends_on = None
 

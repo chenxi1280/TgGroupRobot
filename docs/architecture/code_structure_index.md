@@ -121,7 +121,7 @@ ORM 位于 `backend/platform/db/schema/models/`，以 `chat_id` 为主要租户�
 0001_legacy_baseline
   -> 0002_verification_reliability
   -> 0003_garage_forward_reliability
-  -> 0004_scheduled_message_reliability
+  -> 0004_scheduled_reliability
   -> 0005_ad_rotation_reliability
 ```
 

@@ -50,7 +50,7 @@
 | `0001_legacy_baseline` | 历史库一次性纳管基线 |
 | `0002_verification_reliability` | 验证超时状态和 attempt 历史 |
 | `0003_garage_forward_reliability` | 车库来源事件幂等和可靠执行字段 |
-| `0004_scheduled_message_reliability` | 定时 occurrence、快照、租约和状态 |
+| `0004_scheduled_reliability` | 定时 occurrence、快照、租约和状态 |
 | `0005_ad_rotation_reliability` | 广告派发记录、池配置、租约和重放关联 |
 
 启动顺序固定为：`legacy bootstrap（仅未纳管历史库） → stamp baseline → alembic upgrade head → schema gate`。已纳管库不会重复执行兼容 SQL，任何错误都会阻断启动。
