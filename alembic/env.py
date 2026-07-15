@@ -9,6 +9,7 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from backend.platform.db.runtime.base import Base
+from backend.platform.db.runtime.database_migrations import ALEMBIC_VERSION_TABLE_SCHEMA
 from backend.platform.db.runtime.schema_gate import _load_model_metadata
 
 config = context.config
@@ -26,6 +27,7 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         include_schemas=True,
+        version_table_schema=ALEMBIC_VERSION_TABLE_SCHEMA,
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -36,6 +38,7 @@ def _run_sync_migrations(connection: Connection) -> None:
         connection=connection,
         target_metadata=target_metadata,
         include_schemas=True,
+        version_table_schema=ALEMBIC_VERSION_TABLE_SCHEMA,
     )
     with context.begin_transaction():
         context.run_migrations()

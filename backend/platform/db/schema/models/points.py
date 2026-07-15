@@ -129,7 +129,7 @@ class CustomPointLedger(Base):
     __tablename__ = "custom_point_ledger"
     __table_args__ = {"schema": "bot"}
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     chat_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("bot.tg_chats.id", ondelete="CASCADE"), index=True)
     type_id: Mapped[int] = mapped_column(Integer, ForeignKey("bot.custom_point_types.id", ondelete="CASCADE"), index=True)
     user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("bot.tg_users.id", ondelete="CASCADE"), index=True)
@@ -261,7 +261,7 @@ class PointsMallOrderLog(Base):
     __tablename__ = "points_mall_order_logs"
     __table_args__ = {"schema": "bot"}
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     order_id: Mapped[int] = mapped_column(Integer, ForeignKey("bot.points_mall_orders.order_id", ondelete="CASCADE"), index=True)
     action: Mapped[str] = mapped_column(String(32), index=True)
     payload: Mapped[dict] = mapped_column(JSONB, default=dict)

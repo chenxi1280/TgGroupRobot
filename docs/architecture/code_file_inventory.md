@@ -34,6 +34,7 @@
 | `alembic/versions/0003_garage_forward_reliability.py` | 车库可靠性 |
 | `alembic/versions/0004_scheduled_message_reliability.py` | 定时消息可靠性 |
 | `alembic/versions/0005_ad_rotation_reliability.py` | 广告可靠性 |
+| `alembic/versions/0006_schema_alignment.py` | 历史生产库 Schema 契约对齐 |
 
 ## 验证超时
 

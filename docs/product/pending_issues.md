@@ -52,6 +52,7 @@
 | `0003_garage_forward_reliability` | 车库来源事件幂等和可靠执行字段 |
 | `0004_scheduled_reliability` | 定时 occurrence、快照、租约和状态 |
 | `0005_ad_rotation_reliability` | 广告派发记录、池配置、租约和重放关联 |
+| `0006_schema_alignment` | 历史生产库字段类型与游戏积分来源外键对齐 |
 
 启动顺序固定为：`legacy bootstrap（仅未纳管历史库） → stamp baseline → alembic upgrade head → schema gate`。已纳管库不会重复执行兼容 SQL，任何错误都会阻断启动。
 

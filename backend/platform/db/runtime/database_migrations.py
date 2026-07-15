@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from backend.platform.db.runtime.startup_migrations import run_legacy_schema_bootstrap
 
 LEGACY_BASELINE_REVISION = "0001_legacy_baseline"
+ALEMBIC_VERSION_TABLE_SCHEMA = "public"
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 REVISION_FILES = (
     "0001_legacy_baseline.py",
@@ -22,6 +23,7 @@ REVISION_FILES = (
     "0003_garage_forward_reliability.py",
     "0004_scheduled_message_reliability.py",
     "0005_ad_rotation_reliability.py",
+    "0006_schema_alignment.py",
 )
 
 log = structlog.get_logger(__name__)
@@ -46,7 +48,10 @@ def _load_revision(filename: str) -> ModuleType:
 async def _has_version_table(engine: AsyncEngine) -> bool:
     async with engine.connect() as conn:
         return await conn.run_sync(
-            lambda sync_conn: inspect(sync_conn).has_table("alembic_version")
+            lambda sync_conn: inspect(sync_conn).has_table(
+                "alembic_version",
+                schema=ALEMBIC_VERSION_TABLE_SCHEMA,
+            )
         )
 
 
