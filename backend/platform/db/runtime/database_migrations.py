@@ -53,9 +53,11 @@ async def _has_version_table(engine: AsyncEngine) -> bool:
 def _build_config(engine: AsyncEngine) -> Config:
     config = Config(str(PROJECT_ROOT / "alembic.ini"))
     config.set_main_option("script_location", str(PROJECT_ROOT / "alembic"))
+    database_url = engine.url.render_as_string(hide_password=False)
+    # Alembic uses ConfigParser, where literal percent signs must be doubled.
     config.set_main_option(
         "sqlalchemy.url",
-        engine.url.render_as_string(hide_password=False),
+        database_url.replace("%", "%%"),
     )
     return config
 

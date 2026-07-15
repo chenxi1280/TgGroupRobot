@@ -1,8 +1,24 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
+from sqlalchemy.engine import make_url
 
 from backend.platform.db.runtime import database_migrations
+
+
+def test_build_config_accepts_percent_encoded_credentials() -> None:
+    url = make_url(
+        "postgresql+psycopg://app_user:p%40ssword@postgres:5432/tggrouprobot"
+    )
+    engine = SimpleNamespace(url=url)
+
+    config = database_migrations._build_config(engine)  # type: ignore[arg-type]
+
+    assert config.get_main_option("sqlalchemy.url") == url.render_as_string(
+        hide_password=False
+    )
 
 
 @pytest.mark.asyncio
