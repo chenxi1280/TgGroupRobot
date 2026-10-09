@@ -35,6 +35,7 @@
 | `alembic/versions/0004_scheduled_message_reliability.py` | 定时消息可靠性 |
 | `alembic/versions/0005_ad_rotation_reliability.py` | 广告可靠性 |
 | `alembic/versions/0006_schema_alignment.py` | 历史生产库 Schema 契约对齐 |
+| `alembic/versions/0007_ops_module_config_and_prompt_delivery.py` | 模块 JSON、验证提示投递、运营审计与调度状态 |
 
 ## 验证超时
 

@@ -51,7 +51,7 @@ async def _raw_update_probe(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     if message is not None:
         text = message.text or message.caption or ""
 
-    log.info(
+    log.debug(
         "raw_update_entry",
         update_id=update.update_id,
         has_message=update.message is not None,
@@ -95,8 +95,8 @@ def build_application() -> Application:
     builder = (
         Application.builder()
         .token(settings.bot_token)
-        # ConversationHandler 依赖串行处理更新；并发会导致状态追踪错位。
-        .concurrent_updates(False)
+        # 跨 chat 并行；同 chat/private user 由 chat shard 串行，保护 ConversationHandler 状态。
+        .concurrent_updates(True)
         .request(request)
         .get_updates_request(get_updates_request)
         .post_shutdown(cancel_background_tasks)
@@ -107,6 +107,10 @@ def build_application() -> Application:
     # 注入依赖
     app.bot_data["settings"] = settings
     app.bot_data["db"] = db
+
+    from backend.platform.runtime.chat_shard import install_chat_sharded_processing
+
+    install_chat_sharded_processing(app)
 
     # 注册处理器
     _register_commands(app)

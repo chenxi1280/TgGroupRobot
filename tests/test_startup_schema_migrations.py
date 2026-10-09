@@ -194,3 +194,14 @@ def test_init_sql_contains_ad_rotation_delivery_state() -> None:
     assert "content_snapshot JSONB NOT NULL" in init_sql
     assert "CREATE UNIQUE INDEX IF NOT EXISTS uq_ad_rotation_history_dispatch_key" in init_sql
     assert "CREATE INDEX IF NOT EXISTS ix_ad_rotation_history_due" in init_sql
+
+
+def test_init_sql_contains_ops_module_config_and_prompt_delivery() -> None:
+    init_sql = (PROJECT_ROOT / "sql" / "init.sql").read_text(encoding="utf-8")
+
+    assert "module_config JSONB NOT NULL DEFAULT '{}'::jsonb" in init_sql
+    assert "prompt_status VARCHAR(32) NOT NULL DEFAULT 'pending'" in init_sql
+    assert "prompt_message_id INTEGER" in init_sql
+    assert "CREATE TABLE IF NOT EXISTS bot.ops_audit_events" in init_sql
+    assert "CREATE TABLE IF NOT EXISTS bot.scheduler_task_states" in init_sql
+    assert "CREATE INDEX IF NOT EXISTS ix_ops_audit_events_domain" in init_sql

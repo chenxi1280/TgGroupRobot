@@ -9,6 +9,7 @@ from telegram.ext import ContextTypes
 
 from backend.platform.db.runtime.session import Database
 from backend.platform.db.schema.models.core import TgUser
+from backend.platform.runtime.request_scope import get_or_load_admin
 from backend.platform.telegram.message_actor import build_sender_chat_actor, is_sender_chat_actor, resolve_message_actor
 from backend.shared.services.module_settings_service import ModuleSettingsService
 from backend.shared.services.permission_service import is_user_admin
@@ -98,8 +99,8 @@ def _resolve_runtime(update: Update) -> _GroupMessageRuntime | None:
         return None
     chat, message, sender_chat, user, message_text = inputs
     sender_chat_id = getattr(sender_chat, "id", None)
-    log.warning(
-        "=== UNIFIED_GROUP_MESSAGE_HANDLER ENTRY ===",
+    log.debug(
+        "unified_group_message_handler_entry",
         chat_id=chat.id,
         user_id=user.id,
         sender_chat_id=sender_chat_id,
@@ -121,14 +122,19 @@ def _resolve_runtime(update: Update) -> _GroupMessageRuntime | None:
 
 async def _resolve_admin_status(context: ContextTypes.DEFAULT_TYPE, runtime: _GroupMessageRuntime) -> bool:
     if runtime.real_user_id is None:
-        log.info(
+        log.debug(
             "unified_handler_skip_admin_check_sender_chat",
             chat_id=runtime.chat.id,
             sender_chat_id=runtime.sender_chat_id,
         )
         return False
     try:
-        return await is_user_admin(context, runtime.chat.id, runtime.real_user_id)
+        return await get_or_load_admin(
+            context,
+            runtime.chat.id,
+            runtime.real_user_id,
+            checker=is_user_admin,
+        )
     except Exception as exc:
         log.warning(
             "admin_check_failed",
@@ -141,19 +147,39 @@ async def _resolve_admin_status(context: ContextTypes.DEFAULT_TYPE, runtime: _Gr
 
 async def _load_chat_settings(context: ContextTypes.DEFAULT_TYPE, runtime: _GroupMessageRuntime):
     db: Database = context.application.bot_data["db"]
-    async with db.session_factory() as session:
+
+    async def _loader(session, chat_id: int):
         old_user = await session.get(TgUser, runtime.real_user_id) if runtime.real_user_id is not None else None
         old_username, old_name = _old_user_identity(old_user)
         profile = _runtime_user_profile(runtime)
         settings = await ModuleSettingsService.ensure(
             session,
-            runtime.chat.id,
+            chat_id,
             chat_type=runtime.chat.type,
             title=runtime.chat.title,
             user_id=runtime.real_user_id,
             **profile,
         )
+        return settings, old_username, old_name
+
+    # get_or_load_settings 默认只缓存 settings；这里需要 old identity，先直接加载并写 scope
+    from backend.platform.runtime.request_scope import current_scope, scoped_session
+
+    scope = current_scope()
+    if scope is not None and scope.settings is not None and scope.chat_id == runtime.chat.id:
+        old_username = scope.get_cached("old_username")
+        old_name = scope.get_cached("old_name")
+        if old_username is not None or old_name is not None:
+            return db, scope.settings, old_username, old_name or ""
+
+    async with scoped_session(db) as session:
+        settings, old_username, old_name = await _loader(session, runtime.chat.id)
         await session.commit()
+    if scope is not None:
+        scope.chat_id = runtime.chat.id
+        scope.settings = settings
+        scope.set_cached("old_username", old_username)
+        scope.set_cached("old_name", old_name)
     return db, settings, old_username, old_name
 
 
@@ -276,7 +302,7 @@ async def unified_group_message_handler(update: Update, context: ContextTypes.DE
 
     is_admin = await _resolve_admin_status(context, runtime)
 
-    log.info(
+    log.debug(
         "unified_handler_admin_check",
         chat_id=runtime.chat.id,
         user_id=runtime.real_user_id,

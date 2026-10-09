@@ -32,6 +32,14 @@ class _Session:
         return None
 
 
+class _TrackingSession(_Session):
+    def __init__(self, events: list[str]) -> None:
+        self.events = events
+
+    async def commit(self):
+        self.events.append("commit")
+
+
 class _Db:
     def __init__(self, session: _Session | None = None) -> None:
         self._session = session or _Session()
@@ -83,6 +91,43 @@ def _settings(**overrides):
     }
     defaults.update(overrides)
     return SimpleNamespace(**defaults)
+
+
+@pytest.mark.asyncio
+async def test_challenge_is_committed_before_telegram_side_effects(monkeypatch) -> None:
+    events: list[str] = []
+    challenge = SimpleNamespace(
+        token="token-1",
+        question=None,
+        solved=False,
+        timeout_handled=False,
+        prompt_attempts=0,
+    )
+
+    async def create_challenge(*args, **kwargs):
+        return challenge
+
+    async def restrict(*args, **kwargs):
+        events.append("restrict")
+        return SimpleNamespace(failed=False)
+
+    async def send(*args, **kwargs):
+        events.append("send")
+        return SimpleNamespace(message_id=7)
+
+    monkeypatch.setattr(verification_handler, "create_or_replace_challenge", create_challenge)
+    monkeypatch.setattr(verification_handler, "restrict_user_safely", restrict)
+    monkeypatch.setattr(verification_handler, "_send_challenge_prompt", send)
+
+    await verification_handler._start_member_challenge(
+        SimpleNamespace(),
+        _TrackingSession(events),
+        SimpleNamespace(id=-100123),
+        member=_member(),
+        settings=_settings(),
+    )
+
+    assert events[:3] == ["commit", "restrict", "send"]
 
 
 @pytest.mark.asyncio

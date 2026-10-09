@@ -124,6 +124,7 @@ ORM 位于 `backend/platform/db/schema/models/`，以 `chat_id` 为主要租户�
   -> 0004_scheduled_reliability
   -> 0005_ad_rotation_reliability
   -> 0006_schema_alignment
+  -> 0007_ops_module_config_prompt
 ```
 
 Schema Gate 位于 `backend/platform/db/runtime/schema_gate.py` 和 `schema_contract.py`，统一聚合类型、nullable、default、外键、普通索引和唯一约束差异。

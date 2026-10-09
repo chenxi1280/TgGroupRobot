@@ -48,7 +48,6 @@ def test_group_dispatcher_exposes_expected_business_handler_matrix():
         "lottery",
         "solitaire",
         "moderation",
-        "points",
     ]
 
 

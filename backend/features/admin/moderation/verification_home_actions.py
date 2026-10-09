@@ -213,6 +213,19 @@ class VerificationHomeActionsMixin:
                 challenge_key=key,
             )
             return
+        if section == "prompt_fail_open" and action == "toggle":
+            from backend.features.admin.moderation.verification_prompt_policy import (
+                toggle_prompt_fail_open,
+            )
+
+            await toggle_prompt_fail_open(
+                update,
+                context,
+                chat_id=chat_id,
+                db=db,
+                show_menu=self._show_verification_menu,
+            )
+            return
 
         await self._show_verification_menu(update, context, chat_id)
 

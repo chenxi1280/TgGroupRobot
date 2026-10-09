@@ -46,6 +46,7 @@
         <button class="tab" data-tab="accounts">后台账号</button>
         <button class="tab" data-tab="verificationTimeouts">验证超时任务</button>
         <button class="tab" data-tab="adDeliveries">广告派发任务</button>
+        <button class="tab" data-tab="opsCenter">失败任务运营台</button>
         <button class="tab" data-tab="audit">操作日志</button>
       </nav>
 
@@ -295,6 +296,45 @@
             <table>
               <thead><tr><th>ID</th><th>广告</th><th>状态</th><th>次数</th><th>错误</th><th>计划时间</th><th>下次重试</th><th>操作</th></tr></thead>
               <tbody id="adDeliveriesBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section id="tabOpsCenter" class="tab-panel hidden">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>跨域失败任务运营台</h2>
+            <button id="refreshOpsBtn" type="button" class="ghost">刷新</button>
+          </div>
+          <p class="muted">汇总验证超时、验证提示、车库转发、定时消息、轮播广告的失败/不确定任务，以及自动暂停的调度任务。</p>
+          <div id="opsSummary" class="result-box"></div>
+          <div class="form-grid">
+            <label>
+              <span>失败域</span>
+              <select id="opsDomain">
+                <option value="verification_timeout">验证超时</option>
+                <option value="verification_prompt">验证提示</option>
+                <option value="garage_forward">车库转发</option>
+                <option value="scheduled_message">定时消息</option>
+                <option value="ad_rotation">轮播广告</option>
+              </select>
+            </label>
+            <button id="loadOpsFailuresBtn" type="button">查询失败明细</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>域</th><th>ID</th><th>群组</th><th>状态</th><th>次数</th><th>错误</th></tr></thead>
+              <tbody id="opsFailuresBody"></tbody>
+            </table>
+          </div>
+          <div class="panel-head" style="margin-top:1rem">
+            <h2>已暂停调度任务</h2>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>任务</th><th>自动暂停</th><th>原因</th><th>连续错误</th><th>最近错误</th><th>操作</th></tr></thead>
+              <tbody id="opsPausedTasksBody"></tbody>
             </table>
           </div>
         </section>

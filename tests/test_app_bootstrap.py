@@ -38,7 +38,7 @@ class _FakeBuilder:
         return self.app
 
 
-def test_build_application_uses_serial_updates(monkeypatch):
+def test_build_application_uses_chat_sharded_concurrent_updates(monkeypatch):
     fake_builder = _FakeBuilder()
     captured_requests: list[tuple[object, dict]] = []
     settings = SimpleNamespace(
@@ -76,7 +76,7 @@ def test_build_application_uses_serial_updates(monkeypatch):
     app = app_main.build_application()
 
     assert app is fake_builder.app
-    assert fake_builder.concurrent_updates_value is False
+    assert fake_builder.concurrent_updates_value is True
     assert captured_db == [("postgresql+asyncpg://example", 10)]
     assert len(captured_requests) == 2
     assert captured_requests[0][1]["connection_pool_size"] == 32

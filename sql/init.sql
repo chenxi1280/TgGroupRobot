@@ -134,6 +134,7 @@ CREATE TABLE IF NOT EXISTS bot.chat_settings (
     anti_spam_repeat_messages INTEGER NOT NULL DEFAULT 3,          -- 重复消息触发条数
     anti_spam_repeat_seconds INTEGER NOT NULL DEFAULT 15,          -- 重复消息检测窗口（秒）
     anti_spam_rules JSONB NOT NULL DEFAULT '{}'::jsonb,            -- 反垃圾规则开关与名单配置
+    module_config JSONB NOT NULL DEFAULT '{}'::jsonb,              -- 模块扩展 JSON 配置
     message_points_enabled BOOLEAN NOT NULL DEFAULT FALSE,         -- 是否启用发言积分
     message_points INTEGER NOT NULL DEFAULT 1,                     -- 每次发言获得积分
     message_points_daily_limit INTEGER,                            -- 每日发言积分上限（null=无限制）
@@ -207,6 +208,7 @@ ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS anti_spam_delete_notify_s
 ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS anti_spam_repeat_messages INTEGER NOT NULL DEFAULT 3;
 ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS anti_spam_repeat_seconds INTEGER NOT NULL DEFAULT 15;
 ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS anti_spam_rules JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS module_config JSONB NOT NULL DEFAULT '{}'::jsonb;
 ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS verification_cover_media_type VARCHAR(16);
 ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS verification_cover_file_id VARCHAR(256);
 ALTER TABLE bot.chat_settings ADD COLUMN IF NOT EXISTS verification_agreement_text TEXT NOT NULL DEFAULT '请阅读并同意本群规则后再发言。';
@@ -365,6 +367,7 @@ COMMENT ON COLUMN bot.chat_settings.anti_spam_delete_notify_seconds IS '反垃�
 COMMENT ON COLUMN bot.chat_settings.anti_spam_repeat_messages IS '反垃圾重复消息触发条数';
 COMMENT ON COLUMN bot.chat_settings.anti_spam_repeat_seconds IS '反垃圾重复消息检测窗口（秒）';
 COMMENT ON COLUMN bot.chat_settings.anti_spam_rules IS '反垃圾规则配置（开关、名单、阈值）';
+COMMENT ON COLUMN bot.chat_settings.module_config IS '模块扩展 JSON 配置（如 verification.prompt_fail_open）';
 COMMENT ON COLUMN bot.chat_settings.message_points_enabled IS '是否启用发言积分功能';
 COMMENT ON COLUMN bot.chat_settings.message_points IS '每次发言获得积分数';
 COMMENT ON COLUMN bot.chat_settings.message_points_daily_limit IS '每日发言积分上限（NULL=无限制）';
@@ -1012,6 +1015,11 @@ CREATE TABLE IF NOT EXISTS bot.verification_challenges (
     timeout_last_error TEXT,                                     -- 最近错误
     timeout_completed_at TIMESTAMPTZ,                             -- 终态完成时间
     timeout_replay_of_attempt_id INTEGER,                         -- 管理员确认重放的来源 attempt
+    prompt_status VARCHAR(32) NOT NULL DEFAULT 'pending',         -- 验证提示消息投递状态
+    prompt_message_id INTEGER,                                    -- 验证提示消息 ID
+    prompt_attempts INTEGER NOT NULL DEFAULT 0,                   -- 提示发送尝试次数
+    prompt_last_error TEXT,                                       -- 提示发送最近错误
+    prompt_completed_at TIMESTAMPTZ,                              -- 提示投递完成时间
     created_at TIMESTAMPTZ NOT NULL,                              -- 记录创建时间（带时区）
     CONSTRAINT fk_verification_challenges_chat_id FOREIGN KEY (chat_id) 
         REFERENCES bot.tg_chats(id) ON DELETE CASCADE,                -- 外键约束：删除群组时级联删除验证记录
@@ -1065,6 +1073,52 @@ CREATE TABLE IF NOT EXISTS bot.verification_timeout_attempts (
 
 CREATE INDEX IF NOT EXISTS ix_verification_timeout_attempt_status_created
     ON bot.verification_timeout_attempts(status, created_at);
+
+-- 兼容历史库：补齐验证提示可靠投递字段
+ALTER TABLE bot.verification_challenges ADD COLUMN IF NOT EXISTS prompt_status VARCHAR(32) NOT NULL DEFAULT 'pending';
+ALTER TABLE bot.verification_challenges ADD COLUMN IF NOT EXISTS prompt_message_id INTEGER;
+ALTER TABLE bot.verification_challenges ADD COLUMN IF NOT EXISTS prompt_attempts INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE bot.verification_challenges ADD COLUMN IF NOT EXISTS prompt_last_error TEXT;
+ALTER TABLE bot.verification_challenges ADD COLUMN IF NOT EXISTS prompt_completed_at TIMESTAMPTZ;
+COMMENT ON COLUMN bot.verification_challenges.prompt_status IS '验证提示消息投递状态：pending/succeeded/retryable_failed/uncertain 等';
+COMMENT ON COLUMN bot.verification_challenges.prompt_message_id IS '验证提示消息在群内的 message_id';
+COMMENT ON COLUMN bot.verification_challenges.prompt_attempts IS '验证提示发送尝试次数';
+COMMENT ON COLUMN bot.verification_challenges.prompt_last_error IS '验证提示发送最近错误';
+COMMENT ON COLUMN bot.verification_challenges.prompt_completed_at IS '验证提示投递完成时间';
+
+-- 运营审计事件
+CREATE TABLE IF NOT EXISTS bot.ops_audit_events (
+    id SERIAL PRIMARY KEY,
+    domain VARCHAR(64) NOT NULL,
+    event_type VARCHAR(64) NOT NULL,
+    chat_id BIGINT,
+    user_id BIGINT,
+    entity_type VARCHAR(64),
+    entity_id VARCHAR(128),
+    severity VARCHAR(16) NOT NULL DEFAULT 'info',
+    detail JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS ix_ops_audit_events_domain ON bot.ops_audit_events(domain);
+CREATE INDEX IF NOT EXISTS ix_ops_audit_events_event_type ON bot.ops_audit_events(event_type);
+CREATE INDEX IF NOT EXISTS ix_ops_audit_events_chat_id ON bot.ops_audit_events(chat_id);
+CREATE INDEX IF NOT EXISTS ix_ops_audit_events_entity_id ON bot.ops_audit_events(entity_id);
+CREATE INDEX IF NOT EXISTS ix_ops_audit_events_created_at ON bot.ops_audit_events(created_at);
+
+-- 调度任务暂停/恢复状态
+CREATE TABLE IF NOT EXISTS bot.scheduler_task_states (
+    task_name VARCHAR(64) PRIMARY KEY,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    auto_paused BOOLEAN NOT NULL DEFAULT FALSE,
+    paused_reason TEXT,
+    consecutive_errors INTEGER NOT NULL DEFAULT 0,
+    total_runs INTEGER NOT NULL DEFAULT 0,
+    total_errors INTEGER NOT NULL DEFAULT 0,
+    last_success_at TIMESTAMPTZ,
+    last_failure_at TIMESTAMPTZ,
+    last_error TEXT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 
 -- ============================================
 -- 10. 订阅套餐表 (subscription_plans)

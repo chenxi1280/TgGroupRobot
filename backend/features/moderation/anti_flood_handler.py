@@ -58,9 +58,9 @@ class PreparedFlood:
 
 async def _load_flood_settings(context: ContextTypes.DEFAULT_TYPE, chat_id: int):
     db = context.application.bot_data["db"]
-    async with db.session_factory() as session:
-        settings = await get_chat_settings(session, chat_id)
-        await session.commit()
+    from backend.platform.runtime.request_scope import get_or_load_settings
+
+    settings = await get_or_load_settings(db, chat_id, loader=get_chat_settings)
     return db, settings
 
 

@@ -13,6 +13,8 @@ from backend.platform.db.schema.models.admin_web import (  # noqa: F401
 )
 from backend.platform.db.schema.models.automation import (  # noqa: F401
     AdCampaign,
+    AdRotationHistory,
+    AdRotationRule,
     InviteLink,
     InviteTracking,
     ScheduledMessage,
@@ -80,6 +82,7 @@ from backend.platform.db.schema.models.garage_features import (  # noqa: F401
     TeacherProfile,
     TeacherSearchSetting,
 )
+from backend.platform.db.schema.models.ops import OpsAuditEvent, SchedulerTaskState  # noqa: F401
 from backend.platform.db.schema.models.scheduled_message import ScheduledMessageLog, ScheduledMessageTask  # noqa: F401
 from backend.platform.db.schema.models.welcome import WelcomeMessage  # noqa: F401
 from backend.platform.db.schema.models.expansion import (  # noqa: F401

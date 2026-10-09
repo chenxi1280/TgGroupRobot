@@ -238,6 +238,9 @@ class ChatSettings(Base):
     anti_spam_repeat_seconds: Mapped[int] = mapped_column(Integer, default=15)
     anti_spam_rules: Mapped[dict] = mapped_column(JSONB, default=dict)
 
+    # 按模块扩展的 JSON 配置（新设置优先写这里，避免继续膨胀宽表列）
+    module_config: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
+
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC))
     updated_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True),

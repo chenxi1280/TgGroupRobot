@@ -87,7 +87,14 @@ async def should_exempt_admin(
         return False
 
     try:
-        if await is_user_admin(context, chat_id, user_id):
+        from backend.platform.runtime.request_scope import get_or_load_admin
+
+        if await get_or_load_admin(
+            context,
+            chat_id,
+            user_id,
+            checker=is_user_admin,
+        ):
             return True
     except Exception as exc:  # pragma: no cover - defensive logging
         log.warning("moderation_admin_check_failed", chat_id=chat_id, user_id=user_id, error=str(exc))

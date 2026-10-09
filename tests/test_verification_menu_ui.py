@@ -78,6 +78,7 @@ async def test_verification_menu_shows_timeout_operations_entry(monkeypatch):
         ["🛡️ 进群自助审核"],
         ["🚧 禁止批量进群"],
         ["⚠️ 超时失败任务"],
+        ["📨 提示失败：放行(fail-open)"],
         ["🔙 返回"],
     ]
     assert "进群验证 - 新人未通过验证则进行限制" in rendered["text"]

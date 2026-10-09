@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from sqlalchemy import and_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.platform.db.schema.models.core import PointsAccount, PointsTransaction
@@ -21,32 +22,52 @@ async def get_balance(session: AsyncSession, chat_id: int, user_id: int) -> int:
     return int(bal or 0)
 
 
+async def _load_account_for_update(
+    session: AsyncSession,
+    chat_id: int,
+    user_id: int,
+) -> PointsAccount | None:
+    res = await session.execute(
+        select(PointsAccount)
+        .where(
+            and_(
+                PointsAccount.chat_id == chat_id,
+                PointsAccount.user_id == user_id,
+            )
+        )
+        .with_for_update()
+    )
+    return res.scalar_one_or_none()
+
+
 async def _get_or_create_account(
     session: AsyncSession,
     chat_id: int,
     user_id: int,
 ) -> PointsAccount:
-    res = await session.execute(
-        select(PointsAccount).where(
-            and_(
-                PointsAccount.chat_id == chat_id,
-                PointsAccount.user_id == user_id,
-            )
-        ).with_for_update()
-    )
-    acc = res.scalar_one_or_none()
-    if acc is None:
-        acc = PointsAccount(chat_id=chat_id, user_id=user_id, balance=0)
-        session.add(acc)
-        await session.flush()
-    return acc
+    acc = await _load_account_for_update(session, chat_id, user_id)
+    if acc is not None:
+        return acc
+
+    try:
+        async with session.begin_nested():
+            acc = PointsAccount(chat_id=chat_id, user_id=user_id, balance=0)
+            session.add(acc)
+            await session.flush()
+            return acc
+    except IntegrityError:
+        acc = await _load_account_for_update(session, chat_id, user_id)
+        if acc is None:
+            raise
+        return acc
 
 
 async def change_points(
     session: AsyncSession,
     chat_id: int,
     user_id: int,
-    *, amount: int,
+    *,
+    amount: int,
     txn_type: str,
     reason: str | None = None,
 ) -> tuple[bool, int]:

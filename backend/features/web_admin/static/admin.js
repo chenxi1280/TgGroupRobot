@@ -211,6 +211,46 @@ const loadAuditLogs = async () => {
   `).join('')
 }
 
+const renderOpsDomainCounts = (domains) => {
+  return Object.entries(domains || {}).map(([domain, counts]) => {
+    const total = Object.values(counts || {}).reduce((sum, value) => sum + Number(value || 0), 0)
+    const detail = Object.entries(counts || {}).map(([status, count]) => `${status}:${count}`).join(' / ')
+    return `<div><strong>${escapeHtml(domain)}</strong> 共 ${total} · ${escapeHtml(detail || '无')}</div>`
+  }).join('')
+}
+
+const loadOpsCenter = async () => {
+  const response = await api('/admin/api/ops/summary')
+  const data = response.data || {}
+  $('opsSummary').innerHTML = renderOpsDomainCounts(data.domains)
+  $('opsPausedTasksBody').innerHTML = (data.paused_scheduler_tasks || []).map((task) => `
+    <tr>
+      <td>${escapeHtml(task.task_name)}</td>
+      <td>${task.auto_paused ? '是' : '否'}</td>
+      <td>${escapeHtml(task.paused_reason || '')}</td>
+      <td>${escapeHtml(task.consecutive_errors || 0)}</td>
+      <td>${escapeHtml(task.last_error || '')}</td>
+      <td><button type="button" class="ghost ops-resume-btn" data-task="${escapeHtml(task.task_name)}">恢复</button></td>
+    </tr>
+  `).join('') || '<tr><td colspan="6">暂无暂停任务</td></tr>'
+  $('opsSummary').classList.remove('hidden')
+}
+
+const loadOpsFailures = async () => {
+  const domain = $('opsDomain').value
+  const response = await api(`/admin/api/ops/failures?domain=${encodeURIComponent(domain)}&limit=50`)
+  $('opsFailuresBody').innerHTML = (response.data.items || []).map((item) => `
+    <tr>
+      <td>${escapeHtml(item.domain)}</td>
+      <td>${escapeHtml(item.id)}</td>
+      <td>${escapeHtml(item.chat_id || '')}</td>
+      <td>${escapeHtml(item.status)}</td>
+      <td>${escapeHtml(item.attempts || 0)}</td>
+      <td>${escapeHtml(item.error || '')}</td>
+    </tr>
+  `).join('') || '<tr><td colspan="6">暂无失败记录</td></tr>'
+}
+
 const showAdminPanel = async (admin) => {
   state.currentAdminId = admin.id
   $('currentAdmin').textContent = admin.display_name || admin.username
@@ -220,7 +260,14 @@ const showAdminPanel = async (admin) => {
   state.specs = specs.data.items || []
   state.copyLimit = specs.data.copy_limit || 40
   fillSpecSelects()
-  await Promise.all([loadKeys(), loadAnnouncement(), loadPlatformConfig(), loadAccounts(), loadAuditLogs()])
+  await Promise.all([
+    loadKeys(),
+    loadAnnouncement(),
+    loadPlatformConfig(),
+    loadAccounts(),
+    loadAuditLogs(),
+    loadOpsCenter(),
+  ])
 }
 
 const boot = async () => {
@@ -265,8 +312,35 @@ document.querySelectorAll('.tab').forEach((button) => {
     show($('tabAccounts'), button.dataset.tab === 'accounts')
     show($('tabVerificationTimeouts'), button.dataset.tab === 'verificationTimeouts')
     show($('tabAdDeliveries'), button.dataset.tab === 'adDeliveries')
+    show($('tabOpsCenter'), button.dataset.tab === 'opsCenter')
     show($('tabAudit'), button.dataset.tab === 'audit')
+    if (button.dataset.tab === 'opsCenter') {
+      loadOpsCenter().catch((error) => toast(error.message))
+    }
   })
+})
+
+$('refreshOpsBtn')?.addEventListener('click', () => {
+  loadOpsCenter().catch((error) => toast(error.message))
+})
+$('loadOpsFailuresBtn')?.addEventListener('click', () => {
+  loadOpsFailures().catch((error) => toast(error.message))
+})
+document.addEventListener('click', async (event) => {
+  const target = event.target
+  if (!(target instanceof HTMLElement) || !target.classList.contains('ops-resume-btn')) return
+  const taskName = target.dataset.task
+  if (!taskName) return
+  try {
+    await api(`/admin/api/ops/scheduler/${encodeURIComponent(taskName)}/resume`, {
+      method: 'POST',
+      body: '{}',
+    })
+    toast(`任务 ${taskName} 已恢复`)
+    await loadOpsCenter()
+  } catch (error) {
+    toast(error.message)
+  }
 })
 
 $('generateForm').addEventListener('submit', async (event) => {

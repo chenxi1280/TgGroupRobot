@@ -24,6 +24,7 @@ REVISION_FILES = (
     "0004_scheduled_message_reliability.py",
     "0005_ad_rotation_reliability.py",
     "0006_schema_alignment.py",
+    "0007_ops_module_config_and_prompt_delivery.py",
 )
 
 log = structlog.get_logger(__name__)

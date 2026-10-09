@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from backend.platform.runtime.request_scope import bind_request_scope
 from backend.platform.telegram.group_pipeline import GroupMessageHandler
 from backend.shared.errors import BusinessRuleError
 
@@ -16,7 +17,6 @@ EXPECTED_BUSINESS_HANDLER_ORDER = [
     "lottery",
     "solitaire",
     "moderation",
-    "points",
 ]
 
 
@@ -48,16 +48,18 @@ async def test_group_message_handler_runs_business_handlers_in_order() -> None:
         (name, _recording_handler(name, calls))
         for name in EXPECTED_BUSINESS_HANDLER_ORDER
     ]
+    handler._points_handler = _recording_handler("points", calls)
     update, context, chat, user = _update_context()
 
-    handled = await handler.handle(update, context, chat, user=user, message_text="hello")
+    async with bind_request_scope(chat_id=chat.id, user_id=user.id):
+        handled = await handler.handle(update, context, chat, user=user, message_text="hello")
 
     assert handled is False
-    assert calls == ["core", *EXPECTED_BUSINESS_HANDLER_ORDER]
+    assert calls == ["core", *EXPECTED_BUSINESS_HANDLER_ORDER, "points"]
 
 
 @pytest.mark.asyncio
-async def test_group_message_handler_short_circuits_after_consumed_message() -> None:
+async def test_group_message_handler_still_awards_points_after_business_consume() -> None:
     calls: list[str] = []
     handler = GroupMessageHandler()
     handler._core_handler = _recording_handler("core", calls)
@@ -65,12 +67,33 @@ async def test_group_message_handler_short_circuits_after_consumed_message() -> 
         ("auction", _recording_handler("auction", calls, result=True)),
         ("engagement", _recording_handler("engagement", calls)),
     ]
+    handler._points_handler = _recording_handler("points", calls)
     update, context, chat, user = _update_context()
 
-    handled = await handler.handle(update, context, chat, user=user, message_text="拍卖")
+    async with bind_request_scope(chat_id=chat.id, user_id=user.id):
+        handled = await handler.handle(update, context, chat, user=user, message_text="拍卖")
+
+    # 业务消费不再阻断积分旁路；handle 本身返回 False（仅 core 拦截返回 True）
+    assert handled is False
+    assert calls == ["core", "auction", "points"]
+
+
+@pytest.mark.asyncio
+async def test_core_short_circuit_suppresses_points() -> None:
+    calls: list[str] = []
+    handler = GroupMessageHandler()
+    handler._core_handler = _recording_handler("core", calls, result=True)
+    handler._business_handlers = [
+        ("auction", _recording_handler("auction", calls)),
+    ]
+    handler._points_handler = _recording_handler("points", calls)
+    update, context, chat, user = _update_context()
+
+    async with bind_request_scope(chat_id=chat.id, user_id=user.id):
+        handled = await handler.handle(update, context, chat, user=user, message_text="blocked")
 
     assert handled is True
-    assert calls == ["core", "auction"]
+    assert calls == ["core"]
 
 
 @pytest.mark.asyncio
@@ -93,10 +116,12 @@ async def test_business_rule_error_warns_and_continues(monkeypatch) -> None:
         ("auction", rejected),
         ("engagement", _recording_handler("engagement", calls)),
     ]
+    handler._points_handler = _recording_handler("points", calls)
     update, context, chat, user = _update_context()
 
-    assert await handler.handle(update, context, chat, user=user, message_text="continue") is False
-    assert calls == ["core", "auction", "engagement"]
+    async with bind_request_scope(chat_id=chat.id, user_id=user.id):
+        assert await handler.handle(update, context, chat, user=user, message_text="continue") is False
+    assert calls == ["core", "auction", "engagement", "points"]
     assert events[0]["event"] == "group_handler_business_error"
     assert events[0]["error_type"] == "BusinessRuleError"
 
@@ -117,10 +142,12 @@ async def test_programming_errors_are_re_raised_and_stop_pipeline(error) -> None
         ("auction", broken),
         ("engagement", _recording_handler("engagement", calls)),
     ]
+    handler._points_handler = _recording_handler("points", calls)
     update, context, chat, user = _update_context()
 
     with pytest.raises(type(error)):
-        await handler.handle(update, context, chat, user=user, message_text="stop")
+        async with bind_request_scope(chat_id=chat.id, user_id=user.id):
+            await handler.handle(update, context, chat, user=user, message_text="stop")
 
     assert calls == ["core", "auction"]
 
@@ -143,6 +170,7 @@ async def test_unexpected_error_logs_trace_and_re_raises(monkeypatch) -> None:
             SimpleNamespace(),
             SimpleNamespace(),
             handler_name="db",
+            default_suppress_on_consume=False,
         )
 
     assert events == [{
@@ -165,4 +193,7 @@ class _CaptureLogger:
         self._events.append({"level": "exception", "event": event, **values})
 
     def info(self, event, **values):
+        del event, values
+
+    def debug(self, event, **values):
         del event, values

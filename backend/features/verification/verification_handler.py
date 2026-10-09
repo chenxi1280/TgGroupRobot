@@ -141,28 +141,26 @@ async def _send_verification_prompt(
     *,
     text: str,
     reply_markup=None,
-) -> None:
+):
     media_type = getattr(settings, "verification_cover_media_type", None)
     file_id = getattr(settings, "verification_cover_file_id", None)
     if media_type == "photo" and file_id:
-        await context.bot.send_photo(
+        return await context.bot.send_photo(
             chat_id=chat_id,
             photo=file_id,
             caption=text,
             parse_mode="HTML",
             reply_markup=reply_markup,
         )
-        return
     if media_type == "video" and file_id:
-        await context.bot.send_video(
+        return await context.bot.send_video(
             chat_id=chat_id,
             video=file_id,
             caption=text,
             parse_mode="HTML",
             reply_markup=reply_markup,
         )
-        return
-    await context.bot.send_message(
+    return await context.bot.send_message(
         chat_id=chat_id,
         text=text,
         parse_mode="HTML",
@@ -228,50 +226,125 @@ def _verification_permissions(settings) -> ChatPermissions:
     )
 
 
-async def _send_challenge_prompt(context, chat, member, *, settings, challenge) -> None:
+async def _send_challenge_prompt(context, chat, member, *, settings, challenge):
     mention = member.mention_html()
     if settings.verification_mode == "button":
         from backend.shared.ui.common.verification import verification_keyboard
 
         agreement = html.escape((getattr(settings, "verification_agreement_text", None) or "请阅读并同意本群规则后再发言。").strip())
         text = f"{mention}\n\n{agreement}\n\n⏱️ 请在 {settings.verification_timeout_seconds} 秒内点击按钮。"
-        await _send_verification_prompt(context, chat.id, settings, text=text, reply_markup=verification_keyboard(challenge.token))
-        return
+        return await _send_verification_prompt(
+            context, chat.id, settings, text=text, reply_markup=verification_keyboard(challenge.token)
+        )
     if settings.verification_mode == "math":
         prompt = html.escape((getattr(settings, "verification_math_prompt_text", None) or "请回答下面的简单算术题完成验证。").strip())
         text = f"🔢 {mention}\n\n{prompt}\n\n<b>{challenge.question}</b>\n\n⏱️ {settings.verification_timeout_seconds} 秒内完成"
-        await _send_verification_prompt(context, chat.id, settings, text=text)
-        return
+        return await _send_verification_prompt(context, chat.id, settings, text=text)
     if settings.verification_mode == "captcha":
         text = f"🔢 {mention} 请输入以下验证码以完成验证：\n\n<b>{challenge.question}</b>\n\n⏱️ {settings.verification_timeout_seconds} 秒内完成"
-        await context.bot.send_message(chat_id=chat.id, text=text, parse_mode="HTML")
-        return
+        return await context.bot.send_message(chat_id=chat.id, text=text, parse_mode="HTML")
     if settings.verification_mode == "admin":
         from backend.shared.ui.common.verification import admin_verify_keyboard
 
         name = member.username or member.first_name or "用户"
         mention_text = f"@{name}" if member.username else mention
-        await context.bot.send_message(
+        return await context.bot.send_message(
             chat_id=chat.id,
             text=f"👋 {mention_text} 申请加入群组，请管理员确认是否通过。",
             reply_markup=admin_verify_keyboard(member.id, challenge.token),
             parse_mode="HTML",
         )
+    return None
+
+
+async def _mark_prompt_success(challenge, message) -> None:
+    import datetime as dt
+
+    from backend.platform.delivery import DeliveryStatus
+
+    challenge.prompt_status = DeliveryStatus.succeeded.value
+    challenge.prompt_message_id = getattr(message, "message_id", None)
+    challenge.prompt_attempts = int(getattr(challenge, "prompt_attempts", 0) or 0) + 1
+    challenge.prompt_last_error = None
+    challenge.prompt_completed_at = dt.datetime.now(dt.UTC)
+
+
+async def _mark_prompt_failure(challenge, error: Exception) -> None:
+    import datetime as dt
+
+    from backend.platform.delivery import DeliveryStatus
+
+    challenge.prompt_status = DeliveryStatus.retryable_failed.value
+    challenge.prompt_attempts = int(getattr(challenge, "prompt_attempts", 0) or 0) + 1
+    challenge.prompt_last_error = str(error)[:500]
+    challenge.prompt_completed_at = dt.datetime.now(dt.UTC)
+
+
+async def _audit_prompt_failure(session, chat, *, member, settings, challenge, fail_open: bool) -> None:
+    from backend.shared.services.ops_audit_service import record_ops_event
+
+    await record_ops_event(
+        session,
+        domain="verification",
+        event_type="prompt_send_failed",
+        chat_id=chat.id,
+        user_id=member.id,
+        entity_type="verification_challenge",
+        entity_id=str(getattr(challenge, "id", "") or ""),
+        severity="warning",
+        detail={
+            "fail_open": fail_open,
+            "mode": getattr(settings, "verification_mode", None),
+            "error": getattr(challenge, "prompt_last_error", None),
+        },
+    )
+
+
+async def _notify_prompt_failure(context, chat, *, member, text: str) -> None:
+    try:
+        await context.bot.send_message(chat_id=chat.id, text=text, parse_mode="HTML")
+    except Exception as exc:
+        log.warning(
+            "verification_prompt_failure_notice_failed",
+            chat_id=chat.id,
+            user_id=member.id,
+            error=str(exc),
+        )
 
 
 async def _release_after_prompt_failure(context, session, chat, *, member, settings, challenge) -> None:
+    from backend.shared.services.module_config_service import verification_prompt_fail_open
+
+    fail_open = verification_prompt_fail_open(settings)
+    await _audit_prompt_failure(
+        session, chat, member=member, settings=settings, challenge=challenge, fail_open=fail_open
+    )
+    if not fail_open:
+        await session.commit()
+        await _notify_prompt_failure(
+            context,
+            chat,
+            member=member,
+            text=(
+                f"⚠️ {member.mention_html()} 验证提示发送失败，用户仍保持限制状态。"
+                "请管理员检查机器人发言权限后手动处理。"
+            ),
+        )
+        return
+
     challenge.solved = True
     challenge.timeout_handled = True
-    await session.flush()
+    await session.commit()
     await _unrestrict_and_notify(context, chat.id, member.id, settings.language)
-    try:
-        await context.bot.send_message(
-            chat_id=chat.id,
-            text=f"⚠️ {member.mention_html()} 验证提示发送失败，已临时放行。请管理员检查机器人在本群发言权限。",
-            parse_mode="HTML",
-        )
-    except Exception as exc:
-        log.warning("verification_prompt_failure_notice_failed", chat_id=chat.id, user_id=member.id, error=str(exc))
+    await _notify_prompt_failure(
+        context,
+        chat,
+        member=member,
+        text=(
+            f"⚠️ {member.mention_html()} 验证提示发送失败，已按 fail-open 策略临时放行。"
+            "请管理员检查机器人在本群发言权限。"
+        ),
+    )
 
 
 async def _start_member_challenge(context, session, chat, *, member, settings) -> None:
@@ -282,6 +355,7 @@ async def _start_member_challenge(context, session, chat, *, member, settings) -
         ttl_seconds=settings.verification_timeout_seconds,
         verification_type=settings.verification_mode,
     )
+    await session.commit()
     restrict_result = await restrict_user_safely(
         context,
         feature="进群验证",
@@ -293,13 +367,24 @@ async def _start_member_challenge(context, session, chat, *, member, settings) -
     if restrict_result.failed:
         challenge.solved = True
         challenge.timeout_handled = True
-        await session.flush()
+        await session.commit()
         return
     try:
-        await _send_challenge_prompt(context, chat, member, settings=settings, challenge=challenge)
+        sent = await _send_challenge_prompt(context, chat, member, settings=settings, challenge=challenge)
+        await _mark_prompt_success(challenge, sent)
+        await session.commit()
     except Exception as exc:
-        log.warning("verification_prompt_send_failed", chat_id=chat.id, user_id=member.id, mode=settings.verification_mode, error=str(exc))
-        await _release_after_prompt_failure(context, session, chat, member=member, settings=settings, challenge=challenge)
+        log.warning(
+            "verification_prompt_send_failed",
+            chat_id=chat.id,
+            user_id=member.id,
+            mode=settings.verification_mode,
+            error=str(exc),
+        )
+        await _mark_prompt_failure(challenge, exc)
+        await _release_after_prompt_failure(
+            context, session, chat, member=member, settings=settings, challenge=challenge
+        )
 
 
 async def _process_joined_member(context, session, chat, *, member, settings) -> bool:

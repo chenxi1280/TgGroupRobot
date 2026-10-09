@@ -426,8 +426,10 @@ async def anti_spam_message_handler(update: Update, context: ContextTypes.DEFAUL
     if request is None:
         return
     db: Database = context.application.bot_data["db"]
+    from backend.platform.runtime.request_scope import get_or_load_settings
+
+    settings = await get_or_load_settings(db, request.chat.id, loader=get_chat_settings)
     async with db.session_factory() as session:
-        settings = await get_chat_settings(session, request.chat.id)
         if await _handle_leave_ban(
             context, session, request=request, settings=settings
         ):

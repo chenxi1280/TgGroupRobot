@@ -8,6 +8,7 @@ from backend.features.web_admin.ad_delivery_router import router as ad_delivery_
 from backend.features.web_admin.auth_router import router as auth_router
 from backend.features.web_admin.card_router import router as card_router
 from backend.features.web_admin.platform_router import router as platform_router
+from backend.features.web_admin.ops_router import router as ops_router
 from backend.features.web_admin.verification_timeout_router import router as verification_timeout_router
 from backend.platform.config.core.settings import Settings
 from backend.platform.db.runtime.session import Database
@@ -19,6 +20,7 @@ ADMIN_ROUTERS = (
     account_router,
     verification_timeout_router,
     ad_delivery_router,
+    ops_router,
 )
 
 

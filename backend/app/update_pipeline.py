@@ -14,13 +14,14 @@ import structlog
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from backend.features.group_ops.start_handler import private_message_handler as private_default_handler
 from backend.platform.db.runtime.session import Database
+from backend.platform.runtime.request_scope import bind_request_scope
 from backend.platform.state.state_service import get_user_state
-from backend.shared.handlers.base.chat_resolver import ChatResolver
 from backend.platform.telegram.group_pipeline import GroupMessageHandler
 from backend.platform.telegram.message_actor import resolve_message_actor
 from backend.platform.telegram.private_config_handler import PrivateConfigHandler
-from backend.features.group_ops.start_handler import private_message_handler as private_default_handler
+from backend.shared.handlers.base.chat_resolver import ChatResolver
 
 log = structlog.get_logger(__name__)
 
@@ -32,29 +33,19 @@ class MessageDispatcher:
     """
 
     def __init__(self) -> None:
-        """初始化分发器"""
         self._private_config_handler = PrivateConfigHandler()
         self._group_message_handler = GroupMessageHandler()
 
     async def dispatch(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """分发消息到对应的处理器
-
-        Args:
-            update: Telegram 更新对象
-            context: Bot 上下文
-        """
-        # 基础检查
         if update.effective_chat is None or update.effective_message is None:
             return
 
         chat = update.effective_chat
         message = update.effective_message
         user = resolve_message_actor(update)
-
-        # 文本消息（媒体消息通常没有 text，但可能有 caption）
         message_text = message.text or message.caption or ""
 
-        log.info(
+        log.debug(
             "message_dispatcher_entry",
             chat_id=chat.id,
             user_id=user.id if user is not None else None,
@@ -63,56 +54,55 @@ class MessageDispatcher:
             message_text_preview=message_text[:50],
         )
 
-        # 根据聊天类型分发
-        if chat.type == "private":
-            if user is None:
-                return
-            await self._dispatch_private(update, context, chat, user=user, message_text=message_text)
-        else:
-            # 群聊消息统一进入处理链，非文本消息也要经过强制关注/防护等规则。
-            if user is None:
-                return
-            await self._group_message_handler.handle(update, context, chat, user, message_text)
+        async with bind_request_scope(
+            update_id=getattr(update, "update_id", None),
+            chat_id=chat.id,
+            user_id=user.id if user is not None else None,
+        ):
+            if chat.type == "private":
+                if user is None:
+                    return
+                await self._dispatch_private(
+                    update, context, chat, user=user, message_text=message_text
+                )
+            else:
+                if user is None:
+                    return
+                await self._group_message_handler.handle(
+                    update, context, chat, user=user, message_text=message_text
+                )
 
     async def _dispatch_private(
         self,
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat: Any,
-        *, user: Any,
+        *,
+        user: Any,
         message_text: str,
     ) -> None:
-        """分发私聊消息
-
-        Args:
-            update: Telegram 更新对象
-            context: Bot 上下文
-            chat: 聊天对象
-            user: 用户对象
-            message_text: 消息文本
-        """
         db: Database = context.application.bot_data["db"]
 
         async with db.session_factory() as session:
-            # 获取用户状态（优先查询目标群组，其次查询私聊）
-            state = await self._get_user_state(session=session, db=db, user_id=user.id, chat_id=chat.id)
+            state = await self._get_user_state(
+                session=session, db=db, user_id=user.id, chat_id=chat.id
+            )
 
             if state is not None:
-                # 有配置状态，走配置流程
-                log.info(
+                log.debug(
                     "message_dispatcher_private_config",
                     user_id=user.id,
                     state_type=state.state_type,
                 )
-                await self._private_config_handler.handle(update, context, session, state, message_text)
+                await self._private_config_handler.handle(
+                    update, context, session, state=state, message_text=message_text
+                )
                 await session.commit()
                 return
 
-        # 私聊中的非文本且无配置状态：静默忽略
         if not message_text:
             return
 
-        # 无配置状态，走默认私聊处理
         await private_default_handler(update, context)
 
     async def _get_user_state(self, session: Any, db: Database, user_id: int, *, chat_id: int) -> Any:

@@ -44,7 +44,7 @@ class PrivateConfigHandler:
 
         state_type = state.state_type
 
-        log.info(
+        log.debug(
             "private_config_handler_entry",
             user_id=update.effective_user.id,
             state_type=state_type,
@@ -72,7 +72,11 @@ class PrivateConfigHandler:
             await handler(update, context, session, state=state, message_text=message_text)
         except Exception as e:
             log.exception("private_config_handler_error", state_type=state_type, error=str(e))
-            await self._send_error_message(update, f"配置处理出错: {str(e)}")
+            # 不对用户暴露内部异常细节（SQL/路径/密钥等），仅回通用提示
+            await self._send_error_message(
+                update,
+                "配置处理失败，请重试或使用 /cancel 退出",
+            )
 
     async def _handle_unknown_state(
         self,

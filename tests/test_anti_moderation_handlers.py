@@ -341,7 +341,8 @@ async def test_anti_spam_handler_records_final_action(monkeypatch):
 
     assert recorded[0]["action"] == "delete"
     assert executed[0]["kwargs"]["action"] == "delete"
-    assert session.commits == 1
+    # settings cache loading and moderation action use separate transaction boundaries
+    assert session.commits == 2
 
 
 @pytest.mark.asyncio
@@ -524,7 +525,8 @@ async def test_explicit_garbage_hit_falls_back_to_delete_even_when_other_action_
         await anti_spam_handler.anti_spam_message_handler(update, context)
 
     assert update.effective_message.deleted is True
-    assert session.commits == 1
+    # settings cache loading and moderation action use separate transaction boundaries
+    assert session.commits == 2
 
 
 @pytest.mark.asyncio

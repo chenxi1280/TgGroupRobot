@@ -38,6 +38,9 @@ def test_admin_web_app_registers_all_operational_routes() -> None:
         ("POST", "/admin/api/accounts/{account_id}/status"),
         ("POST", "/admin/api/accounts/{account_id}/password"),
         ("GET", "/admin/api/audit-logs"),
+        ("GET", "/admin/api/ops/summary"),
+        ("GET", "/admin/api/ops/failures"),
+        ("POST", "/admin/api/ops/scheduler/{task_name}/resume"),
     }
     assert expected <= routes
 

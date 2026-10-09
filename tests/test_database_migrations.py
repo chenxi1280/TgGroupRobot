@@ -141,6 +141,7 @@ def test_reliability_revisions_form_linear_chain_and_have_downgrades() -> None:
         "0004_scheduled_reliability",
         "0005_ad_rotation_reliability",
         "0006_schema_alignment",
+        "0007_ops_module_config_prompt",
     ]
     assert [revision.down_revision for revision in revisions] == [
         None,
@@ -149,6 +150,7 @@ def test_reliability_revisions_form_linear_chain_and_have_downgrades() -> None:
         "0003_garage_forward_reliability",
         "0004_scheduled_reliability",
         "0005_ad_rotation_reliability",
+        "0006_schema_alignment",
     ]
     assert all(callable(revision.downgrade) for revision in revisions)
 

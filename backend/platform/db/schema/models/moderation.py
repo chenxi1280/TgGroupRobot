@@ -90,6 +90,16 @@ class VerificationChallenge(Base):
         Integer,
         nullable=True,
     )
+    # 验证提示消息可靠投递状态（用户可见副作用）
+    prompt_status: Mapped[str] = mapped_column(
+        String(32),
+        default=DeliveryStatus.pending.value,
+        server_default=DeliveryStatus.pending.value,
+    )
+    prompt_message_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    prompt_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    prompt_last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    prompt_completed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC))
 
 

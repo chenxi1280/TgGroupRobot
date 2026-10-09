@@ -116,11 +116,13 @@ class VerificationViewsMixin:
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
     ) -> None:
-        log.warning(
-            "=== _SHOW_VERIFICATION_MENU CALLED ===",
+        log.debug(
+            "show_verification_menu",
             chat_id=chat_id,
             user_id=update.effective_user.id if update.effective_user else None,
         )
+
+        from backend.shared.services.module_config_service import verification_prompt_fail_open
 
         db: Database = context.application.bot_data["db"]
         await self._set_current_chat(db, update.effective_user.id, chat_id)
@@ -134,6 +136,8 @@ class VerificationViewsMixin:
         spam_label = "启动" if bool(getattr(settings, "join_spam_guard_enabled", False)) else "关闭"
         review_label = "启动" if bool(getattr(settings, "join_self_review_enabled", False)) else "关闭"
         burst_label = "启动" if bool(getattr(settings, "join_burst_enabled", False)) else "关闭"
+        fail_open = verification_prompt_fail_open(settings)
+        fail_open_label = "放行(fail-open)" if fail_open else "保持限制(fail-closed)"
 
         text = (
             f"🛡️ [{chat_title}] 进群验证\n\n"
@@ -142,7 +146,8 @@ class VerificationViewsMixin:
             f"进群验证：{verification_label}\n"
             f"垃圾拦截：{spam_label}\n"
             f"进群自助审核：{review_label}\n"
-            f"禁止批量进群：{burst_label}"
+            f"禁止批量进群：{burst_label}\n"
+            f"提示发送失败策略：{fail_open_label}"
         )
 
         buttons = [
@@ -151,13 +156,16 @@ class VerificationViewsMixin:
             [InlineKeyboardButton("🛡️ 进群自助审核", callback_data=f"adm:vfy_home:{chat_id}:self_review")],
             [InlineKeyboardButton("🚧 禁止批量进群", callback_data=f"adm:vfy_home:{chat_id}:burst")],
             [InlineKeyboardButton("⚠️ 超时失败任务", callback_data=f"adm:vfy_home:{chat_id}:timeouts")],
+            [
+                InlineKeyboardButton(
+                    f"📨 提示失败：{fail_open_label}",
+                    callback_data=f"adm:vfy_home:{chat_id}:prompt_fail_open:toggle",
+                )
+            ],
             [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
         ]
         keyboard = InlineKeyboardMarkup(buttons)
-
-        log.info("=== CALLING SAFE_EDIT FOR VERIFICATION MENU ===")
         await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
-        log.info("=== SAFE_EDIT COMPLETED ===")
 
     async def _show_verification_rules_menu(
         self,

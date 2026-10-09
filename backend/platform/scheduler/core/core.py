@@ -63,6 +63,8 @@ class ScheduledTask(ABC):
         self.total_runs = 0  # 总运行次数
         self.total_errors = 0  # 总错误次数
         self.is_running = False  # 是否正在运行
+        self.auto_paused = False
+        self.paused_reason: str | None = None
 
     @abstractmethod
     async def execute(self, app: "Application") -> None:
@@ -90,12 +92,16 @@ class ScheduledTask(ABC):
 
         # 检查是否连续失败过多
         if self.error_count >= self.max_consecutive_failures:
+            reason = f"连续失败 {self.error_count} 次，已自动暂停"
             log.error(
                 "task_paused_too_many_failures",
                 task_name=self.name,
                 error_count=self.error_count,
             )
             self.enabled = False
+            self.auto_paused = True
+            self.paused_reason = reason
+            await self._persist_state(app, required=True)
             return
 
         self.is_running = True
@@ -104,27 +110,44 @@ class ScheduledTask(ABC):
         try:
             log.debug("task_started", task_name=self.name)
             await self.execute(app)
-            self._record_success(start_time)
+            await self._record_success(app, start_time)
         except Exception as exc:
-            self._record_failure(start_time, exc)
+            await self._record_failure(app, start_time, exc)
         finally:
             self.is_running = False
 
-    def _record_success(self, start_time: dt.datetime) -> None:
+    async def _persist_state(self, app: "Application", *, required: bool = False) -> None:
+        bot_data = getattr(app, "bot_data", None)
+        db = bot_data.get("db") if isinstance(bot_data, dict) else None
+        if db is None:
+            return
+        try:
+            from backend.platform.scheduler.core.persistence import persist_task_snapshot
+
+            await persist_task_snapshot(db, self)
+        except Exception as exc:  # pragma: no cover - persistence must not break tasks
+            log.error("task_state_persist_failed", task_name=self.name, error=str(exc))
+            if required:
+                raise
+
+    async def _record_success(self, app: "Application", start_time: dt.datetime) -> None:
         finished_at = dt.datetime.now(dt.timezone.utc)
         self.last_run = start_time
         self.last_success_at = finished_at
         self.last_error = None
         self.total_runs += 1
         self.error_count = 0
+        self.auto_paused = False
+        self.paused_reason = None
         log.debug(
             "task_completed",
             task_name=self.name,
             duration=(finished_at - start_time).total_seconds(),
             total_runs=self.total_runs,
         )
+        await self._persist_state(app)
 
-    def _record_failure(self, start_time: dt.datetime, error: Exception) -> None:
+    async def _record_failure(self, app: "Application", start_time: dt.datetime, error: Exception) -> None:
         finished_at = dt.datetime.now(dt.timezone.utc)
         self.last_failure_at = finished_at
         self.last_error = str(error)
@@ -139,6 +162,18 @@ class ScheduledTask(ABC):
             duration=(finished_at - start_time).total_seconds(),
             exc_info=True,
         )
+        if self.error_count >= self.max_consecutive_failures:
+            self.enabled = False
+            self.auto_paused = True
+            self.paused_reason = f"连续失败 {self.error_count} 次，已自动暂停"
+        await self._persist_state(app, required=self.auto_paused)
+
+    def resume(self) -> None:
+        """人工恢复被自动暂停的任务。"""
+        self.enabled = True
+        self.auto_paused = False
+        self.paused_reason = None
+        self.error_count = 0
 
     def get_status(self) -> dict:
         """获取任务状态"""
@@ -147,6 +182,8 @@ class ScheduledTask(ABC):
             "enabled": self.enabled,
             "interval": self.interval,
             "is_running": self.is_running,
+            "auto_paused": self.auto_paused,
+            "paused_reason": self.paused_reason,
             "last_run": self.last_run.isoformat() if self.last_run else None,
             "last_success_at": (
                 self.last_success_at.isoformat() if self.last_success_at else None
@@ -213,6 +250,11 @@ class Scheduler:
             return
 
         self.running = True
+        try:
+            await self.restore_persisted_states()
+        except Exception:
+            self.running = False
+            raise
         log.info(
             "scheduler_started",
             task_count=len(self.tasks),
@@ -318,3 +360,49 @@ class Scheduler:
             "running": self.running,
             "tasks": {name: task.get_status() for name, task in self.tasks.items()},
         }
+
+    def resume_task(self, task_name: str) -> bool:
+        task = self.tasks.get(task_name)
+        if task is None:
+            return False
+        task.resume()
+        if self.running and task_name not in self._task_tasks:
+            initial_delay = 0.0
+            async_task = asyncio.create_task(
+                self._run_task_loop(task, initial_delay=initial_delay)
+            )
+            self._task_tasks[task_name] = async_task
+        return True
+
+    def _apply_persisted_state(self, task: ScheduledTask, row) -> None:
+        if not (row.auto_paused or not row.enabled):
+            return
+        task.enabled = False
+        task.auto_paused = bool(row.auto_paused)
+        task.paused_reason = row.paused_reason
+        task.error_count = int(row.consecutive_errors or 0)
+        task.total_runs = int(row.total_runs or 0)
+        task.total_errors = int(row.total_errors or 0)
+        task.last_error = row.last_error
+        task.last_success_at = row.last_success_at
+        task.last_failure_at = row.last_failure_at
+        log.warning(
+            "scheduler_task_restored_paused",
+            task_name=task.name,
+            paused_reason=row.paused_reason,
+        )
+
+    async def restore_persisted_states(self) -> None:
+        """从数据库恢复暂停标记。"""
+        bot_data = getattr(self.app, "bot_data", None)
+        db = bot_data.get("db") if isinstance(bot_data, dict) else None
+        if db is None:
+            return
+        from backend.platform.scheduler.core.persistence import load_task_states
+
+        async with db.session_factory() as session:
+            states = await load_task_states(session)
+        for name, task in self.tasks.items():
+            row = states.get(name)
+            if row is not None:
+                self._apply_persisted_state(task, row)

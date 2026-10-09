@@ -8,6 +8,7 @@ from sqlalchemy.dialects import postgresql
 import backend.platform.db.schema.models.alliance  # noqa: F401
 import backend.platform.db.schema.models.core  # noqa: F401
 import backend.platform.db.schema.models.garage_features  # noqa: F401
+import backend.platform.db.schema.models.ops  # noqa: F401
 import backend.platform.db.schema.models.scheduled_message  # noqa: F401
 import backend.platform.db.schema.models.welcome  # noqa: F401
 from backend.platform.db.runtime.schema_gate import SchemaValidationError, validate_database_schema
@@ -135,6 +136,7 @@ def _full_tables() -> dict[str, dict]:
                 "anti_spam_action", "anti_spam_mute_duration", "anti_spam_exempt_admin",
                 "anti_spam_delete_notify", "anti_spam_delete_notify_seconds", "anti_spam_repeat_messages",
                 "anti_spam_repeat_seconds", "anti_spam_rules",
+                "module_config",
                 "control_permission_policy",
                 "group_lock_phrase_enabled", "group_lock_open_phrase", "group_lock_close_phrase",
                 "group_lock_schedule_enabled", "group_lock_open_time", "group_lock_close_time",
@@ -239,6 +241,8 @@ def _full_tables() -> dict[str, dict]:
                 "timeout_send_started_at", "timeout_last_error",
                 "timeout_completed_at", "created_at",
                 "timeout_replay_of_attempt_id",
+                "prompt_status", "prompt_message_id", "prompt_attempts",
+                "prompt_last_error", "prompt_completed_at",
             },
             "indexes": [
                 {
@@ -657,6 +661,26 @@ def _full_tables() -> dict[str, dict]:
             "columns": {
                 "id", "chat_id", "old_user_id", "new_user_id",
                 "asset_snapshot", "result", "reason", "created_at",
+            },
+        },
+        "ops_audit_events": {
+            "columns": {
+                "id", "domain", "event_type", "chat_id", "user_id",
+                "entity_type", "entity_id", "severity", "detail", "created_at",
+            },
+            "indexes": [
+                {"name": "ix_ops_audit_events_domain", "column_names": ["domain"], "unique": False},
+                {"name": "ix_ops_audit_events_event_type", "column_names": ["event_type"], "unique": False},
+                {"name": "ix_ops_audit_events_chat_id", "column_names": ["chat_id"], "unique": False},
+                {"name": "ix_ops_audit_events_entity_id", "column_names": ["entity_id"], "unique": False},
+                {"name": "ix_ops_audit_events_created_at", "column_names": ["created_at"], "unique": False},
+            ],
+        },
+        "scheduler_task_states": {
+            "columns": {
+                "task_name", "enabled", "auto_paused", "paused_reason",
+                "consecutive_errors", "total_runs", "total_errors",
+                "last_success_at", "last_failure_at", "last_error", "updated_at",
             },
         },
     }
