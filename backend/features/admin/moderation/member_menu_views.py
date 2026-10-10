@@ -223,7 +223,8 @@ def new_member_limit_keyboard(view: NewMemberLimitView) -> InlineKeyboardMarkup:
     rows = [
         toggle_row("⚙️ 状态：", enabled=view.enabled, label_callback=f"adm:menu:newmem:{chat_id}", on_callback=f"adm:nml:{chat_id}:set:enabled:1", off_callback=f"adm:nml:{chat_id}:set:enabled:0"),
         [InlineKeyboardButton(f"⏱ 限制时长（{view.duration_label}）", callback_data=f"adm:nml:{chat_id}:input:window")],
-        toggle_row("🖼️ 媒体", enabled=view.block_media, label_callback=f"adm:menu:newmem:{chat_id}", on_callback=f"adm:nml:{chat_id}:set:block_media:1", off_callback=f"adm:nml:{chat_id}:set:block_media:0") + toggle_row("🔗 链接", enabled=view.block_links, label_callback=f"adm:menu:newmem:{chat_id}", on_callback=f"adm:nml:{chat_id}:set:block_links:1", off_callback=f"adm:nml:{chat_id}:set:block_links:0"),
+        toggle_row("🖼️ 媒体", enabled=view.block_media, label_callback=f"adm:menu:newmem:{chat_id}", on_callback=f"adm:nml:{chat_id}:set:block_media:1", off_callback=f"adm:nml:{chat_id}:set:block_media:0"),
+        toggle_row("🔗 链接", enabled=view.block_links, label_callback=f"adm:menu:newmem:{chat_id}", on_callback=f"adm:nml:{chat_id}:set:block_links:1", off_callback=f"adm:nml:{chat_id}:set:block_links:0"),
         toggle_row("📝 仅纯文本", enabled=view.text_only, label_callback=f"adm:menu:newmem:{chat_id}", on_callback=f"adm:nml:{chat_id}:set:text_only:1", off_callback=f"adm:nml:{chat_id}:set:text_only:0"),
         toggle_row("🗑 删除触发消息", enabled=view.delete_message, label_callback=f"adm:menu:newmem:{chat_id}", on_callback=f"adm:nml:{chat_id}:set:delete_message:1", off_callback=f"adm:nml:{chat_id}:set:delete_message:0"),
         toggle_row("💬 提示消息", enabled=view.warn_enabled, label_callback=f"adm:menu:newmem:{chat_id}", on_callback=f"adm:nml:{chat_id}:set:warn_enabled:1", off_callback=f"adm:nml:{chat_id}:set:warn_enabled:0"),

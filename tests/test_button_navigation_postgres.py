@@ -4,7 +4,7 @@ from collections import Counter
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import select
+from sqlalchemy import func, select
 from telegram import Update
 from telegram.ext import Application, CallbackQueryHandler, MessageHandler, filters
 
@@ -16,7 +16,7 @@ from backend.features.moderation.services.garbage_guard_rules import RULE_ORDER,
 from backend.features.admin.ui.antispam import garbage_guard_rule_keyboard
 from backend.features.points.points_router import PointsRouter
 from backend.platform.db.runtime.session import create_database
-from backend.platform.db.schema.models.core import ChatSettings
+from backend.platform.db.schema.models.core import ChatSettings, VerificationChallenge
 from backend.platform.runtime.chat_shard import install_chat_sharded_processing
 from test_admin_routes_postgres import TelegramBoundary, callback_update, command_update
 from test_mall_intent_postgres import seed
@@ -71,6 +71,8 @@ async def test_every_feature_returns_to_its_category_and_has_unique_actions(runt
         duplicates = {cb for cb, count in Counter(callbacks).items() if count > 1}
         assert all(":home:" in cb or ":noop" in cb or cb.startswith("adm:menu:") for cb in duplicates), feature.feature_id
         assert all(len(cb.encode()) <= 64 for cb in callbacks), feature.feature_id
+        if feature.feature_id == "newmem":
+            assert all(len(row) <= 3 for row in [params for endpoint, params in transport.calls if endpoint in {"sendMessage", "editMessageText"}][-1]["reply_markup"]["inline_keyboard"])
         async with db.session_factory() as session:
             settings = await session.get(ChatSettings, chat)
             for rule in RULE_ORDER:
@@ -144,3 +146,19 @@ async def test_old_group_menu_and_toggle_open_current_navigation(runtime):
             assert len([b for b in buttons if b.get("callback_data", "").startswith("adm:menu:category_")]) == 6
         if data == "adm:toggle:sign_enabled":
             assert any(b.get("callback_data", "").startswith("pts:toggle:") for b in buttons)
+
+
+async def test_own_bot_join_records_membership_without_verifying_or_restricting_itself(runtime):
+    from types import SimpleNamespace
+    from backend.features.verification.verification_handler import new_members_handler
+    app, db, transport, _, chat, user = runtime
+    raw = command_update(app, user, chat, 900, "/admin").to_dict()
+    raw["message"].pop("text")
+    raw["message"].pop("entities")
+    raw["message"]["new_chat_members"] = [dict(app.bot.to_dict(), is_bot=True)]
+    transport.calls.clear()
+    await new_members_handler(Update.de_json(raw, app.bot), SimpleNamespace(application=app, bot=app.bot, user_data={}))
+    async with db.session_factory() as session:
+        assert (await session.execute(select(func.count()).select_from(VerificationChallenge).where(
+            VerificationChallenge.chat_id == chat))).scalar() == 0
+    assert not any(endpoint in {"restrictChatMember", "banChatMember", "sendMessage"} for endpoint, _ in transport.calls)

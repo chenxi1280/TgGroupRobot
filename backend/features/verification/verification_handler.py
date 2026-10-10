@@ -431,6 +431,8 @@ async def new_members_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         settings = await get_chat_settings(session, chat.id)
         new_members = list(update.effective_message.new_chat_members or [])
         await _prepare_joined_members(session, chat, new_members)
+        # Keep membership facts, but never verify or restrict the bot itself.
+        new_members = [member for member in new_members if member.id != getattr(context.bot, "id", None)]
         if await _handle_join_burst_guard(context, session, chat, members=new_members, settings=settings):
             await session.commit()
             return
