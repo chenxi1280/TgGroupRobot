@@ -25,7 +25,7 @@ def test_solitaire_keyboards_keep_chat_scope_in_back_and_detail_callbacks() -> N
     )
     detail = solitaire_detail_keyboard(7, is_active=True, chat_id=-100123)
 
-    assert menu.inline_keyboard[-1][0].callback_data == "adm:menu:main:-100123"
+    assert menu.inline_keyboard[-1][0].callback_data == "adm:menu:category_activities:-100123"
     assert listing.inline_keyboard[0][0].callback_data == "sol:detail:-100123:7"
     assert listing.inline_keyboard[-1][0].callback_data == "adm:menu:solitaire:-100123"
     assert detail.inline_keyboard[0][0].callback_data == "sol:refresh:-100123:7"

@@ -184,7 +184,7 @@ async def _prepare_joined_members(session, chat, members) -> None:
 
 
 async def _start_member_self_review(context, session, chat, *, member, settings) -> None:
-    started = await _start_self_review_if_needed(context, session, chat, member, settings)
+    started = await _start_self_review_if_needed(context, session, chat, user=member, settings=settings)
     if not started:
         return
     try:
@@ -335,7 +335,7 @@ async def _release_after_prompt_failure(context, session, chat, *, member, setti
     challenge.solved = True
     challenge.timeout_handled = True
     await session.commit()
-    await _unrestrict_and_notify(context, chat.id, member.id, settings.language)
+    await _unrestrict_and_notify(context, chat.id, member.id, language=settings.language)
     await _notify_prompt_failure(
         context,
         chat,
@@ -388,7 +388,7 @@ async def _start_member_challenge(context, session, chat, *, member, settings) -
 
 
 async def _process_joined_member(context, session, chat, *, member, settings) -> bool:
-    if await _handle_join_spam_guard(context, chat, member, settings):
+    if await _handle_join_spam_guard(context, chat, member, settings=settings):
         return False
     await _track_invite_for_member(context, session, chat, member=member, settings=settings)
     if not settings.verification_enabled:
@@ -431,7 +431,7 @@ async def new_members_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         settings = await get_chat_settings(session, chat.id)
         new_members = list(update.effective_message.new_chat_members or [])
         await _prepare_joined_members(session, chat, new_members)
-        if await _handle_join_burst_guard(context, session, chat, new_members, settings):
+        if await _handle_join_burst_guard(context, session, chat, members=new_members, settings=settings):
             await session.commit()
             return
 

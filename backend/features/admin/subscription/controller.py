@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.shared.callback_parser import CallbackData
+
 from backend.features.admin.support import *
 _HANDLE_RENEWAL_THRESHOLD_3 = 3
 
@@ -76,7 +78,7 @@ def _health_keyboard(chat_id: int) -> InlineKeyboardMarkup:
             InlineKeyboardButton("🧹 自动删除", callback_data=f"adm:menu:autodel:{chat_id}"),
             InlineKeyboardButton("⚙️ 控制权限", callback_data=f"adm:menu:control:{chat_id}"),
         ],
-        [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
+        [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_system:{chat_id}")],
     ])
 
 
@@ -87,7 +89,7 @@ class SubscriptionAdminControllerMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        *, callback_data: CallbackParser,
+        *, callback_data: CallbackData,
     ) -> None:
         """处理续费入口操作"""
         sub_action = callback_data.get(2) if callback_data.length() >= _HANDLE_RENEWAL_THRESHOLD_3 else "page"

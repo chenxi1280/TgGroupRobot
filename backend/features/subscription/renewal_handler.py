@@ -136,7 +136,7 @@ async def _return_to_admin(update, context, chat_id: int) -> None:
     mark_callback_query_answered(update)
     from backend.features.admin.admin_handler import _admin_handler
 
-    await _admin_handler._show_main_menu(update, context, chat_id)
+    await _admin_handler._show_category_system(update, context, chat_id)
 
 
 async def _handle_renew_action(update, context, chat_id: int, *, action: str) -> bool:

@@ -24,7 +24,7 @@ def lottery_menu_keyboard(chat_id: int | None = None) -> InlineKeyboardMarkup:
     create_menu_callback = f"lot:create_menu:{chat_id}" if chat_id else "lot:create_menu"
     list_callback = f"lot:list:{chat_id}:all:all:0" if chat_id else "lot:list:all:all:0"
     setting_callback = f"lot:settings:{chat_id}" if chat_id else "lot:settings"
-    back_button = create_back_button(chat_id, "main")
+    back_button = create_back_button(chat_id, "category_activities")
 
     return InlineKeyboardMarkup([
         [

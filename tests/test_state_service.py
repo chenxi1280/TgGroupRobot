@@ -13,6 +13,7 @@ from backend.platform.state.conversation_state_service import ConversationStateS
 
 
 CLASSIFIED_NON_PRIVATE_STATES = {
+    "guess_draft",  # Suspended draft, deliberately does not consume text.
     ConversationStateType.auction_wait_title.value,
     ConversationStateType.auction_wait_start_price.value,
     ConversationStateType.auction_wait_end_at.value,
@@ -318,6 +319,8 @@ async def test_module_settings_service_ensure_chat_zero_is_compat_only(monkeypat
 
 @pytest.mark.asyncio
 async def test_conversation_state_service_start_update_get_clear(monkeypatch):
+    from unittest.mock import AsyncMock
+    monkeypatch.setattr("backend.platform.state.edit_drafts.suspend_inputs", AsyncMock(return_value=[]))
     session = DummySession()
     lookup = {"state": None}
 

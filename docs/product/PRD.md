@@ -1,20 +1,24 @@
 # TgGroupRobot PRD 入口与代码对接索引
 
-> 版本：v1.2
-> 日期：2026-07-14
-> 状态：当前产品基线入口
+> 版本：v1.3
+> 日期：2026-10-10
+> 状态：产品需求与修复方案入口；最新修复方案待实施
 
 本文档作为后续维护的 PRD 入口，避免引用空文件导致产品、架构、问题清单三套文档断开。
+
+2026-10-10 已确认管理分发、商城开关与交易流程、导航状态、列表可达性等缺口。本轮设计以[服务修复与交互统一 PRD](./2026-10-10-service-repair-prd.md)为增量需求基线；其中的目标行为尚未实现。历史局部回归与可靠性审计保留，不再概括为当前所有功能均已闭环。
 
 ## 1. 权威文档
 
 | 用途 | 文档 | 说明 |
 |------|------|------|
+| 本轮修复 PRD | [2026-10-10-service-repair-prd.md](./2026-10-10-service-repair-prd.md) | 问题基线、六类导航、公共交互、业务补全、分期和 24 个验收场景；设计稿 |
+| 配套实施与运行恢复 | [2026-10-10-service-repair-design.md](../architecture/2026-10-10-service-repair-design.md) | 注册、状态、事务、兼容、运行反馈与发布回退；待实施 |
 | 产品需求全文 | [TgGroupRobot_PRD.md](./TgGroupRobot_PRD.md) | 当前完整 PRD，覆盖产品定位、角色、功能需求、流程和验收口径 |
-| 当前功能状态 | [06_feature_truth_table.md](../setup/06_feature_truth_table.md) | 当前实现基线；`已闭环` 表示主链路可用且已有基础回归测试 |
+| 当前功能状态 | [06_feature_truth_table.md](../setup/06_feature_truth_table.md) | 区分已发现缺口、历史记录待复核、本地验证、Telegram 验收与策略关闭 |
 | 架构总览 | [code_structure_index.md](../architecture/code_structure_index.md) | 面向维护者的模块结构、运行链路、测试归类和架构模式 |
 | 逐文件索引 | [code_file_inventory.md](../architecture/code_file_inventory.md) | 机器辅助生成的逐文件职责、类/方法、函数和常量索引 |
-| 闭环审计 | [pending_issues.md](./pending_issues.md) | 2026-07-14 全量可靠性、操作、数据流与工程质量闭环证据 |
+| 问题与历史审计 | [pending_issues.md](./pending_issues.md) | 2026-10-10 待修复问题，以及 2026-07-14 特定范围的历史审计 |
 
 ## 2. PRD 与代码模块映射
 
@@ -39,10 +43,12 @@
 ## 3. 维护口径
 
 - 产品状态以 `docs/setup/06_feature_truth_table.md` 为准。
+- 本轮范围内的导航、交互与修复验收以 2026-10-10 修复 PRD 为设计基线；未覆盖的业务需求继续沿用产品需求全文。
+- 设计完成、代码实现、本地验证、已部署与真实 Telegram 验收分别记录，不相互替代。
 - 代码结构以 `docs/architecture/code_structure_index.md` 和 `docs/architecture/code_file_inventory.md` 为准。
 - ORM 模型当前权威路径为 `backend/platform/db/schema/models/`。
 - `tests/` 当前是平铺结构，不存在 `tests/features/<domain>/` 目录。
-- `pending_issues.md` 保留历史文件名，但当前内容是闭环审计；批准范围内没有未完成项。
+- `pending_issues.md` 同时维护当前待修复条目和有日期、范围限定的历史审计；历史关闭不代表新发现已解决。
 
 ## 4. 工程质量与交付门禁
 

@@ -5,43 +5,24 @@ from backend.features.admin.ui.admin_main_text import format_admin_main_menu_tex
 from backend.features.group_ops.services.group_daily_stats import AdminMenuStats, GroupDayCounts
 
 
-def test_private_admin_main_menu_routes_real_and_todo_features():
+def test_private_admin_main_menu_has_six_categories_and_scoped_features():
+    from backend.features.admin.ui.admin_main_keyboards import ADMIN_CATEGORIES, admin_category_menu
+    from backend.features.admin.core.menu_dispatch import ADMIN_MENU_HANDLERS
     keyboard = admin_main_menu(-100123).inline_keyboard
-    buttons = {
-        button.text: button.callback_data
-        for row in keyboard
-        for button in row
-    }
-
-    assert buttons["💰拍卖"] == "adm:menu:auction:-100123"
-    assert buttons["🎮游戏"] == "adm:menu:game:-100123"
-    assert buttons["⚽竞猜"] == "adm:menu:guess:-100123"
-    assert buttons["✨促活工具"] == "adm:menu:engagement:-100123"
-    assert buttons["💥炸号继承"] == "adm:menu:inherit:-100123"
-    assert buttons["⌨️底部按钮"] == "adm:menu:bottom_button:-100123"
-    assert buttons["🩺健康检查"] == "adm:menu:health:-100123"
-    assert buttons["📊群组统计"] == "adm:menu:stats:-100123"
-    assert buttons["📡频道同步"] == "adm:menu:sync:-100123"
-    assert buttons["⚡快捷发布"] == "adm:menu:qpub:-100123"
-    assert buttons["🧑‍🍼新成员限制"] == "adm:menu:newmem:-100123"
-    assert buttons["🌙夜间管控"] == "adm:menu:night:-100123"
-    assert buttons["⌨️命令配置"] == "adm:menu:gcmd:-100123"
-    assert buttons["📥导入设置"] == "adm:menu:import:-100123"
-    assert buttons["📋克隆"] == "adm:menu:clone:-100123"
-    assert buttons["💳续费订阅"] == "adm:menu:renewal:-100123"
-    assert buttons["⚙️管理权限"] == "adm:menu:control:-100123"
-
-
-def test_private_admin_main_menu_groups_buttons_three_per_row():
-    keyboard = admin_main_menu(-100123).inline_keyboard
-
-    assert all(len(row) == 3 for row in keyboard)
-    assert [button.text for button in keyboard[-1]] == ["🔄切换群", "💳续费订阅", "⚙️管理权限"]
-    assert [button.callback_data for button in keyboard[-1]] == [
-        "adm:switch_group",
-        "adm:menu:renewal:-100123",
-        "adm:menu:control:-100123",
+    assert len(keyboard) == 5
+    assert all(len(row) == 2 for row in keyboard[:4])
+    assert [button.text for row in keyboard[:3] for button in row] == [
+        "群安全", "消息运营", "积分与增长", "活动互动", "车库业务", "系统管理",
     ]
+    feature_ids = [feature for _, features in ADMIN_CATEGORIES.values() for _, feature in features]
+    assert len(feature_ids) == len(set(feature_ids)) == 38
+    assert "solitaire" in feature_ids
+    assert all(feature in ADMIN_MENU_HANDLERS for feature in feature_ids)
+    for category in ADMIN_CATEGORIES:
+        for row in admin_category_menu(category, -100123).inline_keyboard:
+            for button in row:
+                assert button.callback_data.endswith(":-100123")
+                assert len(button.callback_data.encode()) <= 64
 
 
 def test_admin_main_menu_text_includes_daily_stats_and_subscription() -> None:

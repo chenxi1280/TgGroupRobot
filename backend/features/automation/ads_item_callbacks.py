@@ -129,9 +129,8 @@ async def ads_toggle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
             await session.commit()
             await answer_callback_query_safely(update, "轮播消息不存在", show_alert=True)
             return
-        item.enabled = not item.enabled
         await session.commit()
-    await _ads_handler.show_list(update, context, target_chat_id)
+    await _ads_handler.show_detail(update, context, target_chat_id, item_id)
 
 
 async def ads_item_set_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

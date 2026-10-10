@@ -4,7 +4,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from functools import lru_cache
 from importlib import import_module
-from typing import Any
+from typing import Any, Protocol
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from telegram import Update
@@ -12,10 +12,12 @@ from telegram.ext import ContextTypes
 
 from backend.shared.ui.button_input import is_clear_button_input
 
-ConfigHandler = Callable[
-    [Update, ContextTypes.DEFAULT_TYPE, AsyncSession, Any, str],
-    Awaitable[None],
-]
+class ConfigHandler(Protocol):
+    async def __call__(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, session: AsyncSession,
+        *, state: Any, message_text: str,
+    ) -> None: ...
+
 
 
 @lru_cache(maxsize=None)
@@ -47,7 +49,7 @@ def full_args_handler(module_path: str, func_name: str) -> ConfigHandler:
         message_text: str,
     ) -> None:
         func = _resolve_attr(module_path, func_name)
-        await func(update, context, session, state, message_text)
+        await func(update, context, session, state=state, message_text=message_text)
 
     return handler
 

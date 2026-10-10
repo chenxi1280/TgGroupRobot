@@ -22,6 +22,20 @@ env:
 jobs:
   checks:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: tggrouprobot_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
 
     steps:
       - name: Checkout
@@ -40,15 +54,29 @@ jobs:
           BOT_TOKEN: 123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi
           DATABASE_URL: postgresql+psycopg://ci:ci@localhost:5432/tggrouprobot
           APP_ENV: test
+          TGR_REPAIR_TEST_DATABASE_URL: postgresql+psycopg://ci:ci@localhost:5432/tggrouprobot_test
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip
           python -m pip install -r requirements-dev.txt
           python -m compileall -q main.py backend scripts
           python scripts/quality_metrics.py
+          python scripts/check_call_contracts.py
           python -m ruff check main.py backend scripts tests
           python -m mypy
-          timeout 60s python -m pytest -W error
+          python - <<'PY'
+          import asyncio, os
+          from backend.platform.db.runtime.session import create_database
+          from backend.platform.db.runtime.database_migrations import migrate_database
+          from backend.platform.db.runtime.schema_gate import validate_database_schema
+          async def main():
+              db = create_database(os.environ['TGR_REPAIR_TEST_DATABASE_URL'])
+              await migrate_database(db.engine)
+              await validate_database_schema(db.engine)
+              await db.engine.dispose()
+          asyncio.run(main())
+          PY
+          timeout 600s python -m pytest -W error
 
   build-images:
     runs-on: ubuntu-latest

@@ -27,7 +27,7 @@ def test_command_config_toggle_and_alias() -> None:
     set_command_alias(settings, "start", "/BEGIN")
     assert get_command_alias(settings, "start") == "begin"
 
-    set_command_alias(settings, "start", "清空")
+    set_command_alias(settings, "start", None)
     assert get_command_alias(settings, "start") is None
 
 
@@ -50,3 +50,26 @@ def test_command_config_covers_fixed_text_entries_without_alias() -> None:
 
     assert is_command_enabled(settings, "teacher_search") is False
     assert get_command_alias(settings, "teacher_search") is None
+
+
+def test_invalid_and_conflicting_aliases_preserve_existing_configuration():
+    import pytest
+    settings = SimpleNamespace(command_config_enabled=True, command_config={})
+    set_command_alias(settings, "start", "begin")
+    for invalid in ["中文", "a" * 33, "admin", "cancel"]:
+        with pytest.raises(ValueError):
+            set_command_alias(settings, "start", invalid)
+        assert get_command_alias(settings, "start") == "begin"
+    with pytest.raises(ValueError):
+        set_command_alias(settings, "points", "begin")
+
+
+def test_historical_alias_collisions_are_reported_and_not_dispatched():
+    from backend.shared.services.command_config_service import command_alias_conflicts
+    from backend.features.group_ops.command_alias_handler import _build_alias_map
+    settings = SimpleNamespace(command_config_enabled=True, command_config={"commands": {
+        "start": {"enabled": True, "alias": "same"},
+        "points": {"enabled": True, "alias": "same"},
+        "rank": {"enabled": True, "alias": "sign"}}})
+    assert command_alias_conflicts(settings) == {"same", "sign"}
+    assert _build_alias_map(settings) == {}

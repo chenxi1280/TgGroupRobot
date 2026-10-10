@@ -5,7 +5,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 def verification_mode_menu(current_mode: str, chat_id: int | None = None) -> InlineKeyboardMarkup:
     if chat_id is not None:
-        back_callback = f"adm:menu:main:{chat_id}"
+        back_callback = f"adm:menu:category_safety:{chat_id}"
         callbacks = [
             f"adm:vfy_mode:{chat_id}:button",
             f"adm:vfy_mode:{chat_id}:math",
@@ -45,7 +45,7 @@ def verification_config_menu(
     restrict_prefix = "✅" if restrict_can_send else "❌"
 
     if chat_id is not None:
-        back_callback = f"adm:menu:main:{chat_id}"
+        back_callback = f"adm:menu:category_safety:{chat_id}"
         buttons = [
             [InlineKeyboardButton(f"{status_prefix} 验证开关", callback_data=f"adm:vfy_toggle:{chat_id}")],
             [InlineKeyboardButton(f"🔘 验证方式: {mode_label}", callback_data=f"adm:vfy_mode_menu:{chat_id}")],

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from backend.shared.callback_parser import CallbackData
+
 from backend.features.admin.support import *
+from backend.shared.services.command_config_service import command_config_revision
 
 
 class ModerationConfigActionsMixin:
@@ -13,11 +16,15 @@ class ModerationConfigActionsMixin:
         return False
 
     async def _toggle_command_config_entry(
-        self, update, context, *, db, chat_id: int, command_key: str
+        self, update, context, *, db, chat_id: int, command_key: str, enabled: bool, revision: str | None
     ) -> None:
         async with db.session_factory() as session:
             settings = await get_chat_settings(session, chat_id)
+            await session.refresh(settings, with_for_update=True)
             entry = get_command_config(settings)["commands"].get(command_key)
+            if revision != command_config_revision(settings) and (entry or {}).get("enabled", True) != enabled:
+                await answer_callback_query_safely(update, "配置已更新，请刷新后操作；未覆盖他人修改。", show_alert=True)
+                return
             if entry is None:
                 await session.commit()
                 await answer_callback_query_safely(
@@ -25,7 +32,7 @@ class ModerationConfigActionsMixin:
                 )
                 return
             set_command_enabled(
-                settings, command_key, not bool(entry.get("enabled", True))
+                settings, command_key, enabled
             )
             await session.commit()
         await self._show_command_config_detail(
@@ -35,10 +42,14 @@ class ModerationConfigActionsMixin:
     async def _start_command_alias_input(
         self, update, context, *, enum, chat_id: int, command_key: str
     ) -> None:
+        db = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            settings = await get_chat_settings(session, chat_id)
+            base_alias = get_command_config(settings)["commands"][command_key].get("alias")
         await self._start_text_input_state(
             context, update.effective_user.id, chat_id,
             state_type=enum.command_config_alias_input.value,
-            payload={"target_chat_id": chat_id, "command_key": command_key},
+            payload={"target_chat_id": chat_id, "command_key": command_key, "base_alias": base_alias},
         )
         keyboard = InlineKeyboardMarkup(
             [[InlineKeyboardButton(
@@ -55,7 +66,7 @@ class ModerationConfigActionsMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        *, callback_data: CallbackParser,
+        *, callback_data: CallbackData,
     ) -> None:
         action = callback_data.get(3) or "home"
         preset = callback_data.get(4)
@@ -88,7 +99,7 @@ class ModerationConfigActionsMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        *, callback_data: CallbackParser,
+        *, callback_data: CallbackData,
     ) -> None:
         from backend.platform.db.schema.models.enums import ConversationStateType
 
@@ -97,30 +108,30 @@ class ModerationConfigActionsMixin:
         db: Database = context.application.bot_data["db"]
 
         if op == "toggle_enabled":
-            async with db.session_factory() as session:
-                settings = await get_chat_settings(session, chat_id)
-                settings.command_config_enabled = not bool(getattr(settings, "command_config_enabled", False))
-                await session.commit()
             await self._show_command_config_menu(update, context, chat_id)
             return
 
-        if op == "detail":
-            if not await self._require_command_config_key(update, command_key):
-                return
+        if op in {"enable_config", "disable_config"}:
+            await _set_command_config_enabled(self, update, context, db=db, chat_id=chat_id, op=op, callback_data=callback_data)
+            return
+        if op == "list":
+            await self._show_command_config_menu(update, context, chat_id, page=callback_data.get_int_optional(4) or 0)
+            return
+
+        if not await self._require_command_config_key(update, command_key):
+            return
+        if op in {"detail", "toggle"}:
             await self._show_command_config_detail(update, context, chat_id, command_key=command_key)
             return
 
-        if op == "toggle":
-            if not await self._require_command_config_key(update, command_key):
-                return
+
+        if op in {"enable", "disable"}:
             await self._toggle_command_config_entry(
-                update, context, db=db, chat_id=chat_id, command_key=command_key
+                update, context, db=db, chat_id=chat_id, command_key=command_key, enabled=op == "enable", revision=callback_data.get(5)
             )
             return
 
         if op == "alias":
-            if not await self._require_command_config_key(update, command_key):
-                return
             await self._start_command_alias_input(
                 update, context, enum=ConversationStateType,
                 chat_id=chat_id, command_key=command_key,
@@ -128,11 +139,33 @@ class ModerationConfigActionsMixin:
             return
 
         if op == "clear_alias":
-            if not await self._require_command_config_key(update, command_key):
-                return
-            async with db.session_factory() as session:
-                settings = await get_chat_settings(session, chat_id)
-                set_command_alias(settings, command_key, None)
-                await session.commit()
-            await self._show_command_config_detail(update, context, chat_id, command_key=command_key)
+            await _clear_command_alias(self, update, context, db=db, chat_id=chat_id, command_key=command_key, callback_data=callback_data)
+
+
+async def _set_command_config_enabled(self, update, context, *, db, chat_id, op, callback_data):
+    async with db.session_factory() as session:
+        settings = await get_chat_settings(session, chat_id)
+        await session.refresh(settings, with_for_update=True)
+        desired = op == "enable_config"
+        if callback_data.get(4) != command_config_revision(settings) and settings.command_config_enabled != desired:
+            await answer_callback_query_safely(update, "配置已更新，请刷新后操作。", show_alert=True)
             return
+        settings.command_config_enabled = desired
+        await session.commit()
+    await self._show_command_config_menu(update, context, chat_id)
+    return
+
+
+async def _clear_command_alias(self, update, context, *, db, chat_id, command_key, callback_data):
+    if not await self._require_command_config_key(update, command_key):
+        return
+    async with db.session_factory() as session:
+        settings = await get_chat_settings(session, chat_id)
+        await session.refresh(settings, with_for_update=True)
+        if callback_data.get(5) != command_config_revision(settings):
+            await answer_callback_query_safely(update, "配置已更新，请刷新后清空。", show_alert=True)
+            return
+        set_command_alias(settings, command_key, None)
+        await session.commit()
+    await self._show_command_config_detail(update, context, chat_id, command_key=command_key)
+    return

@@ -1,7 +1,7 @@
 {
   "slug": "command-config",
   "title": "群组命令配置",
-  "status": "已闭环",
+  "status": "本地验证通过；Telegram 部分场景通过",
   "category": "群组扩展",
   "entryScreen": "entry",
   "coverage": {
@@ -51,11 +51,11 @@
             "feedback": "进入群组选择。"
           },
           {
-            "label": "返回主菜单",
-            "callbackData": "adm:menu:main:{chat_id}",
+            "label": "返回系统管理",
+            "callbackData": "adm:menu:category_system:{chat_id}",
             "action": "goto",
             "target": "main_menu",
-            "feedback": "已回到主菜单。"
+            "feedback": "已回到系统管理分类。"
           }
         ]
       ],
@@ -102,9 +102,9 @@
     },
     {
       "id": "main_menu",
-      "title": "主菜单",
+      "title": "系统管理",
       "message": [
-        "这里展示机器人后台的真实功能入口。"
+        "从此分类进入对应功能；本流程演示当前功能的操作。"
       ],
       "keyboard": [
         [
@@ -129,7 +129,7 @@
         [
           {
             "label": "总开关",
-            "callbackData": "adm:gcmd:{chat_id}:toggle_enabled",
+            "callbackData": "adm:gcmd:{chat_id}:enable_config:{revision}",
             "action": "toggle",
             "target": "home",
             "feedback": "群命令总开关已切换。"
@@ -144,11 +144,11 @@
         ],
         [
           {
-            "label": "返回主菜单",
-            "callbackData": "adm:menu:main:{chat_id}",
+            "label": "返回系统管理",
+            "callbackData": "adm:menu:category_system:{chat_id}",
             "action": "back",
             "target": "entry",
-            "feedback": "已返回主菜单。"
+            "feedback": "已回到系统管理分类。"
           }
         ]
       ],
@@ -166,7 +166,7 @@
         [
           {
             "label": "开启命令",
-            "callbackData": "adm:gcmd:{chat_id}:toggle:rank",
+            "callbackData": "adm:gcmd:{chat_id}:enable:rank:{revision}",
             "action": "toggle",
             "target": "detail",
             "feedback": "命令已切换。"
@@ -180,7 +180,7 @@
           },
           {
             "label": "清空别名",
-            "callbackData": "adm:gcmd:{chat_id}:clear_alias:rank",
+            "callbackData": "adm:gcmd:{chat_id}:clear_alias:rank:{revision}",
             "action": "confirm",
             "target": "result",
             "feedback": "别名已清空。"

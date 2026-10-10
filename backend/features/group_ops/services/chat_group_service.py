@@ -49,6 +49,7 @@ async def _set_selected_chat_state(session, user_id: int, chat_id: int) -> None:
             state_data={"managed_chat_id": chat_id},
         ))
         return
+    state.state_type = "selected_chat"
     state.state_data = {"managed_chat_id": chat_id}
 
 
@@ -152,7 +153,14 @@ async def get_user_managed_chats(
     """
     log.info("get_user_managed_chats_start", user_id=user_id)
     chats = await _load_group_chats(db)
-    entries = [await _managed_chat_entry(bot, chat, user_id) for chat in chats]
+    from types import SimpleNamespace
+    from backend.shared.services.permission_service import PermissionPolicyService
+    context = SimpleNamespace(bot=bot, application=SimpleNamespace(bot_data={"db": db}))
+    entries = []
+    for chat in chats:
+        decision = await PermissionPolicyService.evaluate(context, chat.id, user_id)
+        if decision.allowed:
+            entries.append((chat.id, chat.title or f"群组{chat.id}", True))
     result = [entry for entry in entries if entry is not None]
     log.info("get_user_managed_chats_complete", user_id=user_id, result_count=len(result))
     return result
@@ -175,6 +183,8 @@ async def set_user_current_chat(
         )
 
         await _ensure_private_chat(session, user_id)
+        from backend.platform.state.edit_drafts import suspend_inputs
+        await suspend_inputs(session, user_id)
         await _set_selected_chat_state(session, user_id, chat_id)
         await session.commit()
         return True

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.shared.callback_parser import CallbackData
+
 from backend.features.admin.support import *
 from backend.shared.button_layout_editor import ButtonEditorContext, show_layout_menu
 from backend.shared.ui.message_config_panel import (
@@ -119,7 +121,7 @@ class WelcomeAdminControllerMixin:
                 InlineKeyboardButton("删除", callback_data=f"adm:wel:{chat_id}:delete:{item.id}"),
             ])
         keyboard_rows.append([InlineKeyboardButton("➕ 添加一条", callback_data=f"adm:wel:{chat_id}:add")])
-        keyboard_rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")])
+        keyboard_rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_safety:{chat_id}")])
         await self.message_helper.safe_edit(update, "\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard_rows))
 
     async def _show_welcome_detail_menu(
@@ -248,7 +250,7 @@ class WelcomeAdminControllerMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        *, callback_data: CallbackParser,
+        *, callback_data: CallbackData,
     ) -> None:
         from backend.platform.db.schema.models.enums import ConversationStateType, WelcomeDeleteMode, WelcomeMode
         from backend.features.verification.welcome_service import WelcomeService

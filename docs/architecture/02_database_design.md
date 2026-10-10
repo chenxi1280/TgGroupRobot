@@ -189,3 +189,27 @@
 - **来源消息 + 目标群** 1:1 **车库消息映射**，1:1 **车库投递执行记录**
 
 
+
+## 2026-10-10 服务修复增量（Alembic 0008–0014）
+
+本节描述候选代码的数据库结构；迁移已在专用本地 PostgreSQL 验证，不表示生产库已升级。
+
+| Revision | 表与变化 | 一致性约束 |
+|---|---|---|
+| 0008_mall_confirmation | `points_mall_intents`：token、群、购买者、商品、交易条款 JSON、到期时间、order_id | token 主键；order_id 唯一；确认锁意图→商城配置→商品→账户；同意图只扣分一次 |
+| 0009_edit_drafts | `edit_drafts`：token、user_id、chat_id、原状态作用域、状态类型、JSON 载荷、创建与过期时间 | 用户和原群绑定；默认 7 天；返回/切群保留草稿；恢复时校验正式配置版本；清理不触及正式配置 |
+| 0010_activity_publications | `activity_publications`：token、domain、群、创建者、entity_id、payload、status、message_id、error、updated_at | 发布前先持久化身份；processing 在传输前提交；未知结果不自动重放 |
+| 0011_mall_fulfillment | 订单新增 product_snapshot、fulfiller_user_id、assignment_version、fulfillment_note、fulfilled_at；新增 `mall_notifications` | 商品外键改为 RESTRICT；商品删除为软删除；通知唯一键为订单/角色/分配版本；订单与通知创建同一事务 |
+| 0012_ui_feedback | `ui_feedback`：token、user_id、text、status、created_at | 失败的页面反馈独立保存，下次打开管理首页展示；不重执行业务 |
+| 0013_activity_media | `auction_items.cover_file_id`、`guess_events.cover_media_type` | 预览、正式发布及后续编辑保留媒体类型 |
+| 0014_mall_intent_cancel | `points_mall_intents.cancelled_at` | 取消确认与消费意图共用行锁；取消后旧确认按钮不能成交 |
+
+兑换意图状态由 `order_id`、`cancelled_at`、`expires_at` 推导：已消费优先，其次已取消、已过期，其他为待确认。取消不会删除意图，已消费意图不会通过取消按钮退款。
+
+订单历史快照缺失时显示“历史商品/历史信息未记录”，不反填当前商品内容。人工标记发放只记录操作人、说明及时间，不代表买家确认收货。取消/退款沿用订单状态条件和库存恢复规则；已处理状态不能重复退款。
+
+通知状态使用 pending / processing / retryable_failed / succeeded / permanent_failed / uncertain / cancelled。领取、改派与中断恢复统一按照“订单→通知”锁顺序。明确限流按服务端等待时间退避（最多 5 次），权限/内容拒绝转永久失败，网络未知结果不自动重发；管理员接管通知与订单状态独立。
+
+草稿 JSON 中 `__draft_base_version__` 是恢复时的配置指纹；按钮/消息编辑还保留原正文、媒体和按钮快照。保存前锁目标对象并比较快照，冲突时保留草稿。运行时 `ConversationState` 继续表示活跃输入或已选群，不用切换群字段覆盖旧输入类型。
+
+0008–0014 的 downgrade 均拒绝删除业务记录。回退采用保留新表的兼容应用版本或前向修复；不能恢复旧全库快照抹掉新订单、扣分流水或未知发布记录。所有新字段纳入 ORM/Schema Gate，启动前必须完成 Alembic 升级和结构检查。

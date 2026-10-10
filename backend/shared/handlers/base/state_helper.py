@@ -61,8 +61,8 @@ class StateHelper:
             self.session,
             self.chat_id,
             self.user_id,
-            state_type,
-            state_data,
+            state_type=state_type,
+            state_data=state_data,
         )
 
     async def clear_state(self) -> None:

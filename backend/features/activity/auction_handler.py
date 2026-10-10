@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import datetime as dt
+import secrets
+from backend.features.activity.services.activity_publication_service import prepare_publication, send_publication, validate_publication_payload, publication_payload
 from dataclasses import dataclass
 import structlog
 from telegram import InlineKeyboardMarkup, Update
@@ -79,7 +81,7 @@ async def _reply(
 def _auction_item_prompt() -> str:
     return (
         "💰 拍卖 | 拍卖物品\n\n"
-        "本步请发送要拍卖的物品消息，可以是文字、图片或其它消息。\n"
+        "本步请发送要拍卖的物品消息，支持纯文字、图片或带说明的图片。\n"
         "格式：直接发送物品内容，或回复物品消息发送“拍卖”。\n"
         "完整示例：苹果手机 15 Pro 256G"
     )
@@ -131,9 +133,10 @@ class _AuctionFlow:
 
 
 async def _handle_auction_title(flow: _AuctionFlow, data: dict) -> bool:
-    if data.get("awaiting_item") and _is_auction_create_trigger(flow.text):
-        await _reply(flow.update, _auction_item_prompt())
+    if await _auction_item_input_rejected(flow, data):
         return True
+    if not flow.text:
+        return await _auction_title_without_text(flow, data)
     source_message_id = data.get("source_message_id") or getattr(
         flow.message, "message_id", None
     )
@@ -146,6 +149,7 @@ async def _handle_auction_title(flow: _AuctionFlow, data: dict) -> bool:
         **data,
         "source_message_id": int(source_message_id),
         "title": flow.text[:255],
+        "cover_file_id": data.get("cover_file_id") or (flow.message.photo[-1].file_id if getattr(flow.message, "photo", None) else None),
     }
     next_data.pop("awaiting_item", None)
     await set_user_state(
@@ -198,7 +202,7 @@ async def _handle_auction_end_at(flow: _AuctionFlow, data: dict) -> bool:
     except ValidationError as exc:
         await _reply(flow.update, f"❌ {exc}")
         return True
-    next_data = {**data, "end_at": end_at.isoformat()}
+    next_data = {**data, "end_at": end_at.isoformat(), "publication_token": data.get("publication_token") or secrets.token_hex(12)}
     await set_user_state(
         flow.session,
         flow.chat.id,
@@ -207,6 +211,21 @@ async def _handle_auction_end_at(flow: _AuctionFlow, data: dict) -> bool:
         state_data=next_data,
     )
     await flow.session.commit()
+    from backend.platform.db.schema.models.expansion import AuctionItem
+    preview = AuctionItem(id=0, title=next_data["title"], start_price=next_data["start_price"],
+        current_price=next_data["start_price"], end_at=end_at, status="running")
+    payload = publication_payload(next_data["publication_token"], {"text": format_auction_announcement(preview), "photo": next_data.get("cover_file_id")})
+    try:
+        if payload["photo"]:
+            await flow.context.bot.send_photo(chat_id=flow.user.id, photo=payload["photo"], caption=payload["text"], parse_mode=None)
+        else:
+            await flow.context.bot.send_message(chat_id=flow.user.id, text=payload["text"], parse_mode=None)
+    except TelegramError:
+        await _reply(flow.update, "无法私发预览，请先私聊机器人发送 /start，再发送截止时间重新预览。")
+        await set_user_state(flow.session, flow.chat.id, flow.user.id,
+            state_type=ConversationStateType.auction_wait_end_at.value, state_data=data)
+        await flow.session.commit()
+        return True
     await _reply(flow.update, _auction_confirm_prompt(next_data, flow.text))
     return True
 
@@ -232,32 +251,41 @@ async def _publish_auction_from_state(flow: _AuctionFlow, data: dict) -> None:
     end_at = dt.datetime.fromisoformat(data["end_at"])
     if end_at.tzinfo is None:
         end_at = end_at.replace(tzinfo=dt.UTC)
-    item = await publish_auction(
-        flow.session,
-        chat_id=flow.chat.id,
-        creator_user_id=flow.user.id,
-        source_message_id=int(data["source_message_id"]),
-        title=str(data["title"]),
-        start_price=int(data["start_price"]),
-        end_at=end_at,
-    )
-    sent = await flow.context.bot.send_message(
-        chat_id=flow.chat.id,
-        reply_to_message_id=item.source_message_id,
-        text=format_auction_announcement(item),
-        parse_mode="Markdown",
-    )
-    item.last_announce_message_id = sent.message_id
-    await _pin_auction_announcement(flow, item, sent.message_id)
+    token = data.get("publication_token")
+    if not token:
+        await set_user_state(flow.session, flow.chat.id, flow.user.id,
+            state_type=ConversationStateType.auction_wait_end_at.value, state_data=data)
+        await flow.session.commit()
+        await _reply(flow.update, "请重新填写截止时间后确认发布。")
+        return
+    async def create_entity():
+        if end_at <= dt.datetime.now(dt.UTC):
+            raise ValidationError("截止时间已过，请修改后发布。")
+        item = await publish_auction(flow.session, chat_id=flow.chat.id, creator_user_id=flow.user.id,
+            source_message_id=int(data["source_message_id"]), title=str(data["title"]),
+            start_price=int(data["start_price"]), end_at=end_at)
+        item.cover_file_id = data.get("cover_file_id")
+        return item
+    record = await prepare_publication(flow.session, token=token, domain="auction", chat_id=flow.chat.id,
+        creator_user_id=flow.user.id, create_entity=create_entity,
+        render=lambda item: validate_publication_payload({"text": format_auction_announcement(item), "reply_to_message_id": item.source_message_id, "photo": data.get("cover_file_id")}))
+    record = await send_publication(flow.session, flow.context, record)
+    if record.status != "succeeded":
+        await _reply(flow.update, f"拍卖 #{record.entity_id}：{record.error or '发布结果待核实，请勿重复创建'}\n回复原消息发送 /verifypublication {record.token}", parse_mode=None)
+        return
+    from backend.platform.db.schema.models.expansion import AuctionItem
+    item = await flow.session.get(AuctionItem, record.entity_id)
+    await _pin_auction_announcement(flow, item, record.message_id)
     await clear_user_state(flow.session, flow.chat.id, flow.user.id)
     await flow.session.commit()
 
 
 async def _handle_auction_confirm(flow: _AuctionFlow, data: dict) -> bool:
     if flow.text in {"取消", "取消创建"}:
-        await clear_user_state(flow.session, flow.chat.id, flow.user.id)
+        from backend.platform.state.edit_drafts import suspend_inputs
+        await suspend_inputs(flow.session, flow.user.id)
         await flow.session.commit()
-        await _reply(flow.update, "🧹 已取消拍卖创建。")
+        await _reply(flow.update, "已退出拍卖创建，草稿已保留，可从管理首页的草稿入口恢复。")
         return True
     if flow.text not in {"确认", "确认发布", "发布"}:
         await _reply(flow.update, "❌ 请发送 `确认` 发布，或发送 `取消` 退出。")
@@ -294,6 +322,8 @@ async def _start_auction_creation(flow: _AuctionFlow) -> bool:
         if reply_message
         else {"awaiting_item": True}
     )
+    if reply_message and getattr(reply_message, "photo", None):
+        state_data["cover_file_id"] = reply_message.photo[-1].file_id
     await set_user_state(
         flow.session,
         flow.chat.id,
@@ -354,8 +384,6 @@ def _auction_message_parts(update: Update):
     if chat is None or user is None or message is None or chat.type == "private":
         return None
     text = (message.text or message.caption or "").strip()
-    if not text:
-        return None
     return chat, user, message, text
 
 
@@ -387,3 +415,32 @@ async def auction_group_message_handler(
         if _is_auction_create_trigger(text):
             return await _start_auction_creation(flow)
         return await _handle_auction_bid(flow)
+
+
+async def _auction_title_without_text(flow, data):
+    if data.get("awaiting_item") and getattr(flow.message, "photo", None):
+        next_data = {**data, "source_message_id": flow.message.message_id, "cover_file_id": flow.message.photo[-1].file_id}
+        next_data.pop("awaiting_item", None)
+        await set_user_state(
+            flow.session, flow.chat.id, flow.user.id,
+            state_type=ConversationStateType.auction_wait_title.value,
+            state_data=next_data,
+        )
+        await flow.session.commit()
+        await _reply(flow.update, _auction_title_prompt())
+    else:
+        await _reply(flow.update, "请输入拍卖标题，已上传的物品消息会保留。")
+    return True
+
+
+async def _auction_item_input_rejected(flow, data):
+    if any(getattr(flow.message, field, None) for field in ("video", "document", "audio", "voice", "sticker", "animation")):
+        await _reply(flow.update, "本步仅支持文字或按图片方式上传的照片；其他类型暂不支持，草稿已保留。")
+        return True
+    if data.get("awaiting_item") and _is_auction_create_trigger(flow.text):
+        await _reply(flow.update, _auction_item_prompt())
+        return True
+    if data.get("awaiting_item") and not (flow.text or getattr(flow.message, "photo", None)):
+        await _reply(flow.update, "本步支持文字或图片，请重新发送；已填写内容会保留。")
+        return True
+    return False

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.shared.callback_parser import CallbackData
+
 import datetime as dt
 
 from backend.features.admin.support import *
@@ -321,7 +323,7 @@ class GarageReviewActionsMixin:
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
         *,
-        callback_data: CallbackParser,
+        callback_data: CallbackData,
     ) -> None:
         from backend.features.garage.services.garage_features_service import CarReviewService
         from backend.platform.db.schema.models.enums import ConversationStateType

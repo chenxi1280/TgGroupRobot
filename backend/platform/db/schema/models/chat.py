@@ -334,3 +334,17 @@ class ConversationState(Base):
         default=lambda: dt.datetime.now(dt.UTC),
         onupdate=lambda: dt.datetime.now(dt.UTC),
     )
+
+
+class EditDraft(Base):
+    __tablename__ = "edit_drafts"
+    __table_args__ = {"schema": "bot"}
+
+    token: Mapped[str] = mapped_column(String(32), primary_key=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("bot.tg_users.id", ondelete="CASCADE"), index=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger)
+    state_chat_id: Mapped[int] = mapped_column(BigInteger)
+    state_type: Mapped[str] = mapped_column(String(64))
+    state_data: Mapped[dict] = mapped_column(JSONB)
+    expires_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC))

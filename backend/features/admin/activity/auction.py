@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.shared.callback_parser import CallbackData
+
 from backend.features.admin.support import *
 
 
@@ -19,7 +21,7 @@ def _auction_menu_keyboard(setting, chat_id: int) -> InlineKeyboardMarkup:
         [InlineKeyboardButton("⏱ 自动延时：", callback_data=f"auc:home:{chat_id}"), InlineKeyboardButton("✅ 启动" if setting.auto_extend_enabled else "启动", callback_data=f"auc:toggle:{chat_id}:auto_extend:1"), InlineKeyboardButton("✅ 关闭" if not setting.auto_extend_enabled else "关闭", callback_data=f"auc:toggle:{chat_id}:auto_extend:0")],
         [InlineKeyboardButton("🚫 不关联" + (" ✅" if setting.points_mode == "none" else ""), callback_data=f"auc:points_mode:{chat_id}:none"), InlineKeyboardButton("🌑 主积分" + (" ✅" if setting.points_mode == "group_points" else ""), callback_data=f"auc:points_mode:{chat_id}:group_points")],
         [InlineKeyboardButton("📋 活动列表", callback_data=f"auc:list:{chat_id}:0")],
-        [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
+        [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_activities:{chat_id}")],
     ]
     return InlineKeyboardMarkup(rows)
 
@@ -145,7 +147,7 @@ class AuctionAdminControllerMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        *, callback_data: CallbackParser,
+        *, callback_data: CallbackData,
     ) -> None:
         action = callback_data.get(1)
         db: Database = context.application.bot_data["db"]

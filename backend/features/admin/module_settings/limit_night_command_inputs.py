@@ -153,9 +153,22 @@ async def handle_command_config_input(
         return
     settings = await admin_module().get_chat_settings(session, target_chat_id)
 
+    from backend.shared.services.command_config_service import get_command_config
+    await session.refresh(settings, with_for_update=True)
+    current_alias = get_command_config(settings)["commands"][command_key].get("alias")
+    if "base_alias" not in state.state_data or state.state_data["base_alias"] != current_alias:
+        await update.effective_message.reply_text("别名已变化或旧输入缺少版本信息。草稿保留，请返回命令详情重新编辑。")
+        return
     text_value = message_text.strip()
+    if not text_value:
+        await update.effective_message.reply_text("别名不能为空；要移除请发送“清空”。")
+        return
     alias = None if text_value in {"", "清空"} else text_value
-    set_command_alias(settings, command_key, alias)
+    try:
+        set_command_alias(settings, command_key, alias)
+    except ValueError as exc:
+        await update.effective_message.reply_text(str(exc))
+        return
 
     await clear_admin_input_state(session, target_chat_id=target_chat_id, user_id=update.effective_user.id)
     await session.commit()

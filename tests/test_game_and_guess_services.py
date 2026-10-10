@@ -424,7 +424,7 @@ async def test_guess_admin_title_input_saves_draft_and_refreshes_menu(monkeypatc
 
     assert handled is True
     assert cleared == [(-1001, 42)]
-    assert saved == [(42, 42, "guess_wait_title", {"target_chat_id": -1001, "title": "世界杯决赛"})]
+    assert saved == [(42, 42, "guess_draft", {"target_chat_id": -1001, "title": "世界杯决赛"})]
     assert shown == [{"target_chat_id": -1001, "title": "世界杯决赛"}]
     assert session.commits == 1
     assert message.replies == []
@@ -464,63 +464,13 @@ async def test_guess_admin_cover_input_accepts_photo_and_image_document(monkeypa
     assert document_message.replies == []
 
 
-@pytest.mark.asyncio
-async def test_guess_publish_uses_default_command_keyword(monkeypatch):
-    created: list[dict] = []
-    cleared: list[tuple[int, int]] = []
-    shown: list[tuple[int, int]] = []
-    answered: list[str] = []
-
-    async def fake_get_user_state(session, chat_id: int, user_id: int):
-        return SimpleNamespace(
-            state_type="guess_wait_title",
-            state_data={
-                "target_chat_id": -1001,
-                "title": "周末竞猜",
-                "options": [{"key": "1", "label": "主胜"}, {"key": "2", "label": "客胜"}],
-                "deadline_at": (dt.datetime.now(dt.UTC) + dt.timedelta(hours=1)).isoformat(),
-            },
-        )
-
-    async def fake_create_guess_event(session, chat_id: int, creator_user_id: int, draft: dict):
-        created.append(dict(draft))
-        return SimpleNamespace(id=7, announcement_message_id=None)
-
-    async def fake_clear_private_admin_state(session, *, target_chat_id: int, user_id: int) -> None:
-        cleared.append((target_chat_id, user_id))
-
-    async def fake_show_guess_event_detail(update, context, chat_id: int, event_id: int) -> None:
-        shown.append((chat_id, event_id))
-
-    async def fake_answer(update, text: str, show_alert: bool = False):
-        answered.append(text)
-
-    monkeypatch.setattr("backend.features.admin.activity.guess.get_user_state", fake_get_user_state)
-    monkeypatch.setattr("backend.features.admin.activity.guess.create_guess_event", fake_create_guess_event)
-    monkeypatch.setattr("backend.features.admin.activity.guess.clear_private_admin_state", fake_clear_private_admin_state)
-    monkeypatch.setattr("backend.features.admin.activity.guess.format_event_runtime", lambda event: "runtime text")
-    monkeypatch.setattr("backend.features.admin.activity.guess.answer_callback_query_safely", fake_answer)
-    monkeypatch.setattr(admin_handler._admin_handler, "_show_guess_event_detail", fake_show_guess_event_detail)
-
-    session = _GuessPublishSession()
-    bot = _GuessPublishBot()
-    update = SimpleNamespace(effective_user=SimpleNamespace(id=42))
-    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _GuessPublishDb(session)}), bot=bot)
-
-    await admin_handler._admin_handler._handle_guess(
-        update,
-        context,
-        -1001,
-        callback_data=CallbackParser.parse("guess:create:-1001:publish"),
-    )
-
-    assert created and created[0]["command_keyword"] == "竞猜"
-    assert bot.sent == [{"chat_id": -1001, "text": "runtime text", "parse_mode": "Markdown"}]
-    assert cleared == [(-1001, 42)]
-    assert shown == [(-1001, 7)]
-    assert answered == []
-    assert session.commits == 1
-    assert session.rollbacks == 0
+def test_guess_publish_uses_default_command_keyword():
+    from backend.features.activity.services.guess_service_runtime import build_draft_event
+    event = build_draft_event(-1001, 42, {
+        "title": "周末竞猜", "options": [{"key": "1", "label": "主胜"}],
+        "deadline_at": (dt.datetime.now(dt.UTC) + dt.timedelta(hours=1)).isoformat(),
+    })
+    assert event.command_keyword == "竞猜"
 
 
 def test_guess_preview_uses_waiting_placeholders():

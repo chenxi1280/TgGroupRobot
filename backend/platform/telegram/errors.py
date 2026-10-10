@@ -4,6 +4,7 @@ from collections import deque
 
 import structlog
 from telegram import Update
+from backend.platform.telegram.ui_feedback import retain_feedback
 _ANSWER_CALLBACK_QUERY_SAFELY_THRESHOLD_180 = 180
 _BUILD_PUBLIC_ERROR_TEXT_THRESHOLD_120 = 120
 
@@ -50,17 +51,10 @@ def build_public_error_text(error: Exception | None, fallback: str = "操作失�
     if error is None:
         return fallback
 
-    text = str(error).strip()
-    if not text:
-        return fallback
-
-    first_line = text.splitlines()[0].strip()
-    if not first_line:
-        return fallback
-
-    if len(first_line) > _BUILD_PUBLIC_ERROR_TEXT_THRESHOLD_120:
-        return fallback
-    return first_line
+    import secrets
+    reference = secrets.token_hex(4)
+    log.error("public_operation_error", reference=reference, error=str(error))
+    return f"{fallback}（查询编号 {reference}）"
 
 
 async def answer_callback_query_safely(
@@ -73,12 +67,20 @@ async def answer_callback_query_safely(
     """安全回复 callback query，避免因文本过长再次触发 Telegram 异常。"""
     if update.callback_query is None:
         return
-    if _is_callback_query_answered(update):
-        return
-
     safe_text = text.strip() or fallback_text
     if len(safe_text) > _ANSWER_CALLBACK_QUERY_SAFELY_THRESHOLD_180:
         safe_text = fallback_text
+
+    if _is_callback_query_answered(update):
+        # Acknowledging receipt does not deliver the eventual operation result.
+        message = getattr(update, "effective_message", None)
+        if message is not None:
+            try:
+                await message.reply_text(safe_text)
+            except Exception as exc:
+                log.warning("callback_result_delivery_failed", error=str(exc))
+                await retain_feedback(update, text)
+        return
 
     try:
         await update.callback_query.answer(text=safe_text, show_alert=show_alert)
@@ -90,6 +92,7 @@ async def answer_callback_query_safely(
             _remember_callback_query_answered(update)
         except Exception as fallback_exc:
             log.warning("callback_query_answer_failed", error=str(fallback_exc), used_fallback=True)
+            await retain_feedback(update, text)
             return
 
 

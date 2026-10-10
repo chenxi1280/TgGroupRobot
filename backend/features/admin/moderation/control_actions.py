@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.shared.callback_parser import CallbackData
+
 from backend.features.admin.support import *
 from backend.shared.time_ui import build_copy_time_keyboard, build_hhmm_prompt_text, next_top_of_hour_hhmm
 
@@ -24,7 +26,7 @@ class ModerationControlActionsMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        *, callback_data: CallbackParser,
+        *, callback_data: CallbackData,
     ) -> None:
         from backend.platform.db.schema.models.enums import ControlPermissionPolicy
 
@@ -46,7 +48,7 @@ class ModerationControlActionsMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        *, callback_data: CallbackParser,
+        *, callback_data: CallbackData,
     ) -> None:
         op = callback_data.get(3)
         arg = callback_data.get(4)
@@ -156,7 +158,7 @@ class ModerationControlActionsMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        *, callback_data: CallbackParser,
+        *, callback_data: CallbackData,
     ) -> None:
         op = callback_data.get(3)
         arg = callback_data.get(4)

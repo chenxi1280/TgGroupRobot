@@ -43,7 +43,7 @@ async def detect_spam_violation(
         settings,
         message,
         chat_id,
-        user_id,
+        user_id=user_id,
         tracker=get_antispam_tracker(),
     )
 

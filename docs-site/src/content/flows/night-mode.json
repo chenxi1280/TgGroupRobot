@@ -1,7 +1,7 @@
 {
   "slug": "night-mode",
   "title": "夜间管控",
-  "status": "已闭环",
+  "status": "历史记录待复核",
   "category": "群组扩展",
   "entryScreen": "entry",
   "coverage": {
@@ -53,11 +53,11 @@
             "feedback": "进入群组选择。"
           },
           {
-            "label": "返回主菜单",
-            "callbackData": "adm:menu:main:{chat_id}",
+            "label": "返回群安全",
+            "callbackData": "adm:menu:category_safety:{chat_id}",
             "action": "goto",
             "target": "main_menu",
-            "feedback": "已回到主菜单。"
+            "feedback": "已回到群安全分类。"
           }
         ]
       ],
@@ -104,9 +104,9 @@
     },
     {
       "id": "main_menu",
-      "title": "主菜单",
+      "title": "群安全",
       "message": [
-        "这里展示机器人后台的真实功能入口。"
+        "从此分类进入对应功能；本流程演示当前功能的操作。"
       ],
       "keyboard": [
         [
@@ -131,10 +131,24 @@
         [
           {
             "label": "消息拦截",
-            "callbackData": "adm:night:{chat_id}:toggle:enabled",
-            "action": "toggle",
+            "callbackData": "adm:menu:night:{chat_id}",
+            "action": "toast",
             "target": "home",
-            "feedback": "消息拦截已切换。"
+            "feedback": "显示当前配置，不修改开关。"
+          },
+          {
+            "label": "启用",
+            "callbackData": "adm:night:{chat_id}:set:enabled:1",
+            "action": "toast",
+            "target": "home",
+            "feedback": "已启用；重复点击保持相同状态。"
+          },
+          {
+            "label": "关闭",
+            "callbackData": "adm:night:{chat_id}:set:enabled:0",
+            "action": "toast",
+            "target": "home",
+            "feedback": "已关闭；重复点击保持相同状态。"
           },
           {
             "label": "管控开始",
@@ -154,17 +168,45 @@
         [
           {
             "label": "全员禁言模式",
-            "callbackData": "adm:night:{chat_id}:toggle:lock_schedule",
-            "action": "toggle",
+            "callbackData": "adm:menu:night:{chat_id}",
+            "action": "toast",
             "target": "home",
-            "feedback": "全员禁言模式已切换。"
+            "feedback": "显示当前配置，不修改开关。"
+          },
+          {
+            "label": "启用",
+            "callbackData": "adm:night:{chat_id}:set:lock_schedule:1",
+            "action": "toast",
+            "target": "home",
+            "feedback": "已启用；重复点击保持相同状态。"
+          },
+          {
+            "label": "关闭",
+            "callbackData": "adm:night:{chat_id}:set:lock_schedule:0",
+            "action": "toast",
+            "target": "home",
+            "feedback": "已关闭；重复点击保持相同状态。"
           },
           {
             "label": "口令开关群",
-            "callbackData": "adm:night:{chat_id}:toggle:lock_phrase",
-            "action": "toggle",
+            "callbackData": "adm:menu:night:{chat_id}",
+            "action": "toast",
             "target": "home",
-            "feedback": "口令开关群已切换。"
+            "feedback": "显示当前配置，不修改开关。"
+          },
+          {
+            "label": "启用",
+            "callbackData": "adm:night:{chat_id}:set:lock_phrase:1",
+            "action": "toast",
+            "target": "home",
+            "feedback": "已启用；重复点击保持相同状态。"
+          },
+          {
+            "label": "关闭",
+            "callbackData": "adm:night:{chat_id}:set:lock_phrase:0",
+            "action": "toast",
+            "target": "home",
+            "feedback": "已关闭；重复点击保持相同状态。"
           }
         ],
         [
@@ -186,24 +228,66 @@
         [
           {
             "label": "管理员豁免",
-            "callbackData": "adm:night:{chat_id}:toggle:exempt_admin",
-            "action": "toggle",
+            "callbackData": "adm:menu:night:{chat_id}",
+            "action": "toast",
             "target": "home",
-            "feedback": "管理员豁免已切换。"
+            "feedback": "显示当前配置，不修改开关。"
+          },
+          {
+            "label": "启用",
+            "callbackData": "adm:night:{chat_id}:set:exempt_admin:1",
+            "action": "toast",
+            "target": "home",
+            "feedback": "已启用；重复点击保持相同状态。"
+          },
+          {
+            "label": "关闭",
+            "callbackData": "adm:night:{chat_id}:set:exempt_admin:0",
+            "action": "toast",
+            "target": "home",
+            "feedback": "已关闭；重复点击保持相同状态。"
           },
           {
             "label": "删除消息",
-            "callbackData": "adm:night:{chat_id}:toggle:delete_message",
-            "action": "toggle",
+            "callbackData": "adm:menu:night:{chat_id}",
+            "action": "toast",
             "target": "home",
-            "feedback": "删除消息已切换。"
+            "feedback": "显示当前配置，不修改开关。"
+          },
+          {
+            "label": "启用",
+            "callbackData": "adm:night:{chat_id}:set:delete_message:1",
+            "action": "toast",
+            "target": "home",
+            "feedback": "已启用；重复点击保持相同状态。"
+          },
+          {
+            "label": "关闭",
+            "callbackData": "adm:night:{chat_id}:set:delete_message:0",
+            "action": "toast",
+            "target": "home",
+            "feedback": "已关闭；重复点击保持相同状态。"
           },
           {
             "label": "提示开关",
-            "callbackData": "adm:night:{chat_id}:toggle:warn_enabled",
-            "action": "toggle",
+            "callbackData": "adm:menu:night:{chat_id}",
+            "action": "toast",
             "target": "home",
-            "feedback": "提示已切换。"
+            "feedback": "显示当前配置，不修改开关。"
+          },
+          {
+            "label": "启用",
+            "callbackData": "adm:night:{chat_id}:set:warn_enabled:1",
+            "action": "toast",
+            "target": "home",
+            "feedback": "已启用；重复点击保持相同状态。"
+          },
+          {
+            "label": "关闭",
+            "callbackData": "adm:night:{chat_id}:set:warn_enabled:0",
+            "action": "toast",
+            "target": "home",
+            "feedback": "已关闭；重复点击保持相同状态。"
           }
         ],
         [
@@ -247,11 +331,11 @@
         ],
         [
           {
-            "label": "返回主菜单",
-            "callbackData": "adm:menu:main:{chat_id}",
+            "label": "返回群安全",
+            "callbackData": "adm:menu:category_safety:{chat_id}",
             "action": "back",
             "target": "entry",
-            "feedback": "已返回主菜单。"
+            "feedback": "已回到群安全分类。"
           }
         ]
       ],

@@ -38,6 +38,7 @@ class AuctionItem(Base):
         index=True,
     )
     source_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    cover_file_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
     title: Mapped[str | None] = mapped_column(String(255), nullable=True)
     start_price: Mapped[int] = mapped_column(Integer, default=0)
     current_price: Mapped[int] = mapped_column(Integer, default=0)

@@ -74,7 +74,7 @@ def _review_action_rows(setting, chat_id: int, *, approver_label: str, fields, r
         [InlineKeyboardButton(f"🪙 奖励 {setting.reward_points} 分", callback_data=f"crv:reward:{chat_id}"), InlineKeyboardButton(f"🕵️ 审核：{approver_label}", callback_data=f"crv:approver:set:{chat_id}")],
         [InlineKeyboardButton(f"✏️ 自定义项 {enabled_count}/{len(fields)}", callback_data=f"crv:fields:{chat_id}"), InlineKeyboardButton("📝 报告模版", callback_data=f"crv:template:edit:{chat_id}")],
         [InlineKeyboardButton(f"📂 评价管理 {pending_count}", callback_data=f"crv:reports:{chat_id}"), InlineKeyboardButton("👩 在榜老师", callback_data=f"tsearch:open_course:list:{chat_id}:0")],
-        [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
+        [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_garage:{chat_id}")],
     ]
 
 

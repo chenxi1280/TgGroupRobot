@@ -5,10 +5,10 @@ from typing import Awaitable, Callable
 
 import structlog
 from telegram import Update
-from telegram.ext import ContextTypes
+from telegram.ext import ContextTypes, ApplicationHandlerStop
 
 from backend.shared.services.chat_service import get_chat_settings
-from backend.shared.services.command_config_service import get_command_alias, is_command_enabled
+from backend.shared.services.command_config_service import get_command_alias, is_command_enabled, command_alias_conflicts
 
 log = structlog.get_logger(__name__)
 
@@ -38,10 +38,11 @@ def _extract_command_key(text: str) -> str | None:
 
 
 def _build_alias_map(settings: object) -> dict[str, str]:
+    conflicts = command_alias_conflicts(settings)
     return {
         alias: key
         for key in COMMAND_TARGETS
-        if (alias := get_command_alias(settings, key)) is not None
+        if (alias := get_command_alias(settings, key)) is not None and alias not in conflicts
     }
 
 
@@ -70,16 +71,32 @@ async def command_alias_handler(update: Update, context: ContextTypes.DEFAULT_TY
         settings = await get_chat_settings(session, chat.id)
         await session.commit()
 
+    if not await _alias_dispatch_allowed(update, context, command_text=command_text, settings=settings):
+        return
     target_key = _build_alias_map(settings).get(command_text)
     if not target_key:
         return
 
     if not is_command_enabled(settings, target_key):
         await message.reply_text("该指令已关闭。")
-        return
+        raise ApplicationHandlerStop
 
     handler = _load_command_handler(target_key)
     if handler is None:
         log.warning("command_alias_unhandled", key=target_key, chat_id=chat.id)
         return
     await handler(update, context)
+    raise ApplicationHandlerStop
+
+
+async def _alias_dispatch_allowed(update, context, *, command_text, settings):
+    message = update.effective_message
+    command_token = (message.text or "").split(None, 1)[0]
+    if "@" in command_token and command_token.split("@", 1)[1].lower() != context.bot.username.lower():
+        return
+    if command_text in COMMAND_TARGETS:
+        return  # Original command is owned by its registered CommandHandler.
+    if command_text in command_alias_conflicts(settings):
+        await message.reply_text("此历史命令别名存在冲突，请管理员在命令配置中修改。")
+        raise ApplicationHandlerStop
+    return True

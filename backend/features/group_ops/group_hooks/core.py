@@ -69,7 +69,7 @@ def _old_user_identity(old_user) -> tuple[str | None, str]:
     return old_user.username, " ".join(parts)
 
 
-def _runtime_user_profile(runtime: _GroupMessageRuntime) -> dict[str, object | None]:
+def _runtime_user_profile(runtime: _GroupMessageRuntime) -> dict[str, str | None]:
     if runtime.real_user_id is None:
         return {"username": None, "first_name": None, "last_name": None, "language_code": None}
     return {
@@ -201,7 +201,7 @@ async def _process_control_hooks(
         message_text=runtime.message_text,
     ):
         return True
-    if await _process_night_mode(context, runtime.chat, runtime.user, runtime.message, settings, is_admin):
+    if await _process_night_mode(context, runtime.chat, runtime.user, message=runtime.message, settings=settings, is_admin=is_admin):
         return True
     if runtime.real_user_id is not None and is_admin:
         return await _process_alliance_reply_ban(
@@ -218,7 +218,7 @@ async def _process_control_hooks(
         return True
     if not await _check_force_subscribe(context, runtime.chat, runtime.user, message=runtime.message, settings=settings):
         return True
-    return await _process_new_member_limit(context, db, runtime.chat, runtime.user, runtime.message, settings)
+    return await _process_new_member_limit(context, db, runtime.chat, user=runtime.user, message=runtime.message, settings=settings)
 
 
 async def _process_feature_hooks(

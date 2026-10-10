@@ -17,7 +17,6 @@ disable_error_code = [
     "arg-type",
     "assignment",
     "attr-defined",
-    "call-arg",
     "call-overload",
     "index",
     "misc",
@@ -30,3 +29,12 @@ disable_error_code = [
     "union-attr",
     "var-annotated",
 ]
+
+[[tool.mypy.overrides]]
+module = ["backend.features.admin.runtime", "backend.platform.telegram.private_config_adapters", "backend.platform.telegram.private_config_handler", "backend.features.group_ops.group_hooks.core", "backend.features.group_ops.group_hooks.controls"]
+enable_error_code = ["call-arg", "arg-type"]
+
+[[tool.mypy.overrides]]
+module = "backend.platform.config.core.settings"
+# Pydantic Settings loads required fields from environment at construction.
+disable_error_code = ["call-arg"]

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.shared.callback_parser import CallbackData
+
 from backend.features.admin.support import *
 
 
@@ -52,7 +54,7 @@ class VerificationConfigStartMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         target_chat_id: int,
-        *, callback_data: CallbackParser | None = None,
+        *, callback_data: CallbackData | None = None,
     ) -> None:
         if update.callback_query is None or update.effective_chat is None or update.effective_user is None:
             return

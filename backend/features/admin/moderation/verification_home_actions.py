@@ -21,7 +21,7 @@ from backend.features.admin.support_constants import (
 from backend.features.admin.support_helpers import _cycle_config_value
 from backend.platform.db.runtime.session import Database
 from backend.platform.telegram.errors import answer_callback_query_safely
-from backend.shared.callback_parser import CallbackParser
+from backend.shared.callback_parser import CallbackData, CallbackParser
 from backend.shared.services.chat_service import get_chat_settings
 
 
@@ -181,7 +181,7 @@ class VerificationHomeActionsMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        *, callback_data: CallbackParser,
+        *, callback_data: CallbackData,
     ) -> None:
         section = callback_data.get(3)
         action = callback_data.get(4)
@@ -340,10 +340,7 @@ class VerificationHomeActionsMixin:
                 update,
                 text,
                 reply_markup=InlineKeyboardMarkup([
-                    [
-                        InlineKeyboardButton("✅ 同意", callback_data=f"adm:vfy_home:{chat_id}:rule:button"),
-                        InlineKeyboardButton("❌ 不同意", callback_data=f"adm:vfy_home:{chat_id}:rule:button"),
-                    ],
+                    [InlineKeyboardButton(("✅ 同意") + " · " + ("❌ 不同意"), callback_data=f"adm:vfy_home:{chat_id}:rule:button")],
                     [InlineKeyboardButton("🔙 返回", callback_data=f"adm:vfy_home:{chat_id}:rule:button")],
                 ]),
             )

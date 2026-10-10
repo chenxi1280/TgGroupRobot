@@ -1,7 +1,7 @@
 {
   "slug": "force-subscribe",
   "title": "强制订阅",
-  "status": "已闭环",
+  "status": "历史记录待复核",
   "category": "入群风控",
   "entryScreen": "entry",
   "coverage": {
@@ -56,11 +56,11 @@
             "feedback": "进入群组选择。"
           },
           {
-            "label": "返回主菜单",
-            "callbackData": "adm:menu:main:{chat_id}",
+            "label": "返回群安全",
+            "callbackData": "adm:menu:category_safety:{chat_id}",
             "action": "goto",
             "target": "main_menu",
-            "feedback": "已回到主菜单。"
+            "feedback": "已回到群安全分类。"
           }
         ]
       ],
@@ -107,9 +107,9 @@
     },
     {
       "id": "main_menu",
-      "title": "主菜单",
+      "title": "群安全",
       "message": [
-        "这里展示机器人后台的真实功能入口。"
+        "从此分类进入对应功能；本流程演示当前功能的操作。"
       ],
       "keyboard": [
         [
@@ -134,10 +134,24 @@
         [
           {
             "label": "开启",
-            "callbackData": "adm:fs:{chat_id}:toggle:enabled",
-            "action": "toggle",
+            "callbackData": "adm:menu:forcesub:{chat_id}",
+            "action": "toast",
             "target": "home",
-            "feedback": "强制关注已切换。"
+            "feedback": "显示当前配置，不修改开关。"
+          },
+          {
+            "label": "启用",
+            "callbackData": "adm:fs:{chat_id}:set:enabled:1",
+            "action": "toast",
+            "target": "home",
+            "feedback": "已启用；重复点击保持相同状态。"
+          },
+          {
+            "label": "关闭",
+            "callbackData": "adm:fs:{chat_id}:set:enabled:0",
+            "action": "toast",
+            "target": "home",
+            "feedback": "已关闭；重复点击保持相同状态。"
           },
           {
             "label": "频道 1",
@@ -211,11 +225,11 @@
         ],
         [
           {
-            "label": "返回主菜单",
-            "callbackData": "adm:menu:main:{chat_id}",
+            "label": "返回群安全",
+            "callbackData": "adm:menu:category_safety:{chat_id}",
             "action": "back",
             "target": "entry",
-            "feedback": "已返回主菜单。"
+            "feedback": "已回到群安全分类。"
           }
         ]
       ],

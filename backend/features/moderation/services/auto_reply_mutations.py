@@ -134,7 +134,7 @@ async def move_auto_reply_rule_impl(
     direction: str,
     get_chat_auto_reply_rules_func: RuleListLoader,
 ) -> bool:
-    rules = await get_chat_auto_reply_rules_func(session, chat_id)
+    rules = await get_chat_auto_reply_rules_func(session, chat_id, False)
     current_index = next((idx for idx, rule in enumerate(rules) if rule.id == rule_id), None)
     if current_index is None:
         return False

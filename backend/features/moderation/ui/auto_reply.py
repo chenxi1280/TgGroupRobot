@@ -135,7 +135,7 @@ def auto_reply_list_keyboard(
         buttons.append(_auto_reply_navigation_row(chat_id, current_page, total_pages))
     create_callback = f"auto_reply:create:{chat_id}" if chat_id is not None else "auto_reply:create"
     buttons.append([InlineKeyboardButton("➕ 添加一条", callback_data=create_callback)])
-    back_callback = f"adm:menu:main:{chat_id}" if chat_id else "auto_reply:menu"
+    back_callback = f"adm:menu:category_messages:{chat_id}" if chat_id else "auto_reply:menu"
     buttons.append([InlineKeyboardButton("🔙 返回", callback_data=back_callback)])
     return InlineKeyboardMarkup(buttons)
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.shared.callback_parser import CallbackData
+
 from backend.features.admin.support import *
 
 
@@ -208,7 +210,7 @@ class CustomPointsAdminControllerMixin:
 
     async def _handle_custom_points(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id: int,
-        *, callback_data: CallbackParser,
+        *, callback_data: CallbackData,
     ) -> None:
         op = callback_data.get(3)
         if op == "noop":

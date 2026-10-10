@@ -359,7 +359,7 @@ async def _prepare_spam_punishment(
     context, session, *, request: ModerationRequest, settings
 ):
     violation = await detect_spam_violation(
-        settings, request.message, request.chat.id, request.actor_id
+        settings, request.message, request.chat.id, user_id=request.actor_id
     )
     if not violation.blocked:
         await session.commit()

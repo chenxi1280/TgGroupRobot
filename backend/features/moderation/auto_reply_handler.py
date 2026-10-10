@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.platform.telegram.errors import answer_callback_query_safely
+
 from dataclasses import dataclass
 
 from telegram import Update
@@ -343,7 +345,7 @@ async def auto_reply_toggle_callback(update: Update, context: ContextTypes.DEFAU
         return
     query = update.callback_query
     if not (query.data or "").startswith("auto_reply:toggle:"):
-        await _auto_reply_toggle_handler.handle_callback(update, context, require_admin=False)
+        await answer_callback_query_safely(update, "旧开关入口已更新，请从管理首页重新打开自动回复。", show_alert=True)
         return
     target_chat_id = await _resolve_auto_reply_target_chat_id(update, context)
     if target_chat_id is None:
@@ -351,9 +353,7 @@ async def auto_reply_toggle_callback(update: Update, context: ContextTypes.DEFAU
     rule_id = await _legacy_toggle_rule_id(query)
     if rule_id is None:
         return
-    if not await _toggle_legacy_rule(context, query, chat_id=target_chat_id, rule_id=rule_id):
-        return
-    await query.answer("状态已切换")
+    await query.answer("请在新版页面选择启用或关闭")
     await _show_updated_auto_reply(update, context, chat_id=target_chat_id, rule_id=rule_id)
 
 

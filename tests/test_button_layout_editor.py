@@ -15,7 +15,22 @@ from backend.shared.button_layout_editor import (
 )
 
 
+@pytest.fixture(autouse=True)
+def editor_gesture_draft_storage(monkeypatch):
+    # Gesture tests isolate storage; real persistence/restart/conflict is covered
+    # in the disposable PostgreSQL suite.
+    async def ensure(session, context, editor_ctx):
+        return ButtonLayoutEditorService._clone_grid(context.user_data["button_editor_drafts"][f"{editor_ctx.module_type}:{editor_ctx.target_chat_id}:{editor_ctx.entity_id}"])
+    async def persist(session, context, editor_ctx, *, grid, save_buttons=None):
+        context.user_data["button_editor_drafts"][f"{editor_ctx.module_type}:{editor_ctx.target_chat_id}:{editor_ctx.entity_id}"] = grid
+    monkeypatch.setattr(button_layout_editor, "_ensure_draft", ensure)
+    monkeypatch.setattr(button_layout_editor, "_persist_draft", persist)
+
+
 class _Session:
+    async def flush(self):
+        return None
+
     async def commit(self):
         return None
 
@@ -158,12 +173,12 @@ def test_build_layout_keyboard_shows_add_and_existing_buttons() -> None:
         ButtonLayoutEditorService.to_grid([[{"text": "关注", "url": "https://t.me/demo"}]]),
     )
 
-    first_row = keyboard.inline_keyboard[0]
+    first_row = keyboard.inline_keyboard[1]
     assert first_row[0].text == "关注"
     assert first_row[1].text == "➕ 按钮"
     assert first_row[1].callback_data == "btned:add:ads:-1001:9:0:1"
-    assert keyboard.inline_keyboard[-1][0].text == "♻️ 清空按钮"
-    assert keyboard.inline_keyboard[-1][1].text == "🔙 返回"
+    assert keyboard.inline_keyboard[-3][0].text == "♻️ 清空按钮"
+    assert keyboard.inline_keyboard[-3][1].text == "🔙 返回"
 
 
 def test_build_layout_keyboard_uses_four_columns_and_clickable_holes() -> None:
@@ -175,7 +190,7 @@ def test_build_layout_keyboard_uses_four_columns_and_clickable_holes() -> None:
     grid = ButtonLayoutEditorService.delete_button(grid, 0, 1)
 
     keyboard = build_layout_keyboard(ButtonEditorContext("auto_reply", -1001, 10), grid)
-    first_row = keyboard.inline_keyboard[0]
+    first_row = keyboard.inline_keyboard[1]
 
     assert [button.text for button in first_row] == ["A", "⚠️ 空", "C", "➕ 按钮"]
     assert first_row[1].callback_data == "btned:add:auto_reply:-1001:10:0:1"
@@ -190,7 +205,7 @@ def test_button_layout_editor_clear_buttons_exports_empty() -> None:
 
 
 @pytest.mark.asyncio
-async def test_button_layout_editor_clear_callback_persists_empty_buttons(monkeypatch) -> None:
+async def test_button_layout_editor_clear_callback_updates_only_draft(monkeypatch) -> None:
     saved: list[list[dict[str, str]]] | None = None
     shown: list[ButtonEditorContext] = []
 
@@ -223,7 +238,7 @@ async def test_button_layout_editor_clear_callback_persists_empty_buttons(monkey
 
     await button_layout_editor_callback(update, context)
 
-    assert saved == []
+    assert saved is None
     assert context.user_data["button_editor_drafts"]["auto_reply:-1001:10"] == [[]]
     assert shown and shown[0].module_type == "auto_reply"
 
@@ -264,7 +279,7 @@ async def test_button_layout_editor_add_callback_opens_new_button_detail(monkeyp
     ("module_type", "entity_id"),
     [("ads", 9), ("auto_reply", 10), ("welcome", 12), ("invite", 0)],
 )
-async def test_button_layout_editor_input_persists_complete_buttons(monkeypatch, module_type: str, entity_id: int) -> None:
+async def test_button_layout_editor_input_updates_draft_without_saving(monkeypatch, module_type: str, entity_id: int) -> None:
     saved: list[list[dict[str, str]]] = []
     shown: list[ButtonEditorContext] = []
 
@@ -315,7 +330,8 @@ async def test_button_layout_editor_input_persists_complete_buttons(monkeypatch,
 
     await handle_button_layout_editor_input(update, context, session, state=state, message_text="新按钮")
 
-    assert saved == [[{"text": "新按钮", "url": "https://t.me/demo"}]]
+    assert saved == []
+    assert context.user_data["button_editor_drafts"][f"{module_type}:-1001:{entity_id}"] == [[{"text": "新按钮", "url": "https://t.me/demo"}]]
     assert shown and shown[0].module_type == module_type
 
 
@@ -368,4 +384,6 @@ async def test_button_layout_editor_input_saves_auto_reply_text_trigger(monkeypa
 
     await handle_button_layout_editor_input(update, context, SimpleNamespace(commit=fake_commit), state=state, message_text="签到")
 
-    assert saved == [[{"text": "签到", "action_type": "text_trigger", "payload": "签到"}]]
+    assert saved == []
+    grid = context.user_data["button_editor_drafts"]["auto_reply:-1001:10"]
+    assert ButtonLayoutEditorService.export_complete_buttons(grid, module_type="auto_reply") == [[{"text": "签到", "action_type": "text_trigger", "payload": "签到"}]]

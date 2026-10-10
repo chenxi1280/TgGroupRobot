@@ -162,11 +162,17 @@ async def test_private_message_handler_does_not_treat_selected_chat_as_input_sta
     monkeypatch.setattr(start_handler.StateHelper, "get_state_by_chat", fake_get_state_by_chat)
     monkeypatch.setattr(start_handler, "get_user_managed_chats", fake_get_user_managed_chats)
     monkeypatch.setattr(start_handler, "get_user_current_chat", fake_get_user_current_chat)
+    async def fake_set_current(*args):
+        return None
+    async def fake_teacher_chats(*args):
+        return []
+    monkeypatch.setattr(start_handler, "set_user_current_chat", fake_set_current)
+    monkeypatch.setattr(start_handler, "_list_teacher_self_chats", fake_teacher_chats)
 
     update = SimpleNamespace(
         effective_chat=SimpleNamespace(id=9001, type="private"),
         effective_user=SimpleNamespace(id=42),
-        effective_message=SimpleNamespace(reply_text=fake_reply_text),
+        effective_message=SimpleNamespace(text="你好", reply_text=fake_reply_text),
     )
     context = SimpleNamespace(
         application=SimpleNamespace(bot_data={"db": _Db()}),
@@ -176,4 +182,4 @@ async def test_private_message_handler_does_not_treat_selected_chat_as_input_sta
     await start_handler.private_message_handler(update, context)
 
     assert len(replies) == 1
-    assert "请选择要管理的群组" in replies[0][0]
+    assert "测试群" in replies[0][0]

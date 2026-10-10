@@ -16,6 +16,7 @@ from backend.features.admin.points_config_handler import (
     WAIT_VALUE as PTS_WAIT_VALUE,
 )
 from backend.app.router_base import BaseRouter
+from backend.features.points.mall_order_handler import order_callback, deliver_command, assign_command, order_command
 from backend.platform.telegram.conversation_callback_handler import PerUserConversationCallbackHandler
 
 log = structlog.get_logger(__name__)
@@ -29,6 +30,11 @@ class PointsRouter(BaseRouter):
 
     def register(self, app: Application) -> None:
         log.debug(f"Registering {self.name} router")
+
+        app.add_handler(CommandHandler("order", order_command))
+        app.add_handler(CommandHandler("deliver", deliver_command))
+        app.add_handler(CommandHandler("assign", assign_command))
+        app.add_handler(CallbackQueryHandler(order_callback, pattern=r"^morder:"))
 
         # 命令处理器
         app.add_handler(CommandHandler("sign", sign_command))

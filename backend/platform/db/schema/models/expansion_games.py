@@ -136,6 +136,7 @@ class GuessEvent(Base):
     )
     title: Mapped[str] = mapped_column(String(128), default="竞猜活动")
     cover_file_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    cover_media_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     mode: Mapped[str] = mapped_column(String(16), default="no_banker")
     banker_user_id: Mapped[int | None] = mapped_column(

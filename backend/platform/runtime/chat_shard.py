@@ -66,7 +66,11 @@ def install_chat_sharded_processing(application) -> None:
                 update_id=getattr(update, "update_id", None),
                 chat_id=chat.id if chat is not None else None,
                 user_id=user.id if user is not None else None,
-            ):
+            ) as scope:
+                scope.cache["feedback_db"] = application.bot_data.get("db")
+                if getattr(update, "callback_query", None):
+                    from backend.platform.state.private_navigation import suspend_for_private_navigation
+                    await suspend_for_private_navigation(application, update)
                 return await original(update, *args, **kwargs)
 
     application.process_update = process_update  # type: ignore[method-assign]

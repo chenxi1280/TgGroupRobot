@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.shared.callback_parser import CallbackData
+
 from backend.features.admin.garage.forward_presenters import (
     build_forward_audit_keyboard,
     build_forward_home_keyboard,
@@ -75,7 +77,7 @@ class GarageForwardAdminMixin:
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
         *,
-        callback_data: CallbackParser,
+        callback_data: CallbackData,
     ) -> None:
         from backend.platform.db.schema.models.enums import ConversationStateType
         from backend.features.garage.services.garage_forward_service import (

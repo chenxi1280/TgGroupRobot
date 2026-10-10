@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.shared.callback_parser import CallbackData
+
 from backend.features.admin.support import *
 
 
@@ -232,7 +234,7 @@ class TeacherSearchActionsMixin:
 
     async def _handle_teacher_search(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id: int,
-        *, callback_data: CallbackParser,
+        *, callback_data: CallbackData,
     ) -> None:
         from backend.features.garage.services.garage_features_service import TeacherSearchService
         from backend.platform.db.schema.models.enums import ConversationStateType

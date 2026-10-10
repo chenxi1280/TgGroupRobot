@@ -32,7 +32,7 @@ def test_invite_link_menu_keyboard_matches_basic_mode_layout():
         ["📤 导出数据"],
         ["🔙 返回"],
     ]
-    assert callbacks["🔙 返回"] == "adm:menu:main:-1001"
+    assert callbacks["🔙 返回"] == "adm:menu:category_growth:-1001"
 
 
 @pytest.mark.asyncio

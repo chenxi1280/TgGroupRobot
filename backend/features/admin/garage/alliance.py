@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.shared.callback_parser import CallbackData
+
 from backend.features.admin.support import *
 from backend.shared.services.base import NotFoundError
 
@@ -9,7 +11,7 @@ def _empty_alliance_view(chat_id: int):
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("🆕 创建联盟", callback_data=f"ali:create:input:{chat_id}")],
         [InlineKeyboardButton("🤝 加入联盟", callback_data=f"ali:join:input:{chat_id}")],
-        [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
+        [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_safety:{chat_id}")],
     ])
     return text, keyboard
 
@@ -29,7 +31,7 @@ def _alliance_view(alliance, setting, members, *, chat_id: int):
         [InlineKeyboardButton("📋 联合封禁名单", callback_data=f"ali:jointban:list:{chat_id}")],
         [InlineKeyboardButton("⚙️ 联合封禁：", callback_data=f"ali:home:{chat_id}"), InlineKeyboardButton("✅ 启动" if joint_ban else "启动", callback_data=f"ali:jointban:toggle:{chat_id}:1"), InlineKeyboardButton("关闭" if joint_ban else "✅ 关闭", callback_data=f"ali:jointban:toggle:{chat_id}:0")],
         [InlineKeyboardButton("🔑 邀请密码" if is_owner else "🔑 邀请密码（仅创建群）", callback_data=f"ali:invite:show:{chat_id}" if is_owner else f"ali:invite:denied:{chat_id}"), InlineKeyboardButton("🚪 退出联盟", callback_data=f"ali:leave:{chat_id}:confirm")],
-        [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
+        [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_safety:{chat_id}")],
     ]
     return text, InlineKeyboardMarkup(rows)
 
@@ -251,7 +253,7 @@ class GarageAllianceAdminMixin:
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
         *,
-        callback_data: CallbackParser,
+        callback_data: CallbackData,
     ) -> None:
         from backend.platform.db.schema.models.enums import ConversationStateType
         from backend.features.garage.services.alliance_service import AllianceService

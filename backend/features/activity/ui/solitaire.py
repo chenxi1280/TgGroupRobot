@@ -19,7 +19,7 @@ def solitaire_menu_keyboard(chat_id: int | None = None) -> InlineKeyboardMarkup:
     create_callback = f"sol:create:{chat_id}" if chat_id else "sol:create"
     list_callback = f"sol:list:{chat_id}:0" if chat_id else "sol:list"
     stats_callback = f"sol:stats:{chat_id}" if chat_id else "sol:stats"
-    back_button = create_back_button(chat_id, "main")
+    back_button = create_back_button(chat_id, "category_activities")
 
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("➕ 创建接龙", callback_data=create_callback)],

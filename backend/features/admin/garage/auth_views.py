@@ -30,12 +30,7 @@ def _garage_auth_status_rows(settings, chat_id: int) -> list:
                 callback_data=f"grg:toggle:{chat_id}:0",
             ),
         ],
-        [
-            InlineKeyboardButton("⚙️ 认证图标", callback_data=f"grg:badge:{chat_id}"),
-            InlineKeyboardButton(
-                settings.garage_auth_badge or "🤝", callback_data=f"grg:badge:{chat_id}"
-            ),
-        ],
+        [InlineKeyboardButton(("⚙️ 认证图标") + " · " + (settings.garage_auth_badge or "🤝"), callback_data=f"grg:badge:{chat_id}")],
         [InlineKeyboardButton("💌 手动认证老师", callback_data=f"grg:teacher:list:{chat_id}:0")],
         [InlineKeyboardButton("📇 生成老师汇总信息", callback_data=f"grg:summary:menu:{chat_id}")],
     ]
@@ -65,7 +60,7 @@ def _garage_limit_rows(settings, chat_id: int) -> list:
             InlineKeyboardButton(f"限制条数（{settings.garage_limit_max_count}条）", callback_data=f"grg:limit:max:{chat_id}"),
         ],
         [InlineKeyboardButton("📄 限制发言白名单", callback_data=f"grg:wl:list:{chat_id}:0")],
-        [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
+        [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_garage:{chat_id}")],
     ]
 
 
@@ -161,6 +156,7 @@ class GarageAuthViewsMixin:
             pool_info = await GarageAuthService.get_teacher_pool_info(session, chat_id)
             await session.commit()
 
+        page = max(0, min(page, max(0, (len(rows) - 1) // 8)))
         lines = [
             "🚗 车库认证 | 手动添加认证老师",
             "",
@@ -173,14 +169,23 @@ class GarageAuthViewsMixin:
         if not rows:
             lines.append("数据为空")
         else:
-            start = page * 10
-            for item, user in rows[start:start + 10]:
-                name = f"@{user.username}" if user and user.username else str(item.user_id)
+            start = page * 8
+            for item, user in rows[start:start + 8]:
+                name = _identity_name(item, user)
                 lines.append(f"- {name}")
         keyboard_rows = [[InlineKeyboardButton("➕ 添加老师", callback_data=f"grg:teacher:add:{chat_id}")]]
-        for item, user in rows[page * 10: page * 10 + 10]:
-            title = f"删除 {('@' + user.username) if user and user.username else item.user_id}"
-            keyboard_rows.append([InlineKeyboardButton(title[:48], callback_data=f"grg:teacher:del:{chat_id}:{item.user_id}")])
+        for item, user in rows[page * 8: page * 8 + 8]:
+            title = f"查看 {_identity_name(item, user)}"
+            keyboard_rows.append([InlineKeyboardButton(title[:48], callback_data=f"grg:teacher:detail:{chat_id}:{item.user_id}:{page}")])
+        lines.append(f"第 {page+1}/{max(1, (len(rows)+7)//8)} 页，共 {len(rows)} 人")
+        navigation = []
+        if page:
+            navigation.append(InlineKeyboardButton("上一页", callback_data=f"grg:teacher:list:{chat_id}:{page-1}"))
+        if (page+1)*8 < len(rows):
+            navigation.append(InlineKeyboardButton("下一页", callback_data=f"grg:teacher:list:{chat_id}:{page+1}"))
+        if navigation:
+            keyboard_rows.append(navigation)
+        keyboard_rows.append([InlineKeyboardButton("刷新", callback_data=f"grg:teacher:list:{chat_id}:{page}")])
         keyboard_rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"grg:home:{chat_id}")])
         await self.message_helper.safe_edit(update, "\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard_rows))
 
@@ -198,17 +203,31 @@ class GarageAuthViewsMixin:
             rows = await GarageAuthService.list_whitelist(session, chat_id)
             await session.commit()
 
+        page = max(0, min(page, max(0, (len(rows) - 1) // 8)))
         lines = ["📄 老师发言限制 | 添加白名单", "", "白名单中的老师可无视发言限制", ""]
         if not rows:
             lines.append("白名单为空")
         else:
-            start = page * 10
-            for item, user in rows[start:start + 10]:
-                name = f"@{user.username}" if user and user.username else str(item.user_id)
+            start = page * 8
+            for item, user in rows[start:start + 8]:
+                name = _identity_name(item, user)
                 lines.append(f"- {name}")
         keyboard_rows = [[InlineKeyboardButton("➕ 添加白名单", callback_data=f"grg:wl:add:{chat_id}")]]
-        for item, user in rows[page * 10: page * 10 + 10]:
-            title = f"删除 {('@' + user.username) if user and user.username else item.user_id}"
-            keyboard_rows.append([InlineKeyboardButton(title[:48], callback_data=f"grg:wl:del:{chat_id}:{item.user_id}")])
+        for item, user in rows[page * 8: page * 8 + 8]:
+            title = f"查看 {_identity_name(item, user)}"
+            keyboard_rows.append([InlineKeyboardButton(title[:48], callback_data=f"grg:wl:detail:{chat_id}:{item.user_id}:{page}")])
+        lines.append(f"第 {page+1}/{max(1, (len(rows)+7)//8)} 页，共 {len(rows)} 人")
+        navigation = []
+        if page:
+            navigation.append(InlineKeyboardButton("上一页", callback_data=f"grg:wl:list:{chat_id}:{page-1}"))
+        if (page+1)*8 < len(rows):
+            navigation.append(InlineKeyboardButton("下一页", callback_data=f"grg:wl:list:{chat_id}:{page+1}"))
+        if navigation:
+            keyboard_rows.append(navigation)
+        keyboard_rows.append([InlineKeyboardButton("刷新", callback_data=f"grg:wl:list:{chat_id}:{page}")])
         keyboard_rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"grg:home:{chat_id}")])
         await self.message_helper.safe_edit(update, "\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard_rows))
+
+
+def _identity_name(item, user):
+    return f"@{user.username}" if user and user.username else str(item.user_id)

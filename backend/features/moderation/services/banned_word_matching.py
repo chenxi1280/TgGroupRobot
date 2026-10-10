@@ -38,7 +38,7 @@ async def match_banned_words_impl(
     *,
     get_chat_banned_words_func: WordListLoader,
 ) -> list[BannedWord]:
-    words = await get_chat_banned_words_func(session, chat_id, active_only=True)
+    words = await get_chat_banned_words_func(session, chat_id, True)
     matched: list[BannedWord] = []
     for word in words:
         if match_word(word, text):

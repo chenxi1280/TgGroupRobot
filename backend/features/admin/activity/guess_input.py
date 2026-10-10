@@ -64,16 +64,18 @@ async def _guess_title_value(flow: _GuessInput):
 
 async def _guess_cover_value(flow: _GuessInput):
     message = flow.update.effective_message
+    media_type = "photo"
     if flow.value == "清空":
         file_id = None
     elif getattr(message, "photo", None):
         file_id = message.photo[-1].file_id
     elif _is_image_document(getattr(message, "document", None)):
         file_id = message.document.file_id
+        media_type = "document"
     else:
         await message.reply_text("请发送图片，或发送“清空”。")
         return None
-    return {**flow.draft, "cover_file_id": file_id}
+    return {**flow.draft, "cover_file_id": file_id, "cover_media_type": media_type}
 
 
 async def _guess_banker_value(flow: _GuessInput):
@@ -144,7 +146,7 @@ async def _save_guess_draft(flow: _GuessInput, context, draft: dict) -> None:
         flow.session,
         chat_id=flow.user_id,
         user_id=flow.user_id,
-        state_type="guess_wait_title",
+        state_type="guess_draft",
         state_data=draft,
     )
     await flow.session.commit()

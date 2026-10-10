@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.shared.callback_parser import CallbackData
+
 import datetime as dt
 
 from backend.features.admin.support import *
@@ -209,6 +211,7 @@ class EngagementAdminEggActionsMixin:
             await self._show_engagement_egg_list(
                 update, context, chat_id,
                 status=callback_data.get(4, "all") or "all",
+                page=callback_data.get_int_optional(5) or 0,
             )
             return True
         if sub == "detail":
@@ -218,7 +221,8 @@ class EngagementAdminEggActionsMixin:
                 await self._show_engagement_egg_list(update, context, chat_id)
             else:
                 await self._show_engagement_egg(
-                    update, context, chat_id, event_id=event_id
+                    update, context, chat_id, event_id=event_id,
+                    status=callback_data.get(5, "all") or "all", page=callback_data.get_int_optional(6) or 0,
                 )
             return True
         if sub != "history":
@@ -262,7 +266,7 @@ class EngagementAdminEggActionsMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        *, callback_data: CallbackParser,
+        *, callback_data: CallbackData,
         session,
     ) -> None:
         sub = callback_data.get(3)

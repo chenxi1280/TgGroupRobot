@@ -124,3 +124,18 @@ async def test_exception_user_bypasses_all_rules() -> None:
     )
 
     assert violation.blocked is False
+
+
+@pytest.mark.asyncio
+async def test_public_spam_service_and_handler_keep_user_identity():
+    from unittest.mock import AsyncMock
+    from backend.features.moderation.services.anti_spam_service import detect_spam_violation as public_detect
+    from backend.features.moderation.anti_spam_handler import ModerationRequest, _prepare_spam_punishment
+    settings = _settings({'banned_accounts': True, 'banned_user_ids': [42]})
+    blocked = await public_detect(settings, _message(), -1001, user_id=42)
+    assert blocked.blocked and blocked.rule == 'banned_account'
+    session = SimpleNamespace(commit=AsyncMock())
+    request = ModerationRequest(chat=SimpleNamespace(id=-1001), user=None,
+        message=_message(), sender_chat=None, actor_id=43, real_user=None)
+    assert await _prepare_spam_punishment(None, session, request=request, settings=settings) is None
+    session.commit.assert_awaited_once()

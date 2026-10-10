@@ -162,7 +162,7 @@ class VerificationViewsMixin:
                     callback_data=f"adm:vfy_home:{chat_id}:prompt_fail_open:toggle",
                 )
             ],
-            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
+            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_safety:{chat_id}")],
         ]
         keyboard = InlineKeyboardMarkup(buttons)
         await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)

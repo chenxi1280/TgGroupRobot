@@ -17,7 +17,7 @@ def test_renewal_keyboard_uses_url_when_contact_username_present() -> None:
     )
     assert keyboard.inline_keyboard[0][0].callback_data == "renew:input:-100123"
     assert keyboard.inline_keyboard[1][0].url == "https://t.me/seller_name"
-    assert keyboard.inline_keyboard[-1][0].callback_data == "renew:back:-100123"
+    assert keyboard.inline_keyboard[-1][0].callback_data == "adm:menu:category_system:-100123"
 
 
 def test_renewal_keyboard_exposes_input_and_back_buttons() -> None:
@@ -29,7 +29,7 @@ def test_renewal_keyboard_exposes_input_and_back_buttons() -> None:
 
     assert len(keyboard.inline_keyboard) == 2
     assert keyboard.inline_keyboard[0][0].callback_data == "renew:input:-100123"
-    assert keyboard.inline_keyboard[1][0].callback_data == "renew:back:-100123"
+    assert keyboard.inline_keyboard[1][0].callback_data == "adm:menu:category_system:-100123"
 
 
 @pytest.mark.asyncio

@@ -16,5 +16,5 @@ def renewal_entry_keyboard(
         rows.append([InlineKeyboardButton(contact_label, url=contact_url)])
     elif contact_username:
         rows.append([InlineKeyboardButton(contact_label, url=f"https://t.me/{contact_username.lstrip('@')}")])
-    rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"renew:back:{chat_id}")])
+    rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_system:{chat_id}")])
     return InlineKeyboardMarkup(rows)

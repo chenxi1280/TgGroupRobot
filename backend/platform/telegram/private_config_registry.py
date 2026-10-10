@@ -20,6 +20,8 @@ HandlerSpec = tuple[tuple[str, ...], ConfigHandler]
 
 def _register_states(handlers: dict[str, ConfigHandler], state_names: Iterable[str], handler: ConfigHandler) -> None:
     for state_name in state_names:
+        if state_name in handlers:
+            raise ValueError(f"Duplicate private input state registration: {state_name}")
         handlers[state_name] = handler
 
 

@@ -15,6 +15,7 @@ from backend.features.automation.services.ad_rotation_service import get_or_crea
 from backend.platform.db.runtime.session import Database
 from backend.platform.delivery import DeliveryStatus
 from backend.platform.telegram.errors import answer_callback_query_safely, build_public_error_text
+from backend.shared.handlers.base.message_helper import MessageHelper
 _ADS_HISTORY_CALLBACK_THRESHOLD_3 = 3
 
 
@@ -145,9 +146,7 @@ async def _show_replay_confirmation(update: Update, chat_id: int, history_id: in
 
 
 async def _edit(update: Update, text: str, keyboard: InlineKeyboardMarkup) -> None:
-    if update.callback_query and update.callback_query.message:
-        await update.callback_query.message.edit_text(text, reply_markup=keyboard)
-    await answer_callback_query_safely(update)
+    await MessageHelper.safe_edit(update, text=text, reply_markup=keyboard)
 
 
 def _format_history(histories) -> str:

@@ -33,14 +33,14 @@ async def show_private_admin_menu_impl(update: Update, context: ContextTypes.DEF
 
 async def _handle_group_admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE, chat, *, user) -> None:
     try:
-        is_admin = await is_user_admin(context, chat.id, user.id)
+        is_admin, reason = await PermissionPolicyService.require_manage(context, chat.id, user.id)
     except TelegramError as exc:
         log.error("admin_command_get_chat_member_failed", error=str(exc))
         await update.effective_message.reply_text("无法获取管理员信息，请确保 bot 有读取群成员的权限")
         return
 
     if not is_admin:
-        await update.effective_message.reply_text("此命令仅限管理员使用")
+        await update.effective_message.reply_text(reason or "此命令仅限管理员使用")
         return
 
     db: Database = context.application.bot_data["db"]
@@ -55,12 +55,12 @@ async def _handle_group_admin_command(update: Update, context: ContextTypes.DEFA
         f"1) 点击下方按钮选择设置（仅限管理员）\n"
         f"2) 点击机器人对话框底部[开始]按钮\n\n"
         f"🟩 功能更新提醒: 在机器人私聊中发送 /start 也可打开管理菜单",
-        reply_markup=create_guide_keyboard(context.bot.username),
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("前往本群管理", url=f"https://t.me/{context.bot.username}?start=manage_{chat.id}")]]),
     )
 
     async def delete_later() -> None:
         try:
-            await asyncio.sleep(10)
+            await asyncio.sleep(getattr(context.application.bot_data.get("settings"), "group_guide_message_delete_seconds", 30))
             await message.delete()
         except asyncio.CancelledError:
             raise
@@ -76,16 +76,13 @@ async def _handle_private_admin_command(update: Update, context: ContextTypes.DE
         chats = await get_user_managed_chats(db, user.id, context.bot)
         current_chat_id = await ChatResolver.get_current_chat(db, user.id)
 
-        if not chats:
-            await update.effective_message.reply_text(
-                "👋 欢迎使用群管理 Bot！\n\n"
-                "暂无群组，请先将 bot 添加到群组中并设为管理员..."
-            )
+        available_ids = {item[0] for item in chats}
+        if current_chat_id not in available_ids:
+            current_chat_id = chats[0][0] if len(chats) == 1 else None
+        if current_chat_id is None:
+            await admin_runtime._show_group_selection(update, chats, None)
             return
-
-        if current_chat_id is None and chats:
-            current_chat_id = chats[0][0]
-            await set_user_current_chat(db, user.id, current_chat_id)
+        await set_user_current_chat(db, user.id, current_chat_id)
 
         await show_private_admin_menu_impl(update, context, current_chat_id)
     except Exception as exc:

@@ -1,5 +1,7 @@
 # 阶段③：指令系统与 Inline Keyboard（To C 友好）
 
+> 本文保留早期 MVP 设计。2026-10-10 的当前修复设计见[服务修复与交互统一 PRD](../product/2026-10-10-service-repair-prd.md)；当前实现状态见[功能真值表](./06_feature_truth_table.md)。下文命令示例不应直接视作当前已注册且已验证的功能清单。
+
 ## 1) Bot 指令清单（MVP + 可扩展）
 
 ### 普通成员

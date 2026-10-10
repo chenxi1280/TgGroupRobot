@@ -6,8 +6,8 @@ from backend.features.admin.support import *
 _ORDER_STATUSES = {"all", "created", "fulfilled", "canceled", "refunded"}
 _ORDER_STATUS_NAMES = {
     "all": "全部",
-    "created": "待处理",
-    "fulfilled": "已发放",
+    "created": "待发放",
+    "fulfilled": "已人工标记发放",
     "canceled": "已取消",
     "refunded": "已退款",
 }
@@ -17,15 +17,16 @@ def _normalize_order_status(status: str) -> str:
     return status if status in _ORDER_STATUSES else "all"
 
 
-def _format_orders_page(orders: list, *, product_id: int | None, status: str, summary: str) -> str:
+def _format_orders_page(orders: list, *, product_id: int | None, status: str, summary: str, page: int = 0, total: int | None = None) -> str:
     title = "🧾 管理订单" if product_id is None else f"🧾 管理订单 | 商品 {product_id}"
     lines = [title, f"当前筛选：{_ORDER_STATUS_NAMES.get(status, '全部')}", summary, ""]
     for order in orders:
         lines.extend([
             f"订单#{order.order_id}｜商品 {order.product_id}", f"用户：{order.buyer_user_id}",
-            f"积分：{order.price_points}｜数量：{order.quantity}", f"状态：{order.order_status}", "",
+            f"积分：{order.price_points}｜数量：{order.quantity}", f"状态：{_ORDER_STATUS_NAMES.get(order.order_status, order.order_status)}", "",
         ])
-    lines.append(f"{len(orders)} 条数据，第 1 页/共 1 页")
+    total = len(orders) if total is None else total
+    lines.append(f"{total} 条数据，第 {page + 1} 页/共 {max(1, (total + 7) // 8)} 页")
     return "\n".join(lines)
 
 
@@ -37,27 +38,25 @@ class PointsMallOrderPagesMixin:
         chat_id: int,
         *, product_id: int | None = None,
         status: str = "all",
+        page: int = 0,
     ) -> None:
         """显示积分商城订单管理页"""
         normalized_status = _normalize_order_status(status)
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
-            orders = await PointsExtendedService.list_recent_orders(
-                session,
-                chat_id,
-                limit=20,
-                product_id=product_id,
-                order_status=normalized_status,
-            )
             status_counts = await PointsExtendedService.count_orders_by_status(
-                session,
-                chat_id=chat_id,
-                product_id=product_id,
+                session, chat_id=chat_id, product_id=product_id,
+            )
+            total = status_counts.get(normalized_status, 0)
+            page = max(0, min(page, max(0, (total - 1) // 8)))
+            orders = await PointsExtendedService.list_recent_orders(
+                session, chat_id, limit=8, offset=page * 8,
+                product_id=product_id, order_status=normalized_status,
             )
             await session.commit()
         summary = _format_order_status_summary(status_counts)
         text = _format_orders_page(
-            orders, product_id=product_id, status=normalized_status, summary=summary,
+            orders, product_id=product_id, status=normalized_status, summary=summary, page=page, total=total,
         )
         await self.message_helper.safe_edit(
             update,
@@ -67,7 +66,7 @@ class PointsMallOrderPagesMixin:
                 orders=orders,
                 product_id=product_id,
                 status=normalized_status,
-                status_counts=status_counts,
+                status_counts=status_counts, page=page, total=total,
             ),
         )
 
@@ -80,6 +79,7 @@ class PointsMallOrderPagesMixin:
 
         status: str = "all",
         product_id: int | None = None,
+        page: int = 0,
     ) -> None:
         normalized_status = _normalize_order_status(status)
         db: Database = context.application.bot_data["db"]
@@ -89,7 +89,7 @@ class PointsMallOrderPagesMixin:
             await session.commit()
         if order is None:
             await answer_callback_query_safely(update, "订单不存在", show_alert=True)
-            await self._show_points_mall_orders_page(update, context, chat_id, product_id=product_id, status=normalized_status)
+            await self._show_points_mall_orders_page(update, context, chat_id, product_id=product_id, status=normalized_status, page=page)
             return
         log_lines = _format_order_logs(logs)
         text = "\n".join(
@@ -101,7 +101,7 @@ class PointsMallOrderPagesMixin:
                 f"购买用户：{order.buyer_user_id}",
                 f"所需积分：{order.price_points}",
                 f"数量：{order.quantity}",
-                f"订单状态：{order.order_status}",
+                f"订单状态：{_ORDER_STATUS_NAMES.get(order.order_status, order.order_status)}",
                 f"操作人员：{order.operator_user_id or '未处理'}",
                 "",
                 *log_lines,
@@ -114,7 +114,7 @@ class PointsMallOrderPagesMixin:
                 chat_id,
                 order,
                 status=normalized_status,
-                product_id=product_id,
+                product_id=product_id, page=page,
             ),
         )
 

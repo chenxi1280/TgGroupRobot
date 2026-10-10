@@ -142,6 +142,13 @@ def test_reliability_revisions_form_linear_chain_and_have_downgrades() -> None:
         "0005_ad_rotation_reliability",
         "0006_schema_alignment",
         "0007_ops_module_config_prompt",
+        "0008_mall_confirmation",
+        "0009_edit_drafts",
+        "0010_activity_publications",
+        "0011_mall_fulfillment",
+        "0012_ui_feedback",
+        "0013_activity_media",
+        "0014_mall_intent_cancel",
     ]
     assert [revision.down_revision for revision in revisions] == [
         None,
@@ -151,6 +158,13 @@ def test_reliability_revisions_form_linear_chain_and_have_downgrades() -> None:
         "0004_scheduled_reliability",
         "0005_ad_rotation_reliability",
         "0006_schema_alignment",
+        "0007_ops_module_config_prompt",
+        "0008_mall_confirmation",
+        "0009_edit_drafts",
+        "0010_activity_publications",
+        "0011_mall_fulfillment",
+        "0012_ui_feedback",
+        "0013_activity_media",
     ]
     assert all(callable(revision.downgrade) for revision in revisions)
 

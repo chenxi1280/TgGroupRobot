@@ -7,7 +7,13 @@ from __future__ import annotations
 import structlog
 from telegram import Update
 from telegram.ext import ContextTypes
-from telegram.error import TelegramError
+from telegram.error import BadRequest, TelegramError
+
+from backend.platform.telegram.errors import (
+    _is_callback_query_answered, answer_callback_query_safely, mark_callback_query_answered,
+)
+
+from backend.platform.telegram.ui_feedback import retain_feedback
 
 log = structlog.get_logger(__name__)
 
@@ -39,34 +45,32 @@ class MessageHelper:
             bool: 是否成功编辑
         """
         if update.callback_query is None:
-            if update.effective_message is None:
-                return False
-            try:
-                await update.effective_message.reply_text(
-                    text,
-                    reply_markup=reply_markup,
-                    parse_mode=parse_mode,
-                )
-                return True
-            except TelegramError as e:
-                log.warning("reply_message_failed", error=str(e))
-                return False
+            return await MessageHelper.safe_reply(update, text, reply_markup=reply_markup, parse_mode=parse_mode)
 
-        try:
-            # 先 answer callback query，避免"一直加载"
-            if show_alert:
-                await update.callback_query.answer(text, show_alert=True)
-                return True
-            else:
+        if show_alert:
+            await answer_callback_query_safely(update, text, show_alert=True)
+            return True
+        if not _is_callback_query_answered(update):
+            try:
                 await update.callback_query.answer()
-                # 然后编辑消息
-                await update.callback_query.edit_message_text(
-                    text, reply_markup=reply_markup, parse_mode=parse_mode
-                )
+                mark_callback_query_answered(update)
+            except TelegramError as exc:
+                log.warning("callback_ack_failed", error=str(exc))
+        try:
+            await update.callback_query.edit_message_text(
+                text, reply_markup=reply_markup, parse_mode=parse_mode
+            )
+            return True
+        except BadRequest as exc:
+            if "message is not modified" in str(exc).lower():
                 return True
-        except TelegramError as e:
-            log.warning("edit_message_failed", error=str(e))
-            return False
+            log.warning("edit_message_failed", error=str(exc))
+        except TelegramError as exc:
+            log.warning("edit_message_failed", error=str(exc))
+        # Re-render only; never repeat the business operation that produced it.
+        return await MessageHelper.safe_reply(
+            update, text, reply_markup=reply_markup, parse_mode=parse_mode
+        )
 
     @staticmethod
     async def safe_answer(update: Update, text: str = "", show_alert: bool = False) -> bool:
@@ -119,6 +123,7 @@ class MessageHelper:
             return True
         except TelegramError as e:
             log.warning("reply_message_failed", error=str(e))
+            await retain_feedback(update, text)
             return False
 
     @staticmethod

@@ -30,7 +30,7 @@ class ModerationControlMenusMixin:
         for label, value in rows:
             prefix = "✅" if current == value else "❌"
             buttons.append([InlineKeyboardButton(f"{prefix} {label}", callback_data=f"adm:perm:{chat_id}:{value}")])
-        buttons.append([InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")])
+        buttons.append([InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_system:{chat_id}")])
 
         current_label = next((label for label, value in rows if value == current), "拥有添加管理员权限")
         text = (
@@ -83,6 +83,6 @@ class ModerationControlMenusMixin:
                 InlineKeyboardButton("🧹 删除提示消息：", callback_data=f"adm:menu:renamewatch:{chat_id}"),
                 InlineKeyboardButton(f"{delete_after}秒后删除", callback_data=f"adm:rm:{chat_id}:cycle_delete_after"),
             ],
-            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
+            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_safety:{chat_id}")],
         ])
         await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)

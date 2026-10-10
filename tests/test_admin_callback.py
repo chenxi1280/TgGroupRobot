@@ -30,7 +30,7 @@ async def test_group_admin_callback_delegates_points_level_callbacks(monkeypatch
 
     async def fake_is_user_admin(context, chat_id: int, user_id: int):
         calls.append(("admin_check", chat_id))
-        return True
+        return True, None
 
     async def fake_ensure_chat(session, *, chat_id: int, chat_type: str, title: str):
         calls.append(("ensure_chat", chat_id))
@@ -42,7 +42,7 @@ async def test_group_admin_callback_delegates_points_level_callbacks(monkeypatch
     async def fake_process(update, context, target_chat_id: int):
         calls.append(("process", target_chat_id))
 
-    monkeypatch.setattr(callback_flow, "is_user_admin", fake_is_user_admin)
+    monkeypatch.setattr(callback_flow.PermissionPolicyService, "require_manage", fake_is_user_admin)
     monkeypatch.setattr(callback_flow, "ensure_chat", fake_ensure_chat)
     monkeypatch.setattr(callback_flow, "get_chat_settings", fake_get_chat_settings)
     monkeypatch.setattr(callback_flow.admin_runtime, "process", fake_process)
@@ -134,6 +134,9 @@ async def test_admin_callback_invalid_private_menu_answers_without_recursion():
         data = "adm:menu:sm:list"
         id = "invalid-menu"
 
+        async def edit_message_text(self, text, **kwargs):
+            answers.append((text, kwargs["reply_markup"]))
+
         async def answer(self, text: str = "", show_alert: bool = False):
             answers.append((text, show_alert))
 
@@ -146,7 +149,9 @@ async def test_admin_callback_invalid_private_menu_answers_without_recursion():
 
     await admin_handler.admin_callback(update, context)
 
-    assert answers == [("❌ 群组参数无效，请返回重试", True)]
+    assert len(answers) == 2
+    assert "缺少可信群信息" in answers[-1][0]
+    assert answers[-1][1].inline_keyboard[0][0].callback_data == "adm:switch_group"
 
 
 def test_create_back_button_uses_admin_menu_order() -> None:

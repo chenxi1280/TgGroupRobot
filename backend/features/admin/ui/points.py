@@ -126,7 +126,7 @@ def _points_admin_rows(chat_id: int) -> list[list[InlineKeyboardButton]]:
             InlineKeyboardButton("🧾 导出操作日志", callback_data=f"pts:view:export_logs:{chat_id}"),
             InlineKeyboardButton("🗑 清空积分", callback_data=f"pts:edit:clear_points:{chat_id}"),
         ],
-        [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
+        [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_growth:{chat_id}")],
     ]
 
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.shared.callback_parser import CallbackData
+
 from dataclasses import dataclass
 from typing import Callable
 
@@ -29,7 +31,7 @@ class BottomButtonActionMixin:
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
         *,
-        callback_data: CallbackParser,
+        callback_data: CallbackData,
     ) -> None:
         action = callback_data.get(1)
         db: Database = context.application.bot_data["db"]

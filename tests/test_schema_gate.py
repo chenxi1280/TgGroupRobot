@@ -213,9 +213,19 @@ def _full_tables() -> dict[str, dict]:
             },
             "indexes": [{"name": "ix_points_mall_products_created_at", "column_names": ["created_at"], "unique": False}],
         },
+        "edit_drafts": {"columns": {"token", "user_id", "chat_id", "state_chat_id", "state_type", "state_data", "expires_at", "created_at"}},
+        "ui_feedback": {"columns": {"token", "user_id", "text", "status", "created_at"}},
+        "activity_publications": {"columns": {"token", "domain", "chat_id", "creator_user_id", "entity_id", "status", "payload", "message_id", "error", "updated_at"}},
+        "mall_notifications": {"columns": {"id", "order_id", "recipient_id", "role", "assignment_version", "status", "attempts", "next_retry_at", "message_id", "last_error", "updated_at"},
+            "uniques": [{"name": "uq_mall_notification_target", "column_names": ["order_id", "role", "assignment_version"]}]},
+        "points_mall_intents": {
+            "columns": {"token", "chat_id", "buyer_user_id", "product_id", "terms", "expires_at", "cancelled_at", "order_id", "created_at"},
+            "uniques": [{"name": "uq_mall_intent_order", "column_names": ["order_id"]}],
+        },
         "points_mall_orders": {
             "columns": {
-                "order_id", "chat_id", "product_id", "buyer_user_id", "price_points", "quantity",
+                "order_id", "chat_id", "product_id", "buyer_user_id", "price_points",
+                "product_snapshot", "fulfiller_user_id", "assignment_version", "fulfillment_note", "fulfilled_at", "quantity",
                 "order_status", "operator_user_id", "created_at", "updated_at",
             },
             "indexes": [{"name": "ix_points_mall_orders_created_at", "column_names": ["created_at"], "unique": False}],
@@ -557,7 +567,7 @@ def _full_tables() -> dict[str, dict]:
             "columns": {
                 "id", "chat_id", "creator_user_id", "source_message_id", "title",
                 "start_price", "current_price", "status", "start_at", "end_at",
-                "winner_user_id", "winner_bid_id", "last_announce_message_id",
+                "winner_user_id", "winner_bid_id", "last_announce_message_id", "cover_file_id",
                 "created_at", "updated_at",
             },
         },
@@ -603,7 +613,7 @@ def _full_tables() -> dict[str, dict]:
         },
         "guess_events": {
             "columns": {
-                "id", "chat_id", "creator_user_id", "title", "cover_file_id", "description",
+                "id", "chat_id", "creator_user_id", "title", "cover_file_id", "cover_media_type", "description",
                 "mode", "banker_user_id", "public_pool", "options_json", "command_keyword",
                 "deadline_at", "allow_repeat_bet", "status", "winner_option",
                 "announcement_message_id", "created_at", "updated_at",

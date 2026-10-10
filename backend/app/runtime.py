@@ -37,6 +37,7 @@ def _register_scheduler_tasks(scheduler: Scheduler) -> None:
         VerificationTimeoutTask,
     )
 
+    from backend.platform.scheduler.tasks.mall_notification_task import MallNotificationTask
     scheduler.register_tasks([
         LotteryTask(),
         AuctionTask(),
@@ -51,6 +52,7 @@ def _register_scheduler_tasks(scheduler: Scheduler) -> None:
         EngagementTask(),
         GameTask(),
         GuessTask(),
+        MallNotificationTask(),
         TeacherSearchTask(),
         GarageForwardRetryTask(),
     ])

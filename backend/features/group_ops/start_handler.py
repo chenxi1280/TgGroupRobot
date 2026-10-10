@@ -62,15 +62,20 @@ async def _build_private_home_markup(
     current_chat_id: int | None,
 ) -> InlineKeyboardMarkup | None:
     teacher_rows = await _list_teacher_self_chats(context, user_id)
-    if not chats and not teacher_rows:
-        return chat_group_list_keyboard(chats, current_chat_id)
 
     rows: list[list[InlineKeyboardButton]] = []
-    if chats:
+    if current_chat_id is not None:
+        from backend.features.admin.ui.admin_main_keyboards import admin_main_menu
+        rows.extend(admin_main_menu(current_chat_id).inline_keyboard)
+    elif chats:
         rows.extend(chat_group_list_keyboard(chats, current_chat_id).inline_keyboard)
     if teacher_rows:
         rows.append([InlineKeyboardButton("👩‍🏫 老师资料维护", callback_data="teacher:self:list")])
-    return InlineKeyboardMarkup(rows) if rows else None
+    rows.append([InlineKeyboardButton("我的兑换订单", callback_data="morder:mine:0:0"),
+                 InlineKeyboardButton("我的待发放订单", callback_data="morder:assigned:0:0")])
+    if not chats:
+        rows.append([InlineKeyboardButton("刷新管理群", callback_data="adm:switch_group")])
+    return InlineKeyboardMarkup(rows)
 
 
 async def _send_guide_message(update: Update, context: ContextTypes.DEFAULT_TYPE, chat, *, user) -> None:
@@ -144,6 +149,13 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 async def _handle_private_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     payload = _extract_start_payload(update.effective_message.text)
+    if payload.startswith("order_"):
+        from backend.features.points.mall_order_handler import show_order_lookup
+        await show_order_lookup(update, context, payload.removeprefix("order_"))
+        return
+    if payload.startswith("manage_"):
+        await _start_managed_group(update, context, payload)
+        return
     payload_handlers = (
         _handle_invite_relay_start,
         _handle_teacher_location_start,
@@ -157,6 +169,10 @@ async def _handle_private_start(update: Update, context: ContextTypes.DEFAULT_TY
     user_id = update.effective_user.id
     chats = await get_user_managed_chats(db, user_id, context.bot)
     current_chat_id = await get_user_current_chat(db, user_id)
+    if current_chat_id not in {row[0] for row in chats}:
+        current_chat_id = chats[0][0] if len(chats) == 1 else None
+    if current_chat_id is not None:
+        await set_user_current_chat(db, user_id, current_chat_id)
     reply_markup = await _build_private_home_markup(
         context,
         user_id=user_id,
@@ -190,6 +206,8 @@ def _private_start_text(
         if current_title
         else format_private_chat_list(len(chats))
     )
+    if current_title:
+        text += "\n管理资格：可配置"
     suffix = "\n\n认证老师也可以用下面按钮维护自己的资料。"
     return text + (suffix if has_teacher_rows else "")
 
@@ -244,6 +262,7 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             target_chat_id=target_chat_id,
         )
         await session.commit()
+    await update.effective_message.reply_text("已退出编辑，草稿已保留，可从管理首页继续编辑。")
     await _show_cancel_result(update, context, targets=targets)
 
 
@@ -288,10 +307,14 @@ async def _clear_cancel_state(
 ) -> _CancelTargets:
     if chat.type != "private":
         await ensure_chat(session, chat_id=chat.id, chat_type=chat.type, title=chat.title)
+        from backend.platform.state.edit_drafts import suspend_inputs
+        await suspend_inputs(session, user_id)
         await clear_user_state(session, chat_id=chat.id, user_id=user_id)
         return _CancelTargets(chat.id, None, False)
     private_state = await get_user_state(session, chat_id=user_id, user_id=user_id)
     targets = _targets_from_private_state(private_state, target_chat_id)
+    from backend.platform.state.edit_drafts import suspend_inputs
+    await suspend_inputs(session, user_id)
     await clear_private_input_state(session, user_id)
     if targets.target_chat_id != target_chat_id:
         await set_user_state(
@@ -357,32 +380,21 @@ async def private_message_handler(update: Update, context: ContextTypes.DEFAULT_
     if state is not None and state.state_type != "selected_chat":
         return
 
-    # 没有对话状态，显示群组列表
-    chats = await get_user_managed_chats(db, user.id, context.bot)
-    current_chat_id = await get_user_current_chat(db, user.id)
-    reply_markup = await _build_private_home_markup(
-        context,
-        user_id=user.id,
-        chats=chats,
-        current_chat_id=current_chat_id,
-    )
-    teacher_self_rows = await _list_teacher_self_chats(context, user.id)
+    await _handle_private_start(update, context)
 
-    if not chats:
-        # 使用 service 层格式化消息
-        text = format_empty_chat_list_hint()
-        if teacher_self_rows:
-            text += "\n\n如果你是认证老师，也可以点下面按钮维护老师资料。"
-        await update.effective_message.reply_text(
-            text,
-            reply_markup=reply_markup,
-        )
-    else:
-        # 使用 service 层格式化消息
-        text = format_private_chat_list(len(chats))
-        if teacher_self_rows:
-            text += "\n\n认证老师也可以用下面按钮维护自己的资料。"
-        await update.effective_message.reply_text(
-            text,
-            reply_markup=reply_markup,
-        )
+
+async def _start_managed_group(update, context, payload):
+    from backend.shared.services.permission_service import PermissionPolicyService
+    from backend.features.admin.command_flow import show_private_admin_menu_impl
+    try:
+        target = int(payload.removeprefix("manage_"))
+    except ValueError:
+        await update.effective_message.reply_text("群管理链接无效，请在群中重新发送 /admin。")
+        return
+    allowed, reason = await PermissionPolicyService.require_manage(context, target, update.effective_user.id)
+    if not allowed:
+        await update.effective_message.reply_text(reason or "当前无法管理此群")
+        return
+    await set_user_current_chat(context.application.bot_data["db"], update.effective_user.id, target)
+    await show_private_admin_menu_impl(update, context, target)
+    return

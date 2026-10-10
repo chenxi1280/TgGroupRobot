@@ -117,7 +117,7 @@ async def test_auto_delete_config_set_updates_settings_and_rerenders(monkeypatch
     assert keyboard.inline_keyboard[0][0].callback_data == "autodel:noop:join:-100123"
     assert keyboard.inline_keyboard[0][1].callback_data == "autodel:set:join:1:-100123"
     assert keyboard.inline_keyboard[0][2].callback_data == "autodel:set:join:0:-100123"
-    assert keyboard.inline_keyboard[-1][0].callback_data == "adm:menu:main:-100123"
+    assert keyboard.inline_keyboard[-1][0].callback_data == "adm:menu:category_safety:-100123"
 
 
 @pytest.mark.asyncio
@@ -385,7 +385,7 @@ def test_auto_delete_keyboard_matches_document_layout():
     assert keyboard.inline_keyboard[0][1].text == "✅ 启动"
     assert keyboard.inline_keyboard[0][2].text == "关闭"
     assert keyboard.inline_keyboard[2][0].callback_data == "autodel:noop:pinned:-100123"
-    assert keyboard.inline_keyboard[-1][0].callback_data == "adm:menu:main:-100123"
+    assert keyboard.inline_keyboard[-1][0].callback_data == "adm:menu:category_safety:-100123"
 
 
 def _all_delete_settings(**overrides):

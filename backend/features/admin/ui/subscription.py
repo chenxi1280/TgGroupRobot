@@ -16,5 +16,5 @@ def subscription_menu_keyboard(
     else:
         rows.append([InlineKeyboardButton(contact_label, callback_data=f"sub:contact:{chat_id}")])
 
-    rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")])
+    rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_system:{chat_id}")])
     return InlineKeyboardMarkup(rows)

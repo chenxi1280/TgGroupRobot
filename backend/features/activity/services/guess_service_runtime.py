@@ -43,6 +43,13 @@ async def resolve_user_id(session: AsyncSession, raw: str) -> int | None:
 async def create_event(session: AsyncSession, chat_id: int, creator_user_id: int, *, draft: dict) -> GuessEvent:
     await ModuleSettingsService.ensure(session, chat_id=chat_id, user_id=creator_user_id)
     await ensure_user(session, creator_user_id, None, first_name=None, last_name=None, language_code=None)
+    event = build_draft_event(chat_id, creator_user_id, draft)
+    session.add(event)
+    await session.flush()
+    return event
+
+
+def build_draft_event(chat_id: int, creator_user_id: int, draft: dict):
     banker_user_id = draft.get("banker_user_id")
     deadline_at = parse_deadline(str(draft.get("deadline_at")))
     if deadline_at <= now():
@@ -52,6 +59,7 @@ async def create_event(session: AsyncSession, chat_id: int, creator_user_id: int
         creator_user_id=creator_user_id,
         title=str(draft.get("title") or "竞猜活动")[:128],
         cover_file_id=draft.get("cover_file_id"),
+        cover_media_type=draft.get("cover_media_type") or "photo",
         description=draft.get("description"),
         mode="banker" if banker_user_id else "no_banker",
         banker_user_id=banker_user_id,
@@ -62,8 +70,6 @@ async def create_event(session: AsyncSession, chat_id: int, creator_user_id: int
         allow_repeat_bet=bool(draft.get("allow_repeat_bet", False)),
         status="running",
     )
-    session.add(event)
-    await session.flush()
     return event
 
 

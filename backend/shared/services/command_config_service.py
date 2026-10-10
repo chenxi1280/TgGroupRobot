@@ -104,6 +104,9 @@ def set_command_enabled(settings, key: str, enabled: bool) -> None:
     settings.command_config = config
 
 
+MAX_ALIAS_LENGTH = 32
+
+
 def set_command_alias(settings, key: str, alias: str | None) -> None:
     definition = next((item for item in COMMAND_DEFINITIONS if item["key"] == key), None)
     if definition is not None and not definition.get("allow_alias", True):
@@ -111,7 +114,9 @@ def set_command_alias(settings, key: str, alias: str | None) -> None:
     config = get_command_config(settings)
     if key not in config["commands"]:
         return
-    config["commands"][key]["alias"] = _normalize_alias(alias)
+    normalized = _normalize_alias(alias)
+    _validate_alias(alias, normalized, config=config, key=key)
+    config["commands"][key]["alias"] = normalized
     settings.command_config = config
 
 
@@ -144,3 +149,33 @@ async def ensure_command_enabled(
 async def is_group_text_command_enabled(session, chat_id: int, command_key: str) -> bool:
     settings = await get_chat_settings(session, chat_id)
     return is_command_enabled(settings, command_key)
+
+
+def command_config_revision(settings) -> str:
+    import hashlib
+    import json
+    value = {"enabled": bool(settings.command_config_enabled), "config": get_command_config(settings)}
+    return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=True).encode()).hexdigest()[:8]
+
+
+def command_alias_conflicts(settings) -> set[str]:
+    """Historical collisions are invalid, rather than selecting an arbitrary owner."""
+    aliases: dict[str, list[str]] = {}
+    reserved = {item["key"] for item in COMMAND_DEFINITIONS} | {"help", "cancel", "deliver", "assign", "verifypublication", "order"}
+    for key, entry in get_command_config(settings)["commands"].items():
+        alias = entry.get("alias")
+        if alias:
+            aliases.setdefault(alias, []).append(key)
+    return {alias for alias, keys in aliases.items() if len(keys) > 1 or alias in reserved or len(alias) > MAX_ALIAS_LENGTH}
+
+
+def _validate_alias(alias, normalized, *, config, key):
+    if alias is not None and (normalized is None or len(normalized) > MAX_ALIAS_LENGTH):
+        raise ValueError("别名须为 1–32 位英文字母、数字或下划线。")
+    if normalized is not None:
+        reserved = {item["key"] for item in COMMAND_DEFINITIONS} | {"help", "cancel", "deliver", "assign", "verifypublication", "order"}
+        if normalized in reserved:
+            raise ValueError("别名与保留命令冲突，请使用其他名称。")
+        if any(name != key and entry.get("alias") == normalized
+               for name, entry in config["commands"].items()):
+            raise ValueError("本群已有命令使用该别名，请使用其他名称。")

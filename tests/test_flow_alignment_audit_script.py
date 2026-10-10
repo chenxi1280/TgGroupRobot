@@ -52,19 +52,19 @@ def test_flow_alignment_audit_reports_reverse_mapping_stats_without_blocking() -
         assert payload["sample"]
 
 
-def test_flow_alignment_audit_extracts_antispam_two_button_row_templates() -> None:
+def test_flow_alignment_audit_extracts_compact_antispam_controls() -> None:
     audit = load_audit_module()
     evidence = audit.callback_evidence_from_backend()
 
     callbacks = [
-        "gg:toggle:{rule_id}:enabled:{chat_id}",
+        "gg:set:{rule_id}:enabled:{chat_id}:1",
         "gg:cycle:{rule_id}:messages:{chat_id}",
     ]
 
     for callback in callbacks:
         matches = audit.callback_evidence_matches(callback, evidence)
         assert any(
-            match.kind == "template" and match.path == "backend/features/admin/ui/antispam.py"
+            match.kind == "template" and match.path.startswith("backend/features/admin/ui/antispam")
             for match in matches
         )
 

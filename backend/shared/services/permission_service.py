@@ -132,7 +132,7 @@ class PermissionPolicyService:
             ) or default_policy
         except Exception as exc:  # pragma: no cover - defensive fallback
             log.warning("permission_policy_resolve_failed", chat_id=chat_id, error=str(exc))
-            return default_policy
+            raise
 
     @classmethod
     async def can_manage(
@@ -165,14 +165,17 @@ class PermissionPolicyService:
         if context is None:
             return PermissionDecision(False, "context_required")
 
-        if not hasattr(context, "bot") or context.bot is None:
+        if getattr(context, "bot", None) is None:
             return PermissionDecision(False, "bot_unavailable")
 
-        member = await context.bot.get_chat_member(chat_id=chat_id, user_id=user_id)
+        try:
+            member = await context.bot.get_chat_member(chat_id=chat_id, user_id=user_id)
+            policy = await cls._resolve_chat_policy(context, chat_id)
+        except Exception:
+            return PermissionDecision(False, "permission_check_failed")
         if member.status not in ("administrator", "creator"):
             return PermissionDecision(False, "group_admin_required")
 
-        policy = await cls._resolve_chat_policy(context, chat_id)
         allowed = cls._get_member_policy_allowed(member, policy)
         reason = "group_admin" if allowed else "group_admin_required"
         return PermissionDecision(allowed, reason)

@@ -54,11 +54,11 @@
             "feedback": "进入群组选择。"
           },
           {
-            "label": "返回主菜单",
-            "callbackData": "adm:menu:main:{chat_id}",
+            "label": "返回消息运营",
+            "callbackData": "adm:menu:category_messages:{chat_id}",
             "action": "goto",
             "target": "main_menu",
-            "feedback": "已回到主菜单。"
+            "feedback": "已回到消息运营分类。"
           }
         ]
       ],
@@ -105,9 +105,9 @@
     },
     {
       "id": "main_menu",
-      "title": "主菜单",
+      "title": "消息运营",
       "message": [
-        "这里展示机器人后台的真实功能入口。"
+        "从此分类进入对应功能；本流程演示当前功能的操作。"
       ],
       "keyboard": [
         [
@@ -134,14 +134,14 @@
           {
             "label": "开启",
             "callbackData": "btm:toggle:{chat_id}:1",
-            "action": "toggle",
+            "action": "toast",
             "target": "home",
             "feedback": "底部按钮已开启。"
           },
           {
             "label": "关闭",
             "callbackData": "btm:toggle:{chat_id}:0",
-            "action": "toggle",
+            "action": "toast",
             "target": "home",
             "feedback": "底部按钮已关闭。"
           },
@@ -171,11 +171,11 @@
         ],
         [
           {
-            "label": "返回主菜单",
-            "callbackData": "adm:menu:main:{chat_id}",
+            "label": "返回消息运营",
+            "callbackData": "adm:menu:category_messages:{chat_id}",
             "action": "back",
             "target": "entry",
-            "feedback": "已返回主菜单。"
+            "feedback": "已回到消息运营分类。"
           }
         ]
       ],

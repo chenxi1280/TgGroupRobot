@@ -38,13 +38,13 @@ def _engagement_egg_text(event) -> str:
     return "\n".join(lines)
 
 
-def _engagement_egg_keyboard(event, chat_id: int) -> InlineKeyboardMarkup:
+def _engagement_egg_keyboard(event, chat_id: int, *, status: str = "all", page: int = 0) -> InlineKeyboardMarkup:
     status_value = "idle" if event.status == "running" else "running"
     rows = [
         [InlineKeyboardButton("✅ 状态" if event.enabled else "❌ 状态", callback_data=f"act:egg:{chat_id}:toggle:{event.id}:{0 if event.enabled else 1}"), InlineKeyboardButton("🧩 编辑模板", callback_data=f"act:egg:{chat_id}:template:{event.id}")],
         [InlineKeyboardButton("👀 预览配置", callback_data=f"act:egg:{chat_id}:preview:{event.id}"), InlineKeyboardButton("📤 立即发布", callback_data=f"act:egg:{chat_id}:publish:{event.id}")],
         [InlineKeyboardButton("⏸ 暂停" if event.status == "running" else "▶️ 恢复", callback_data=f"act:egg:{chat_id}:status:{event.id}:{status_value}"), InlineKeyboardButton("♻️ 重置活动", callback_data=f"act:egg:{chat_id}:reset:{event.id}")],
-        [InlineKeyboardButton("🔙 返回列表", callback_data=f"act:egg:{chat_id}:list:all")],
+        [InlineKeyboardButton("🔙 返回列表", callback_data=f"act:egg:{chat_id}:list:{status}:{page}")],
     ]
     return InlineKeyboardMarkup(rows)
 
@@ -123,7 +123,7 @@ class EngagementAdminViewsMixin:
                 InlineKeyboardButton("🍬 水群激励", callback_data=f"act:chat:{chat_id}:home"),
                 InlineKeyboardButton("📊 水群数据", callback_data=f"act:chat:{chat_id}:stats"),
             ],
-            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
+            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_activities:{chat_id}")],
         ])
         await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
 
@@ -132,12 +132,15 @@ class EngagementAdminViewsMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        *, status: str = "all",
+        *, status: str = "all", page: int = 0,
     ) -> None:
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
             counts = await get_egg_event_counts(session, chat_id)
-            events = await list_egg_events(session, chat_id, status=status, limit=12)
+            status = status if status in {"all", "idle", "running", "finished"} else "all"
+            total = counts[status]
+            page = max(0, min(page, max(0, (total - 1) // 8)))
+            events = await list_egg_events(session, chat_id, status=status, limit=8, offset=page * 8)
             await session.commit()
         lines = [
             "🥚 有奖彩蛋",
@@ -148,14 +151,7 @@ class EngagementAdminViewsMixin:
             f"📋 全部 {counts['all']} | ⚪ 草稿/暂停 {counts['idle']} | 🟢 运行中 {counts['running']} | ✅ 已结束 {counts['finished']}",
             "",
         ]
-        if not events:
-            lines.append("• 当前筛选下暂无活动")
-        else:
-            for event in events:
-                status_icon = {"idle": "⚪", "running": "🟢", "finished": "✅"}.get(event.status, "⚪")
-                lines.append(
-                    f"• #{event.id} {status_icon} {event.title} | 线索 {event.published_clue_count}/{len(event.clues or [])} | {'✅ 开启' if event.enabled else '❌ 关闭'}"
-                )
+        _egg_list_lines(events, lines)
         keyboard_rows = [
             [
                 InlineKeyboardButton("➕ 添加彩蛋", callback_data=f"act:egg:{chat_id}:new"),
@@ -167,10 +163,13 @@ class EngagementAdminViewsMixin:
                 InlineKeyboardButton("✅ 已结束" if status == "finished" else "已结束", callback_data=f"act:egg:{chat_id}:list:finished"),
             ],
         ]
-        for event in events[:8]:
+        lines.append(f"第 {page + 1}/{max(1, (total + 7) // 8)} 页，共 {total} 条")
+        for event in events:
             keyboard_rows.append(
-                [InlineKeyboardButton(f"🔎 #{event.id} {event.title[:18]}", callback_data=f"act:egg:{chat_id}:detail:{event.id}")]
+                [InlineKeyboardButton(f"🔎 #{event.id} {event.title[:18]}", callback_data=f"act:egg:{chat_id}:detail:{event.id}:{status}:{page}")]
             )
+        keyboard_rows.extend(_egg_page_navigation(chat_id, page, total, status=status))
+        keyboard_rows.append([InlineKeyboardButton("刷新", callback_data=f"act:egg:{chat_id}:list:{status}:{page}")])
         keyboard_rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"act:home:{chat_id}")])
         keyboard = InlineKeyboardMarkup(keyboard_rows)
         await self.message_helper.safe_edit(update, text="\n".join(lines), reply_markup=keyboard)
@@ -180,7 +179,7 @@ class EngagementAdminViewsMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        *, event_id: int,
+        *, event_id: int, status: str = "all", page: int = 0,
     ) -> None:
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
@@ -195,7 +194,7 @@ class EngagementAdminViewsMixin:
             return
         await self.message_helper.safe_edit(
             update, text=_engagement_egg_text(event),
-            reply_markup=_engagement_egg_keyboard(event, chat_id),
+            reply_markup=_engagement_egg_keyboard(event, chat_id, status=status, page=page),
         )
 
     async def _show_engagement_chat_reward(
@@ -281,3 +280,23 @@ class EngagementAdminViewsMixin:
             "\n".join(lines),
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"act:egg:{chat_id}:list:all")]]),
         )
+
+
+def _egg_list_lines(events, lines):
+    if not events:
+        lines.append("• 当前筛选下暂无活动")
+    else:
+        for event in events:
+            status_icon = {"idle": "⚪", "running": "🟢", "finished": "✅"}.get(event.status, "⚪")
+            lines.append(
+                f"• #{event.id} {status_icon} {event.title} | 线索 {event.published_clue_count}/{len(event.clues or [])} | {'✅ 开启' if event.enabled else '❌ 关闭'}"
+            )
+
+
+def _egg_page_navigation(chat_id, page, total, *, status):
+    nav = []
+    if page:
+        nav.append(InlineKeyboardButton("上一页", callback_data=f"act:egg:{chat_id}:list:{status}:{page-1}"))
+    if (page + 1) * 8 < total:
+        nav.append(InlineKeyboardButton("下一页", callback_data=f"act:egg:{chat_id}:list:{status}:{page+1}"))
+    return [nav] if nav else []

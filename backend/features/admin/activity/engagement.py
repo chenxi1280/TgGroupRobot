@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.shared.callback_parser import CallbackData
+
 from backend.features.admin.activity.engagement_chat_actions import EngagementAdminChatActionsMixin
 from backend.features.admin.activity.engagement_egg_actions import EngagementAdminEggActionsMixin
 from backend.features.admin.activity.engagement_views import EngagementAdminViewsMixin
@@ -16,7 +18,7 @@ class EngagementAdminControllerMixin(
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        *, callback_data: CallbackParser,
+        *, callback_data: CallbackData,
     ) -> None:
         action = callback_data.get(1)
         db: Database = context.application.bot_data["db"]

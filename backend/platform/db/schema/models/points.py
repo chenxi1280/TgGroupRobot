@@ -239,11 +239,17 @@ class PointsMallOrder(Base):
 
     order_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     chat_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("bot.tg_chats.id", ondelete="CASCADE"), index=True)
-    product_id: Mapped[int] = mapped_column(Integer, ForeignKey("bot.points_mall_products.product_id", ondelete="CASCADE"), index=True)
+    product_id: Mapped[int] = mapped_column(Integer, ForeignKey("bot.points_mall_products.product_id", ondelete="RESTRICT"), index=True)
     buyer_user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("bot.tg_users.id", ondelete="CASCADE"), index=True)
     price_points: Mapped[int] = mapped_column(Integer)
     quantity: Mapped[int] = mapped_column(Integer, default=1)
     order_status: Mapped[str] = mapped_column(String(16), default="created", index=True)
+    product_snapshot: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
+    fulfiller_user_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    assignment_version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    fulfillment_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    fulfilled_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     operator_user_id: Mapped[int | None] = mapped_column(
         BigInteger,
         ForeignKey("bot.tg_users.id", ondelete="SET NULL"),
@@ -266,3 +272,34 @@ class PointsMallOrderLog(Base):
     action: Mapped[str] = mapped_column(String(32), index=True)
     payload: Mapped[dict] = mapped_column(JSONB, default=dict)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC), index=True)
+
+
+class PointsMallIntent(Base):
+    __tablename__ = "points_mall_intents"
+    __table_args__ = (UniqueConstraint("order_id", name="uq_mall_intent_order"), {"schema": "bot"})
+
+    token: Mapped[str] = mapped_column(String(32), primary_key=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("bot.tg_chats.id", ondelete="CASCADE"))
+    buyer_user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("bot.tg_users.id", ondelete="CASCADE"))
+    product_id: Mapped[int] = mapped_column(Integer)
+    terms: Mapped[dict] = mapped_column(JSONB)
+    expires_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True))
+    cancelled_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    order_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("bot.points_mall_orders.order_id", ondelete="RESTRICT"), nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC))
+
+
+class MallNotification(Base):
+    __tablename__ = "mall_notifications"
+    __table_args__ = (UniqueConstraint("order_id", "role", "assignment_version", name="uq_mall_notification_target"), {"schema": "bot"})
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    order_id: Mapped[int] = mapped_column(Integer, ForeignKey("bot.points_mall_orders.order_id", ondelete="CASCADE"))
+    recipient_id: Mapped[int] = mapped_column(BigInteger)
+    role: Mapped[str] = mapped_column(String(16))
+    assignment_version: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(32), default="pending")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    next_retry_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC))

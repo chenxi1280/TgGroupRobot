@@ -31,7 +31,7 @@ def test_auto_delete_keyboard_uses_expected_callbacks() -> None:
     assert rows[0][1].callback_data == "autodel:set:join:1:-100123"
     assert rows[0][2].callback_data == "autodel:set:join:0:-100123"
     assert rows[1][0].callback_data == "autodel:noop:left:-100123"
-    assert rows[-1][0].callback_data == "adm:menu:main:-100123"
+    assert rows[-1][0].callback_data == "adm:menu:category_safety:-100123"
 
 
 @pytest.mark.asyncio

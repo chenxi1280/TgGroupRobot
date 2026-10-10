@@ -253,7 +253,7 @@ async def test_teacher_search_attendance_menu_hides_force_when_nearby_is_off(mon
 
     rows = [[button.text for button in row] for row in captured["keyboard"]]
     assert rows == [
-        ["📚 开课老师", "1 人"],
+        ["📚 开课老师 · 1 人"],
         ["返回"],
     ]
     assert "开课打卡：✅ 启动" in captured["text"]
@@ -292,9 +292,9 @@ async def test_teacher_search_attendance_mode_menu_shows_fixed_words(monkeypatch
     rows = [[button.text for button in row] for row in captured["keyboard"]]
     assert "🔍 老师搜索 | 选择打卡模式" in captured["text"]
     assert rows[:3] == [["不在此群打卡"], ["发言就是打卡"], ["✅ 固定话术打卡"]]
-    assert rows[3:6] == [["🟡 开课词：", "开课"], ["🔴 满课词：", "满课"], ["⚪ 休息词：", "休息"]]
+    assert rows[3:6] == [["🟡 开课词： · 开课"], ["🔴 满课词： · 满课"], ["⚪ 休息词： · 休息"]]
     assert captured["keyboard"][0][0].callback_data == "tsearch:attendance_source:menu:-1001"
-    assert captured["keyboard"][3][1].callback_data == "tsearch:attendance_word:open:-1001"
+    assert captured["keyboard"][3][0].callback_data == "tsearch:attendance_word:open:-1001"
 
 
 @pytest.mark.asyncio

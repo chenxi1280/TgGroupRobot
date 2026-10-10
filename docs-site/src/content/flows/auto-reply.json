@@ -1,7 +1,7 @@
 {
   "slug": "auto-reply",
   "title": "自动回复",
-  "status": "已闭环",
+  "status": "历史记录待复核",
   "category": "消息自动化",
   "entryScreen": "entry",
   "coverage": {
@@ -189,14 +189,14 @@
           {
             "label": "启用",
             "callbackData": "auto_reply:set:{chat_id}:{rule_id}:active:1",
-            "action": "toggle",
+            "action": "toast",
             "target": "detail",
             "feedback": "规则已启用。"
           },
           {
             "label": "关闭",
             "callbackData": "auto_reply:set:{chat_id}:{rule_id}:active:0",
-            "action": "toggle",
+            "action": "toast",
             "target": "detail",
             "feedback": "规则已关闭。"
           }
@@ -306,7 +306,7 @@
           {
             "label": "不延迟",
             "callbackData": "auto_reply:delay:set:{chat_id}:{rule_id}:0",
-            "action": "toggle",
+            "action": "toast",
             "target": "delay",
             "feedback": "已关闭延迟。"
           }

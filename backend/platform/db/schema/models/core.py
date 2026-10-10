@@ -22,6 +22,7 @@ from backend.platform.db.schema.models.chat import (  # noqa: F401
     ChatMember,
     ChatSettings,
     ConversationState,
+    EditDraft,
     GroupDailyStats,
     NearbyProfile,
     TgChat,
@@ -42,6 +43,8 @@ from backend.platform.db.schema.models.points import (  # noqa: F401
     PointsAccount,
     PointsLevel,
     PointsLevelSetting,
+    MallNotification,
+    PointsMallIntent,
     PointsMallOrder,
     PointsMallOrderLog,
     PointsMallProduct,
@@ -57,3 +60,7 @@ from backend.platform.db.schema.models.subscription import (  # noqa: F401
     RenewalCardKeyBatch,
     SubscriptionPlan,
 )
+
+from backend.platform.db.schema.models.activity_publications import ActivityPublication  # noqa: F401
+
+from backend.platform.db.schema.models.ui_feedback import UiFeedback  # noqa: F401

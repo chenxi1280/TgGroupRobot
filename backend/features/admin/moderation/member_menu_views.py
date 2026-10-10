@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
+from backend.shared.ui.common.keyboard import toggle_row
 
 from backend.features.admin.module_settings import (
     describe_force_subscribe_target,
@@ -120,19 +121,9 @@ def force_subscribe_text(view: ForceSubscribeView) -> str:
 def _force_target_rows(view: ForceSubscribeView) -> list[list[InlineKeyboardButton]]:
     chat_id = view.chat_id
     return [
-        [
-            InlineKeyboardButton("⚙️ 状态:", callback_data=f"adm:menu:forcesub:{chat_id}"),
-            InlineKeyboardButton("✅ 启动" if view.enabled else "启动", callback_data=f"adm:fs:{chat_id}:toggle:enabled"),
-            InlineKeyboardButton("关闭" if view.enabled else "❌ 关闭", callback_data=f"adm:fs:{chat_id}:toggle:enabled"),
-        ],
-        [
-            InlineKeyboardButton("⚙️ 绑定频道/群组1：", callback_data=f"adm:fs:{chat_id}:input:channel1"),
-            InlineKeyboardButton(view.channel_1[:TARGET_BUTTON_LABEL_LENGTH], callback_data=f"adm:fs:{chat_id}:input:channel1"),
-        ],
-        [
-            InlineKeyboardButton("⚙️ 绑定频道/群组2：", callback_data=f"adm:fs:{chat_id}:input:channel2"),
-            InlineKeyboardButton(view.channel_2[:TARGET_BUTTON_LABEL_LENGTH], callback_data=f"adm:fs:{chat_id}:input:channel2"),
-        ],
+        toggle_row("⚙️ 状态：", enabled=view.enabled, label_callback=f"adm:menu:forcesub:{chat_id}", on_callback=f"adm:fs:{chat_id}:set:enabled:1", off_callback=f"adm:fs:{chat_id}:set:enabled:0"),
+        [InlineKeyboardButton(("⚙️ 绑定频道/群组1：") + " · " + (view.channel_1[:TARGET_BUTTON_LABEL_LENGTH]), callback_data=f"adm:fs:{chat_id}:input:channel1")],
+        [InlineKeyboardButton(("⚙️ 绑定频道/群组2：") + " · " + (view.channel_2[:TARGET_BUTTON_LABEL_LENGTH]), callback_data=f"adm:fs:{chat_id}:input:channel2")],
     ]
 
 
@@ -167,7 +158,7 @@ def _force_policy_rows(view: ForceSubscribeView) -> list[list[InlineKeyboardButt
             InlineKeyboardButton(delete_label, callback_data=f"adm:fs:{chat_id}:delete_after"),
         ],
         [InlineKeyboardButton("🧹 清空封面", callback_data=f"adm:fs:{chat_id}:clear_cover")],
-        [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
+        [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_safety:{chat_id}")],
     ]
 
 
@@ -230,14 +221,14 @@ def _toggle_label(value: bool) -> str:
 def new_member_limit_keyboard(view: NewMemberLimitView) -> InlineKeyboardMarkup:
     chat_id = view.chat_id
     rows = [
-        [InlineKeyboardButton("⚙️ 状态：", callback_data=f"adm:menu:newmem:{chat_id}"), InlineKeyboardButton("✅ 启动" if view.enabled else "启动", callback_data=f"adm:nml:{chat_id}:toggle:enabled"), InlineKeyboardButton("关闭" if view.enabled else "❌ 关闭", callback_data=f"adm:nml:{chat_id}:toggle:enabled")],
+        toggle_row("⚙️ 状态：", enabled=view.enabled, label_callback=f"adm:menu:newmem:{chat_id}", on_callback=f"adm:nml:{chat_id}:set:enabled:1", off_callback=f"adm:nml:{chat_id}:set:enabled:0"),
         [InlineKeyboardButton(f"⏱ 限制时长（{view.duration_label}）", callback_data=f"adm:nml:{chat_id}:input:window")],
-        [InlineKeyboardButton("🖼️ 媒体", callback_data=f"adm:nml:{chat_id}:toggle:block_media"), InlineKeyboardButton(_toggle_label(view.block_media), callback_data=f"adm:nml:{chat_id}:toggle:block_media"), InlineKeyboardButton("🔗 链接", callback_data=f"adm:nml:{chat_id}:toggle:block_links"), InlineKeyboardButton(_toggle_label(view.block_links), callback_data=f"adm:nml:{chat_id}:toggle:block_links")],
-        [InlineKeyboardButton("📝 仅纯文本", callback_data=f"adm:nml:{chat_id}:toggle:text_only"), InlineKeyboardButton(_toggle_label(view.text_only), callback_data=f"adm:nml:{chat_id}:toggle:text_only")],
-        [InlineKeyboardButton("🗑 删除触发消息", callback_data=f"adm:nml:{chat_id}:toggle:delete_message"), InlineKeyboardButton(_toggle_label(view.delete_message), callback_data=f"adm:nml:{chat_id}:toggle:delete_message")],
-        [InlineKeyboardButton("💬 提示消息", callback_data=f"adm:nml:{chat_id}:toggle:warn_enabled"), InlineKeyboardButton(_toggle_label(view.warn_enabled), callback_data=f"adm:nml:{chat_id}:toggle:warn_enabled")],
+        toggle_row("🖼️ 媒体", enabled=view.block_media, label_callback=f"adm:menu:newmem:{chat_id}", on_callback=f"adm:nml:{chat_id}:set:block_media:1", off_callback=f"adm:nml:{chat_id}:set:block_media:0") + toggle_row("🔗 链接", enabled=view.block_links, label_callback=f"adm:menu:newmem:{chat_id}", on_callback=f"adm:nml:{chat_id}:set:block_links:1", off_callback=f"adm:nml:{chat_id}:set:block_links:0"),
+        toggle_row("📝 仅纯文本", enabled=view.text_only, label_callback=f"adm:menu:newmem:{chat_id}", on_callback=f"adm:nml:{chat_id}:set:text_only:1", off_callback=f"adm:nml:{chat_id}:set:text_only:0"),
+        toggle_row("🗑 删除触发消息", enabled=view.delete_message, label_callback=f"adm:menu:newmem:{chat_id}", on_callback=f"adm:nml:{chat_id}:set:delete_message:1", off_callback=f"adm:nml:{chat_id}:set:delete_message:0"),
+        toggle_row("💬 提示消息", enabled=view.warn_enabled, label_callback=f"adm:menu:newmem:{chat_id}", on_callback=f"adm:nml:{chat_id}:set:warn_enabled:1", off_callback=f"adm:nml:{chat_id}:set:warn_enabled:0"),
         [InlineKeyboardButton("✏️ 提示文案", callback_data=f"adm:nml:{chat_id}:input:warn_text"), InlineKeyboardButton(f"🕒 删除提示（{view.warn_delete}秒）", callback_data=f"adm:nml:{chat_id}:cycle:warn_delete")],
-        [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
+        [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_safety:{chat_id}")],
     ]
     return InlineKeyboardMarkup(rows)
 
@@ -309,10 +300,10 @@ def night_mode_text(view: NightModeView) -> str:
 def _night_control_rows(view: NightModeView) -> list[list[InlineKeyboardButton]]:
     chat_id = view.chat_id
     return [
-        [InlineKeyboardButton("🧹 消息拦截", callback_data=f"adm:night:{chat_id}:toggle:enabled"), InlineKeyboardButton("✅ 开启" if view.message_control else "开启", callback_data=f"adm:night:{chat_id}:toggle:enabled"), InlineKeyboardButton("关闭" if view.message_control else "❌ 关闭", callback_data=f"adm:night:{chat_id}:toggle:enabled")],
+        toggle_row("🧹 消息拦截", enabled=view.message_control, label_callback=f"adm:menu:night:{chat_id}", on_callback=f"adm:night:{chat_id}:set:enabled:1", off_callback=f"adm:night:{chat_id}:set:enabled:0"),
         [InlineKeyboardButton(f"⏰ 管控开始（{view.start_time}）", callback_data=f"adm:night:{chat_id}:input:start"), InlineKeyboardButton(f"⏰ 管控结束（{view.end_time}）", callback_data=f"adm:night:{chat_id}:input:end")],
-        [InlineKeyboardButton("🔒 全员禁言模式", callback_data=f"adm:night:{chat_id}:toggle:lock_schedule"), InlineKeyboardButton(_toggle_label(view.lock_schedule), callback_data=f"adm:night:{chat_id}:toggle:lock_schedule")],
-        [InlineKeyboardButton("🗣 口令开关群", callback_data=f"adm:night:{chat_id}:toggle:lock_phrase"), InlineKeyboardButton(_toggle_label(view.phrase_enabled), callback_data=f"adm:night:{chat_id}:toggle:lock_phrase")],
+        toggle_row("🔒 全员禁言模式", enabled=view.lock_schedule, label_callback=f"adm:menu:night:{chat_id}", on_callback=f"adm:night:{chat_id}:set:lock_schedule:1", off_callback=f"adm:night:{chat_id}:set:lock_schedule:0"),
+        toggle_row("🗣 口令开关群", enabled=view.phrase_enabled, label_callback=f"adm:menu:night:{chat_id}", on_callback=f"adm:night:{chat_id}:set:lock_phrase:1", off_callback=f"adm:night:{chat_id}:set:lock_phrase:0"),
         [InlineKeyboardButton(f"🔓 开群词（{view.open_phrase[:PHRASE_BUTTON_LABEL_LENGTH]}）", callback_data=f"adm:night:{chat_id}:input:open_phrase"), InlineKeyboardButton(f"🔒 关群词（{view.close_phrase[:PHRASE_BUTTON_LABEL_LENGTH]}）", callback_data=f"adm:night:{chat_id}:input:close_phrase")],
     ]
 
@@ -321,13 +312,13 @@ def _night_policy_rows(view: NightModeView) -> list[list[InlineKeyboardButton]]:
     chat_id = view.chat_id
     next_notice = "keep" if view.delete_notice else "delete"
     return [
-        [InlineKeyboardButton("🛡️ 管理员豁免", callback_data=f"adm:night:{chat_id}:toggle:exempt_admin"), InlineKeyboardButton(_toggle_label(view.exempt_admin), callback_data=f"adm:night:{chat_id}:toggle:exempt_admin")],
+        toggle_row("🛡️ 管理员豁免", enabled=view.exempt_admin, label_callback=f"adm:menu:night:{chat_id}", on_callback=f"adm:night:{chat_id}:set:exempt_admin:1", off_callback=f"adm:night:{chat_id}:set:exempt_admin:0"),
         [InlineKeyboardButton(f"👥 白名单（{view.whitelist_summary}）", callback_data=f"adm:night:{chat_id}:input:whitelist")],
-        [InlineKeyboardButton("🗑 删除触发消息", callback_data=f"adm:night:{chat_id}:toggle:delete_message"), InlineKeyboardButton(_toggle_label(view.delete_message), callback_data=f"adm:night:{chat_id}:toggle:delete_message")],
-        [InlineKeyboardButton("💬 提示消息", callback_data=f"adm:night:{chat_id}:toggle:warn_enabled"), InlineKeyboardButton(_toggle_label(view.warn_enabled), callback_data=f"adm:night:{chat_id}:toggle:warn_enabled")],
+        toggle_row("🗑 删除触发消息", enabled=view.delete_message, label_callback=f"adm:menu:night:{chat_id}", on_callback=f"adm:night:{chat_id}:set:delete_message:1", off_callback=f"adm:night:{chat_id}:set:delete_message:0"),
+        toggle_row("💬 提示消息", enabled=view.warn_enabled, label_callback=f"adm:menu:night:{chat_id}", on_callback=f"adm:night:{chat_id}:set:warn_enabled:1", off_callback=f"adm:night:{chat_id}:set:warn_enabled:0"),
         [InlineKeyboardButton("✏️ 提示文案", callback_data=f"adm:night:{chat_id}:input:warn_text"), InlineKeyboardButton(f"🕒 删除提示（{view.warn_delete}秒）", callback_data=f"adm:night:{chat_id}:cycle:warn_delete")],
-        [InlineKeyboardButton("🧹 口令通知", callback_data=f"adm:night:{chat_id}:notice:{next_notice}"), InlineKeyboardButton("删除" if view.delete_notice else "保留", callback_data=f"adm:night:{chat_id}:notice:{next_notice}")],
-        [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
+        [InlineKeyboardButton(("🧹 口令通知") + " · " + ("删除" if view.delete_notice else "保留"), callback_data=f"adm:night:{chat_id}:notice:{next_notice}")],
+        [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_safety:{chat_id}")],
     ]
 
 

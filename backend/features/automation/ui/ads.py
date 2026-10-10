@@ -21,7 +21,7 @@ def ads_menu_keyboard(chat_id: int | None = None) -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton("📜 派发历史", callback_data=f"ads:history:{chat_id}:all"),
         ],
-        [create_back_button(chat_id, "main")],
+        [create_back_button(chat_id, "category_messages")],
     ])
 
 
@@ -84,7 +84,7 @@ def ads_manage_keyboard(chat_id: int, item, *, page: int, total_pages: int) -> I
     rows: list[list[InlineKeyboardButton]] = [
         [
             InlineKeyboardButton(f"顺序: {item.sort_order}", callback_data=f"ads:item:input:{chat_id}:{item.id}:order"),
-            InlineKeyboardButton(status_label, callback_data=f"ads:item:toggle:{chat_id}:{item.id}"),
+            InlineKeyboardButton(status_label, callback_data=f"ads:item:set:{chat_id}:{item.id}:enabled:{0 if item.enabled else 1}"),
             InlineKeyboardButton("修改", callback_data=f"ads:detail:{chat_id}:{item.id}"),
             InlineKeyboardButton("删除", callback_data=f"ads:item:delete:{chat_id}:{item.id}"),
         ],

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Protocol
+
 from backend.features.admin.activity.controller import ActivityAdminControllerMixin
 from backend.features.admin.core.controller import CoreAdminControllerMixin
 from backend.features.admin.garage.controller import GarageAdminControllerMixin
@@ -9,10 +11,15 @@ from backend.features.admin.points.controller import PointsAdminControllerMixin
 from backend.features.admin.subscription.controller import SubscriptionAdminControllerMixin
 from backend.features.admin.welcome.controller import WelcomeAdminControllerMixin
 from backend.platform.telegram.errors import mark_callback_query_answered
-from backend.shared.callback_parser import CallbackParser
+from backend.shared.callback_parser import CallbackData, CallbackParser
 from backend.shared.handlers.base.base_handler import BaseHandler
 from telegram import Update
 from telegram.ext import ContextTypes
+
+
+class AdminAction(Protocol):
+    async def __call__(self, update: Update, context: ContextTypes.DEFAULT_TYPE,
+                       chat_id: int, /, *, callback_data: CallbackData) -> None: ...
 
 
 PREFIX_HANDLERS = {
@@ -84,12 +91,20 @@ class AdminRuntime(
         await q.answer()
         mark_callback_query_answered(update)
 
-        callback_data = CallbackParser.parse(q.data)
+        callback_data = CallbackParser.parse(q.data or "")
         prefix = callback_data.get(0)
+        navigation_actions = {"menu", "back_to_main", "back_to_menu", "switch_group"}
+        if (prefix == "adm" and callback_data.get(1) in navigation_actions) or callback_data.get(3) in {"home", "list", "detail"}:
+            from backend.platform.state.edit_drafts import suspend_inputs
+            db = context.application.bot_data["db"]
+            async with db.session_factory() as session:
+                await suspend_inputs(session, update.effective_user.id)
+                await session.commit()
 
-        prefix_handler = PREFIX_HANDLERS.get(prefix)
+
+        prefix_handler = self._prefix_dispatch().get(prefix)
         if prefix_handler is not None:
-            await getattr(self, prefix_handler)(update, context, target_chat_id, callback_data)
+            await prefix_handler(update, context, target_chat_id, callback_data=callback_data)
             return
 
         action = callback_data.get(1)
@@ -103,10 +118,60 @@ class AdminRuntime(
             await start_anti_spam_config(update, context, target_chat_id)
             return
 
-        action_handler = ADM_ACTION_HANDLERS.get(action)
+        action_handler = self._action_dispatch().get(action)
         if action_handler is None:
+            from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+            await self.message_helper.safe_edit(
+                update, "此操作入口已失效，请重新打开功能页面。",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("返回管理首页", callback_data=f"adm:menu:main:{target_chat_id}")
+                ]]),
+            )
             return
-        await getattr(self, action_handler)(update, context, target_chat_id, callback_data)
+        await action_handler(update, context, target_chat_id, callback_data=callback_data)
+
+    def _prefix_dispatch(self) -> dict[str, AdminAction]:
+        return {
+            "ali": self._handle_alliance,
+            "gfw": self._handle_garage_forward,
+            "grg": self._handle_garage_auth,
+            "tsearch": self._handle_teacher_search,
+            "crv": self._handle_car_review,
+            "auc": self._handle_auction,
+            "btm": self._handle_bottom_button,
+            "gm": self._handle_game,
+            "guess": self._handle_guess,
+            "act": self._handle_engagement,
+            "qpub": self._handle_quick_publish,
+        }
+
+    def _action_dispatch(self) -> dict[str, AdminAction]:
+        return {
+            "menu": self._handle_menu,
+            "switch_group": self._handle_switch_group,
+            "select_group": self._handle_select_group,
+            "back_to_main": self._handle_back_to_main,
+            "back_to_menu": self._handle_back_to_menu,
+            "toggle": self._handle_toggle,
+            "vfy_config": self._handle_verification_config_start,
+            "vfy_home": self._handle_verification_home,
+            "renewal": self._handle_renewal,
+            "perm": self._handle_permission_policy,
+            "gl": self._handle_group_lock,
+            "rm": self._handle_rename_monitor,
+            "fs": self._handle_force_subscribe,
+            "nml": self._handle_new_member_limit,
+            "night": self._handle_night_mode,
+            "gcmd": self._handle_command_config,
+            "punish": self._handle_punishment_policy,
+            "import": self._handle_import_settings,
+            "clone": self._handle_clone_settings,
+            "wel": self._handle_welcome,
+            "cpt": self._handle_custom_points,
+            "lvl": self._handle_points_level,
+            "mall": self._handle_points_mall,
+            "todo": self._show_unimplemented_feature,
+        }
 
 
 admin_runtime = AdminRuntime()

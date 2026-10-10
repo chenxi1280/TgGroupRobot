@@ -166,7 +166,7 @@ def _teacher_search_footer_rows(setting, chat_id: int):
                 "📍 代录老师位置", callback_data=f"tsearch:delegate:start:{chat_id}"
             )
         ],
-        [InlineKeyboardButton("返回", callback_data=f"adm:menu:main:{chat_id}")],
+        [InlineKeyboardButton("返回", callback_data=f"adm:menu:category_garage:{chat_id}")],
     ]
 
 
@@ -211,10 +211,7 @@ def _attendance_keyword_rows(setting, chat_id: int):
     for label, key, word in words:
         callback = f"tsearch:attendance_word:{key}:{chat_id}"
         rows.append(
-            [
-                InlineKeyboardButton(label, callback_data=callback),
-                InlineKeyboardButton(word, callback_data=callback),
-            ]
+            [InlineKeyboardButton((label) + " · " + (word), callback_data=callback)]
         )
     return rows
 
@@ -322,10 +319,7 @@ def build_attendance_detail(
         lines.append(f"开课老师：{open_count}")
         callback = f"tsearch:open_course:list:{chat_id}:0"
         rows.append(
-            [
-                InlineKeyboardButton("📚 开课老师", callback_data=callback),
-                InlineKeyboardButton(open_count, callback_data=callback),
-            ]
+            [InlineKeyboardButton(("📚 开课老师") + " · " + (open_count), callback_data=callback)]
         )
     if getattr(setting, "nearby_search_enabled", False):
         force_on, force_off = _toggle_labels(setting.force_location_enabled)

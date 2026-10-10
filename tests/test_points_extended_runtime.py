@@ -1059,7 +1059,7 @@ async def test_points_handler_skips_level_restriction_for_teacher_when_excluded(
 async def test_handle_points_mall_orders_routes_with_product_scope(monkeypatch):
     calls: list[tuple[int, int | None, str]] = []
 
-    async def fake_show_orders(update, context, chat_id: int, product_id: int | None = None, status: str = "all"):
+    async def fake_show_orders(update, context, chat_id: int, product_id: int | None = None, status: str = "all", page: int = 0):
         calls.append((chat_id, product_id, status))
 
     monkeypatch.setattr(admin_handler._admin_handler, "_show_points_mall_orders_page", fake_show_orders)
@@ -1077,7 +1077,7 @@ async def test_handle_points_mall_orders_routes_with_product_scope(monkeypatch):
 async def test_handle_points_mall_orders_status_short_code(monkeypatch):
     calls: list[tuple[int, int | None, str]] = []
 
-    async def fake_show_orders(update, context, chat_id: int, product_id: int | None = None, status: str = "all"):
+    async def fake_show_orders(update, context, chat_id: int, product_id: int | None = None, status: str = "all", page: int = 0):
         calls.append((chat_id, product_id, status))
 
     monkeypatch.setattr(admin_handler._admin_handler, "_show_points_mall_orders_page", fake_show_orders)
@@ -1212,7 +1212,7 @@ async def test_show_mall_catalog_uses_cover_media_when_available():
     )
     context = SimpleNamespace(application=SimpleNamespace(bot_data={}))
     products = [SimpleNamespace(name="商品A", price_points=20, stock_left=5, product_id=1)]
-    setting = SimpleNamespace(cover_file_id="cover123", cover_media_type="photo")
+    setting = SimpleNamespace(enabled=True, cover_file_id="cover123", cover_media_type="photo")
 
     await handler.show_mall_catalog(update, context, -1001, products=products, setting=setting)
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.shared.callback_parser import CallbackData
+
 from backend.features.admin.support import *
 from backend.shared.time_ui import build_copy_options_keyboard, build_numeric_duration_prompt_text
 
@@ -76,6 +78,8 @@ class GarageAuthActionsMixin:
                 back_callback=config["back"],
             )
             return True
+        if sub == "detail":
+            return await _garage_identity_detail(self, update, db=db, service=service, chat_id=chat_id, action=action, callback_data=callback_data)
         if sub != "del":
             return False
         user_id = callback_data.get_int_optional(4)
@@ -85,7 +89,7 @@ class GarageAuthActionsMixin:
         async with db.session_factory() as session:
             await config["remove"](session, chat_id, user_id)
             await session.commit()
-        await config["view"](update, context, chat_id, page=0)
+        await config["view"](update, context, chat_id, page=callback_data.get_int_optional(5) or 0)
         return True
 
     async def _start_garage_limit_input(
@@ -182,7 +186,7 @@ class GarageAuthActionsMixin:
 
     async def _handle_garage_auth(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id: int,
-        *, callback_data: CallbackParser,
+        *, callback_data: CallbackData,
     ) -> None:
         from backend.features.garage.services.garage_features_service import GarageAuthService
         from backend.platform.db.schema.models.enums import ConversationStateType
@@ -223,3 +227,20 @@ class GarageAuthActionsMixin:
         ):
             return
         await self._show_garage_auth_menu(update, context, chat_id)
+
+
+async def _garage_identity_detail(self, update, *, db, service, chat_id, action, callback_data):
+    user_id = callback_data.get_int_optional(4)
+    page = callback_data.get_int_optional(5) or 0
+    async with db.session_factory() as session:
+        records = await (service.list_certified_teachers(session, chat_id) if action == "teacher" else service.list_whitelist(session, chat_id))
+    entry = next(((item, user) for item, user in records if item.user_id == user_id), None)
+    back = [InlineKeyboardButton("返回原列表", callback_data=f"grg:{action}:list:{chat_id}:{page}")]
+    if entry is None:
+        text, rows = "此记录已删除，请刷新列表。", [back]
+    else:
+        item, user = entry
+        text = f"{'认证老师' if action == 'teacher' else '发言白名单'}\n所属群：{chat_id}\n用户 ID：{item.user_id}\n用户名：{('@' + user.username) if user and user.username else '未设置'}"
+        rows = [[InlineKeyboardButton("移除此记录", callback_data=f"grg:{action}:del:{chat_id}:{item.user_id}:{page}")], back]
+    await self.message_helper.safe_edit(update, text, reply_markup=InlineKeyboardMarkup(rows))
+    return True

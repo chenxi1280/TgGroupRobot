@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.shared.callback_parser import CallbackData
+
 from backend.features.admin.support import *
 from backend.shared.ui.message_config_panel import (
     PanelField,
@@ -84,7 +86,7 @@ class QuickPublishAdminMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        *, callback_data: CallbackParser,
+        *, callback_data: CallbackData,
     ) -> None:
         from backend.platform.db.schema.models.enums import ConversationStateType
         from backend.shared.services.permission_service import PermissionPolicyService
@@ -171,6 +173,6 @@ class QuickPublishAdminMixin:
                 InlineKeyboardButton("🧹 清空草稿", callback_data=f"qpub:clear:{chat_id}"),
             ],
             [InlineKeyboardButton("🚀 立即发送", callback_data=f"qpub:send:{chat_id}")],
-            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
+            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_messages:{chat_id}")],
         ])
         await self.message_helper.safe_edit(update, lines, reply_markup=keyboard)

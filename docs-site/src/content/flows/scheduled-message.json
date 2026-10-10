@@ -1,7 +1,7 @@
 {
   "slug": "scheduled-message",
   "title": "定时消息",
-  "status": "已闭环",
+  "status": "历史记录待复核",
   "category": "消息自动化",
   "entryScreen": "entry",
   "coverage": {
@@ -200,14 +200,14 @@
           {
             "label": "启用",
             "callbackData": "sm:set:{chat_id}:{task_id}:enabled:1",
-            "action": "toggle",
+            "action": "toast",
             "target": "detail",
             "feedback": "启用失败：请先设置文本或封面。"
           },
           {
             "label": "关闭",
             "callbackData": "sm:set:{chat_id}:{task_id}:enabled:0",
-            "action": "toggle",
+            "action": "toast",
             "target": "detail",
             "feedback": "任务已关闭。"
           }
@@ -269,14 +269,14 @@
           {
             "label": "置顶",
             "callbackData": "sm:set:{chat_id}:{task_id}:pin_message:1",
-            "action": "toggle",
+            "action": "toast",
             "target": "detail",
             "feedback": "置顶已开启。"
           },
           {
             "label": "删除上条",
             "callbackData": "sm:set:{chat_id}:{task_id}:delete_previous:1",
-            "action": "toggle",
+            "action": "toast",
             "target": "detail",
             "feedback": "删除上条已开启。"
           }

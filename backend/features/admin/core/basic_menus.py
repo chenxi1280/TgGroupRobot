@@ -126,7 +126,7 @@ class CoreBasicMenusMixin:
         chat_title = await self._get_chat_title(db, chat_id)
         text = _format_group_stats(chat_title, stats)
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
+            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_system:{chat_id}")],
         ])
         await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
 

@@ -42,6 +42,7 @@ class PointsMallOrdersMixin:
         *,
         product_id: int | None = None,
         order_status: str | None = None,
+        offset: int = 0,
     ) -> list[PointsMallOrder]:
         stmt = select(PointsMallOrder).where(PointsMallOrder.chat_id == chat_id)
         if product_id is not None:
@@ -49,7 +50,7 @@ class PointsMallOrdersMixin:
         if order_status and order_status != "all":
             stmt = stmt.where(PointsMallOrder.order_status == order_status)
         result = await session.execute(
-            stmt.order_by(PointsMallOrder.created_at.desc(), PointsMallOrder.order_id.desc()).limit(limit)
+            stmt.order_by(PointsMallOrder.created_at.desc(), PointsMallOrder.order_id.desc()).offset(max(0, offset)).limit(limit)
         )
         return list(result.scalars().all())
 
@@ -104,23 +105,34 @@ class PointsMallOrdersMixin:
         chat_id: int,
         order_id: int,
         operator_user_id: int,
+        note: str | None = None,
+        assigned_only: bool = False,
+        assignment_version: int | None = None,
     ) -> tuple[bool, str, PointsMallOrder | None]:
         result = await session.execute(
             select(PointsMallOrder)
             .where(PointsMallOrder.chat_id == chat_id, PointsMallOrder.order_id == order_id)
-            .with_for_update()
+            .with_for_update().execution_options(populate_existing=True)
         )
         order = result.scalar_one_or_none()
         if order is None:
             return False, "订单不存在", None
+        if assigned_only and order.fulfiller_user_id != operator_user_id:
+            return False, "订单已改派，你无权发放", order
+        if assignment_version is not None and order.assignment_version != assignment_version:
+            return False, "订单归属已变化，请重新打开订单", order
+        if not note or not note.strip():
+            return False, "请填写发放说明后确认", order
         if order.order_status != "created":
             return False, "仅待处理订单可标记发放", order
+        order.fulfillment_note = note.strip()
+        order.fulfilled_at = dt.datetime.now(dt.UTC)
         order.order_status = "fulfilled"
         order.operator_user_id = operator_user_id
         order.updated_at = dt.datetime.now(dt.UTC)
-        session.add(PointsMallOrderLog(order_id=order.order_id, action="fulfill", payload={"operator_user_id": operator_user_id}))
+        session.add(PointsMallOrderLog(order_id=order.order_id, action="fulfill", payload={"operator_user_id": operator_user_id, "note": note}))
         await session.flush()
-        return True, "订单已标记为已发放", order
+        return True, "订单已人工标记发放", order
 
     @staticmethod
     async def cancel_order(
@@ -133,7 +145,7 @@ class PointsMallOrdersMixin:
         result = await session.execute(
             select(PointsMallOrder)
             .where(PointsMallOrder.chat_id == chat_id, PointsMallOrder.order_id == order_id)
-            .with_for_update()
+            .with_for_update().execution_options(populate_existing=True)
         )
         order = result.scalar_one_or_none()
         if order is None:
@@ -144,7 +156,7 @@ class PointsMallOrdersMixin:
         product_result = await session.execute(
             select(PointsMallProduct)
             .where(PointsMallProduct.chat_id == chat_id, PointsMallProduct.product_id == order.product_id)
-            .with_for_update()
+            .with_for_update().execution_options(populate_existing=True)
         )
         product = product_result.scalar_one_or_none()
         if product is not None:
@@ -158,7 +170,7 @@ class PointsMallOrdersMixin:
             chat_id=chat_id,
             user_id=order.buyer_user_id,
             amount=int(order.price_points),
-            txn_type=PointsTxnType.bonus.value,
+            txn_type=PointsTxnType.reward.value,
             reason=f"订单取消退款:{order.order_id}",
         )
         order.order_status = "canceled"
@@ -179,7 +191,7 @@ class PointsMallOrdersMixin:
         result = await session.execute(
             select(PointsMallOrder)
             .where(PointsMallOrder.chat_id == chat_id, PointsMallOrder.order_id == order_id)
-            .with_for_update()
+            .with_for_update().execution_options(populate_existing=True)
         )
         order = result.scalar_one_or_none()
         if order is None:
@@ -195,7 +207,7 @@ class PointsMallOrdersMixin:
             product_result = await session.execute(
                 select(PointsMallProduct)
                 .where(PointsMallProduct.chat_id == chat_id, PointsMallProduct.product_id == order.product_id)
-                .with_for_update()
+                .with_for_update().execution_options(populate_existing=True)
             )
             product = product_result.scalar_one_or_none()
             if product is not None:
@@ -209,7 +221,7 @@ class PointsMallOrdersMixin:
             chat_id=chat_id,
             user_id=order.buyer_user_id,
             amount=int(order.price_points),
-            txn_type=PointsTxnType.bonus.value,
+            txn_type=PointsTxnType.reward.value,
             reason=f"订单退款:{order.order_id}",
         )
         order.order_status = "refunded"

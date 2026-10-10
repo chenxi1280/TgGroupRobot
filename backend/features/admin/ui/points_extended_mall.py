@@ -27,14 +27,15 @@ def points_mall_home_keyboard(setting, chat_id: int) -> InlineKeyboardMarkup:
                 InlineKeyboardButton("🖼️ 商城封面", callback_data=f"adm:menu:points_mall_cover:{chat_id}"),
                 InlineKeyboardButton("⚙️ 修改指令", callback_data=f"adm:mall:{chat_id}:edit:command"),
             ],
+            [InlineKeyboardButton("打开用户商城", callback_data=f"mall:list:{chat_id}")],
             [InlineKeyboardButton("🛍️ 管理商品", callback_data=f"adm:menu:points_mall_products:{chat_id}")],
             [InlineKeyboardButton("🧼 管理订单", callback_data=f"adm:menu:points_mall_orders:{chat_id}")],
-            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:points:{chat_id}")],
+            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_growth:{chat_id}")],
         ]
     )
 
 
-def points_mall_products_keyboard(products, chat_id: int) -> InlineKeyboardMarkup:
+def points_mall_products_keyboard(products, chat_id: int, *, page: int = 0, total: int | None = None) -> InlineKeyboardMarkup:
     rows = [
         [
             InlineKeyboardButton(f"🔢 编号:{product.product_id}", callback_data=f"adm:mall:{chat_id}:product:detail:{product.product_id}"),
@@ -44,6 +45,15 @@ def points_mall_products_keyboard(products, chat_id: int) -> InlineKeyboardMarku
         ]
         for product in products
     ]
+    total = len(products) if total is None else total
+    nav = []
+    if page:
+        nav.append(InlineKeyboardButton("上一页", callback_data=f"adm:mall:{chat_id}:products:{page-1}"))
+    if (page+1)*8 < total:
+        nav.append(InlineKeyboardButton("下一页", callback_data=f"adm:mall:{chat_id}:products:{page+1}"))
+    if nav:
+        rows.append(nav)
+    rows.append([InlineKeyboardButton("刷新", callback_data=f"adm:mall:{chat_id}:products:{page}")])
     rows.append([InlineKeyboardButton("➕ 添加一条", callback_data=f"adm:mall:{chat_id}:product:add")])
     rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:points_mall:{chat_id}")])
     return InlineKeyboardMarkup(rows)
@@ -77,42 +87,42 @@ def points_mall_product_detail_keyboard(product, chat_id: int) -> InlineKeyboard
     )
 
 
-def points_mall_orders_keyboard(chat_id: int, orders=None, product_id: int | None = None, *, status: str = "all", status_counts: dict[str, int] | None = None) -> InlineKeyboardMarkup:
+def points_mall_orders_keyboard(chat_id: int, orders=None, product_id: int | None = None, *, status: str = "all", status_counts: dict[str, int] | None = None, page: int = 0, total: int | None = None) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
     counts = status_counts or {}
-    normalized_status = status if status in {"all", "created", "fulfilled", "canceled", "refunded"} else "all"
+    normalized_status = _mall_order_status(status)
     status_to_code = {"all": "a", "created": "c", "fulfilled": "f", "canceled": "x", "refunded": "r"}
-    status_items = [("all", "📋 全部"), ("created", "🟡 待处理"), ("fulfilled", "✅ 已发放"), ("canceled", "❌ 已取消"), ("refunded", "💸 已退款")]
-    status_row: list[InlineKeyboardButton] = []
-    for key, title in status_items:
-        label = f"{title}({int(counts.get(key, 0))})"
-        if normalized_status == key:
-            label = f"✅ {label}"
-        code = status_to_code[key]
-        callback = f"adm:mall:{chat_id}:orders_status:{code}:{product_id}" if product_id is not None else f"adm:mall:{chat_id}:orders_status:{code}"
-        status_row.append(InlineKeyboardButton(label, callback_data=callback))
-    rows.append(status_row)
+    rows.append(_mall_order_status_buttons(chat_id, product_id, counts=counts, normalized_status=normalized_status, status_to_code=status_to_code))
     product_token = product_id if product_id is not None else 0
     selected_code = status_to_code[normalized_status]
     for order in orders or []:
-        rows.append([InlineKeyboardButton(f"🧾 订单#{order.order_id}", callback_data=f"adm:mall:{chat_id}:order:detail:{order.order_id}:{selected_code}:{product_token}")])
+        rows.append([InlineKeyboardButton(f"🧾 订单#{order.order_id}", callback_data=f"adm:mall:{chat_id}:order:detail:{order.order_id}:{selected_code}:{product_token}:{page}")])
+    total = int(counts.get(normalized_status, 0)) if total is None else total
+    pagination = []
+    for label, target in (("上一页", page - 1), ("下一页", page + 1)):
+        if 0 <= target < max(1, (total + 7) // 8):
+            pagination.append(InlineKeyboardButton(label, callback_data=f"adm:mall:{chat_id}:orders_status:{selected_code}:{product_token}:{target}"))
+    if pagination:
+        rows.append(pagination)
+    rows.append([InlineKeyboardButton("刷新", callback_data=f"adm:mall:{chat_id}:orders_status:{selected_code}:{product_token}:{page}")])
+    rows.append([InlineKeyboardButton("按订单编号查找", callback_data=f"morder:search:{chat_id}:0")])
     back_target = f"adm:menu:points_mall_products:{chat_id}" if product_id is not None else f"adm:menu:points_mall:{chat_id}"
     rows.append([InlineKeyboardButton("🔙 返回", callback_data=back_target)])
     return InlineKeyboardMarkup(rows)
 
 
-def points_mall_order_detail_keyboard(chat_id: int, order, *, status: str = "all", product_id: int | None = None) -> InlineKeyboardMarkup:
-    normalized_status = status if status in {"all", "created", "fulfilled", "canceled", "refunded"} else "all"
+def points_mall_order_detail_keyboard(chat_id: int, order, *, status: str = "all", product_id: int | None = None, page: int = 0) -> InlineKeyboardMarkup:
+    normalized_status = _mall_order_status(status)
     status_code = {"all": "a", "created": "c", "fulfilled": "f", "canceled": "x", "refunded": "r"}[normalized_status]
     product_token = product_id if product_id is not None else 0
-    back_target = f"adm:mall:{chat_id}:orders_status:{status_code}:{product_id}" if product_id is not None else f"adm:mall:{chat_id}:orders_status:{status_code}"
+    back_target = f"adm:mall:{chat_id}:orders_status:{status_code}:{product_token}:{page}"
     return InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton("📦 完成发货", callback_data=f"adm:mall:{chat_id}:order:fulfill:{order.order_id}:{status_code}:{product_token}"),
-                InlineKeyboardButton("❌ 取消订单", callback_data=f"adm:mall:{chat_id}:order:cancel:{order.order_id}:{status_code}:{product_token}"),
+                InlineKeyboardButton("📦 完成发货", callback_data=f"adm:mall:{chat_id}:order:fulfill:{order.order_id}:{status_code}:{product_token}:{page}"),
+                InlineKeyboardButton("❌ 取消订单", callback_data=f"adm:mall:{chat_id}:order:cancel:{order.order_id}:{status_code}:{product_token}:{page}"),
             ],
-            [InlineKeyboardButton("💸 退款", callback_data=f"adm:mall:{chat_id}:order:refund:{order.order_id}:{status_code}:{product_token}")],
+            [InlineKeyboardButton("💸 退款", callback_data=f"adm:mall:{chat_id}:order:refund:{order.order_id}:{status_code}:{product_token}:{page}")],
             [InlineKeyboardButton("🔙 返回", callback_data=back_target)],
         ]
     )
@@ -145,6 +155,24 @@ def points_mall_command_keyboard(chat_id: int) -> InlineKeyboardMarkup:
 
 
 def user_points_mall_keyboard(chat_id: int, products) -> InlineKeyboardMarkup:
-    rows = [[InlineKeyboardButton(f"{product.name} · {product.price_points}积分 · 余{product.stock_left}", callback_data=f"mall:redeem:{chat_id}:{product.product_id}")] for product in products]
+    rows = [[InlineKeyboardButton(f"{product.name} · {product.price_points}积分 · 余{product.stock_left}", callback_data=f"mall:detail:{chat_id}:{product.product_id}")] for product in products]
+    rows.append([InlineKeyboardButton("我的订单", callback_data="morder:mine:0:0")])
     rows.append([InlineKeyboardButton("刷新商品", callback_data=f"mall:list:{chat_id}")])
     return InlineKeyboardMarkup(rows)
+
+
+def _mall_order_status_buttons(chat_id, product_id, *, counts, normalized_status, status_to_code):
+    status_items = [("all", "📋 全部"), ("created", "🟡 待处理"), ("fulfilled", "✅ 已发放"), ("canceled", "❌ 已取消"), ("refunded", "💸 已退款")]
+    status_row: list[InlineKeyboardButton] = []
+    for key, title in status_items:
+        label = f"{title}({int(counts.get(key, 0))})"
+        if normalized_status == key:
+            label = f"✅ {label}"
+        code = status_to_code[key]
+        callback = f"adm:mall:{chat_id}:orders_status:{code}:{product_id}" if product_id is not None else f"adm:mall:{chat_id}:orders_status:{code}"
+        status_row.append(InlineKeyboardButton(label, callback_data=callback))
+    return status_row
+
+
+def _mall_order_status(status):
+    return status if status in {"all", "created", "fulfilled", "canceled", "refunded"} else "all"

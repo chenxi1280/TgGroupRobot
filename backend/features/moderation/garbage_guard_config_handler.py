@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 
@@ -141,7 +141,11 @@ async def _start_garbage_config_input(
             state_data=state_data,
         )
         await session.commit()
-    await _edit_config_message(update.callback_query, prompt)
+    back = (f"gg:rule:quick_reply_actions:{chat_id}"
+            if state_type == ConversationStateType.garbage_guard_quick_reply_keyword.value
+            else f"gg:whitelist:{chat_id}")
+    await _edit_config_message(update.callback_query, prompt + "\n返回后暂停输入，草稿保留。",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("返回", callback_data=back)]]))
 
 
 async def _handle_config_input(
@@ -196,10 +200,10 @@ async def _clear_whitelist(
     await _render_whitelist(update, context, chat_id)
 
 
-def _update_rule_setting(settings, *, op: str, rule_id: str, field: str) -> bool:
+def _update_rule_setting(settings, *, op: str, rule_id: str, field: str, value: str = "") -> bool:
     rule = get_rule_config(settings, rule_id)
-    if op == "toggle" and field in rule:
-        set_rule_config(settings, rule_id, {field: not bool(rule.get(field))})
+    if op == "set" and isinstance(rule.get(field), bool) and value in {"0", "1"}:
+        set_rule_config(settings, rule_id, {field: value == "1"})
         return True
     if op == "cycle" and field in RULE_CYCLE_VALUES:
         cycle_rule_value(settings, rule_id, field)
@@ -229,7 +233,7 @@ async def _mutate_rule_setting(
             user_id=update.effective_user.id,
         )
         settings = await get_chat_settings(session, chat_id)
-        updated = _update_rule_setting(settings, op=op, rule_id=rule_id, field=field)
+        updated = _update_rule_setting(settings, op=op, rule_id=rule_id, field=field, value=cb.get(5))
         if not updated:
             await session.commit()
             await answer_callback_query_safely(update, "无效的规则配置项", show_alert=True)
@@ -257,10 +261,10 @@ async def _dispatch_config_operation(
     if op == "clear" and cb.get(2) == "whitelist":
         await _clear_whitelist(update, context, chat_id)
         return
-    if op == "rule" and cb.get(2) in RULE_DEFINITIONS:
+    if op in {"rule", "toggle"} and cb.get(2) in RULE_DEFINITIONS:
         await _render_rule(update, context, chat_id, rule_id=cb.get(2))
         return
-    if op in {"toggle", "cycle"}:
+    if op in {"set", "cycle"}:
         await _mutate_rule_setting(update, context, chat_id, cb=cb, op=op)
         return
     await answer_callback_query_safely(update, "无效的垃圾防护操作", show_alert=True)

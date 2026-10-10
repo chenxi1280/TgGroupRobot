@@ -33,6 +33,8 @@ class SchemaValidationError(RuntimeError):
 
 
 REQUIRED_INDEXES: tuple[RequiredIndex, ...] = (
+    RequiredIndex("mall_notifications", "uq_mall_notification_target", ("order_id", "role", "assignment_version"), unique=True),
+    RequiredIndex("points_mall_intents", "uq_mall_intent_order", ("order_id",), unique=True),
     RequiredIndex(
         table_name="scheduled_message_tasks",
         index_name="uq_smt_short_id",

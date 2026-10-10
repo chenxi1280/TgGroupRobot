@@ -31,9 +31,9 @@ ALLOWED_DYNAMIC_CALLBACK_BUILDERS = {
 }
 
 ALLOWED_DYNAMIC_ADMIN_MENU_BUILDERS = {
-    ("backend/features/admin/core/navigation.py", 25),
-    ("backend/features/admin/ui/admin_main_keyboards.py", 141),
-    ("backend/features/admin/ui/admin_main_keyboards.py", 146),
+    ("backend/features/admin/core/navigation.py", 27),
+    ("backend/features/admin/ui/admin_main_keyboards.py", 38),
+    ("backend/features/admin/ui/admin_main_keyboards.py", 48),
 }
 
 

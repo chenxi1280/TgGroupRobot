@@ -38,6 +38,6 @@ class AccountInheritAdminMixin:
                 InlineKeyboardButton("🎟️ 旧号生成令牌", callback_data=f"inh:token:gen:{chat_id}"),
                 InlineKeyboardButton("🔓 新号使用令牌", callback_data=f"inh:token:use:{chat_id}"),
             ],
-            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
+            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_growth:{chat_id}")],
         ])
         await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)

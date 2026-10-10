@@ -81,7 +81,8 @@ class ConversationStateService:
                 state_type=state.state_type,
                 expire_at=expire_at.isoformat(),
             )
-            await ServiceBase._delete_entity(session, state)
+            from backend.platform.state.edit_drafts import archive_state
+            await archive_state(session, state)
             return None
 
         log.info(
@@ -127,7 +128,10 @@ class ConversationStateService:
     ) -> ConversationState:
         await cls._ensure_scope(session, chat_id=chat_id, user_id=user_id)
 
+        from backend.platform.state.edit_drafts import suspend_inputs
+        await suspend_inputs(session, user_id, exclude_scope=chat_id)
         state = await cls.get(session, chat_id, user_id)
+        state = await _archive_unrelated_state(cls, session, state, chat_id=chat_id, user_id=user_id, state_type=state_type, state_data=state_data)
         payload = _normalize_payload(state_data, expire_at)
         if state is None:
             state = ConversationState(
@@ -219,7 +223,15 @@ class ConversationStateService:
     ) -> None:
         state = await ConversationStateService.get(session, chat_id, user_id)
         if state is not None:
-            await ServiceBase._delete_entity(session, state)
+            if state.state_type == SELECTED_CHAT_STATE:
+                return
+            target = (state.state_data or {}).get("target_chat_id") or (state.state_data or {}).get("managed_chat_id")
+            if chat_id == user_id and target:
+                state.state_type = SELECTED_CHAT_STATE
+                state.state_data = {"managed_chat_id": target}
+                await session.flush()
+            else:
+                await ServiceBase._delete_entity(session, state)
 
 
 async def get_user_state(
@@ -263,3 +275,15 @@ async def clear_private_input_state(
     state = await ConversationStateService.get(session, user_id, user_id)
     if state is not None and state.state_type != SELECTED_CHAT_STATE:
         await ConversationStateService.clear(session, user_id, user_id)
+
+
+async def _archive_unrelated_state(cls, session, state, *, chat_id, user_id, state_type, state_data):
+    # Moving between unrelated editors preserves the previous unfinished input.
+    if state is not None and state.state_type != SELECTED_CHAT_STATE:
+        old_target = (state.state_data or {}).get("target_chat_id")
+        new_target = (state_data or {}).get("target_chat_id")
+        if state.state_type.split("_")[0] != state_type.split("_")[0] or old_target != new_target:
+            from backend.platform.state.edit_drafts import archive_state
+            await archive_state(session, state)
+            state = await cls.get(session, chat_id, user_id)
+    return state

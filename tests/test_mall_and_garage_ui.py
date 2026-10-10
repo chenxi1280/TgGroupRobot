@@ -48,7 +48,7 @@ async def test_points_mall_command_page_uses_return_to_home(monkeypatch):
     monkeypatch.setattr(admin_handler._admin_handler.message_helper, "safe_edit", fake_safe_edit)
 
     update = SimpleNamespace(effective_user=SimpleNamespace(id=9))
-    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}))
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}), user_data={})
 
     await admin_handler._admin_handler._show_points_mall_command_page(update, context, -100123)
 
@@ -65,7 +65,7 @@ async def test_points_mall_empty_pages_show_single_page(monkeypatch):
     async def fake_list_products(session, chat_id: int):
         return []
 
-    async def fake_list_recent_orders(session, chat_id: int, limit: int, product_id=None, order_status=None):
+    async def fake_list_recent_orders(session, chat_id: int, limit: int, product_id=None, order_status=None, offset=0):
         return []
 
     async def fake_count_orders_by_status(session, *, chat_id: int, product_id=None):
@@ -80,7 +80,7 @@ async def test_points_mall_empty_pages_show_single_page(monkeypatch):
     monkeypatch.setattr(admin_handler._admin_handler.message_helper, "safe_edit", fake_safe_edit)
 
     update = SimpleNamespace()
-    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}))
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}), user_data={})
 
     await admin_handler._admin_handler._show_points_mall_products_page(update, context, -100123)
     await admin_handler._admin_handler._show_points_mall_orders_page(update, context, -100123)
@@ -102,7 +102,7 @@ def test_points_mall_orders_keyboard_has_status_tabs_and_short_callbacks():
     assert first_row[1].text.startswith("✅ 🟡 待处理")
     assert first_row[1].callback_data == "adm:mall:-100123:orders_status:c:7"
     detail_btn = keyboard.inline_keyboard[1][0]
-    assert detail_btn.callback_data == "adm:mall:-100123:order:detail:99:c:7"
+    assert detail_btn.callback_data == "adm:mall:-100123:order:detail:99:c:7:0"
 
 
 @pytest.mark.asyncio
@@ -131,7 +131,7 @@ async def test_garage_forward_menu_marks_selected_mode(monkeypatch):
     monkeypatch.setattr(admin_handler._admin_handler.message_helper, "safe_edit", fake_safe_edit)
 
     update = SimpleNamespace(effective_user=SimpleNamespace(id=1))
-    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}))
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}), user_data={})
 
     await admin_handler._admin_handler._show_garage_forward_prompt(update, context, -100123)
 
@@ -172,7 +172,7 @@ async def test_garage_forward_audit_menu_renders_filters(monkeypatch):
     monkeypatch.setattr(admin_handler._admin_handler.message_helper, "safe_edit", fake_safe_edit)
 
     update = SimpleNamespace()
-    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}))
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}), user_data={})
 
     await admin_handler._admin_handler._show_garage_forward_audit_menu(update, context, -100123, result="success")
 
@@ -237,7 +237,7 @@ async def test_garage_auth_and_teacher_search_buttons_use_icons(monkeypatch):
     monkeypatch.setattr(admin_handler._admin_handler.message_helper, "safe_edit", fake_safe_edit)
 
     update = SimpleNamespace(effective_user=SimpleNamespace(id=1))
-    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}))
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}), user_data={})
 
     await admin_handler._admin_handler._show_garage_auth_menu(update, context, -100123)
     await admin_handler._admin_handler._show_garage_summary_menu(update, context, -100123)

@@ -77,9 +77,9 @@ async def test_legacy_group_lock_menu_renders_night_control(monkeypatch):
     text, keyboard = rendered[0]
     row_texts = [[button.text for button in row] for row in keyboard.inline_keyboard]
     assert "🌙 夜间管控" in text
-    assert ["🧹 消息拦截", "开启", "❌ 关闭"] in row_texts
-    assert ["🔒 全员禁言模式", "关闭"] in row_texts
-    assert ["🗣 口令开关群", "关闭"] in row_texts
+    assert ["🧹 消息拦截", "启动", "✅ 关闭"] in row_texts
+    assert ["🔒 全员禁言模式", "启动", "✅ 关闭"] in row_texts
+    assert ["🗣 口令开关群", "启动", "✅ 关闭"] in row_texts
 
 
 @pytest.mark.asyncio
@@ -258,9 +258,9 @@ def test_garbage_rule_keyboard_hides_dependent_rows_until_enabled() -> None:
     keyboard = garbage_guard_rule_keyboard(settings, -100123, "block_links")
     labels = [button.text for row in keyboard.inline_keyboard for button in row]
 
-    assert "⚙️ 警告次数:" not in labels
-    assert "⚙️ 禁言时长:" not in labels
-    assert "⚙️ 提示删除:" not in labels
+    assert not any(label.startswith("⚙️ 警告次数 ·") for label in labels)
+    assert not any(label.startswith("⚙️ 禁言时长 ·") for label in labels)
+    assert not any(label.startswith("⚙️ 提示删除 ·") for label in labels)
 
     settings = SimpleNamespace(
         anti_flood_enabled=False,
@@ -286,9 +286,9 @@ def test_garbage_rule_keyboard_hides_dependent_rows_until_enabled() -> None:
     keyboard = garbage_guard_rule_keyboard(settings, -100123, "block_links")
     labels = [button.text for row in keyboard.inline_keyboard for button in row]
 
-    assert "⚙️ 警告次数:" in labels
-    assert "⚙️ 禁言时长:" in labels
-    assert "⚙️ 提示删除:" in labels
+    assert any(label.startswith("⚙️ 警告次数 ·") for label in labels)
+    assert any(label.startswith("⚙️ 禁言时长 ·") for label in labels)
+    assert any(label.startswith("⚙️ 提示删除 ·") for label in labels)
 
 
 def test_garbage_guard_banned_words_rule_exposes_add_entry() -> None:
@@ -310,10 +310,8 @@ def test_garbage_guard_quick_reply_rule_exposes_keyword_inputs() -> None:
     labels = [button.text for row in keyboard.inline_keyboard for button in row]
     callbacks = [button.callback_data for row in keyboard.inline_keyboard for button in row]
 
-    assert "⚙️ 禁言回复词:" in labels
-    assert "j" in labels
-    assert "⚙️ 踢出回复词:" in labels
-    assert "t" in labels
+    assert "⚙️ 禁言回复词 · j" in labels
+    assert "⚙️ 踢出回复词 · t" in labels
     assert "gg:input:quick_reply_actions:mute_keyword:-100123" in callbacks
     assert "gg:input:quick_reply_actions:kick_keyword:-100123" in callbacks
     assert "实际触发条件: 管理员引用成员消息后回复 j 禁言，回复 t 踢出" in text
@@ -460,7 +458,7 @@ async def test_game_menu_exposes_rounds_and_help(monkeypatch):
     keyboard = rendered[0]
     row_texts = [[button.text for button in row] for row in keyboard.inline_keyboard]
     assert ["📋 最近牌局", "📘 指令帮助"] in row_texts
-    assert ["🔗 关联积分", "本群分"] in row_texts
+    assert ["🔗 关联积分 · 本群分"] in row_texts
 
 
 @pytest.mark.asyncio

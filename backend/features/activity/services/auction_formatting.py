@@ -68,6 +68,11 @@ async def refresh_auction_message(
 ) -> None:
     if item.last_announce_message_id is None:
         return
+    if getattr(item, "cover_file_id", None):
+        await context.bot.edit_message_caption(chat_id=chat_id, message_id=item.last_announce_message_id,
+            caption=format_auction_announcement(item, bidder_name=bidder_name, is_final=item.status == "ended", settlement_note=settlement_note),
+            parse_mode=None, reply_markup=reply_markup)
+        return
     await context.bot.edit_message_text(
         chat_id=chat_id,
         message_id=item.last_announce_message_id,

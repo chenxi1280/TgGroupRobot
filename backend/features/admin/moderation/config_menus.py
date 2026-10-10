@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from backend.features.admin.support import *
+from backend.shared.services.command_config_service import command_config_revision
 
 
 def _command_detail_text(command_key: str, entry: dict, definition: dict | None) -> tuple[str, bool]:
@@ -16,18 +17,20 @@ def _command_detail_text(command_key: str, entry: dict, definition: dict | None)
     return text, alias_allowed
 
 
-def _command_detail_rows(chat_id: int, command_key: str, *, enabled: bool, alias_allowed: bool):
+def _command_detail_rows(chat_id: int, command_key: str, *, enabled: bool, alias_allowed: bool, revision: str = ""):
     rows = [[
         InlineKeyboardButton("⚙️ 状态：", callback_data=f"adm:gcmd:{chat_id}:detail:{command_key}"),
-        InlineKeyboardButton("✅ 启用" if enabled else "启用", callback_data=f"adm:gcmd:{chat_id}:toggle:{command_key}"),
-        InlineKeyboardButton("关闭" if enabled else "❌ 关闭", callback_data=f"adm:gcmd:{chat_id}:toggle:{command_key}"),
+        InlineKeyboardButton("✅ 启用" if enabled else "启用", callback_data=f"adm:gcmd:{chat_id}:enable:{command_key}:{revision}"),
+        InlineKeyboardButton("关闭" if enabled else "❌ 关闭", callback_data=f"adm:gcmd:{chat_id}:disable:{command_key}:{revision}"),
     ]]
     if alias_allowed:
         rows.extend([
             [InlineKeyboardButton("✏️ 设置别名", callback_data=f"adm:gcmd:{chat_id}:alias:{command_key}")],
-            [InlineKeyboardButton("🧹 清空别名", callback_data=f"adm:gcmd:{chat_id}:clear_alias:{command_key}")],
+            [InlineKeyboardButton("🧹 清空别名", callback_data=f"adm:gcmd:{chat_id}:clear_alias:{command_key}:{revision}")],
         ])
-    rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:gcmd:{chat_id}")])
+    keys = [item["key"] for item in list_command_definitions()]
+    page = keys.index(command_key) // 8 if command_key in keys else 0
+    rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"adm:gcmd:{chat_id}:list:{page}")])
     return rows
 
 
@@ -37,6 +40,7 @@ class ModerationConfigMenusMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
+        *, page: int = 0,
     ) -> None:
         db: Database = context.application.bot_data["db"]
         await self._set_current_chat(db, update.effective_user.id, chat_id)
@@ -44,8 +48,12 @@ class ModerationConfigMenusMixin:
             settings = await get_chat_settings(session, chat_id)
             await session.commit()
 
+        revision = command_config_revision(settings)
         config_enabled = bool(getattr(settings, "command_config_enabled", False))
         config = get_command_config(settings)
+        definitions = list_command_definitions()
+        page = max(0, min(page, (len(definitions)-1)//8))
+        visible = definitions[page*8:(page+1)*8]
         lines = [
             "⌨️ 群组命令配置",
             "",
@@ -53,27 +61,17 @@ class ModerationConfigMenusMixin:
             "",
             f"配置开关: {'✅ 启用' if config_enabled else '❌ 关闭'}",
             "",
-            "命令列表：",
+            f"共 {len(definitions)} 项 · 第 {page+1}/{(len(definitions)+7)//8} 页",
         ]
-        for item in list_command_definitions():
-            key = item["key"]
-            label = item["label"]
-            entry = config["commands"].get(key, {})
-            status = "✅" if entry.get("enabled", True) else "❌"
-            alias = entry.get("alias") or "未设置"
-            if item.get("allow_alias", True):
-                lines.append(f"{status} {label}（别名：{alias}）")
-            else:
-                lines.append(f"{status} {label}")
-
+        _command_summary_lines(visible, config, lines)
         keyboard_rows = [
             [
-                InlineKeyboardButton("⚙️ 配置开关", callback_data=f"adm:gcmd:{chat_id}:toggle_enabled"),
-                InlineKeyboardButton("✅ 启用" if config_enabled else "启用", callback_data=f"adm:gcmd:{chat_id}:toggle_enabled"),
-                InlineKeyboardButton("关闭" if config_enabled else "❌ 关闭", callback_data=f"adm:gcmd:{chat_id}:toggle_enabled"),
+                InlineKeyboardButton("⚙️ 配置开关", callback_data=f"adm:menu:gcmd:{chat_id}"),
+                InlineKeyboardButton("✅ 启用" if config_enabled else "启用", callback_data=f"adm:gcmd:{chat_id}:enable_config:{revision}"),
+                InlineKeyboardButton("关闭" if config_enabled else "❌ 关闭", callback_data=f"adm:gcmd:{chat_id}:disable_config:{revision}"),
             ],
         ]
-        for item in list_command_definitions():
+        for item in visible:
             key = item["key"]
             label = item["label"]
             entry = config["commands"].get(key, {})
@@ -81,7 +79,11 @@ class ModerationConfigMenusMixin:
             keyboard_rows.append(
                 [InlineKeyboardButton(f"{status} {label}", callback_data=f"adm:gcmd:{chat_id}:detail:{key}")]
             )
-        keyboard_rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")])
+        command_rows = keyboard_rows[1:]
+        keyboard_rows = keyboard_rows[:1] + [sum(command_rows[i:i+2], []) for i in range(0, len(command_rows), 2)]
+        keyboard_rows.extend(_command_page_navigation(chat_id, page, len(definitions)))
+        keyboard_rows.append([InlineKeyboardButton("刷新", callback_data=f"adm:gcmd:{chat_id}:list:{page}")])
+        keyboard_rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_system:{chat_id}")])
         await self.message_helper.safe_edit(update, text="\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard_rows))
 
     async def _show_command_config_detail(
@@ -106,7 +108,7 @@ class ModerationConfigMenusMixin:
         definition = definitions.get(command_key)
         enabled = bool(entry.get("enabled", True))
         text, alias_allowed = _command_detail_text(command_key, entry, definition)
-        rows = _command_detail_rows(chat_id, command_key, enabled=enabled, alias_allowed=alias_allowed)
+        rows = _command_detail_rows(chat_id, command_key, enabled=enabled, alias_allowed=alias_allowed, revision=command_config_revision(settings))
         keyboard = InlineKeyboardMarkup(rows)
         await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
 
@@ -151,7 +153,7 @@ class ModerationConfigMenusMixin:
                 InlineKeyboardButton("🔇 禁言", callback_data=f"adm:punish:{chat_id}:preset:mute"),
                 InlineKeyboardButton("⛔ 封禁", callback_data=f"adm:punish:{chat_id}:preset:ban"),
             ],
-            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
+            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_safety:{chat_id}")],
         ])
         await self.message_helper.safe_edit(update, text="\n".join(lines), reply_markup=keyboard)
 
@@ -241,3 +243,25 @@ class ModerationConfigMenusMixin:
         text = format_garbage_guard_home_text(chat_title, settings)
         keyboard = garbage_guard_home_keyboard(settings, chat_id)
         await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
+
+
+def _command_summary_lines(visible, config, lines):
+    for item in visible:
+        key = item["key"]
+        label = item["label"]
+        entry = config["commands"].get(key, {})
+        status = "✅" if entry.get("enabled", True) else "❌"
+        alias = entry.get("alias") or "未设置"
+        if item.get("allow_alias", True):
+            lines.append(f"{status} {label}（别名：{alias}）")
+        else:
+            lines.append(f"{status} {label}")
+
+
+def _command_page_navigation(chat_id, page, total):
+    nav = []
+    if page:
+        nav.append(InlineKeyboardButton("上一页", callback_data=f"adm:gcmd:{chat_id}:list:{page-1}"))
+    if (page+1)*8 < total:
+        nav.append(InlineKeyboardButton("下一页", callback_data=f"adm:gcmd:{chat_id}:list:{page+1}"))
+    return [nav] if nav else []

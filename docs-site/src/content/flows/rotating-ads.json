@@ -1,7 +1,7 @@
 {
   "slug": "rotating-ads",
   "title": "轮播广告",
-  "status": "已闭环",
+  "status": "历史记录待复核",
   "category": "消息自动化",
   "entryScreen": "entry",
   "coverage": {
@@ -193,7 +193,7 @@
           {
             "label": "启用规则",
             "callbackData": "ads:rules:set:{chat_id}:enabled:1",
-            "action": "toggle",
+            "action": "toast",
             "target": "rules",
             "feedback": "规则已启用。"
           },
@@ -232,7 +232,7 @@
           {
             "label": "取消上次置顶",
             "callbackData": "ads:rules:set:{chat_id}:unpin_previous:1",
-            "action": "toggle",
+            "action": "toast",
             "target": "rules",
             "feedback": "已开启取消上次置顶。"
           },
@@ -296,7 +296,7 @@
           {
             "label": "启用",
             "callbackData": "ads:item:set:{chat_id}:{item_id}:enabled:1",
-            "action": "toggle",
+            "action": "toast",
             "target": "detail",
             "feedback": "广告已启用。"
           },

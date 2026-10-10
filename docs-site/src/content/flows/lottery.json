@@ -1,7 +1,7 @@
 {
   "slug": "lottery",
   "title": "抽奖",
-  "status": "已闭环",
+  "status": "历史记录待复核",
   "category": "活动互动",
   "entryScreen": "entry",
   "coverage": {
@@ -347,7 +347,7 @@
           {
             "label": "发布后置顶",
             "callbackData": "lot:setting:{chat_id}:publish_pin:1",
-            "action": "toggle",
+            "action": "toast",
             "target": "settings",
             "feedback": "发布后置顶已开启。"
           }

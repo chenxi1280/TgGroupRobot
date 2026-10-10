@@ -21,6 +21,13 @@ BACKEND_DIR = ROOT / "backend"
 IGNORED_MENU_KEYS = {
     "main": "主菜单本身不是功能页",
     "settings": "早期群设置聚合入口，当前对外功能已拆分",
+    "category_safety": "六类导航聚合页，子功能分别映射到文档",
+    "category_messages": "六类导航聚合页，子功能分别映射到文档",
+    "category_growth": "六类导航聚合页，子功能分别映射到文档",
+    "category_activities": "六类导航聚合页，子功能分别映射到文档",
+    "category_garage": "六类导航聚合页，子功能分别映射到文档",
+    "category_system": "六类导航聚合页，子功能分别映射到文档",
+
 }
 
 VALID_CATEGORIES = {
@@ -85,10 +92,15 @@ def load_features() -> list[dict]:
 
 def truth_table_rows() -> dict[str, str]:
     rows: dict[str, str] = {}
+    reading_modules = False
     with TRUTH_TABLE_PATH.open(encoding="utf-8") as handle:
         for line in handle:
             stripped = line.strip()
-            if not stripped.startswith("|"):
+            if stripped.startswith("## "):
+                reading_modules = False
+            if stripped.startswith("| 模块 |"):
+                reading_modules = True
+            if not reading_modules or not stripped.startswith("|"):
                 continue
             cells = [cell.strip() for cell in stripped.strip("|").split("|")]
             if len(cells) < 3:

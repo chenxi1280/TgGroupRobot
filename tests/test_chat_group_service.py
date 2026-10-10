@@ -27,6 +27,9 @@ class _FakeSession:
     def __init__(self, chats):
         self._chats = chats
 
+    async def commit(self):
+        pass
+
     async def execute(self, stmt):
         return _FakeResult(self._chats)
 
@@ -51,7 +54,10 @@ class _FakeDb:
 
 
 @pytest.mark.asyncio
-async def test_get_user_managed_chats_uses_db_title_without_extra_get_chat():
+async def test_get_user_managed_chats_uses_db_title_without_extra_get_chat(monkeypatch):
+    async def settings(session, chat_id):
+        return SimpleNamespace(control_permission_policy="can_promote_members")
+    monkeypatch.setattr("backend.shared.services.permission_service.get_chat_settings", settings)
     chats = [
         SimpleNamespace(id=-1001, title="测试群A", type="supergroup"),
         SimpleNamespace(id=-1002, title="测试群B", type="group"),

@@ -19,6 +19,9 @@ async def _publish_closed_event(context, event, *, event_id: int, text: str) -> 
         event.announcement_message_id = msg.message_id
         return True
     try:
+        if event.cover_file_id:
+            await context.bot.edit_message_caption(chat_id=event.chat_id, message_id=event.announcement_message_id, caption=text, parse_mode=None)
+            return True
         await PublishService.edit(
             context,
             chat_id=event.chat_id,

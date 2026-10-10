@@ -48,7 +48,7 @@ def invite_link_menu_keyboard(
     """构建邀请链接管理主菜单。"""
     enabled_on, enabled_off = _toggle_labels(enabled)
     remind_on, remind_off = _toggle_labels(remind_enabled)
-    back_button = create_back_button(chat_id, "main")
+    back_button = create_back_button(chat_id, "category_growth")
     callbacks = _invite_menu_callbacks(chat_id)
     relay_label = "✅ 中转" if mode == "relay" else "中转"
     direct_label = "✅ 直接" if mode == "direct" else "直接"

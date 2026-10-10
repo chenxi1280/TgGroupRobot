@@ -46,9 +46,10 @@ def toggle_row(
     enabled: bool,
     on_callback: str,
     off_callback: str,
+    label_callback: str | None = None,
 ) -> list[InlineKeyboardButton]:
     return [
-        noop_button(label),
+        InlineKeyboardButton(label, callback_data=label_callback or NOOP_CALLBACK),
         InlineKeyboardButton("✅ 启动" if enabled else "启动", callback_data=on_callback),
         InlineKeyboardButton("✅ 关闭" if not enabled else "关闭", callback_data=off_callback),
     ]

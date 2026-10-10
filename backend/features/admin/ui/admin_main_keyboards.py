@@ -6,12 +6,23 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 def create_group_selection_keyboard(
     managed_chats: list[tuple[int, str, bool]],
     current_chat_id: int | None,
+    page: int = 0,
 ) -> InlineKeyboardMarkup:
+    page = max(0, min(page, max(0, (len(managed_chats) - 1) // 8)))
     buttons = [
         [InlineKeyboardButton(f"{'✅ ' if chat_id == current_chat_id else ''}{title}", callback_data=f"adm:select_group:{chat_id}")]
-        for chat_id, title, _ in managed_chats
+        for chat_id, title, _ in managed_chats[page * 8:(page + 1) * 8]
     ]
-    buttons.append([InlineKeyboardButton("🔙 返回", callback_data="adm:back_to_main")])
+    navigation = []
+    if page:
+        navigation.append(InlineKeyboardButton("上一页", callback_data=f"adm:switch_group:{page - 1}"))
+    if (page + 1) * 8 < len(managed_chats):
+        navigation.append(InlineKeyboardButton("下一页", callback_data=f"adm:switch_group:{page + 1}"))
+    if navigation:
+        buttons.append(navigation)
+    buttons.append([InlineKeyboardButton("刷新", callback_data=f"adm:switch_group:{page}")])
+    if current_chat_id is not None:
+        buttons.append([InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{current_chat_id}")])
     return InlineKeyboardMarkup(buttons)
 
 
@@ -19,46 +30,30 @@ def create_guide_keyboard(bot_username: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[InlineKeyboardButton("🎛️ 前往设置", url=f"https://t.me/{bot_username}")]])
 
 
-_SCOPED_ADMIN_MENU = (
-    (("🎠轮播广告", "adm:menu:ads:{id}"), ("💬自动回复", "adm:menu:autoreply:{id}"), ("⏰定时消息", "sm:list:{id}:0")),
-    (("🚗车库认证", "adm:menu:garage_auth:{id}"), ("🔍老师搜索", "adm:menu:teacher_search:{id}"), ("📡频道同步", "adm:menu:sync:{id}")),
-    (("🌑主积分", "adm:menu:points:{id}"), ("🌐自定义积分", "adm:menu:custom_points:{id}"), ("🧑‍🎓积分等级", "adm:menu:points_level:{id}")),
-    (("🛒积分商城", "adm:menu:points_mall:{id}"), ("💯车评系统", "adm:menu:car_review:{id}"), ("⌨️底部按钮", "adm:menu:bottom_button:{id}")),
-    (("💰拍卖", "adm:menu:auction:{id}"), ("🎁抽奖", "adm:menu:lottery:{id}"), ("✨促活工具", "adm:menu:engagement:{id}")),
-    (("🎮游戏", "adm:menu:game:{id}"), ("⚽竞猜", "adm:menu:guess:{id}"), ("🔗邀请链接", "adm:menu:invite:{id}")),
-    (("🎉进群欢迎", "adm:menu:welcome:{id}"), ("🛡️进群验证", "adm:menu:verification:{id}"), ("🧑‍🍼新成员限制", "adm:menu:newmem:{id}")),
-    (("☂️垃圾防护", "adm:menu:antispam:{id}"), ("⚖️惩罚策略", "adm:menu:punish:{id}"), ("🧹删除提示", "adm:menu:autodel:{id}")),
-    (("🌙夜间管控", "adm:menu:night:{id}"), ("🕵️改名监控", "adm:menu:renamewatch:{id}"), ("📣强制关注", "adm:menu:forcesub:{id}")),
-    (("💥炸号继承", "adm:menu:inherit:{id}"), ("🛡️联盟功能", "adm:menu:alliance:{id}"), ("⌨️命令配置", "adm:menu:gcmd:{id}")),
-    (("⚙️群设置", "adm:menu:settings:{id}"), ("🩺健康检查", "adm:menu:health:{id}"), ("📊群组统计", "adm:menu:stats:{id}")),
-    (("⚡快捷发布", "adm:menu:qpub:{id}"), ("📥导入设置", "adm:menu:import:{id}"), ("📋克隆", "adm:menu:clone:{id}")),
-    (("🔄切换群", "adm:switch_group"), ("💳续费订阅", "adm:menu:renewal:{id}"), ("⚙️管理权限", "adm:menu:control:{id}")),
-)
-
-_UNSCOPED_ADMIN_MENU = (
-    (("🎁抽奖", "adm:menu:lottery"), ("🔗邀请链接", "adm:menu:invite")),
-    (("👋欢迎", "adm:menu:welcome"), ("🤖验证", "adm:menu:verification")),
-    (("🧑‍🍼新成员限制", "adm:menu:newmem"),), (("💬自动回复", "adm:menu:autoreply"), ("⏰定时消息", "adm:menu:scheduled")),
-    (("☂️垃圾防护", "adm:menu:antispam"), ("🔇违禁词", "adm:menu:keywords")), (("⚖️惩罚策略", "adm:menu:punish"),),
-    (("💰积分", "adm:menu:points"), ("📊统计", "adm:menu:stats")), (("🧩自定义积分", "adm:menu:custom_points"), ("👑积分等级", "adm:menu:points_level")),
-    (("🛍积分商城", "adm:menu:points_mall"),), (("🖐联盟功能", "adm:menu:alliance"), ("📡频道同步", "adm:menu:sync")),
-    (("🚗车库认证", "adm:menu:garage_auth"), ("🔎老师搜索", "adm:menu:teacher_search")), (("💯车评系统", "adm:menu:car_review"),),
-    (("🌙夜间管控", "adm:menu:night"),), (("⌨️命令配置", "adm:menu:gcmd"),), (("📥导入设置", "adm:menu:import"),),
-    (("📋克隆", "adm:menu:clone"),), (("⚙️群设置", "adm:menu:settings"),),
-)
+from backend.features.admin.feature_registry import ADMIN_CATEGORIES
 
 
-def _menu_markup(definitions, chat_id: int | None = None) -> InlineKeyboardMarkup:
-    rows = [
-        [InlineKeyboardButton(label, callback_data=callback.format(id=chat_id)) for label, callback in row]
-        for row in definitions
-    ]
+def admin_category_menu(category: str, chat_id: int) -> InlineKeyboardMarkup:
+    _, features = ADMIN_CATEGORIES[category]
+    buttons = [InlineKeyboardButton(label, callback_data=f"adm:menu:{feature}:{chat_id}")
+               for label, feature in features]
+    rows = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
+    rows.append([InlineKeyboardButton("返回管理首页", callback_data=f"adm:menu:main:{chat_id}")])
     return InlineKeyboardMarkup(rows)
 
 
 def admin_main_menu(chat_id: int | None = None) -> InlineKeyboardMarkup:
-    definitions = _SCOPED_ADMIN_MENU if chat_id is not None else _UNSCOPED_ADMIN_MENU
-    return _menu_markup(definitions, chat_id)
+    if chat_id is None:
+        return InlineKeyboardMarkup([[InlineKeyboardButton("选择管理群", callback_data="adm:switch_group")]])
+    buttons = [InlineKeyboardButton(title, callback_data=f"adm:menu:category_{key}:{chat_id}")
+               for key, (title, _) in ADMIN_CATEGORIES.items()]
+    rows = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
+    rows.append([
+        InlineKeyboardButton("切换群", callback_data="adm:switch_group"),
+        InlineKeyboardButton("刷新页面", callback_data=f"adm:menu:main:{chat_id}"),
+    ])
+    rows.append([InlineKeyboardButton("继续编辑草稿", callback_data=f"draft:list:{chat_id}:0")])
+    return InlineKeyboardMarkup(rows)
 
 
 def toggle_menu(rows: list[tuple[str, str, bool]]) -> InlineKeyboardMarkup:

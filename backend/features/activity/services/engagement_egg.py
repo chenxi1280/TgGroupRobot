@@ -36,7 +36,7 @@ async def list_egg_events(
     session: AsyncSession,
     chat_id: int,
     status: str | None = None,
-    *, limit: int = 20,
+    *, limit: int = 20, offset: int = 0,
 ) -> list[EngagementEggEvent]:
     stmt = select(EngagementEggEvent).where(EngagementEggEvent.chat_id == chat_id)
     if status and status != "all":
@@ -44,7 +44,7 @@ async def list_egg_events(
     stmt = stmt.order_by(
         EngagementEggEvent.created_at.desc(),
         EngagementEggEvent.id.desc(),
-    ).limit(limit)
+    ).limit(limit).offset(max(0, offset))
     result = await session.execute(stmt)
     return list(result.scalars().all())
 

@@ -1,7 +1,7 @@
 {
   "slug": "multi-group-management",
   "title": "多群隔离 / 私聊切群",
-  "status": "已闭环",
+  "status": "本地验证通过",
   "category": "群组核心",
   "entryScreen": "entry",
   "coverage": {

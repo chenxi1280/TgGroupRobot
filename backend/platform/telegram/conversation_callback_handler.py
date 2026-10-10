@@ -17,10 +17,7 @@ class PerUserConversationCallbackHandler(BaseHandler):
     def check_update(self, update: object) -> bool | object | None:
         return self._delegate.check_update(update)
 
-    async def handle_update(self, update, application, check_result, *, context) -> Any:
-        return await self._delegate.handle_update(
-            update,
-            application,
-            check_result,
-            context=context,
-        )
+    async def handle_update(self, update, application, *args, **kwargs) -> Any:
+        # PTB passes check_result/context positionally from ConversationHandler;
+        # preserve both positional and keyword invocation of the delegate API.
+        return await self._delegate.handle_update(update, application, *args, **kwargs)

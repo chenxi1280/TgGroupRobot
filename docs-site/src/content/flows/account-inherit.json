@@ -51,11 +51,11 @@
             "feedback": "进入群组选择。"
           },
           {
-            "label": "返回主菜单",
-            "callbackData": "adm:menu:main:{chat_id}",
+            "label": "返回积分与增长",
+            "callbackData": "adm:menu:category_growth:{chat_id}",
             "action": "goto",
             "target": "main_menu",
-            "feedback": "已回到主菜单。"
+            "feedback": "已回到积分与增长分类。"
           }
         ]
       ],
@@ -102,9 +102,9 @@
     },
     {
       "id": "main_menu",
-      "title": "主菜单",
+      "title": "积分与增长",
       "message": [
-        "这里展示机器人后台的真实功能入口。"
+        "从此分类进入对应功能；本流程演示当前功能的操作。"
       ],
       "keyboard": [
         [
@@ -130,7 +130,7 @@
           {
             "label": "开启继承",
             "callbackData": "inh:toggle:{chat_id}:1",
-            "action": "toggle",
+            "action": "toast",
             "target": "home",
             "feedback": "继承已开启。"
           },
@@ -152,11 +152,11 @@
         ],
         [
           {
-            "label": "返回主菜单",
-            "callbackData": "adm:menu:main:{chat_id}",
+            "label": "返回积分与增长",
+            "callbackData": "adm:menu:category_growth:{chat_id}",
             "action": "back",
             "target": "entry",
-            "feedback": "已返回主菜单。"
+            "feedback": "已回到积分与增长分类。"
           }
         ]
       ],

@@ -84,11 +84,29 @@ class MessageDispatcher:
         db: Database = context.application.bot_data["db"]
 
         async with db.session_factory() as session:
+            from backend.platform.state.edit_drafts import suspend_conflicting_legacy_inputs
+            conflicts = await suspend_conflicting_legacy_inputs(session, user.id)
+            if conflicts:
+                from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+                await session.commit()
+                rows = [[InlineKeyboardButton(f"查看群 {target} 的草稿", callback_data=f"draft:list:{target}:0")]
+                        for target in sorted({draft.chat_id for draft in conflicts})]
+                await update.effective_message.reply_text(
+                    "发现多个旧编辑状态，已分别保留为草稿。本条消息未写入配置；请先选择要继续编辑的草稿。",
+                    reply_markup=InlineKeyboardMarkup(rows))
+                return
             state = await self._get_user_state(
                 session=session, db=db, user_id=user.id, chat_id=chat.id
             )
 
             if state is not None:
+                from backend.platform.state.draft_versions import resumed_version_matches
+                if not await resumed_version_matches(session, state, lock=True):
+                    from backend.platform.state.edit_drafts import archive_state
+                    await archive_state(session, state)
+                    await session.commit()
+                    await update.effective_message.reply_text("正式配置已变化，输入未保存；草稿已保留。请重新打开功能页载入最新配置。")
+                    return
                 log.debug(
                     "message_dispatcher_private_config",
                     user_id=user.id,
@@ -99,6 +117,7 @@ class MessageDispatcher:
                 )
                 await session.commit()
                 return
+            await session.commit()  # Keep TTL reconciliation even when no input remains.
 
         if not message_text:
             return
@@ -108,7 +127,7 @@ class MessageDispatcher:
     async def _get_user_state(self, session: Any, db: Database, user_id: int, *, chat_id: int) -> Any:
         """兼容旧调用方，同时通过新的 scoped state 规则解析状态。"""
         private_state = await get_user_state(session, chat_id=chat_id, user_id=user_id)
-        if private_state is not None and private_state.state_type != "selected_chat":
+        if private_state is not None and private_state.state_type not in {"selected_chat", "guess_draft"}:
             return private_state
 
         target_chat_id = None
@@ -117,6 +136,7 @@ class MessageDispatcher:
         if not target_chat_id:
             target_chat_id = await ChatResolver.get_current_chat(db, user_id)
         if target_chat_id:
-            return await get_user_state(session, chat_id=target_chat_id, user_id=user_id)
+            group_state = await get_user_state(session, chat_id=target_chat_id, user_id=user_id)
+            return group_state if group_state is not None and group_state.state_type != "guess_draft" else None
 
         return None

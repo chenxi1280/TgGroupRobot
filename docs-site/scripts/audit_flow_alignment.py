@@ -119,6 +119,7 @@ STATIC_CALLBACK_ROOTS = {
 
 CALLBACK_HELPER_ARG_INDEXES = {
     "_two_button_row": (1, 3),
+    "setting_row": (1,),
 }
 
 CALLBACK_HELPER_KEYWORDS = {
@@ -126,6 +127,9 @@ CALLBACK_HELPER_KEYWORDS = {
     "right_callback",
     "scoped",
     "unscoped",
+    "on_callback",
+    "off_callback",
+    "label_callback",
 }
 
 

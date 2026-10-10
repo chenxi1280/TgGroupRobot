@@ -19,7 +19,7 @@ def custom_points_list_keyboard(items, chat_id: int) -> InlineKeyboardMarkup:
             ]
         )
     rows.append([InlineKeyboardButton("➕ 添加一条", callback_data=f"adm:cpt:{chat_id}:add")])
-    rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:points:{chat_id}")])
+    rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_growth:{chat_id}")])
     return InlineKeyboardMarkup(rows)
 
 

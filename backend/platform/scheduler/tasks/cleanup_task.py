@@ -32,6 +32,10 @@ class CleanupTask(ScheduledTask):
             return
         async with db.session_factory() as session:
             deleted = await GarageForwardService.purge_expired_audits(session)
+            import datetime as dt
+            from sqlalchemy import delete
+            from backend.platform.db.schema.models.chat import EditDraft
+            await session.execute(delete(EditDraft).where(EditDraft.expires_at <= dt.datetime.now(dt.UTC)))
             await session.commit()
         if deleted:
             log.info("cleanup_task_garage_forward_audits_purged", deleted_count=deleted)

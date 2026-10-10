@@ -42,7 +42,7 @@ def build_bottom_home(
                 "✅ 同步到底部键盘", callback_data=f"btm:generate:{chat_id}:now"
             )
         ],
-        [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
+        [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_messages:{chat_id}")],
     ]
     return text, InlineKeyboardMarkup(rows)
 

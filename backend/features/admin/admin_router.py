@@ -1,12 +1,14 @@
 from __future__ import annotations
 import structlog
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, MessageHandler, filters
-from backend.features.admin.admin_handler import admin_callback
+from backend.features.admin.admin_handler import admin_callback, admin_command
 from backend.features.admin.garage.teacher_self import teacher_self_callback
 from backend.features.invite.account_inherit_handler import account_inherit_callback, account_inherit_command
 from backend.features.garage.garage_forward_handler import garage_forward_channel_post_handler
 from backend.shared.button_layout_editor import button_layout_editor_callback
 from backend.app.router_base import BaseRouter
+from backend.features.admin.draft_pages import draft_callback
+from backend.features.activity.publication_recovery import verify_publication_command
 
 log = structlog.get_logger(__name__)
 
@@ -21,8 +23,11 @@ class AdminRouter(BaseRouter):
         log.debug(f"Registering {self.name} router")
 
         # 命令处理器
-        app.add_handler(CommandHandler("admin", admin_callback))
+        app.add_handler(CommandHandler("admin", admin_command))
+        app.add_handler(CommandHandler("verifypublication", verify_publication_command))
         app.add_handler(CommandHandler("inherit", account_inherit_command))
+
+        app.add_handler(CallbackQueryHandler(draft_callback, pattern=r"^draft:"))
 
         # 回调处理器（管理后台与联盟/车库转发）
         app.add_handler(CallbackQueryHandler(button_layout_editor_callback, pattern=r"^btned:"))

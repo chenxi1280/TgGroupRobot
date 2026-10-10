@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.shared.callback_parser import CallbackData
+
 from backend.features.activity.game_panels import show_blackjack_panel, show_k3_panel
 from backend.features.admin.activity.game_presenters import (
     build_game_menu_keyboard,
@@ -209,7 +211,7 @@ class GameAdminControllerMixin:
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
         *,
-        callback_data: CallbackParser,
+        callback_data: CallbackData,
     ) -> None:
         action = callback_data.get(1)
         if await self._handle_game_navigation(

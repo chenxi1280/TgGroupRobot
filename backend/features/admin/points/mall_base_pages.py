@@ -88,12 +88,18 @@ class PointsMallBasePagesMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
+        *, page: int | None = None,
     ) -> None:
         """显示积分商城商品管理页"""
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
             products = await PointsExtendedService.list_products(session, chat_id)
             await session.commit()
+        pages = context.user_data.setdefault("mall_product_pages", {})
+        total = len(products)
+        page = max(0, min(pages.get(chat_id, 0) if page is None else page, max(0, (total-1)//8)))
+        pages[chat_id] = page
+        products = products[page*8:(page+1)*8]
         if products:
             chunks: list[str] = ["🛍️ 管理商品 | 商品列表", ""]
             for product in products:
@@ -107,12 +113,12 @@ class PointsMallBasePagesMixin:
                         "",
                     ]
                 )
-            chunks.append(f"{len(products)} 条数据，第 1 页/共 1 页")
+            chunks.append(f"{total} 条数据，第 {page+1} 页/共 {max(1,(total+7)//8)} 页")
             text = "\n".join(chunks)
         else:
             text = "🛍️ 管理商品 | 商品列表\n\n0 条数据，第 1 页/共 1 页"
         await self.message_helper.safe_edit(
             update,
             text=text,
-            reply_markup=points_mall_products_keyboard(products, chat_id),
+            reply_markup=points_mall_products_keyboard(products, chat_id, page=page, total=total),
         )

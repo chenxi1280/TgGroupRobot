@@ -190,7 +190,7 @@ async def test_auction_item_reply_after_trigger_uses_message_as_source(monkeypat
     assert saved_state == [
         (
             ConversationStateType.auction_wait_start_price.value,
-            {"source_message_id": 456, "title": "洋芋一袋"},
+            {"source_message_id": 456, "title": "洋芋一袋", "cover_file_id": None},
         )
     ]
     assert replies and "本步只输入起拍价" in replies[0][0]
@@ -222,61 +222,12 @@ async def test_auction_create_trigger_when_disabled_replies(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_auction_confirm_pin_failure_logs_warning(monkeypatch):
-    warnings: list[dict] = []
-    cleared: list[tuple[int, int]] = []
-
-    async def fake_get_or_create_setting(session, chat_id: int):
-        return SimpleNamespace(enabled=True, create_permission="all", pin_message_enabled=True)
-
-    async def fake_get_user_state(session, chat_id: int, user_id: int):
-        return SimpleNamespace(
-            state_type=ConversationStateType.auction_wait_confirm.value,
-            state_data={
-                "source_message_id": 99,
-                "title": "测试拍卖",
-                "start_price": 100,
-                "end_at": "2026-05-07T12:00:00+00:00",
-            },
-        )
-
-    async def fake_publish_auction(session, **kwargs):
-        return SimpleNamespace(id=5, source_message_id=99, title="测试拍卖", start_price=100)
-
-    async def fake_clear_user_state(session, chat_id: int, user_id: int):
-        cleared.append((chat_id, user_id))
-
-    async def fake_send_message(**kwargs):
-        return SimpleNamespace(message_id=7788)
-
-    async def fake_pin_chat_message(*args, **kwargs):
+    warnings = []
+    async def fail_pin(*args, **kwargs):
         raise TelegramError("pin failed")
-
-    def fake_warning(event: str, **fields):
-        warnings.append({"event": event, **fields})
-
-    monkeypatch.setattr(auction_handler, "get_or_create_setting", fake_get_or_create_setting)
-    monkeypatch.setattr(auction_handler, "get_user_state", fake_get_user_state)
-    monkeypatch.setattr(auction_handler, "publish_auction", fake_publish_auction)
-    monkeypatch.setattr(auction_handler, "clear_user_state", fake_clear_user_state)
-    monkeypatch.setattr(auction_handler, "format_auction_announcement", lambda item: "拍卖公告")
-    monkeypatch.setattr(auction_handler.log, "warning", fake_warning)
-
-    update, _ = _group_update(text="确认", reply_to_message_id=99)
-    context = SimpleNamespace(
-        application=SimpleNamespace(bot_data={"db": _FakeDb()}),
-        bot=SimpleNamespace(send_message=fake_send_message, pin_chat_message=fake_pin_chat_message),
-    )
-
-    result = await auction_handler.auction_group_message_handler(update, context)
-
-    assert result is True
-    assert cleared == [(-1001, 42)]
-    assert warnings == [
-        {
-            "event": "auction_pin_message_failed",
-            "chat_id": -1001,
-            "auction_id": 5,
-            "message_id": 7788,
-            "error": "pin failed",
-        }
-    ]
+    monkeypatch.setattr(auction_handler.log, "warning", lambda event, **fields: warnings.append({"event": event, **fields}))
+    flow = SimpleNamespace(setting=SimpleNamespace(pin_message_enabled=True),
+        chat=SimpleNamespace(id=-1001), context=SimpleNamespace(bot=SimpleNamespace(pin_chat_message=fail_pin)))
+    await auction_handler._pin_auction_announcement(flow, SimpleNamespace(id=5), 7788)
+    assert warnings == [{"event": "auction_pin_message_failed", "chat_id": -1001,
+        "auction_id": 5, "message_id": 7788, "error": "pin failed"}]

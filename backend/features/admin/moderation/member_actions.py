@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.shared.callback_parser import CallbackData
+
 from backend.features.admin.support import *
 from backend.shared.time_ui import (
     build_copy_options_keyboard,
@@ -45,15 +47,14 @@ class ModerationMemberActionsMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        *, callback_data: CallbackParser,
+        *, callback_data: CallbackData,
     ) -> None:
         from backend.platform.db.schema.models.enums import ConversationStateType
 
         op = callback_data.get(3)
         arg = callback_data.get(4)
-        if op == "toggle":
-            field = "force_subscribe_custom_buttons_enabled" if arg == "buttons" else "force_subscribe_enabled"
-            await self._toggle_member_setting(update, context, chat_id, field=field, menu="force_subscribe")
+        if op in {"toggle", "set"}:
+            await self._set_force_subscribe_switch(update, context, chat_id, callback_data=callback_data)
             return
         if op == "input":
             await self._start_member_force_subscribe_input(
@@ -92,12 +93,25 @@ class ModerationMemberActionsMixin:
             return
         await answer_callback_query_safely(update, "未识别的强制关注操作，请返回后重试", show_alert=True)
 
-    async def _toggle_member_setting(self, update, context, chat_id: int, *, field: str, menu: str) -> None:
-        db: Database = context.application.bot_data["db"]
-        async with db.session_factory() as session:
-            settings = await get_chat_settings(session, chat_id)
-            setattr(settings, field, not bool(getattr(settings, field, False)))
-            await session.commit()
+    async def _set_force_subscribe_switch(self, update, context, chat_id: int, *, callback_data: CallbackData) -> None:
+        fields = {"enabled": "force_subscribe_enabled", "buttons": "force_subscribe_custom_buttons_enabled"}
+        field = fields.get(callback_data.get(4))
+        if field is None:
+            await answer_callback_query_safely(update, "无效配置项", show_alert=True)
+            return
+        value = callback_data.get(5) if callback_data.get(3) == "set" else None
+        await self._toggle_member_setting(update, context, chat_id, field=field, menu="force_subscribe", value=value)
+
+    async def _toggle_member_setting(self, update, context, chat_id: int, *, field: str, menu: str, value: str | None) -> None:
+        if value is not None:
+            if value not in {"0", "1"}:
+                await answer_callback_query_safely(update, "无效开关值", show_alert=True)
+                return
+            db: Database = context.application.bot_data["db"]
+            async with db.session_factory() as session:
+                settings = await get_chat_settings(session, chat_id)
+                setattr(settings, field, value == "1")
+                await session.commit()
         menu_handler = {
             "force_subscribe": self._show_force_subscribe_menu,
             "new_member": self._show_new_member_limit_menu,
@@ -193,13 +207,13 @@ class ModerationMemberActionsMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        *, callback_data: CallbackParser,
+        *, callback_data: CallbackData,
     ) -> None:
         from backend.platform.db.schema.models.enums import ConversationStateType
 
         op = callback_data.get(3)
         arg = callback_data.get(4)
-        if op == "toggle":
+        if op in {"toggle", "set"}:
             field_map = {
                 "enabled": "new_member_limit_enabled",
                 "block_media": "new_member_limit_block_media",
@@ -212,7 +226,7 @@ class ModerationMemberActionsMixin:
             if field is None:
                 await answer_callback_query_safely(update, "未识别的新成员限制配置项，请返回后重试", show_alert=True)
                 return
-            await self._toggle_member_setting(update, context, chat_id, field=field, menu="new_member")
+            await self._toggle_member_setting(update, context, chat_id, field=field, menu="new_member", value=callback_data.get(5) if op == "set" else None)
             return
         if op == "input":
             await self._start_new_member_input(update, context, chat_id, option=arg, state_enum=ConversationStateType)
@@ -264,13 +278,13 @@ class ModerationMemberActionsMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        *, callback_data: CallbackParser,
+        *, callback_data: CallbackData,
     ) -> None:
         from backend.platform.db.schema.models.enums import ConversationStateType
 
         op = callback_data.get(3)
         arg = callback_data.get(4)
-        if op == "toggle":
+        if op in {"toggle", "set"}:
             field_map = {
                 "enabled": "night_mode_enabled",
                 "lock_schedule": "group_lock_schedule_enabled",
@@ -283,7 +297,7 @@ class ModerationMemberActionsMixin:
             if field is None:
                 await answer_callback_query_safely(update, "未识别的夜间管控配置项，请返回后重试", show_alert=True)
                 return
-            await self._toggle_member_setting(update, context, chat_id, field=field, menu="night")
+            await self._toggle_member_setting(update, context, chat_id, field=field, menu="night", value=callback_data.get(5) if op == "set" else None)
             return
         if op == "notice":
             await self._set_night_notice(update, context, chat_id, mode=arg)

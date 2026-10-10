@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.shared.callback_parser import CallbackData
+
 from backend.features.admin.support import *
 
 
@@ -52,7 +54,7 @@ class SettingsTransferAdminMixin:
                 InlineKeyboardButton("🧹 清空选择", callback_data=f"adm:import:{chat_id}:clear"),
             ],
             [InlineKeyboardButton("🚀 执行导入", callback_data=f"adm:import:{chat_id}:apply")],
-            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
+            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_system:{chat_id}")],
         ])
         await self.message_helper.safe_edit(update, text="\n".join(lines), reply_markup=keyboard)
 
@@ -198,7 +200,7 @@ class SettingsTransferAdminMixin:
                 InlineKeyboardButton("🧹 清空选择", callback_data=f"adm:clone:{chat_id}:clear"),
             ],
             [InlineKeyboardButton("🚀 执行克隆", callback_data=f"adm:clone:{chat_id}:apply")],
-            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
+            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_system:{chat_id}")],
         ])
         await self.message_helper.safe_edit(update, text="\n".join(lines), reply_markup=keyboard)
 
@@ -207,7 +209,7 @@ class SettingsTransferAdminMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        *, callback_data: CallbackParser,
+        *, callback_data: CallbackData,
     ) -> None:
         await self._handle_settings_transfer(
             update, context, chat_id, callback_data=callback_data, mode="import"
@@ -218,7 +220,7 @@ class SettingsTransferAdminMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
-        *, callback_data: CallbackParser,
+        *, callback_data: CallbackData,
     ) -> None:
         await self._handle_settings_transfer(
             update, context, chat_id, callback_data=callback_data, mode="clone"

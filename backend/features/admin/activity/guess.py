@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+from backend.shared.callback_parser import CallbackData
+
+import secrets
+from backend.features.activity.services.activity_publication_service import prepare_publication, send_publication, validate_publication_payload, publication_payload
+from backend.features.activity.services.guess_service_runtime import build_draft_event
+
 from backend.features.admin.activity.runtime import clear_private_admin_state
 from backend.features.admin.support import *
 from backend.shared.time_helper import LOCAL_TIMEZONE
@@ -58,15 +64,16 @@ def _state_matches_guess_chat(state, chat_id: int) -> bool:
 
 async def _get_guess_draft_state(session, user_id: int, chat_id: int):
     state = await get_user_state(session, user_id, user_id)
-    if state is not None and str(state.state_type).startswith("guess_wait_") and _state_matches_guess_chat(state, chat_id):
+    if state is not None and (str(state.state_type).startswith("guess_wait_") or state.state_type == "guess_draft") and _state_matches_guess_chat(state, chat_id):
         return state
     state = await get_user_state(session, chat_id, user_id)
-    if state is not None and str(state.state_type).startswith("guess_wait_") and _state_matches_guess_chat(state, chat_id):
+    if state is not None and (str(state.state_type).startswith("guess_wait_") or state.state_type == "guess_draft") and _state_matches_guess_chat(state, chat_id):
         return state
     return None
 
 
 async def _start_guess_input_state(session, *, user_id: int, chat_id: int, state_type: str, draft: dict) -> None:
+    draft = {**draft, "publication_token": draft.get("publication_token") or secrets.token_hex(12)}
     await clear_private_admin_state(session, target_chat_id=chat_id, user_id=user_id)
     await set_user_state(
         session,
@@ -75,6 +82,9 @@ async def _start_guess_input_state(session, *, user_id: int, chat_id: int, state
         state_type=state_type,
         state_data={"target_chat_id": chat_id, **draft},
     )
+
+
+from backend.features.admin.activity.guess_preview import preview_guess, published_draft_locked
 
 
 class GuessAdminControllerMixin:
@@ -111,7 +121,7 @@ class GuessAdminControllerMixin:
             ],
             [
                 InlineKeyboardButton("⚙️ 规则设置", callback_data=f"guess:settings:{chat_id}:home"),
-                InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}"),
+                InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_activities:{chat_id}"),
             ],
         ])
         await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
@@ -287,14 +297,17 @@ class GuessAdminControllerMixin:
             )
             next_draft = _guess_draft_with_defaults({})
         elif sub == "preview":
+            draft.setdefault("publication_token", secrets.token_hex(12))
+            await _start_guess_input_state(session, user_id=update.effective_user.id, chat_id=chat_id, state_type="guess_draft", draft=draft)
             await session.commit()
+            await preview_guess(update, session, chat_id=chat_id, draft=draft)
             await self._show_guess_create_menu(update, context, chat_id, draft=draft)
             return True
         else:
             return False
         await _start_guess_input_state(
             session, user_id=update.effective_user.id, chat_id=chat_id,
-            state_type="guess_wait_title", draft=next_draft,
+            state_type="guess_draft", draft=next_draft,
         )
         await session.commit()
         await self._show_guess_create_menu(update, context, chat_id, draft=next_draft)
@@ -315,31 +328,31 @@ class GuessAdminControllerMixin:
                 toast="❌ 发布失败：请先补齐活动名字、竞猜选项和截止时间。下面可以直接继续修改。",
             )
             return
+        token = draft.get("publication_token")
+        if not token:
+            draft["publication_token"] = secrets.token_hex(12)
+            await _start_guess_input_state(session, user_id=update.effective_user.id,
+                chat_id=chat_id, state_type="guess_wait_title", draft=draft)
+            await session.commit()
+            token = draft["publication_token"]
+        async def create_entity():
+            return await create_guess_event(session, chat_id, update.effective_user.id, draft=draft)
         try:
-            event = await create_guess_event(
-                session, chat_id, update.effective_user.id, draft
-            )
-            sent = await context.bot.send_message(
-                chat_id=chat_id, text=format_event_runtime(event), parse_mode="Markdown"
-            )
+            record = await prepare_publication(session, token=token, domain="guess", chat_id=chat_id,
+                creator_user_id=update.effective_user.id, create_entity=create_entity,
+                render=lambda event: validate_publication_payload({"text": format_event_runtime(event), "photo": event.cover_file_id, "media_type": event.cover_media_type}))
         except ValidationError as exc:
             await session.rollback()
-            await answer_callback_query_safely(update, f"❌ {exc}", show_alert=True)
+            await answer_callback_query_safely(update, str(exc), show_alert=True)
             return
-        except TelegramError as exc:
-            await session.rollback()
-            await answer_callback_query_safely(
-                update, f"❌ 发布到群里失败：{exc}", show_alert=True
-            )
+        record = await send_publication(session, context, record)
+        if record.status != "succeeded":
+            await answer_callback_query_safely(update,
+                f"活动 #{record.entity_id}：{record.error or '发布结果待核实，请勿重复创建'}\n回复群中原消息发送 /verifypublication {record.token}", show_alert=True)
             return
-        event.announcement_message_id = sent.message_id
-        await clear_private_admin_state(
-            session, target_chat_id=chat_id, user_id=update.effective_user.id
-        )
+        await clear_private_admin_state(session, target_chat_id=chat_id, user_id=update.effective_user.id)
         await session.commit()
-        await self._show_guess_event_detail(
-            update, context, chat_id, event_id=event.id
-        )
+        await self._show_guess_event_detail(update, context, chat_id, event_id=record.entity_id)
 
     async def _handle_guess_create(
         self, update, context, session, *, chat_id: int, callback_data
@@ -347,6 +360,8 @@ class GuessAdminControllerMixin:
         sub = callback_data.get(3)
         state = await _get_guess_draft_state(session, update.effective_user.id, chat_id)
         draft = dict(state.state_data or {}) if state else {}
+        if await published_draft_locked(update, session, sub=sub, draft=draft):
+            return
         if sub == "start":
             draft = _guess_draft_with_defaults({})
             await _start_guess_input_state(
@@ -456,7 +471,7 @@ class GuessAdminControllerMixin:
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
         *,
-        callback_data: CallbackParser,
+        callback_data: CallbackData,
     ) -> None:
         action = callback_data.get(1)
         if action == "home":

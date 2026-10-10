@@ -62,6 +62,11 @@ def build_layout_keyboard(editor_ctx: ButtonEditorContext, grid: ButtonGrid) -> 
         ),
         InlineKeyboardButton("🔙 返回", callback_data=_module_return_callback(editor_ctx)),
     ])
+    rows.append([InlineKeyboardButton("预览", callback_data=detail_callback_data(editor_ctx, "preview")),
+                 InlineKeyboardButton("保存", callback_data=detail_callback_data(editor_ctx, "save"))])
+    rows.append([InlineKeyboardButton("放弃修改/重新载入", callback_data=detail_callback_data(editor_ctx, "discard"))])
+    rows.insert(0, [InlineKeyboardButton("编辑正文", callback_data=detail_callback_data(editor_ctx, "body")),
+                    InlineKeyboardButton("编辑封面", callback_data=detail_callback_data(editor_ctx, "cover"))])
     return InlineKeyboardMarkup(rows)
 
 
@@ -125,11 +130,8 @@ async def _reply_or_edit(
     text: str,
     reply_markup: InlineKeyboardMarkup,
 ) -> None:
-    if update.callback_query is not None:
-        await update.callback_query.edit_message_text(text=text, reply_markup=reply_markup)
-        return
-    if update.effective_message is not None:
-        await update.effective_message.reply_text(text=text, reply_markup=reply_markup)
+    from backend.shared.handlers.base.message_helper import MessageHelper
+    await MessageHelper.safe_edit(update, text, reply_markup=reply_markup)
 
 
 async def _render_layout(
@@ -139,10 +141,11 @@ async def _render_layout(
     editor_ctx: ButtonEditorContext,
     session,
 ) -> None:
+    context.user_data["button_editor_user_id"] = update.effective_user.id
     draft = await _ensure_draft(session, context, editor_ctx)
     text = (
-        f"{_module_title(editor_ctx.module_type)}｜按钮布局\n\n"
-        "先配置按钮布局（每行最多4个按钮） 再点击按钮配置文案"
+        f"{_module_title(editor_ctx.module_type)}｜消息编辑\n\n"
+        "先配置按钮布局（每行最多4个按钮），再点击按钮配置文案。\n当前编辑草稿；点击保存后生效，返回保留草稿。"
     )
     await _reply_or_edit(
         update,
@@ -188,6 +191,7 @@ async def _render_detail(
     editor_ctx: ButtonEditorContext,
     session,
 ) -> None:
+    context.user_data["button_editor_user_id"] = update.effective_user.id
     draft = await _ensure_draft(session, context, editor_ctx)
     cell = ButtonLayoutEditorService.get_cell(
         draft,

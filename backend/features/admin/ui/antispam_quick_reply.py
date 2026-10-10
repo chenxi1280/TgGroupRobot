@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from telegram import InlineKeyboardButton
 
+from backend.features.admin.ui.antispam_controls import setting_row
+
 
 def quick_reply_trigger_summary(rule: dict) -> str:
     mute_keyword = str(rule.get("mute_keyword", "j"))
@@ -11,18 +13,8 @@ def quick_reply_trigger_summary(rule: dict) -> str:
 
 def quick_reply_condition_rows(rule: dict, chat_id: int, rule_id: str) -> list[list[InlineKeyboardButton]]:
     return [
-        _two_button_row(
-            "⚙️ 禁言回复词:",
-            f"gg:input:{rule_id}:mute_keyword:{chat_id}",
-            str(rule.get("mute_keyword", "j")),
-            right_callback=f"gg:input:{rule_id}:mute_keyword:{chat_id}",
-        ),
-        _two_button_row(
-            "⚙️ 踢出回复词:",
-            f"gg:input:{rule_id}:kick_keyword:{chat_id}",
-            str(rule.get("kick_keyword", "t")),
-            right_callback=f"gg:input:{rule_id}:kick_keyword:{chat_id}",
-        ),
+        setting_row("⚙️ 禁言回复词:", f"gg:input:{rule_id}:mute_keyword:{chat_id}", str(rule.get("mute_keyword", "j"))),
+        setting_row("⚙️ 踢出回复词:", f"gg:input:{rule_id}:kick_keyword:{chat_id}", str(rule.get("kick_keyword", "t"))),
     ]
 
 
@@ -33,18 +25,8 @@ def quick_reply_action_rows(
     *, mute_seconds_label: str,
 ) -> list[list[InlineKeyboardButton]]:
     rows = [
-        _two_button_row(
-            "⚙️ 删除指令:",
-            f"gg:toggle:{rule_id}:delete_message:{chat_id}",
-            _status(bool(rule.get("delete_message"))),
-            right_callback=f"gg:toggle:{rule_id}:delete_message:{chat_id}",
-        ),
-        _two_button_row(
-            "⚙️ 禁言时长:",
-            f"gg:cycle:{rule_id}:mute_seconds:{chat_id}",
-            mute_seconds_label,
-            right_callback=f"gg:cycle:{rule_id}:mute_seconds:{chat_id}",
-        ),
+        setting_row("⚙️ 删除指令:", f"gg:toggle:{rule_id}:delete_message:{chat_id}", _status(bool(rule.get("delete_message"))), enabled=bool(rule.get("delete_message"))),
+        setting_row("⚙️ 禁言时长:", f"gg:cycle:{rule_id}:mute_seconds:{chat_id}", mute_seconds_label),
         _notice_row(rule, chat_id, rule_id),
     ]
     if bool(rule.get("notice_enabled")):
@@ -53,16 +35,6 @@ def quick_reply_action_rows(
     return rows
 
 
-def _two_button_row(
-    left_text: str,
-    left_callback: str,
-    right_text: str,
-    *, right_callback: str,
-) -> list[InlineKeyboardButton]:
-    return [
-        InlineKeyboardButton(left_text, callback_data=left_callback),
-        InlineKeyboardButton(right_text, callback_data=right_callback),
-    ]
 
 
 def _status(enabled: bool) -> str:
@@ -71,18 +43,8 @@ def _status(enabled: bool) -> str:
 
 def _notice_row(rule: dict, chat_id: int, rule_id: str) -> list[InlineKeyboardButton]:
     notice_label = f"{rule['notice_delete_seconds']}秒后删除" if bool(rule.get("notice_enabled")) else "❌ 关闭"
-    return _two_button_row(
-        "⚙️ 提示消息:",
-        f"gg:toggle:{rule_id}:notice_enabled:{chat_id}",
-        notice_label,
-        right_callback=f"gg:toggle:{rule_id}:notice_enabled:{chat_id}",
-    )
+    return setting_row("⚙️ 提示消息:", f"gg:toggle:{rule_id}:notice_enabled:{chat_id}", notice_label, enabled=bool(rule.get("notice_enabled")))
 
 
 def _notice_delete_row(rule: dict, chat_id: int, rule_id: str) -> list[InlineKeyboardButton]:
-    return _two_button_row(
-        "⚙️ 提示删除:",
-        f"gg:cycle:{rule_id}:notice_delete_seconds:{chat_id}",
-        f"{rule['notice_delete_seconds']}秒",
-        right_callback=f"gg:cycle:{rule_id}:notice_delete_seconds:{chat_id}",
-    )
+    return setting_row("⚙️ 提示删除:", f"gg:cycle:{rule_id}:notice_delete_seconds:{chat_id}", f"{rule['notice_delete_seconds']}秒")

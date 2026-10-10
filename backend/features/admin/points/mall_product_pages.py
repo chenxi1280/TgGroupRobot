@@ -54,21 +54,7 @@ class PointsMallProductPagesMixin:
             await answer_callback_query_safely(update, "❌ 商品不存在", show_alert=True)
             await self._show_points_mall_products_page(update, context, chat_id)
             return
-        text = "\n".join(
-            [
-                "🛍️ 管理商品 | 预览效果",
-                "",
-                f"商品名称：{product.name}",
-                f"兑换价格：{product.price_points} 积分",
-                f"限购设置：{'不限制' if not product.limit_per_user else product.limit_per_user}",
-                f"可售数量：{product.stock_left}/{product.stock_total}",
-                f"兑换说明：{product.description or '暂无说明'}",
-            ]
-        )
-        await self.message_helper.safe_edit(
-            update,
-            text=text,
-            reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("🔙 返回", callback_data=f"adm:mall:{chat_id}:product:detail:{product_id}")]]
-            ),
-        )
+        from backend.features.points.mall_presentation import product_detail_text, send_mall_page
+        await send_mall_page(update, product_detail_text(product),
+            [[InlineKeyboardButton("返回商品管理", callback_data=f"adm:mall:{chat_id}:product:detail:{product_id}")]],
+            media=product.cover_file_id, media_type=product.cover_media_type)

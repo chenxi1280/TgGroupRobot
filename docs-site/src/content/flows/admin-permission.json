@@ -1,7 +1,7 @@
 {
   "slug": "admin-permission",
   "title": "管理员权限校验",
-  "status": "已闭环",
+  "status": "本地验证通过",
   "category": "群组核心",
   "entryScreen": "entry",
   "coverage": {

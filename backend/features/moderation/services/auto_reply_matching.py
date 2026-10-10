@@ -55,7 +55,7 @@ async def match_auto_reply_impl(
     *,
     get_chat_auto_reply_rules_func: RuleListLoader,
 ) -> MatchResult:
-    rules = await get_chat_auto_reply_rules_func(session, chat_id, active_only=True)
+    rules = await get_chat_auto_reply_rules_func(session, chat_id, True)
 
     matched_rules: list[AutoReplyRule] = []
     for rule in rules:

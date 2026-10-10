@@ -25,6 +25,13 @@ REVISION_FILES = (
     "0005_ad_rotation_reliability.py",
     "0006_schema_alignment.py",
     "0007_ops_module_config_and_prompt_delivery.py",
+    "0008_mall_confirmation.py",
+    "0009_edit_drafts.py",
+    "0010_activity_publications.py",
+    "0011_mall_fulfillment.py",
+    "0012_ui_feedback.py",
+    "0013_activity_media.py",
+    "0014_mall_intent_cancel.py",
 )
 
 log = structlog.get_logger(__name__)

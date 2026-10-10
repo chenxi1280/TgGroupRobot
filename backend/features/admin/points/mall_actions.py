@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.shared.callback_parser import CallbackData
+
 from backend.features.admin.support import *
 
 
@@ -70,6 +72,9 @@ class PointsMallActionsMixin:
     async def _handle_mall_settings(
         self, update, context, *, db, chat_id: int, op: str, callback_data
     ) -> bool:
+        if op == "products":
+            await self._show_points_mall_products_page(update, context, chat_id, page=callback_data.get_int_optional(4) or 0)
+            return True
         if op == "toggle":
             await self._toggle_mall_setting(
                 update, context, db=db, chat_id=chat_id, callback_data=callback_data
@@ -108,14 +113,19 @@ class PointsMallActionsMixin:
         status = _normalize_mall_order_status(callback_data.get(6) or "a")
         product_token = callback_data.get_int_optional(7)
         product_id = None if product_token in {None, 0} else product_token
+        page = callback_data.get_int_optional(8) or 0
         if sub == "detail":
             await self._show_points_mall_order_detail(
                 update, context, chat_id, order_id=order_id,
-                status=status, product_id=product_id,
+                status=status, product_id=product_id, page=page,
             )
             return
+        if sub == "fulfill":
+            await self.message_helper.safe_edit(update,
+                f"请填写发放说明：在私聊发送 /deliver {order_id} 发放说明。提交后还需确认。",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("查看订单", callback_data=f"morder:detail:{chat_id}:{order_id}")]]))
+            return
         actions = {
-            "fulfill": PointsExtendedService.fulfill_order,
             "cancel": PointsExtendedService.cancel_order,
             "refund": PointsExtendedService.refund_order,
         }
@@ -134,7 +144,7 @@ class PointsMallActionsMixin:
         await answer_callback_query_safely(update, message, show_alert=not success)
         await self._show_points_mall_order_detail(
             update, context, chat_id, order_id=order_id,
-            status=status, product_id=product_id,
+            status=status, product_id=product_id, page=page,
         )
 
     async def _create_mall_product(
@@ -275,7 +285,7 @@ class PointsMallActionsMixin:
 
     async def _handle_points_mall(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id: int,
-        *, callback_data: CallbackParser,
+        *, callback_data: CallbackData,
     ) -> None:
         op = callback_data.get(3)
         if op == "noop":
@@ -291,7 +301,8 @@ class PointsMallActionsMixin:
             status_index, product_index = (5, 4) if op == "orders" else (4, 5)
             await self._show_points_mall_orders_page(
                 update, context, chat_id,
-                product_id=callback_data.get_int_optional(product_index),
+                product_id=callback_data.get_int_optional(product_index) or None,
+                page=callback_data.get_int_optional(6) or 0,
                 status=_normalize_mall_order_status(callback_data.get(status_index) or "a"),
             )
             return

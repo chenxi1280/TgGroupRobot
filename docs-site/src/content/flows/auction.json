@@ -1,7 +1,7 @@
 {
   "slug": "auction",
   "title": "拍卖",
-  "status": "已闭环",
+  "status": "本地验证通过（输入/发布边界）",
   "category": "活动互动",
   "entryScreen": "entry",
   "coverage": {
@@ -54,11 +54,11 @@
             "feedback": "进入群组选择。"
           },
           {
-            "label": "返回主菜单",
-            "callbackData": "adm:menu:main:{chat_id}",
+            "label": "返回活动互动",
+            "callbackData": "adm:menu:category_activities:{chat_id}",
             "action": "goto",
             "target": "main_menu",
-            "feedback": "已回到主菜单。"
+            "feedback": "已回到活动互动分类。"
           }
         ]
       ],
@@ -105,9 +105,9 @@
     },
     {
       "id": "main_menu",
-      "title": "主菜单",
+      "title": "活动互动",
       "message": [
-        "这里展示机器人后台的真实功能入口。"
+        "从此分类进入对应功能；本流程演示当前功能的操作。"
       ],
       "keyboard": [
         [
@@ -133,21 +133,21 @@
           {
             "label": "开启拍卖",
             "callbackData": "auc:toggle:{chat_id}:enabled:1",
-            "action": "toggle",
+            "action": "toast",
             "target": "home",
             "feedback": "拍卖已开启。"
           },
           {
             "label": "置顶",
             "callbackData": "auc:toggle:{chat_id}:pin:1",
-            "action": "toggle",
+            "action": "toast",
             "target": "home",
             "feedback": "拍卖置顶已开启。"
           },
           {
             "label": "自动延时",
             "callbackData": "auc:toggle:{chat_id}:auto_extend:1",
-            "action": "toggle",
+            "action": "toast",
             "target": "home",
             "feedback": "自动延时已开启。"
           }
@@ -177,11 +177,11 @@
         ],
         [
           {
-            "label": "返回主菜单",
-            "callbackData": "adm:menu:main:{chat_id}",
+            "label": "返回活动互动",
+            "callbackData": "adm:menu:category_activities:{chat_id}",
             "action": "back",
             "target": "entry",
-            "feedback": "已返回主菜单。"
+            "feedback": "已回到活动互动分类。"
           }
         ]
       ],

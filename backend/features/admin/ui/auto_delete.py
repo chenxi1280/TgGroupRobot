@@ -45,6 +45,6 @@ def auto_delete_config_keyboard(settings, chat_id: int) -> InlineKeyboardMarkup:
             InlineKeyboardButton(_on_label(bool(settings.auto_delete_anonymous)), callback_data=f"autodel:set:anonymous:1:{chat_id}"),
             InlineKeyboardButton(_off_label(bool(settings.auto_delete_anonymous)), callback_data=f"autodel:set:anonymous:0:{chat_id}"),
         ],
-        [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")],
+        [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_safety:{chat_id}")],
     ]
     return InlineKeyboardMarkup(buttons)

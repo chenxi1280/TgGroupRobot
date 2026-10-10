@@ -1,7 +1,7 @@
 {
   "slug": "anti-flood",
   "title": "防刷屏",
-  "status": "已闭环",
+  "status": "历史记录待复核",
   "category": "内容审核",
   "entryScreen": "entry",
   "coverage": {
@@ -9,7 +9,7 @@
     "callbackPrefixes": [
       "adm:menu:flood",
       "gg:rule:",
-      "gg:toggle:",
+      "gg:set:",
       "gg:cycle:"
     ],
     "inputStates": [
@@ -138,10 +138,24 @@
           },
           {
             "label": "开启规则",
-            "callbackData": "gg:toggle:{rule_id}:enabled:{chat_id}",
-            "action": "toggle",
+            "callbackData": "gg:rule:{rule_id}:{chat_id}",
+            "action": "toast",
             "target": "home",
-            "feedback": "刷屏规则已切换。"
+            "feedback": "显示当前配置，不修改开关。"
+          },
+          {
+            "label": "启用",
+            "callbackData": "gg:set:{rule_id}:enabled:{chat_id}:1",
+            "action": "toast",
+            "target": "home",
+            "feedback": "已启用；重复点击保持相同状态。"
+          },
+          {
+            "label": "关闭",
+            "callbackData": "gg:set:{rule_id}:enabled:{chat_id}:0",
+            "action": "toast",
+            "target": "home",
+            "feedback": "已关闭；重复点击保持相同状态。"
           }
         ],
         [

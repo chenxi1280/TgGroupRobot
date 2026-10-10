@@ -130,7 +130,7 @@ def build_forward_home_keyboard(setting, sources, chat_id: int) -> InlineKeyboar
             ]
         )
     rows.append(
-        [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:main:{chat_id}")]
+        [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_messages:{chat_id}")]
     )
     return InlineKeyboardMarkup(rows)
 

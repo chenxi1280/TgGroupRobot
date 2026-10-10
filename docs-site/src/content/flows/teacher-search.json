@@ -1,7 +1,7 @@
 {
   "slug": "teacher-search",
   "title": "老师搜索",
-  "status": "已闭环",
+  "status": "历史记录待复核",
   "category": "群组扩展",
   "entryScreen": "entry",
   "coverage": {
@@ -58,11 +58,11 @@
             "feedback": "进入群组选择。"
           },
           {
-            "label": "返回主菜单",
-            "callbackData": "adm:menu:main:{chat_id}",
+            "label": "返回车库业务",
+            "callbackData": "adm:menu:category_garage:{chat_id}",
             "action": "goto",
             "target": "main_menu",
-            "feedback": "已回到主菜单。"
+            "feedback": "已回到车库业务分类。"
           }
         ]
       ],
@@ -109,9 +109,9 @@
     },
     {
       "id": "main_menu",
-      "title": "主菜单",
+      "title": "车库业务",
       "message": [
-        "这里展示机器人后台的真实功能入口。"
+        "从此分类进入对应功能；本流程演示当前功能的操作。"
       ],
       "keyboard": [
         [
@@ -137,21 +137,21 @@
           {
             "label": "标签开关",
             "callbackData": "tsearch:toggle:tag:{chat_id}:1",
-            "action": "toggle",
+            "action": "toast",
             "target": "home",
             "feedback": "标签搜索已开启。"
           },
           {
             "label": "出勤开关",
             "callbackData": "tsearch:toggle:attendance:{chat_id}:1",
-            "action": "toggle",
+            "action": "toast",
             "target": "home",
             "feedback": "出勤已开启。"
           },
           {
             "label": "只看可约",
             "callbackData": "tsearch:toggle:only_open:{chat_id}:1",
-            "action": "toggle",
+            "action": "toast",
             "target": "home",
             "feedback": "只看可约已开启。"
           }
@@ -181,11 +181,11 @@
         ],
         [
           {
-            "label": "返回主菜单",
-            "callbackData": "adm:menu:main:{chat_id}",
+            "label": "返回车库业务",
+            "callbackData": "adm:menu:category_garage:{chat_id}",
             "action": "back",
             "target": "entry",
-            "feedback": "已返回主菜单。"
+            "feedback": "已回到车库业务分类。"
           }
         ]
       ],

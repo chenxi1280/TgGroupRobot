@@ -30,14 +30,15 @@ def test_callback_parser_require_int_raises() -> None:
         cb.require_int(2, label="chat_id")
 
 
-def test_build_public_error_text_uses_first_line() -> None:
+def test_build_public_error_text_hides_internal_details() -> None:
     error = RuntimeError("第一行错误\n第二行堆栈")
-    assert build_public_error_text(error) == "第一行错误"
+    assert build_public_error_text(error).startswith("操作失败，请重试（查询编号 ")
+    assert "第一行错误" not in build_public_error_text(error)
 
 
 def test_build_public_error_text_falls_back_for_long_message() -> None:
     error = RuntimeError("x" * 500)
-    assert build_public_error_text(error) == "操作失败，请重试"
+    assert build_public_error_text(error).startswith("操作失败，请重试（查询编号 ")
 
 
 @pytest.mark.asyncio
@@ -110,3 +111,30 @@ async def test_manual_answer_then_mark_prevents_safe_reanswer() -> None:
     await answer_callback_query_safely(update, "后续提示", show_alert=True)
 
     assert calls == [("", False)]
+
+
+@pytest.mark.asyncio
+async def test_acknowledged_callback_delivers_later_error_as_message():
+    from unittest.mock import AsyncMock
+    query = SimpleNamespace(id="ack-later-error", answer=AsyncMock())
+    message = SimpleNamespace(reply_text=AsyncMock())
+    update = SimpleNamespace(callback_query=query, effective_message=message)
+    mark_callback_query_answered(update)
+    await answer_callback_query_safely(update, "商城已关闭")
+    query.answer.assert_not_awaited()
+    message.reply_text.assert_awaited_once_with("商城已关闭")
+
+
+@pytest.mark.asyncio
+async def test_edit_failure_reopens_result_without_reexecuting_action():
+    from unittest.mock import AsyncMock
+    from telegram.error import BadRequest
+    from backend.shared.handlers.base.message_helper import MessageHelper
+    query = SimpleNamespace(id="edit-failure", answer=AsyncMock(),
+                            edit_message_text=AsyncMock(side_effect=BadRequest("message can't be edited")))
+    message = SimpleNamespace(reply_text=AsyncMock())
+    update = SimpleNamespace(callback_query=query, effective_message=message)
+    mark_callback_query_answered(update)
+    assert await MessageHelper.safe_edit(update, "已保存", reply_markup=None)
+    query.answer.assert_not_awaited()
+    message.reply_text.assert_awaited_once_with("已保存", reply_markup=None, parse_mode=None)
