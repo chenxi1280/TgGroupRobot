@@ -6,6 +6,7 @@ import structlog
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from backend.shared.services.chat_service import ensure_chat
 from backend.platform.db.runtime.session import Database
 from backend.platform.delivery import DeliveryStatus
 from backend.shared.services.base import ValidationError
@@ -137,6 +138,9 @@ async def _index_linked_channel_teacher_post(
         return
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
+        # getChat confirmed this channel's discussion group, which may have no
+        # prior bot updates and therefore no local parent record yet.
+        await ensure_chat(session, int(linked_chat_id), "supergroup", title=None)
         result = await TeacherSearchService.index_channel_post_teacher_profile(
             session,
             chat_id=int(linked_chat_id),

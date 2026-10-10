@@ -382,3 +382,28 @@ async def test_send_success_followed_by_commit_loss_retains_processing_and_never
         assert len(calls) == 1
     finally:
         await db.engine.dispose()
+
+
+async def test_linked_channel_index_creates_missing_discussion_group_before_post():
+    from backend.features.garage.garage_forward_handler import _ForwardPost, _index_linked_channel_teacher_post
+    from backend.platform.db.schema.models.core import TgChat
+    from backend.platform.db.schema.models.garage_features import TeacherSourcePost
+    db = create_database(URL)
+    chat = -(3_000_000_000 + secrets.randbelow(900_000_000))
+    async def get_chat(channel_id):
+        return SimpleNamespace(id=channel_id, linked_chat_id=chat, username="repair_source", title="source")
+    context = SimpleNamespace(bot=SimpleNamespace(get_chat=get_chat), application=SimpleNamespace(bot_data={"db": db}))
+    try:
+        async with db.session_factory() as session:
+            assert await session.get(TgChat, chat) is None
+        post = _ForwardPost(source_channel_id=-10010001, source_message_id=1,
+                            text="联系方式：@repair_unknown_contact", has_media=False)
+        await _index_linked_channel_teacher_post(context, post=post)
+        await _index_linked_channel_teacher_post(context, post=post)
+        async with db.session_factory() as session:
+            assert (await session.get(TgChat, chat)).title is None
+            rows = list((await session.execute(select(TeacherSourcePost).where(TeacherSourcePost.chat_id == chat))).scalars())
+            assert len(rows) == 1
+            assert rows[0].bind_status == "pending_bind"
+    finally:
+        await db.engine.dispose()
