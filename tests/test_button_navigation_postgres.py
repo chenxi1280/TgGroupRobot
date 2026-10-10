@@ -112,6 +112,7 @@ async def test_explicit_targets_labels_and_legacy_toggles_do_not_reverse_state(r
     ("gg:input:quick_reply_actions:mute_keyword:{chat}", "gg:rule:quick_reply_actions:{chat}", "anti_spam_rules"),
     ("pts:edit:points_alias:{chat}", "pts:rule:checkin:{chat}", "points_alias"),
     ("pts:edit:points_alias:{chat}", "pts:view:display_rules:{chat}", "points_alias"),
+    ("pts:edit:points_alias:{chat}", "pts:home:{chat}", "points_alias"),
 ])
 async def test_return_from_input_stops_plain_messages_from_changing_configuration(runtime, entry, exit_to, field):
     app, db, transport, _, chat, user = runtime
@@ -122,7 +123,13 @@ async def test_return_from_input_stops_plain_messages_from_changing_configuratio
     assert any("返回" in b["text"] for b in displayed_buttons(transport))
     if entry.startswith("pts:"):
         assert app.user_data[user]["points_edit_field"] == field
+    if exit_to == "pts:home:{chat}":
+        assert [b["callback_data"] for b in displayed_buttons(transport) if "返回" in b["text"]] == [exit_to.format(chat=chat)]
+    transport.calls.clear()
     await app.process_update(callback_update(app, user, 302, exit_to.format(chat=chat)))
+    assert displayed_buttons(transport)
+    if exit_to == "pts:home:{chat}":
+        assert any(b["callback_data"] == f"pts:edit:points_alias:{chat}" for b in displayed_buttons(transport))
     if entry.startswith("pts:"):
         assert "points_edit_field" not in app.user_data[user]
     raw = command_update(app, user, user, 303, "退出后普通文本").to_dict()
@@ -162,3 +169,11 @@ async def test_own_bot_join_records_membership_without_verifying_or_restricting_
         assert (await session.execute(select(func.count()).select_from(VerificationChallenge).where(
             VerificationChallenge.chat_id == chat))).scalar() == 0
     assert not any(endpoint in {"restrictChatMember", "banChatMember", "sendMessage"} for endpoint, _ in transport.calls)
+
+
+async def test_short_points_home_returns_without_an_active_conversation(runtime):
+    app, _, transport, _, chat, user = runtime
+    await app.process_update(callback_update(app, user, 950, f"pts:rule:checkin:{chat}"))
+    transport.calls.clear()
+    await app.process_update(callback_update(app, user, 951, f"pts:home:{chat}"))
+    assert any(b["callback_data"] == f"pts:edit:points_alias:{chat}" for b in displayed_buttons(transport))

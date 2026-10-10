@@ -23,7 +23,6 @@ from backend.shared.handlers.base.base_handler import BaseHandler
 from backend.features.admin.ui.points import back_button
 from backend.shared.services.chat_service import get_chat_settings
 from backend.shared.callback_parser import CallbackParser
-_POINTS_CONFIG_CALLBACK_THRESHOLD_4 = 4
 
 
 
@@ -267,10 +266,11 @@ async def points_config_callback(update: Update, context: ContextTypes.DEFAULT_T
     data = q.data or ""
     cb = CallbackParser.parse(data)
 
-    if cb.length() < _POINTS_CONFIG_CALLBACK_THRESHOLD_4:
+    chat_index = 2 if cb.get(1) == "home" else 3
+    if cb.length() <= chat_index:
         return
 
-    chat_id = cb.get_int(3)
+    chat_id = cb.get_int(chat_index)
     if chat_id == 0:
         return
 
@@ -296,6 +296,14 @@ async def points_config_message_handler(update: Update, context: ContextTypes.DE
 
 async def points_config_cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """取消配置"""
+    query = update.callback_query
+    if query and (getattr(query, "data", "") or "").startswith("pts:"):
+        context.user_data.pop("points_edit_field", None)
+        context.user_data.pop("points_edit_chat_id", None)
+        # Navigation already cleared the input; use the callback's bound group
+        # and the normal permission check to render the destination.
+        await points_config_callback(update, context)
+        return ConversationHandler.END
     return await handle_points_config_cancel(
         update,
         context,
