@@ -44,143 +44,17 @@ def _user_label(user) -> str:
     return getattr(user, "first_name", None) or getattr(user, "username", None) or "频道身份发言"
 
 
-async def _alliance_member_exists(db: Database, chat_id: int) -> bool:
-    async with db.session_factory() as session:
-        member = await AllianceService.get_member(session, chat_id)
-        await session.commit()
-        return member is not None
-
-
-async def _execute_alliance_reply_ban(context: ContextTypes.DEFAULT_TYPE, chat, user, *, message, target_user) -> bool:
-    action_result = await execute_user_action(
-        context,
-        action="ban",
-        feature="联盟封禁",
-        chat_id=chat.id,
-        user_id=target_user.id,
-        actor_user_id=user.id,
-        detail="联盟联合封禁",
-        message_id=getattr(message.reply_to_message, "message_id", None),
-        sender_chat_id=getattr(getattr(message.reply_to_message, "sender_chat", None), "id", None),
-    )
-    if action_result.punishment_applied:
-        return True
-    await _reply_text_safely(
-        message,
-        "联合封禁失败，请检查机器人封禁权限。",
-        event="alliance_reply_ban_feedback_failed",
-        chat_id=chat.id,
-        target_user_id=target_user.id,
-    )
-    return False
-
-
-async def _append_alliance_ban(db: Database, chat, user, *, message, target_user) -> bool:
-    try:
-        async with db.session_factory() as session:
-            await AllianceService.add_joint_ban_entry(
-                session,
-                chat_id=chat.id,
-                operator_user_id=user.id,
-                target_user_id=target_user.id,
-                reason="reply_team_command",
-            )
-            await session.commit()
-        return True
-    except Exception as exc:
-        log.warning("alliance_ban_pool_append_failed", chat_id=chat.id, target_user_id=target_user.id, error=str(exc))
-        await _reply_text_safely(
-            message,
-            "当前群已封禁目标用户，但加入联盟封禁名单失败。",
-            event="alliance_reply_ban_feedback_failed",
-            chat_id=chat.id,
-            target_user_id=target_user.id,
-        )
+async def _process_alliance_reply_ban(context, db, chat, *, user, message, message_text):
+    action={'team':'ban','team_mute':'mute'}.get(message_text.strip().lower())
+    if action is None or message.reply_to_message is None:
         return False
-
-async def _process_alliance_reply_ban(
-    context: ContextTypes.DEFAULT_TYPE,
-    db: Database,
-    chat,
-    *, user,
-    message,
-    message_text: str,
-) -> bool:
-    if message_text.strip().lower() != "team" or message.reply_to_message is None:
-        return False
-
-    target_user = getattr(message.reply_to_message, "from_user", None)
-    if target_user is None:
-        return False
-    try:
-        if not await _alliance_member_exists(db, chat.id):
-            return False
-        if not await _execute_alliance_reply_ban(context, chat, user, message=message, target_user=target_user):
-            return True
-        if not await _append_alliance_ban(db, chat, user, message=message, target_user=target_user):
-            return True
-        await _reply_text_safely(
-            message,
-            "已加入联盟联合封禁名单，并在当前群执行封禁。",
-            event="alliance_reply_ban_feedback_failed",
-            chat_id=chat.id,
-            target_user_id=target_user.id,
-        )
-        return True
-    except Exception as exc:
-        log.warning("alliance_reply_ban_failed", chat_id=chat.id, user_id=user.id, error=str(exc))
-        await _reply_text_safely(
-            message,
-            "联合封禁失败，请确认当前群已加入联盟。",
-            event="alliance_reply_ban_feedback_failed",
-            chat_id=chat.id,
-            user_id=user.id,
-        )
-        return False
+    from backend.features.group_ops.services.alliance_runtime import process_command
+    return await process_command(context,db,chat=chat,user=user,message=message,action=action)
 
 
-async def _process_alliance_joint_ban(
-    context: ContextTypes.DEFAULT_TYPE,
-    db: Database,
-    chat,
-    *, user,
-    message,
-) -> bool:
-    async with db.session_factory() as session:
-        hit = await AllianceService.get_joint_ban_hit(
-            session,
-            chat_id=chat.id,
-            target_user_id=user.id,
-        )
-        if hit is None:
-            await session.commit()
-            return False
-        _, ban_item = hit
-        await session.commit()
-
-    try:
-        action_result = await execute_user_action(
-            context,
-            action="ban",
-            feature="联盟封禁",
-            chat_id=chat.id,
-            user_id=user.id,
-            actor_user_id=ban_item.source_operator_user_id,
-            detail="联盟联合封禁同步",
-            message_id=message.message_id,
-            sender_chat_id=getattr(getattr(message, "sender_chat", None), "id", None),
-        )
-        if not action_result.punishment_applied:
-            return True
-        return True
-    except Exception as exc:
-        log.warning(
-            "alliance_joint_ban_enforce_failed",
-            chat_id=chat.id,
-            user_id=user.id,
-            error=str(exc),
-        )
-        return False
+async def _process_alliance_joint_ban(context, db, chat, *, user, message):
+    from backend.features.group_ops.services.alliance_runtime import process_hit
+    return await process_hit(context,db,chat=chat,user=user)
 
 
 def _explicit_banned_word_rule(settings, chat, user) -> tuple[bool, dict | None]:

@@ -22,6 +22,10 @@ _TRY_CLAIM_CHAT_REWARD_THRESHOLD_7 = 7
 
 
 async def update_chat_reward(session: AsyncSession, chat_id: int, **updates) -> EngagementChatReward:
+    valid = {"reward_type": {"daily", "daily_increment", "weekly_cycle"}, "after_7d_mode": {"reset", "continue"}}
+    for field, values in valid.items():
+        if field in updates and updates[field] not in values:
+            raise ValidationError("无效的水群奖励类型或七日后策略")
     reward = await get_or_create_chat_reward(session, chat_id)
     for key, value in updates.items():
         if hasattr(reward, key):
@@ -32,7 +36,7 @@ async def update_chat_reward(session: AsyncSession, chat_id: int, **updates) -> 
 
 
 async def increase_message_count(session: AsyncSession, chat_id: int, user_id: int) -> EngagementChatStat:
-    biz_date = now_utc().date()
+    biz_date = business_date()
     stat = await get_or_create_chat_stat(session, chat_id, user_id, biz_date=biz_date)
     stat.message_count += 1
     stat.updated_at = now_utc()
@@ -41,7 +45,7 @@ async def increase_message_count(session: AsyncSession, chat_id: int, user_id: i
 
 
 async def get_recent_chat_reward_stats(session: AsyncSession, chat_id: int, days: int = 7) -> list[dict]:
-    start_date = now_utc().date() - dt.timedelta(days=max(days - 1, 0))
+    start_date = business_date() - dt.timedelta(days=max(days - 1, 0))
     stmt = (
         select(
             EngagementChatStat.biz_date,
@@ -99,7 +103,7 @@ async def get_recent_chat_reward_claims(session: AsyncSession, chat_id: int, lim
 
 
 async def get_chat_reward_top_users(session: AsyncSession, chat_id: int, days: int = 7, *, limit: int = 5) -> list[dict]:
-    start_date = now_utc().date() - dt.timedelta(days=max(days - 1, 0))
+    start_date = business_date() - dt.timedelta(days=max(days - 1, 0))
     stmt = (
         select(
             EngagementChatStat.user_id,
@@ -130,28 +134,27 @@ async def get_chat_reward_top_users(session: AsyncSession, chat_id: int, days: i
 
 
 async def try_claim_chat_reward(session: AsyncSession, chat_id: int, user_id: int) -> tuple[int, int] | None:
+    from backend.features.activity.services.engagement_claim_receipts import reward_receipt,previous_streak as receipt_streak
     reward = await get_or_create_chat_reward(session, chat_id)
     if not reward.enabled:
         return None
-    today = now_utc().date()
+    today = business_date()
     stat = await get_or_create_chat_stat(session, chat_id, user_id, biz_date=today)
-    if stat.reward_claimed:
+    if stat.reward_claimed or await reward_receipt(session,chat_id,user_id,day=today) is not None:
         raise ValidationError("今天已经领取过水群奖励了。")
     if stat.message_count < reward.daily_message_target:
         raise ValidationError(f"今日发言数还未达标，当前 {stat.message_count}/{reward.daily_message_target}。")
 
     yesterday = today - dt.timedelta(days=1)
     prev = await get_or_create_chat_stat(session, chat_id, user_id, biz_date=yesterday)
-    previous_streak = prev.streak_days if prev.reward_claimed else 0
+    previous_streak = await receipt_streak(session,chat_id,user_id,day=yesterday,
+        fallback=prev.streak_days if prev.reward_claimed else 0)
     streak = previous_streak + 1
     if reward.after_7d_mode == "reset" and streak > _TRY_CLAIM_CHAT_REWARD_THRESHOLD_7:
         streak = 1
     stat.streak_days = streak
     plan = reward.reward_points_plan or DEFAULT_CHAT_REWARD_PLAN
-    if reward.reward_type == "weekly_cycle":
-        index = (streak - 1) % len(plan)
-    else:
-        index = min(streak - 1, len(plan) - 1)
+    index = reward_plan_index(reward.reward_type, streak=streak, size=len(plan))
     points = plan[index]
     stat.reward_claimed = True
     stat.rewarded_points = points
@@ -168,3 +171,16 @@ async def try_claim_chat_reward(session: AsyncSession, chat_id: int, user_id: in
         )
     await session.flush()
     return points, streak
+
+
+def reward_plan_index(mode: str, *, streak: int, size: int) -> int:
+    if mode == "daily":
+        return 0
+    if mode == "weekly_cycle":
+        return (streak - 1) % size
+    return min(streak - 1, size - 1)
+
+
+def business_date():
+    from backend.shared.time_helper import LOCAL_TIMEZONE
+    return now_utc().astimezone(LOCAL_TIMEZONE).date()

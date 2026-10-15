@@ -142,6 +142,7 @@ def points_rule_keyboard(rule_type: str, settings, chat_id: int) -> InlineKeyboa
             ],
             [InlineKeyboardButton("🎯 设置获得数量", callback_data=f"pts:edit:sign_points:{chat_id}")],
             [InlineKeyboardButton("🔥 连续奖励", callback_data=f"pts:edit:sign_consecutive:{chat_id}")],
+            [InlineKeyboardButton("签到反馈与排行", callback_data=f"signcfg:{chat_id}:view")],
             [InlineKeyboardButton("🔙 返回", callback_data=f"pts:home:{chat_id}")],
         ])
     if rule_type == "speech":

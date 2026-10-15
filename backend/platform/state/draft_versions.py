@@ -13,6 +13,8 @@ VERSION_KEY = "__draft_base_version__"
 
 def _binding(state_type, data, chat_id):
     # Entity identifiers are always combined with the original target group.
+    if state_type == 'generic_notice_input' and data.get('prefix') == 'anote':
+        return AdCampaign, AdCampaign.id == int(data['target'])
     if state_type.startswith("points_mall"):
         if data.get("product_id"):
             return PointsMallProduct, PointsMallProduct.product_id == int(data["product_id"])

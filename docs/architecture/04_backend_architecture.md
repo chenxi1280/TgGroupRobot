@@ -400,3 +400,17 @@ Web 后台复用同一个 `Database`，但会话通过 FastAPI dependency 独立
 - 后台配置细节保留在私聊管理面板或 Web 后台。
 - 任何回调都要明确当前群作用域，避免跨群误操作。
 - 公共工具只沉淀稳定复用能力，不承载单个功能的业务分支。
+
+
+## 2026-10-15 通用管理持久执行增量
+
+AdminRouter的新通知/标签/同意/恢复回调和统一私聊输入注册继续复用权限与草稿边界。GroupLockTask与群消息路径共用持久计划；AdminAutomationTask运行独立提醒及标签对账。`features/admin/services/effect_store.py`负责稳定身份及状态，effect_runtime负责按群数据库执行锁和远端边界，effect_targets固定分发四类操作；没有执行任意方法名的动态通道。
+
+新增0017结构及兼容见[数据库设计](./02_database_design.md)；实际实现/隔离故障证据与真实验收界限见[续建记录](../product/2026-10-15-general-features-completion.md)。未部署，未知远端结果不自动重放。
+
+v0.6复核：module_config采用PostgreSQL原子合并，嵌套对象编辑仍由调用端行锁保护；复制配置按chat_id顺序锁两端并刷新。输入异常先回滚，广告独立session同样回滚。副作用批次逐条隔离异常后汇报失败；GroupLockTask/AdminAutomationTask继续巡检并记录失败，不因某群持续故障全局自动暂停，人工停用保留，单条5次上限/未知不重放不变。其余ScheduledTask默认自动暂停策略保持。新证据见[全面复核](../product/2026-10-15-comprehensive-local-review.md)。
+
+
+## v0.7 剩余通用能力实现
+
+delivery_action_journal把广告/定时前后动作接入AdminEffect，确认回执与置顶/延删任务同一事务保存。AdminAutomationTask恢复delivery_action/alliance_punish/alliance_release；发送正文与附加动作分别记录，不因清理失败重发正文。副作用预检读失败可重试，远端写后未知保持uncertain。导入按群ID固定顺序锁两端，copy_module_configuration处理选中JSON和等级ID重建；不转移所有权或运行历史。联盟命令与命中共享稳定身份执行、本群确认解除及审计。详见[本轮实施记录](../product/2026-10-15-remaining-general-features.md)。未部署或执行真实Telegram测试。

@@ -20,13 +20,18 @@ async def suspend_inputs(session, user_id: int, *, exclude_scope: int | None = N
     states = (await session.execute(stmt.with_for_update())).scalars().all()
     drafts = [await archive_state(session, state) for state in states]
     await session.flush()
-    return drafts
+    return [draft for draft in drafts if draft is not None]
 
 
 async def archive_state(session, state):
     data = dict(state.state_data or {})
     data.pop("__expire_at__", None)
     target = data.get("target_chat_id") or data.get("managed_chat_id") or state.chat_id
+    if state.state_type == "admin_list_search_input":
+        state.state_type = "selected_chat"
+        state.state_data = {"managed_chat_id": target}
+        await session.flush()
+        return None
     from backend.platform.state.draft_versions import VERSION_KEY, version_for_state
     if VERSION_KEY not in data:
         data[VERSION_KEY] = await version_for_state(session, state.state_type, data, chat_id=int(target))

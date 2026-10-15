@@ -105,6 +105,7 @@ class GroupAllianceBanPool(Base):
         nullable=True,
     )
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    punishment_type: Mapped[str] = mapped_column(String(16), default="ban", server_default="ban")
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: dt.datetime.now(dt.UTC),

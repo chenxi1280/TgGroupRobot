@@ -64,43 +64,16 @@ async def _reply_noop(*args, **kwargs):
 
 @pytest.mark.asyncio
 async def test_alliance_reply_ban_uses_team_command(monkeypatch) -> None:
-    session = _FakeSession()
-    calls: list[dict] = []
-
-    async def fake_get_member(session, chat_id: int):
-        return SimpleNamespace(alliance_id=9)
-
-    async def fake_execute_user_action(context, **kwargs):
-        calls.append({"execute": kwargs})
-        return SimpleNamespace(punishment_applied=True)
-
-    async def fake_add_joint_ban_entry(session, **kwargs):
-        calls.append({"joint_ban": kwargs})
-
-    monkeypatch.setattr(moderation_hooks.AllianceService, "get_member", fake_get_member)
-    monkeypatch.setattr(moderation_hooks, "execute_user_action", fake_execute_user_action)
-    monkeypatch.setattr(moderation_hooks.AllianceService, "add_joint_ban_entry", fake_add_joint_ban_entry)
-    context = _context(session)
-
-    handled = await moderation_hooks._process_alliance_reply_ban(
-        context,
-        context.application.bot_data["db"],
-        SimpleNamespace(id=-1001, type="supergroup", title="Test Group"),
-        user=SimpleNamespace(id=7),
-        message=SimpleNamespace(
-            reply_to_message=SimpleNamespace(
-                message_id=41,
-                from_user=SimpleNamespace(id=456),
-                sender_chat=None,
-            ),
-            reply_text=_reply_noop,
-        ),
-        message_text="team",
-    )
-
+    from unittest.mock import AsyncMock
+    delegated=AsyncMock(return_value=True)
+    monkeypatch.setattr('backend.features.group_ops.services.alliance_runtime.process_command',delegated)
+    context=_context(_FakeSession())
+    message=SimpleNamespace(reply_to_message=SimpleNamespace(from_user=SimpleNamespace(id=456)))
+    handled=await moderation_hooks._process_alliance_reply_ban(context,context.application.bot_data['db'],
+        SimpleNamespace(id=-1001),user=SimpleNamespace(id=7),message=message,message_text='team')
     assert handled is True
-    assert calls[0]["execute"]["user_id"] == 456
-    assert calls[1]["joint_ban"]["reason"] == "reply_team_command"
+    assert delegated.await_args.kwargs['action']=='ban'
+    assert delegated.await_args.kwargs['message'] is message
 
 
 @pytest.mark.asyncio

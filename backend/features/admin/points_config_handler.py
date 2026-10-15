@@ -10,6 +10,10 @@ from backend.features.admin.points_config_messages import (
 from backend.features.admin.points_config_shared import (
     WAIT_VALUE,
     safe_edit_message as _safe_edit_message,
+    TOGGLE_FIELDS,
+    EDIT_FIELDS,
+    can_configure_points,
+    valid_points_toggle,
 )
 from backend.features.admin.points_config_views import (
     handle_todo,
@@ -59,7 +63,7 @@ class PointsConfigHandler(BaseHandler):
             case "home":
                 await self._show_points_home(update, context, target_chat_id, changed=False)
             case "toggle":
-                await self._handle_toggle(update, context, target_chat_id, field)
+                await self._handle_toggle(update, context, target_chat_id, field=field)
             case "edit":
                 return await self._handle_edit(update, context, target_chat_id, field=field)
             case "rule":
@@ -122,10 +126,14 @@ class PointsConfigHandler(BaseHandler):
     ) -> None:
         """处理开关切换"""
         callback_data = CallbackParser.parse(update.callback_query.data or "")
+        if not valid_points_toggle(callback_data, field):
+            await _safe_edit_message(update.callback_query, "无效积分开关")
+            return
         db: Database = context.application.bot_data["db"]
 
         async with db.session_factory() as session:
             settings = await get_chat_settings(session, chat_id)
+            await session.refresh(settings, with_for_update=True)
             explicit_value = callback_data.get_int_optional(4)
             if field == "all_enabled":
                 next_value = bool(explicit_value) if explicit_value in {0, 1} else not (
@@ -137,7 +145,7 @@ class PointsConfigHandler(BaseHandler):
                 await session.commit()
                 await self._show_points_home(update, context, chat_id, changed=True)
                 return
-            if hasattr(settings, field):
+            if field in TOGGLE_FIELDS:
                 current = bool(getattr(settings, field))
                 next_value = bool(explicit_value) if explicit_value in {0, 1} else not current
                 setattr(settings, field, next_value)
@@ -162,6 +170,9 @@ class PointsConfigHandler(BaseHandler):
         *, field: str,
     ) -> int:
         """处理数值编辑 - 进入对话状态"""
+        if field not in EDIT_FIELDS:
+            await _safe_edit_message(update.callback_query, "无效积分配置字段")
+            return ConversationHandler.END
         # 保存编辑状态
         context.user_data["points_edit_field"] = field
         context.user_data["points_edit_chat_id"] = chat_id
@@ -275,8 +286,7 @@ async def points_config_callback(update: Update, context: ContextTypes.DEFAULT_T
         return
 
     # 检查管理员权限
-    from backend.shared.services.permission_service import is_user_admin
-    if not await is_user_admin(context, chat_id, update.effective_user.id):
+    if not await can_configure_points(update, context, chat_id):
         await _safe_edit_message(q, "你没有该群组的管理权限")
         return
 
@@ -297,6 +307,12 @@ async def points_config_message_handler(update: Update, context: ContextTypes.DE
 async def points_config_cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """取消配置"""
     query = update.callback_query
+    if query and (query.data or "").startswith("adm:menu:"):
+        from backend.features.admin.points_config_shared import clear_points_input
+        from backend.features.admin.admin_handler import admin_callback
+        clear_points_input(context)
+        await admin_callback(update, context)
+        return ConversationHandler.END
     if query and (getattr(query, "data", "") or "").startswith("pts:"):
         context.user_data.pop("points_edit_field", None)
         context.user_data.pop("points_edit_chat_id", None)

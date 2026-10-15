@@ -172,6 +172,10 @@ async def _charge_join_cost(flow: _JoinFlow, lottery, point_type_id) -> str | No
 
 
 async def _join_lottery_user(flow: _JoinFlow, lottery) -> _JoinOutcome:
+    from backend.platform.db.schema.models.expansion_games import LotterySetting
+    setting = await flow.session.get(LotterySetting, flow.chat.id)
+    if setting is not None and setting.require_username and not getattr(flow.user, "username", None):
+        return _JoinOutcome(error_msg="请先在 Telegram 设置用户名，再重新参与；本次未扣分。")
     rules = lottery.qualification_rules or {}
     subscription_error = await _check_join_subscription(flow, lottery, rules)
     if subscription_error:

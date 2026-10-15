@@ -699,7 +699,7 @@ async def test_show_points_mall_menu_uses_configured_entry_command(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_handle_points_extended_input_rejects_zero_level_threshold(monkeypatch):
+async def test_handle_points_extended_input_accepts_zero_level_threshold(monkeypatch):
     replies: list[str] = []
     update_calls: list[int] = []
 
@@ -716,6 +716,11 @@ async def test_handle_points_extended_input_rejects_zero_level_threshold(monkeyp
     monkeypatch.setattr(admin_handler.PermissionPolicyService, "require_manage", fake_require_manage)
     monkeypatch.setattr(admin_handler.PointsExtendedService, "get_level", fake_get_level)
     monkeypatch.setattr(admin_handler.PointsExtendedService, "update_level", fake_update_level)
+    async def clear(*args, **kwargs): pass
+    async def detail(*args, **kwargs): pass
+    monkeypatch.setattr(admin_handler, "clear_user_state", clear)
+    monkeypatch.setattr(admin_handler, "clear_private_input_state", clear)
+    monkeypatch.setattr(admin_handler._admin_handler, "_show_points_level_detail", detail)
 
     async def _reply_text(text):
         replies.append(text)
@@ -734,8 +739,8 @@ async def test_handle_points_extended_input_rejects_zero_level_threshold(monkeyp
 
     await handle_points_extended_input(update, context, session, state=state, message_text="0")
 
-    assert update_calls == []
-    assert any("必须大于 0" in text for text in replies)
+    assert update_calls == [0]
+    assert not replies
 
 
 @pytest.mark.asyncio

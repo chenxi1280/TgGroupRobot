@@ -9,7 +9,6 @@ from telegram import InlineKeyboardMarkup
 from telegram.error import BadRequest, Forbidden, NetworkError, RetryAfter, TelegramError
 
 from backend.platform.delivery import DeliveryOutcome
-from backend.shared.async_tasks import spawn_background_task
 from backend.shared.services.publish_service import PublishService
 
 log = structlog.get_logger(__name__)
@@ -22,6 +21,7 @@ class AdDeliveryPlan:
     campaign_id: int
     content_snapshot: dict[str, Any]
     rule_snapshot: dict[str, Any]
+    attempt_count: int | None = None
 
 
 class AdDeliveryExecutor(Protocol):
@@ -34,42 +34,47 @@ class TelegramAdDeliveryExecutor:
         self._context = SimpleNamespace(bot=app.bot, application=app)
 
     async def execute(self, plan: AdDeliveryPlan) -> DeliveryOutcome:
-        await self._apply_pre_send_actions(plan)
+        actions = await self._apply_pre_send_actions(plan)
         try:
             result = await self._send(plan)
         except RetryAfter as exc:
-            return DeliveryOutcome.retryable_failure("telegram_retry_after", str(exc))
+            return DeliveryOutcome.retryable_failure("telegram_retry_after", str(exc),metadata={'post_actions':actions})
         except (Forbidden, BadRequest) as exc:
-            return DeliveryOutcome.permanent_failure(_error_code(exc), str(exc))
+            return DeliveryOutcome.permanent_failure(_error_code(exc), str(exc),metadata={'post_actions':actions})
         except NetworkError as exc:
-            return DeliveryOutcome.uncertain("telegram_network_unknown", str(exc))
+            return DeliveryOutcome.uncertain("telegram_network_unknown", str(exc),metadata={'post_actions':actions})
         except TelegramError as exc:
-            return DeliveryOutcome.uncertain("telegram_result_unknown", str(exc))
-        pinned_id = await self._pin_if_requested(plan, int(result.message_id))
-        self._schedule_delete_if_requested(plan, int(result.message_id))
+            return DeliveryOutcome.uncertain("telegram_result_unknown", str(exc),metadata={'post_actions':actions})
+        from backend.features.automation.delivery_action_journal import record_receipt
+        await record_receipt(self._app,plan,message_id=int(result.message_id))
+        pinned_id,actions['pin'] = await self._pin_if_requested(plan, int(result.message_id))
         return DeliveryOutcome.success(
             message_id=int(result.message_id),
-            metadata={"pinned_message_id": pinned_id},
+            metadata={"pinned_message_id": pinned_id, "post_actions": actions},
         )
 
-    async def _apply_pre_send_actions(self, plan: AdDeliveryPlan) -> None:
+    async def _apply_pre_send_actions(self, plan: AdDeliveryPlan) -> dict[str, str]:
         rule = plan.rule_snapshot
         content = plan.content_snapshot
+        actions = {"delete_previous": "not_requested", "unpin_previous": "not_requested"}
         if rule["delete_policy"] == "delete_prev":
-            await self._best_effort("delete", plan.chat_id, rule.get("last_sent_message_id"))
+            actions["delete_previous"] = await self._best_effort("delete", plan, rule.get("last_sent_message_id"))
         elif rule["delete_policy"] == "delete_prev_cycle":
-            await self._best_effort("delete", plan.chat_id, content.get("last_sent_message_id"))
+            actions["delete_previous"] = await self._best_effort("delete", plan, content.get("last_sent_message_id"))
         if rule["mode"] == "send_pin" and rule["unpin_previous"]:
-            await self._best_effort("unpin", plan.chat_id, rule.get("last_pinned_message_id"))
+            actions["unpin_previous"] = await self._best_effort("unpin", plan, rule.get("last_pinned_message_id"))
+        return actions
 
-    async def _best_effort(self, action: str, chat_id: int, message_id: int | None) -> None:
+    async def _best_effort(self, action: str, plan, message_id: int | None) -> str:
         if not message_id:
-            return
-        method = PublishService.delete if action == "delete" else PublishService.unpin
+            return "not_requested"
+        from backend.features.automation.delivery_action_journal import run_action
         try:
-            await method(self._context, chat_id=chat_id, message_id=message_id)
+            return await run_action(self._app,plan,action='delete_previous' if action=='delete' else 'unpin_previous',message_id=message_id)
         except TelegramError as exc:
-            log.warning("ad_rotation_pre_action_failed", action=action, chat_id=chat_id, error=str(exc))
+            log.warning("ad_rotation_pre_action_failed", action=action, chat_id=plan.chat_id, error=str(exc))
+            return "failed"
+        return "succeeded"
 
     async def _send(self, plan: AdDeliveryPlan):
         content = plan.content_snapshot
@@ -85,31 +90,18 @@ class TelegramAdDeliveryExecutor:
             )
         return await PublishService.send(self._context, chat_id=plan.chat_id, text=text, reply_markup=markup)
 
-    async def _pin_if_requested(self, plan: AdDeliveryPlan, message_id: int) -> int | None:
+    async def _pin_if_requested(self, plan: AdDeliveryPlan, message_id: int) -> tuple[int | None,str]:
         if plan.rule_snapshot["mode"] != "send_pin":
-            return None
+            return None,'not_requested'
+        from backend.features.automation.delivery_action_journal import run_action
         try:
-            await PublishService.pin(self._context, chat_id=plan.chat_id, message_id=message_id)
-        except TelegramError as exc:
+            status=await run_action(self._app,plan,action='pin',message_id=message_id)
+        except (BadRequest,Forbidden):
+            return None,'failed'
+        except Exception as exc:
             log.warning("ad_rotation_pin_failed", history_id=plan.history_id, error=str(exc))
-            return None
-        return message_id
-
-    def _schedule_delete_if_requested(self, plan: AdDeliveryPlan, message_id: int) -> None:
-        if plan.rule_snapshot["delete_policy"] != "delete_delay":
-            return
-        from backend.features.automation.ad_delivery_cleanup import delete_later
-
-        spawn_background_task(
-            self._app,
-            delete_later(
-                self._context,
-                chat_id=plan.chat_id,
-                message_id=message_id,
-                delay_seconds=int(plan.rule_snapshot["delete_delay_seconds"]),
-            ),
-            name="ad_rotation.delete_later",
-        )
+            return None,'uncertain'
+        return (message_id if status=='succeeded' else None),status
 
 
 def _restore_markup(buttons: object, bot):

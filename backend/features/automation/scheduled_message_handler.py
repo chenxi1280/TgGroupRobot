@@ -75,7 +75,7 @@ async def _dispatch_scheduled_view_action(
         )
         return True
     if action == "open":
-        await handler.show_detail(update, context, chat_id, parser.get(3))
+        await handler.show_detail(update, context, chat_id, task_id=parser.get(3))
         return True
     if action == "add":
         await handler.create_task(update, context, chat_id)

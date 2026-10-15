@@ -1,19 +1,28 @@
 # TgGroupRobot PRD 入口与代码对接索引
 
-> 版本：v1.3
-> 日期：2026-10-10
-> 状态：产品需求与修复方案入口；最新修复方案待实施
+> 版本：v1.9
+> 日期：2026-10-15
+> 状态：通用部分已本地实现及部分验证；整体PRD未完成、未部署
 
 本文档作为后续维护的 PRD 入口，避免引用空文件导致产品、架构、问题清单三套文档断开。
 
-2026-10-10 已确认管理分发、商城开关与交易流程、导航状态、列表可达性等缺口。本轮设计以[服务修复与交互统一 PRD](./2026-10-10-service-repair-prd.md)为增量需求基线；其中的目标行为尚未实现。历史局部回归与可靠性审计保留，不再概括为当前所有功能均已闭环。
+当前新增需求见[竞品差距改造 PRD](./2026-10-15-competitor-gap-prd.md)，区分已有能力、待补齐项和待核实证据，并定义优先级及验收标准。[全功能复核清单](./2026-10-15-full-feature-review.md)逐项对应竞品 29 个业务入口和我方 38 个稳定 ID。后续用户已授权实现，通用管理功能已有本地修改；各需求、38项自有功能与74条标准的实际状态见[独立实施与验收记录](./2026-10-15-implementation-and-own-feature-audit.md)。未部署，未向真实群/频道发送测试消息。
+
+2026-10-10 的[服务修复与交互统一 PRD](./2026-10-10-service-repair-prd.md)继续作为既有导航、权限、草稿与业务修复的设计基线；当日实施、部署和局部现场结果见[验收记录](./2026-10-10-service-repair-acceptance.md)最后追加章节。历史结果不概括为当前所有功能均已闭环，也不代表 2026-10-15 重新核验了线上版本。
 
 ## 1. 权威文档
 
 | 用途 | 文档 | 说明 |
 |------|------|------|
-| 本轮修复 PRD | [2026-10-10-service-repair-prd.md](./2026-10-10-service-repair-prd.md) | 问题基线、六类导航、公共交互、业务补全、分期和 24 个验收场景；设计稿 |
-| 配套实施与运行恢复 | [2026-10-10-service-repair-design.md](../architecture/2026-10-10-service-repair-design.md) | 注册、状态、事务、兼容、运行反馈与发布回退；待实施 |
+| 竞品差距改造 PRD | [2026-10-15-competitor-gap-prd.md](./2026-10-15-competitor-gap-prd.md) | v0.7；19组需求/74条标准；通用部分本地实现，整体未完成，未部署 |
+| 剩余通用能力续建 | [2026-10-15-remaining-general-features.md](./2026-10-15-remaining-general-features.md) | 消息链接、持久清理及恢复、配置复制、联盟去重与本群解除、旧业务日兼容；本地候选，未部署 |
+| 全面本地复核 | [2026-10-15-comprehensive-local-review.md](./2026-10-15-comprehensive-local-review.md) | 15项追加修复；38项覆盖深度、并发/权限/异常证据与未完成、未验证清单 |
+| 四项通用功能续建 | [2026-10-15-general-features-completion.md](./2026-10-15-general-features-completion.md) | 通知/持久计划、等级标签和到期提醒、异常恢复及自有逻辑复核；本地候选，未部署 |
+| 本地实施及自有功能检查 | [2026-10-15-implementation-and-own-feature-audit.md](./2026-10-15-implementation-and-own-feature-audit.md) | 19组状态、38项自有检查、74条标准证据与开放项 |
+| 全功能复核清单 | [2026-10-15-full-feature-review.md](./2026-10-15-full-feature-review.md) | 竞品 29 业务入口/1 导航，我方 38 ID，逐项页面/代码依据、具体差距与未执行分支；不是全量业务通过证明 |
+| 既有修复 PRD | [2026-10-10-service-repair-prd.md](./2026-10-10-service-repair-prd.md) | 问题基线、六类导航、公共交互、业务补全及验收场景；实施状态以验收记录为准 |
+| 配套实施与运行恢复 | [2026-10-10-service-repair-design.md](../architecture/2026-10-10-service-repair-design.md) | 既有注册、状态、事务、兼容、运行反馈与发布回退设计 |
+| 既有修复验收 | [2026-10-10-service-repair-acceptance.md](./2026-10-10-service-repair-acceptance.md) | 按日期、版本、环境和场景记录，历史局部通过不代表全量现场完成 |
 | 产品需求全文 | [TgGroupRobot_PRD.md](./TgGroupRobot_PRD.md) | 当前完整 PRD，覆盖产品定位、角色、功能需求、流程和验收口径 |
 | 当前功能状态 | [06_feature_truth_table.md](../setup/06_feature_truth_table.md) | 区分已发现缺口、历史记录待复核、本地验证、Telegram 验收与策略关闭 |
 | 架构总览 | [code_structure_index.md](../architecture/code_structure_index.md) | 面向维护者的模块结构、运行链路、测试归类和架构模式 |
@@ -44,6 +53,7 @@
 
 - 产品状态以 `docs/setup/06_feature_truth_table.md` 为准。
 - 本轮范围内的导航、交互与修复验收以 2026-10-10 修复 PRD 为设计基线；未覆盖的业务需求继续沿用产品需求全文。
+- 竞品差距新增需求按 2026-10-15 PRD 评审；其搜索、快捷入口和执行摘要为增量，沿用既有权限、草稿、群隔离及可靠执行约束。实施状态按2026-10-15独立记录逐项标记，不将部分本地通过写成全量完成。
 - 设计完成、代码实现、本地验证、已部署与真实 Telegram 验收分别记录，不相互替代。
 - 代码结构以 `docs/architecture/code_structure_index.md` 和 `docs/architecture/code_file_inventory.md` 为准。
 - ORM 模型当前权威路径为 `backend/platform/db/schema/models/`。

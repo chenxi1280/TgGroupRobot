@@ -67,6 +67,8 @@ async def ads_rules_set_callback(update: Update, context: ContextTypes.DEFAULT_T
 
     cb = CallbackParser.parse(q.data or "")
     chat_id = cb.require_int(3, label="chat_id")
+    if await _resolve_ads_target_chat_id(update, context) != chat_id:
+        return
     field = cb.get(4)
     value = cb.get(5)
 
@@ -91,6 +93,8 @@ DEFAULT_DELETE_DELAY_SECONDS = 60
 
 
 def _rule_update_kwargs(field: str | None, value: str | None) -> dict[str, object] | None:
+    if field in {"enabled", "unpin_previous"} and value not in {"0", "1"}:
+        return None
     factories = {
         "enabled": lambda: {"enabled": value == "1"},
         "mode": lambda: {"mode": value},
@@ -99,7 +103,10 @@ def _rule_update_kwargs(field: str | None, value: str | None) -> dict[str, objec
         "unpin_previous": lambda: {"unpin_previous": value == "1"},
     }
     factory = factories.get(field)
-    return factory() if factory else None
+    try:
+        return factory() if factory else None
+    except (TypeError, ValueError):
+        return None
 
 
 async def _start_existing_delay_edit(update: Update, session, rule, *, chat_id: int, field, value) -> bool:
@@ -134,6 +141,8 @@ async def ads_rules_input_callback(update: Update, context: ContextTypes.DEFAULT
 
     cb = CallbackParser.parse(q.data or "")
     chat_id = cb.require_int(3, label="chat_id")
+    if await _resolve_ads_target_chat_id(update, context) != chat_id:
+        return
     field = cb.get(4)
 
     if field == "interval":

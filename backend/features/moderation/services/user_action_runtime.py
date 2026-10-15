@@ -439,10 +439,12 @@ async def execute_group_permission_action(
     permissions,
     feature: str,
     detail: str,
+    use_independent_chat_permissions: bool | None = None,
 ) -> UserActionResult:
     failures: list[str] = []
     try:
-        await context.bot.set_chat_permissions(chat_id=chat_id, permissions=permissions)
+        kwargs = {} if use_independent_chat_permissions is None else {"use_independent_chat_permissions": use_independent_chat_permissions}
+        await context.bot.set_chat_permissions(chat_id=chat_id, permissions=permissions, **kwargs)
         applied = True
     except Exception as exc:
         applied = False

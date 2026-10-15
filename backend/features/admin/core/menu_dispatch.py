@@ -143,6 +143,8 @@ class CoreMenuDispatchMixin:
     ) -> None:
         """处理菜单操作"""
         menu_action = callback_data.get(2)
+        from backend.features.admin.menu_origins import remember_menu_origin
+        remember_menu_origin(context, chat_id=chat_id, feature=menu_action, source=callback_data.get(4))
 
         handler = self._menu_dispatch().get(menu_action)
         if handler is None:

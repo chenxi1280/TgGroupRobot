@@ -131,6 +131,7 @@ async def lottery_setting_toggle_callback_impl(
         "publish_pin": "publish_pin_enabled",
         "result_pin": "result_pin_enabled",
         "delete_join": "delete_join_message_enabled",
+        "require_username": "require_username",
     }
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:

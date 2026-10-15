@@ -8,6 +8,8 @@ from backend.platform.db.schema.models.expansion import AuctionItem, AuctionSett
 
 
 def format_auction_settings_text(chat_title: str, setting: AuctionSetting) -> str:
+    from backend.features.activity.auction_permissions import creation_policy
+    permission_label = "管理员" if creation_policy(setting) == "admin" else "所有群成员"
     return "\n".join(
         [
             f"💰 拍卖 | {chat_title}",
@@ -15,7 +17,7 @@ def format_auction_settings_text(chat_title: str, setting: AuctionSetting) -> st
             f"⚙️ 状态：{'✅ 启动' if setting.enabled else '❌ 关闭'}",
             f"📌 消息置顶：{'✅ 启动' if setting.pin_message_enabled else '❌ 关闭'}",
             f"⏱ 自动延时：{'✅ 启动' if setting.auto_extend_enabled else '❌ 关闭'}",
-            "👥 创建范围：所有群成员",
+            f"👥 创建范围：{permission_label}",
             f"🪙 关联积分：{'🌑 主积分' if setting.points_mode == 'group_points' else '🚫 不关联'}",
             "",
             "群内发送“拍卖”即可进入创建流程，机器人会提示回复拍卖物品；也可回复任意消息发送“拍卖”快速创建。",

@@ -94,7 +94,7 @@ async def _sign_count(session: AsyncSession, chat_id: int, sign_date: dt.date) -
     start_at = dt.datetime.combine(sign_date, dt.time.min, tzinfo=LOCAL_TIMEZONE).astimezone(dt.UTC)
     end_at = start_at + dt.timedelta(days=1)
     result = await session.execute(
-        select(func.count(SignInLog.id)).where(
+        select(func.count(func.distinct(SignInLog.user_id))).where(
             and_(
                 SignInLog.chat_id == chat_id,
                 SignInLog.created_at >= start_at,

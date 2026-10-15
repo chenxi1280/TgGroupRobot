@@ -15,15 +15,24 @@ def _auction_menu_text(chat_title: str, setting, auctions) -> str:
 
 
 def _auction_menu_keyboard(setting, chat_id: int) -> InlineKeyboardMarkup:
+    from backend.features.activity.auction_permissions import creation_policy
+    policy = creation_policy(setting)
+    return InlineKeyboardMarkup(_auction_core_rows(setting, chat_id) + [
+        [InlineKeyboardButton(("✅ " if policy == "admin" else "") + "管理员创建", callback_data=f"auc:perm:{chat_id}:admin"),
+         InlineKeyboardButton(("✅ " if policy == "all" else "") + "全员创建", callback_data=f"auc:perm:{chat_id}:all")],
+        [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_activities:{chat_id}")],
+    ])
+
+
+def _auction_core_rows(setting, chat_id: int):
     rows = [
         [InlineKeyboardButton("⚙️ 状态：", callback_data=f"auc:home:{chat_id}"), InlineKeyboardButton("✅ 启动" if setting.enabled else "启动", callback_data=f"auc:toggle:{chat_id}:enabled:1"), InlineKeyboardButton("✅ 关闭" if not setting.enabled else "关闭", callback_data=f"auc:toggle:{chat_id}:enabled:0")],
         [InlineKeyboardButton("📌 消息置顶：", callback_data=f"auc:home:{chat_id}"), InlineKeyboardButton("✅ 启动" if setting.pin_message_enabled else "启动", callback_data=f"auc:toggle:{chat_id}:pin:1"), InlineKeyboardButton("✅ 关闭" if not setting.pin_message_enabled else "关闭", callback_data=f"auc:toggle:{chat_id}:pin:0")],
         [InlineKeyboardButton("⏱ 自动延时：", callback_data=f"auc:home:{chat_id}"), InlineKeyboardButton("✅ 启动" if setting.auto_extend_enabled else "启动", callback_data=f"auc:toggle:{chat_id}:auto_extend:1"), InlineKeyboardButton("✅ 关闭" if not setting.auto_extend_enabled else "关闭", callback_data=f"auc:toggle:{chat_id}:auto_extend:0")],
         [InlineKeyboardButton("🚫 不关联" + (" ✅" if setting.points_mode == "none" else ""), callback_data=f"auc:points_mode:{chat_id}:none"), InlineKeyboardButton("🌑 主积分" + (" ✅" if setting.points_mode == "group_points" else ""), callback_data=f"auc:points_mode:{chat_id}:group_points")],
         [InlineKeyboardButton("📋 活动列表", callback_data=f"auc:list:{chat_id}:0")],
-        [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_activities:{chat_id}")],
     ]
-    return InlineKeyboardMarkup(rows)
+    return rows
 
 
 def _auction_setting_updates(action: str, callback_data) -> dict | None:

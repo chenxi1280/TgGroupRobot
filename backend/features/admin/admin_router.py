@@ -22,6 +22,24 @@ class AdminRouter(BaseRouter):
     def register(self, app: Application) -> None:
         log.debug(f"Registering {self.name} router")
 
+        from backend.features.admin.moderation.permission_profiles import permission_profile_callback
+        app.add_handler(CallbackQueryHandler(permission_profile_callback, pattern=r"^gperm:"))
+        from backend.features.admin.points.sign_feedback_config import sign_feedback_callback
+        app.add_handler(CallbackQueryHandler(sign_feedback_callback, pattern=r"^signcfg:"))
+        from backend.features.admin.list_browser import list_browser_callback
+        app.add_handler(CallbackQueryHandler(list_browser_callback, pattern=r"^mlist:"))
+
+        from backend.features.admin.points.level_tag_views import level_tag_callback
+        app.add_handler(CallbackQueryHandler(level_tag_callback, pattern=r"^ltag:"))
+        from backend.features.admin.notice_views import notice_callback
+        from backend.features.admin.effect_views import effect_callback
+        from backend.features.automation.notice_consent import consent_callback
+        app.add_handler(CallbackQueryHandler(notice_callback, pattern=r"^(gnote|anote):"))
+        app.add_handler(CallbackQueryHandler(effect_callback, pattern=r"^eff:"))
+        from backend.features.admin.alliance_effect_views import alliance_effect_callback
+        app.add_handler(CallbackQueryHandler(alliance_effect_callback,pattern=r'^asan:'))
+        app.add_handler(CallbackQueryHandler(consent_callback, pattern=r"^ncons:"))
+
         # 命令处理器
         app.add_handler(CommandHandler("admin", admin_command))
         app.add_handler(CommandHandler("verifypublication", verify_publication_command))

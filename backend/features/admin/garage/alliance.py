@@ -23,12 +23,14 @@ def _alliance_view(alliance, setting, members, *, chat_id: int):
         f"🖐 联盟功能\n\n🟩 联盟名字：{alliance.name}\n\n👥 联盟成员：{len(members)} 个\n"
         f"联合封禁状态：{'✅ 启动' if joint_ban else '❌ 关闭'}\n\n🚫 联合封禁\n"
         "└ 联盟群使用 team 指令封禁用户，该用户加入联合封禁列表\n"
-        "└ 联合封禁列表中的用户，在联盟其他群中发言，会被自动封禁\n\n"
+        "└ 回复成员发送 team_mute 记录持续禁言；封禁可升级、不可被禁言降级\n"
+        "└ 其他启用联防的群按记录类型执行；移除名单不自动解除已实施处罚\n\n"
         f"邀请码权限：{'创建群可重置' if is_owner else '仅创建群可重置'}"
     )
     rows = [
         [InlineKeyboardButton("💥 查看联盟成员", callback_data=f"ali:members:{chat_id}")],
         [InlineKeyboardButton("📋 联合封禁名单", callback_data=f"ali:jointban:list:{chat_id}")],
+        [InlineKeyboardButton('本群处罚记录/解除',callback_data=f'asan:{chat_id}:list:0')],
         [InlineKeyboardButton("⚙️ 联合封禁：", callback_data=f"ali:home:{chat_id}"), InlineKeyboardButton("✅ 启动" if joint_ban else "启动", callback_data=f"ali:jointban:toggle:{chat_id}:1"), InlineKeyboardButton("关闭" if joint_ban else "✅ 关闭", callback_data=f"ali:jointban:toggle:{chat_id}:0")],
         [InlineKeyboardButton("🔑 邀请密码" if is_owner else "🔑 邀请密码（仅创建群）", callback_data=f"ali:invite:show:{chat_id}" if is_owner else f"ali:invite:denied:{chat_id}"), InlineKeyboardButton("🚪 退出联盟", callback_data=f"ali:leave:{chat_id}:confirm")],
         [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_safety:{chat_id}")],
@@ -121,7 +123,7 @@ class GarageAllianceAdminMixin:
             for item in entries:
                 timestamp = item.created_at.strftime("%m-%d %H:%M") if item.created_at else "--"
                 lines.append(
-                    f"🚫 #{item.id}｜用户 {item.target_user_id}｜来源群 {item.source_chat_id}｜{timestamp}"
+                    f"🚫 #{item.id}｜{'禁言' if getattr(item, 'punishment_type', 'ban') == 'mute' else '封禁'}｜用户 {item.target_user_id}｜来源群 {item.source_chat_id}｜{timestamp}"
                 )
                 lines.append(f"原因：{item.reason or '-'}")
                 lines.append("")
@@ -130,6 +132,7 @@ class GarageAllianceAdminMixin:
                 )
         else:
             lines.append("暂无联合封禁记录")
+        keyboard_rows.append([InlineKeyboardButton('本群处罚记录/解除',callback_data=f'asan:{chat_id}:list:0')])
         keyboard_rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"ali:home:{chat_id}")])
         await self.message_helper.safe_edit(update, "\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard_rows))
 

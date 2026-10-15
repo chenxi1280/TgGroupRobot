@@ -329,6 +329,7 @@ COMPATIBILITY_MIGRATIONS: dict[str, tuple[str, ...]] = {
 
 def _load_model_metadata() -> None:
     # 导入模型以填充 Base.metadata
+    import backend.platform.db.schema.models.admin_effects  # noqa: F401
     import backend.platform.db.schema.models.alliance  # noqa: F401
     import backend.platform.db.schema.models.activity  # noqa: F401
     import backend.platform.db.schema.models.admin_web  # noqa: F401

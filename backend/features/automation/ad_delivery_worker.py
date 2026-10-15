@@ -100,6 +100,7 @@ class AdDeliveryWorker:
         return succeeded, errors
 
     async def _process_one(self, plan, now: dt.datetime) -> DeliveryOutcome:
+        now=self._dependencies.clock()
         await self._dependencies.store.mark_send_started(plan, now)
         try:
             outcome = await self._dependencies.executor.execute(plan)

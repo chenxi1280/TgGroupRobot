@@ -148,6 +148,8 @@ async def handle_quick_publish_input(
     admin_handler = import_module("backend.features.admin.admin_handler")
 
     target_chat_id = state.state_data.get("target_chat_id", state.chat_id)
+    if not await _can_edit_quick_publish(update, context, session=session, state=state, chat_id=target_chat_id):
+        return
     field = state.state_data.get("field")
 
     drafts = context.user_data.get("quick_publish_draft", {})
@@ -169,6 +171,17 @@ async def handle_quick_publish_input(
         update, context, session, state=state,
         target_chat_id=target_chat_id, admin_handler=admin_handler,
     )
+
+
+async def _can_edit_quick_publish(update, context, *, session, state, chat_id):
+    from backend.shared.services.permission_service import PermissionPolicyService
+    from backend.platform.state.state_service import clear_user_state
+    if isinstance(chat_id, int) and chat_id < 0 and await PermissionPolicyService.can_manage(context, chat_id, update.effective_user.id):
+        return True
+    await clear_user_state(session, state.chat_id, update.effective_user.id)
+    await session.commit()
+    await update.effective_message.reply_text("权限或草稿群组已失效，已退出快捷发布编辑。")
+    return False
 
 
 async def scheduled_message_text_input(

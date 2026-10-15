@@ -149,6 +149,9 @@ def test_reliability_revisions_form_linear_chain_and_have_downgrades() -> None:
         "0012_ui_feedback",
         "0013_activity_media",
         "0014_mall_intent_cancel",
+        "0015_general_admin_policies",
+        "0016_delivery_action_facts",
+        "0017_generic_admin_delivery",
     ]
     assert [revision.down_revision for revision in revisions] == [
         None,
@@ -165,6 +168,9 @@ def test_reliability_revisions_form_linear_chain_and_have_downgrades() -> None:
         "0011_mall_fulfillment",
         "0012_ui_feedback",
         "0013_activity_media",
+        "0014_mall_intent_cancel",
+        "0015_general_admin_policies",
+        "0016_delivery_action_facts",
     ]
     assert all(callable(revision.downgrade) for revision in revisions)
 
@@ -176,3 +182,10 @@ def test_revision_identifiers_fit_alembic_version_table() -> None:
         len(revision.revision) <= ALEMBIC_VERSION_NUM_MAX_LENGTH
         for revision in revisions
     )
+
+
+@pytest.mark.parametrize("revision_id", ["0015_general_admin_policies", "0016_delivery_action_facts"])
+def test_policy_and_action_fact_migrations_reject_destructive_downgrade(revision_id):
+    revision = next(item for item in database_migrations.load_revision_modules() if item.revision == revision_id)
+    with pytest.raises(RuntimeError, match="Retain"):
+        revision.downgrade()

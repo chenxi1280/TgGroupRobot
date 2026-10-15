@@ -72,6 +72,7 @@ class PrivateConfigHandler:
             await handler(update, context, session, state=state, message_text=message_text)
         except Exception as e:
             log.exception("private_config_handler_error", state_type=state_type, error=str(e))
+            await session.rollback()
             # 不对用户暴露内部异常细节（SQL/路径/密钥等），仅回通用提示
             await self._send_error_message(
                 update,

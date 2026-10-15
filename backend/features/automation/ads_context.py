@@ -23,6 +23,8 @@ from backend.features.automation.ui.ads import (
     ads_menu_keyboard,
     ads_rules_keyboard,
 )
+from backend.features.admin.menu_origins import with_menu_origin
+from backend.features.admin.list_browser import with_list_return
 from backend.platform.db.runtime.session import Database
 from backend.platform.db.schema.models.automation import AdCampaign
 from backend.shared.callback_parser import CallbackParser
@@ -132,7 +134,7 @@ async def _private_ads_candidates(
 ) -> list[int]:
     callback_data = update.callback_query.data if update.callback_query else ""
     candidate_chat_ids = [value for value in _extract_int_parts(callback_data or "") if value < 0]
-    if allow_current_chat_fallback:
+    if allow_current_chat_fallback and not candidate_chat_ids:
         db: Database = context.application.bot_data["db"]
         current_chat_id = await ChatResolver.get_current_chat(db, user_id)
         if current_chat_id not in (None, 0) and current_chat_id not in candidate_chat_ids:
@@ -273,7 +275,7 @@ class AdsHandler(BaseHandler):
         await self.message_helper.safe_edit(
             update,
             text=_render_ads_home_text(rule, items),
-            reply_markup=ads_menu_keyboard(target_chat_id),
+            reply_markup=with_menu_origin(ads_menu_keyboard(target_chat_id), context, chat_id=target_chat_id, feature="ads"),
         )
 
     async def show_rules(self, update: Update, context: ContextTypes.DEFAULT_TYPE, target_chat_id: int) -> None:
@@ -287,34 +289,9 @@ class AdsHandler(BaseHandler):
             reply_markup=ads_rules_keyboard(target_chat_id, rule),
         )
 
-    async def show_list(
-        self,
-        update: Update,
-        context: ContextTypes.DEFAULT_TYPE,
-        target_chat_id: int,
-        *, page: int = 0,
-    ) -> None:
-        db: Database = context.application.bot_data["db"]
-        async with db.session_factory() as session:
-            items = await list_rotation_items(session, target_chat_id)
-            await session.commit()
-
-        if not items:
-            keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("➕ 添加一条", callback_data=f"ads:create:{target_chat_id}")],
-                [InlineKeyboardButton("🔙 返回", callback_data=f"ads:menu:{target_chat_id}")],
-            ])
-            await self.message_helper.safe_edit(update, text=_render_manage_text(items, 0), reply_markup=keyboard)
-            return
-
-        total_pages = max((len(items) - 1) // 1 + 1, 1)
-        current_page = max(0, min(page, total_pages - 1))
-        current_item = items[current_page]
-        await self.message_helper.safe_edit(
-            update,
-            text=_render_manage_text(items, current_page),
-            reply_markup=ads_manage_keyboard(target_chat_id, current_item, page=current_page, total_pages=total_pages),
-        )
+    async def show_list(self, update, context, target_chat_id: int, *, page: int | None = None) -> None:
+        from backend.features.admin.list_browser import render_list
+        await render_list(update, context, feature="ads", chat_id=target_chat_id, page=page)
 
     async def show_detail(self, update: Update, context: ContextTypes.DEFAULT_TYPE, target_chat_id: int, *, item_id: int) -> None:
         db: Database = context.application.bot_data["db"]
@@ -328,7 +305,7 @@ class AdsHandler(BaseHandler):
         await self.message_helper.safe_edit(
             update,
             text=_format_ad_detail_text(item, rule),
-            reply_markup=ads_item_detail_keyboard(target_chat_id, item, rule),
+            reply_markup=with_list_return(ads_item_detail_keyboard(target_chat_id, item, rule), context, chat_id=target_chat_id, feature="ads"),
         )
 
     async def show_time_range(self, update: Update, context: ContextTypes.DEFAULT_TYPE, target_chat_id: int, *, item_id: int) -> None:

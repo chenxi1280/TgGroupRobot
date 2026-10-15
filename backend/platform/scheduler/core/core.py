@@ -38,6 +38,7 @@ class ScheduledTask(ABC):
         *,
         enabled: bool = True,
         max_consecutive_failures: int = 10,  # 连续失败多少次后暂停任务
+        auto_pause_on_failure: bool = True,
     ):
         """
         初始化定时任务
@@ -47,11 +48,13 @@ class ScheduledTask(ABC):
             interval: 执行间隔（秒）
             enabled: 是否启用
             max_consecutive_failures: 连续失败多少次后暂停任务
+            auto_pause_on_failure: 共享巡检可关闭全局自动暂停，仍记录失败并保留人工停用
         """
         self.name = name
         self.interval = interval
         self.enabled = enabled
         self.max_consecutive_failures = max_consecutive_failures
+        self.auto_pause_on_failure = auto_pause_on_failure
 
         # 运行状态
         self.last_run: dt.datetime | None = None  # 上次运行时间
@@ -91,7 +94,7 @@ class ScheduledTask(ABC):
             return
 
         # 检查是否连续失败过多
-        if self.error_count >= self.max_consecutive_failures:
+        if self.auto_pause_on_failure and self.error_count >= self.max_consecutive_failures:
             reason = f"连续失败 {self.error_count} 次，已自动暂停"
             log.error(
                 "task_paused_too_many_failures",
@@ -162,7 +165,7 @@ class ScheduledTask(ABC):
             duration=(finished_at - start_time).total_seconds(),
             exc_info=True,
         )
-        if self.error_count >= self.max_consecutive_failures:
+        if self.auto_pause_on_failure and self.error_count >= self.max_consecutive_failures:
             self.enabled = False
             self.auto_paused = True
             self.paused_reason = f"连续失败 {self.error_count} 次，已自动暂停"

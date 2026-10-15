@@ -1,4 +1,5 @@
 from __future__ import annotations
+from backend.features.automation.notice_consent import handle_consent_start as _handle_notice_consent_start
 
 import asyncio
 from dataclasses import dataclass
@@ -157,6 +158,7 @@ async def _handle_private_start(update: Update, context: ContextTypes.DEFAULT_TY
         await _start_managed_group(update, context, payload)
         return
     payload_handlers = (
+        _handle_notice_consent_start,
         _handle_invite_relay_start,
         _handle_teacher_location_start,
         _handle_teacher_self_location_start,

@@ -47,6 +47,7 @@ for t in modules.values():
                 if isinstance(f, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     methods.setdefault(f.name, []).append(f)
 for m, t in modules.items():
+    parents = {child: parent for parent in ast.walk(t) for child in ast.iter_child_nodes(parent)}
     for c in ast.walk(t):
         if not isinstance(c, ast.Call) or any(isinstance(a, ast.Starred) for a in c.args):
             continue
@@ -59,7 +60,12 @@ for m, t in modules.items():
             and isinstance(c.func.value, ast.Name)
             and c.func.value.id == "self"
         ):
-            choices = methods.get(c.func.attr, [])
+            owner = parents.get(c)
+            while owner is not None and not isinstance(owner, ast.ClassDef):
+                owner = parents.get(owner)
+            local = [n for n in owner.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+                     and n.name == c.func.attr] if owner else []
+            choices = local or methods.get(c.func.attr, [])
             if len(choices) == 1:
                 f = choices[0]
                 skip = (

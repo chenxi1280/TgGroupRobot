@@ -45,25 +45,28 @@ class DeliveryOutcome:
         )
 
     @classmethod
-    def retryable_failure(cls, error_code: str, message: str) -> DeliveryOutcome:
+    def retryable_failure(cls, error_code: str, message: str, metadata: Mapping[str, object] | None = None) -> DeliveryOutcome:
         return cls(
             status=DeliveryStatus.retryable_failed,
             error_code=error_code,
             message=message,
+            metadata=_freeze_metadata(metadata),
         )
 
     @classmethod
-    def permanent_failure(cls, error_code: str, message: str) -> DeliveryOutcome:
+    def permanent_failure(cls, error_code: str, message: str, metadata: Mapping[str, object] | None = None) -> DeliveryOutcome:
         return cls(
             status=DeliveryStatus.permanent_failed,
             error_code=error_code,
             message=message,
+            metadata=_freeze_metadata(metadata),
         )
 
     @classmethod
-    def uncertain(cls, error_code: str, message: str) -> DeliveryOutcome:
+    def uncertain(cls, error_code: str, message: str, metadata: Mapping[str, object] | None = None) -> DeliveryOutcome:
         return cls(
             status=DeliveryStatus.uncertain,
             error_code=error_code,
             message=message,
+            metadata=_freeze_metadata(metadata),
         )

@@ -80,7 +80,8 @@ async def handle_sign_in_action(
         success_formatter=format_sign_in_success_message_func,
         already_formatter=format_sign_in_already_message_func,
     )
-    await update.effective_message.reply_text(msg)
+    from backend.features.points.sign_feedback import reply_with_feedback
+    await reply_with_feedback(update, context, db=db, settings=settings, result=result, original=msg)
 
 
 async def handle_balance_action(

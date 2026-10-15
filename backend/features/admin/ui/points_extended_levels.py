@@ -18,6 +18,7 @@ def points_level_list_keyboard(setting, levels, chat_id: int) -> InlineKeyboardM
             InlineKeyboardButton("关闭" if exclude_teacher else "❌ 关闭", callback_data=f"adm:lvl:{chat_id}:toggle:exclude_teacher:0"),
         ],
     ]
+    rows.append([InlineKeyboardButton("全局等级标签", callback_data=f"ltag:{chat_id}:0:view")])
     if levels:
         rows.extend([[InlineKeyboardButton(f"{level.level_name} / {level.point_threshold}", callback_data=f"adm:lvl:{chat_id}:detail:{level.id}")] for level in levels])
     rows.append([InlineKeyboardButton("➕ 添加一个等级", callback_data=f"adm:lvl:{chat_id}:add")])
@@ -53,6 +54,7 @@ def points_level_detail_keyboard(level, chat_id: int) -> InlineKeyboardMarkup:
                 InlineKeyboardButton("不允许" if enabled else "❌ 不允许", callback_data=f"adm:lvl:{chat_id}:perm:{level.id}:{perm}:0"),
             ]
         )
+    rows.append([InlineKeyboardButton("本级标签", callback_data=f"ltag:{chat_id}:{level.id}:view")])
     rows.append([InlineKeyboardButton("🗑 删除此等级", callback_data=f"adm:lvl:{chat_id}:delete_confirm:{level.id}")])
     rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:points_level:{chat_id}")])
     return InlineKeyboardMarkup(rows)

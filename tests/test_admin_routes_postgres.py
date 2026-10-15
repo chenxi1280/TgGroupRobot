@@ -40,7 +40,7 @@ class TelegramBoundary(BaseRequest):
             result = {"status": "creator", "is_anonymous": False,
                 "user": {"id": int(parameters["user_id"]), "is_bot": False, "first_name": "tester"}}
         elif endpoint == "getChat":
-            result = {"id": int(parameters["chat_id"]), "type": "supergroup", "title": "isolated repair group"}
+            result = {"id": int(parameters["chat_id"]), "type": "supergroup", "title": "isolated repair group", "accent_color_id": 0, "max_reaction_count": 1, "permissions": {"can_send_messages": True, "can_send_photos": True}}
         elif endpoint in {"sendMessage", "editMessageText", "sendPhoto", "editMessageCaption"}:
             result = {"message_id": len(self.calls), "date": 1780000000,
                 "chat": {"id": int(parameters.get("chat_id", 1)), "type": "private"},
@@ -346,7 +346,7 @@ async def test_group_pipeline_reaches_auction_and_accepts_captionless_photo():
             await session.commit()
         base = {"date": 1780000000,
             "from": {"id": user, "is_bot": False, "first_name": "tester"},
-            "chat": {"id": chat, "type": "supergroup", "title": "isolated repair group"}}
+            "chat": {"id": chat, "type": "supergroup", "title": "isolated repair group", "accent_color_id": 0, "max_reaction_count": 1, "permissions": {"can_send_messages": True, "can_send_photos": True}}}
         for update_id, content in [(9001, {"text": "拍卖"}), (9002, {"photo": [
             {"file_id": "photo-fixture", "file_unique_id": "unique", "width": 480, "height": 240}]})]:
             await app.process_update(Update.de_json({"update_id": update_id,

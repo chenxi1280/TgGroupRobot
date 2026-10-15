@@ -213,3 +213,48 @@
 草稿 JSON 中 `__draft_base_version__` 是恢复时的配置指纹；按钮/消息编辑还保留原正文、媒体和按钮快照。保存前锁目标对象并比较快照，冲突时保留草稿。运行时 `ConversationState` 继续表示活跃输入或已选群，不用切换群字段覆盖旧输入类型。
 
 0008–0014 的 downgrade 均拒绝删除业务记录。回退采用保留新表的兼容应用版本或前向修复；不能恢复旧全库快照抹掉新订单、扣分流水或未知发布记录。所有新字段纳入 ORM/Schema Gate，启动前必须完成 Alembic 升级和结构检查。
+
+
+## 2026-10-15 通用管理增量（Alembic 0015–0016）
+
+状态：仅本地候选代码和一次性 PostgreSQL 验证；未在生产执行。产品/逐条状态见[实施记录](../product/2026-10-15-implementation-and-own-feature-audit.md)。
+
+| 表/字段 | 类型与默认 | 数据语义 |
+|---|---|---|
+| `auction_settings.permission_enforced` | BOOLEAN NOT NULL DEFAULT false | 历史忽略的create_permission不突然收紧；显式保存策略才置true并执行all/admin |
+| `lottery_settings.require_username` | BOOLEAN NOT NULL DEFAULT false | 默认保留参与行为；主动加入校验在扣款之前 |
+| `group_alliance_ban_pool.punishment_type` | VARCHAR(16) NOT NULL DEFAULT 'ban' | 历史封禁含义不变；写入只允许ban/mute，升级不降级 |
+| `scheduled_message_logs.post_actions` | JSONB NOT NULL DEFAULT '{}' | 发送与置顶/旧消息清理事实分开；空对象为历史未记录 |
+| `ad_rotation_history.post_actions` | JSONB NOT NULL DEFAULT '{}' | pin/delete_previous/unpin_previous分别为succeeded/failed/not_requested；未知历史不回填成功 |
+
+`chat_settings.module_config.group_lock.profiles.open/closed` 保存独立成员权限字典，字段白名单对应当前 SDK ChatPermissions。未配置沿用旧文本权限行为；配置不产生远端操作。首轮0015–0016未新增上述计划；后续v0.5已通过0017和模块配置补齐，见下节。
+
+`chat_settings.module_config.sign_feedback` 保存template、show_count、show_rank和delete_seconds。模板为纯文本且只允许points/balance/days/bonus/total/position；0秒不删除。人数和名次按created_at的Asia/Shanghai当天窗口去重读取SignInLog。
+
+没有更改历史sign_date、biz_date或积分流水。新签到、日配额及激励按Asia/Shanghai计算；旧UTC业务日领奖记录的切换演练仍是上线前未完成项。激励领取使用chat_id/user_id/biz_date唯一键的INSERT ON CONFLICT及行锁，避免同日并发重复领。
+
+0015/0016均拒绝破坏性downgrade，保留显式权限、处罚类型与附加动作审计。应用回退必须保留新列并理解新类型；旧版本固定封禁而忽略mute不能作为兼容回退。恢复采用兼容版本或前向修复，不删事实以制造一致。空库初始化、完整升级、重复升级及Schema Gate已在一次性数据库验证；这些结果不代表生产迁移完成。
+
+
+## 2026-10-15 v0.5 通用持久执行（0017）
+
+仅本地候选，未生产迁移；完整契约/恢复与验证见[续建记录](../product/2026-10-15-general-features-completion.md)。
+
+| 表/配置 | 关键字段和约束 | 含义 |
+|---|---|---|
+| `admin_effects` | id BIGSERIAL PK；effect_key VARCHAR(128) NOT NULL UNIQUE；chat_id BIGINT；kind VARCHAR(32)；payload/result JSONB；status VARCHAR(32)；attempts INT；next_run_at TIMESTAMPTZ；expires_at/lease_until/started_at/completed_at可空；error TEXT可空 | group_lock/lock_notice/notice_delete/ad_expiry分别持久化；status+next_run_at索引；远端调用前提交started_at，未知不自动重发 |
+| `level_tag_states` | chat_id/user_id联合PK；applied_tag VARCHAR(16)可空；desired_tag VARCHAR(16)；status VARCHAR(32)；error可空；checked_at；retry_at可空 | 只拥有确认设置的标签；未知先读回，冲突不覆盖；429到retry_at再检查 |
+| `notice_consents` | chat_id/ad_id/user_id联合PK；version VARCHAR(32)；enabled BOOLEAN；updated_at | 只有当前收件人本人可修改同意，不将管理员填写ID当同意 |
+| `ad_campaigns.expiry_notice` | JSONB NOT NULL DEFAULT '{}' | enabled/recipient/advance_days/time/text，旧广告默认关闭，时间按Asia/Shanghai |
+| `module_config.group_lock.notices.open/closed` | enabled/text/cover/buttons/delete_seconds | 两套独立通知，0秒不删，默认关闭 |
+| `module_config.group_lock.original_permissions` | SDK读取的权限字典；snapshot_at | 首次完整方案前读回，只读失败拒绝启用；不自动回写原状 |
+| `module_config.level_tags` | enabled；levels[等级ID].enabled/text | 全局/单级独立开关，默认关闭，与媒体权限/身份分离 |
+
+effect_key在配置、计划和授权语义上稳定，不使用UI刷新时间造新身份。副作用按chat_id使用PostgreSQL会话执行锁串行，正常和异常退出均释放；数据库记录是重启/多进程去重依据。领取、开始和完成使用状态/尝试次数校验，配置更新不改写已开始调用的计划。手工重试/取消及本人同意写运营审计。
+
+0017使用固定DDL，拒绝破坏性downgrade。空库、构造0016结构的既有广告升级、重复升级及Schema Gate均通过。没有回填虚假同意、标签所有权或发送事实；没有生产数据变化。
+
+
+## v0.7 剩余通用能力实现
+
+本轮不新增revision，复用0017 AdminEffect新增kind delivery_action/alliance_punish/alliance_release。投递动作唯一身份由来源/执行ID/动作/消息ID构成，payload绑定群及确认消息，post_actions同步保存pending/processing/waiting/succeeded/failed/uncertain/cancelled。联盟身份为池条目ID/群/类型，解除身份为原动作ID；只有确认applied且当前状态匹配才可解除。导入PointsLevel重建主键并映射level_tags，目标LevelTagState不转移。旧UTC签到按不可变created_at对账旧统计，正激励按PointsTransaction真实时间去重；零奖励缺乏不可变时间，禁止推定或静默回填。详见[本轮实施记录](../product/2026-10-15-remaining-general-features.md)。未部署或执行真实Telegram测试。

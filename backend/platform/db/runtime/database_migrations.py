@@ -32,6 +32,9 @@ REVISION_FILES = (
     "0012_ui_feedback.py",
     "0013_activity_media.py",
     "0014_mall_intent_cancel.py",
+    "0015_general_admin_policies.py",
+    "0016_delivery_action_facts.py",
+    "0017_generic_admin_delivery.py",
 )
 
 log = structlog.get_logger(__name__)

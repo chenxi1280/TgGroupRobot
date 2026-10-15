@@ -31,12 +31,9 @@ async def _apply_level_input(update, *, service, session, state_type: str, level
         changes = {"level_name": text[:64]}
     else:
         if not re.fullmatch(r"\d+", text):
-            await update.effective_message.reply_text("积分门槛必须是大于 0 的整数。")
+            await update.effective_message.reply_text("积分门槛必须是大于等于 0 的整数。")
             return False
         threshold = int(text)
-        if threshold <= 0:
-            await update.effective_message.reply_text("积分门槛必须大于 0。")
-            return False
         changes = {"point_threshold": threshold}
     try:
         await service.update_level(session, level, **changes)

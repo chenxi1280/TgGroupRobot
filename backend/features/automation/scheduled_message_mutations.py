@@ -56,7 +56,7 @@ class ScheduledMessageMutationMixin:
                 return
             await session.commit()
 
-        await self.show_detail(update, context, target_chat_id, str(task.task_id))
+        await self.show_detail(update, context, target_chat_id, task_id=str(task.task_id))
 
     async def set_field(
         self,
@@ -110,7 +110,7 @@ class ScheduledMessageMutationMixin:
 
             await session.commit()
 
-        await self.show_detail(update, context, target_chat_id, task_id)
+        await self.show_detail(update, context, target_chat_id, task_id=task_id)
 
     async def edit_field(
         self,
@@ -186,7 +186,7 @@ class ScheduledMessageMutationMixin:
                 update,
                 context,
                 target_chat_id,
-                task_id,
+                task_id=task_id,
                 toast="❌ 预览失败：请先设置文本或封面。下面可直接补齐后再预览。",
             )
             return
@@ -257,7 +257,7 @@ class ScheduledMessageMutationMixin:
         target_chat_id: int,
         *, task_id: str,
     ) -> None:
-        await self.show_detail(update, context, target_chat_id, task_id)
+        await self.show_detail(update, context, target_chat_id, task_id=task_id)
 
     async def cancel_operation(
         self,
@@ -274,6 +274,6 @@ class ScheduledMessageMutationMixin:
                 await session.commit()
 
         if task_id:
-            await self.show_detail(update, context, target_chat_id, task_id)
+            await self.show_detail(update, context, target_chat_id, task_id=task_id)
         else:
             await self.show_list(update, context, target_chat_id)

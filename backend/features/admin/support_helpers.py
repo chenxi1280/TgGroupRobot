@@ -58,8 +58,10 @@ def _resolve_alliance_target(cb: CallbackParser) -> int | None:
     if action in {"members", "invite"}:
         index = 3 if cb.length() >= _RESOLVE_PRIVATE_SCOPED_TARGET_CHAT_ID_THRESHOLD_4 else 2
         return cb.get_int_optional(index)
-    if action in {"jointban", "leave"}:
-        return cb.get_int_optional(3 if cb.get(2) == "toggle" else 2)
+    if action == 'jointban':
+        return cb.get_int_optional(3 if cb.get(2) in {'toggle','list','remove'} else 2)
+    if action == 'leave':
+        return cb.get_int_optional(2)
     indices = {"create": 3, "join": 3, "home": 2}
     index = indices.get(action)
     return cb.get_int_optional(index) if index is not None else None

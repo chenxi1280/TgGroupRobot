@@ -100,7 +100,8 @@ async def test_leave_alliance_deletes_orphan_owner_alliance(monkeypatch):
     async def fake_append_audit(*args, **kwargs):
         return None
 
-    async def fake_session_get(model, key):
+    async def fake_session_get(model, key, *, with_for_update=False):
+        assert with_for_update
         return alliance
 
     session.get = fake_session_get  # type: ignore[method-assign]
@@ -193,7 +194,8 @@ async def test_leave_alliance_syncs_shared_teachers_back_to_local_pool(monkeypat
     async def fake_append_audit(*args, **kwargs):
         return None
 
-    async def fake_session_get(model, key):
+    async def fake_session_get(model, key, *, with_for_update=False):
+        assert with_for_update
         return alliance
 
     sync_calls: list[dict] = []

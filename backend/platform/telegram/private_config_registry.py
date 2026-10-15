@@ -135,6 +135,10 @@ def _points_activity_specs() -> tuple[HandlerSpec, ...]:
 
 def _misc_specs() -> tuple[HandlerSpec, ...]:
     return (
+        _full(("level_tag_input",), "backend.features.admin.points.level_tag_views", "level_tag_input"),
+        _full(("generic_notice_input",), "backend.features.admin.notice_views", "notice_input"),
+        _full(("sign_feedback_input",), "backend.features.admin.points.sign_feedback_config", "handle_sign_feedback_input"),
+        _full(("admin_list_search_input",), "backend.features.admin.list_browser", "handle_list_search_input"),
         _full(("renewal_card_input", "renewal_enter_code"), "backend.features.subscription.renewal_handler", "handle_renewal_card_input"),
         _full(("welcome_title_input", "welcome_text_input", "welcome_cover_input"), "backend.features.admin.welcome", "handle_welcome_input"),
         _full(("button_editor_text_input", "button_editor_url_input", "button_editor_payload_input"), "backend.shared.button_layout_editor", "handle_button_layout_editor_input"),

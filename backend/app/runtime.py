@@ -38,7 +38,9 @@ def _register_scheduler_tasks(scheduler: Scheduler) -> None:
     )
 
     from backend.platform.scheduler.tasks.mall_notification_task import MallNotificationTask
+    from backend.platform.scheduler.tasks.admin_automation_task import AdminAutomationTask
     scheduler.register_tasks([
+        AdminAutomationTask(),
         LotteryTask(),
         AuctionTask(),
         SolitaireTask(),

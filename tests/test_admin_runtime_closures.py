@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from backend.app.update_pipeline import MessageDispatcher
-from backend.platform.scheduler.tasks.group_lock_task import GroupLockTask, _is_closed_now
+from backend.platform.scheduler.tasks.group_lock_task import _is_closed_now
 
 
 def _group_update(*, text=None, caption=None, chat_type='supergroup'):
@@ -63,35 +63,4 @@ def test_group_lock_window_prefers_night_control_times():
     assert isinstance(_is_closed_now(settings), bool)
 
 
-@pytest.mark.asyncio
-async def test_group_lock_task_skips_unchanged_state(monkeypatch):
-    task = GroupLockTask()
-    settings = SimpleNamespace(chat_id=-1001, group_lock_schedule_enabled=True, group_lock_open_time='08:00', group_lock_close_time='02:00')
-
-    class _Session:
-        async def execute(self, stmt):
-            return SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [settings]))
-
-    class _Factory:
-        def __call__(self):
-            return self
-
-        async def __aenter__(self):
-            return _Session()
-
-        async def __aexit__(self, exc_type, exc, tb):
-            return False
-
-    sent: list[tuple[int, bool]] = []
-
-    async def fake_set_chat_permissions(*, chat_id, permissions):
-        sent.append((chat_id, permissions.can_send_messages))
-
-    app = SimpleNamespace(
-        bot_data={'db': SimpleNamespace(session_factory=_Factory()), 'group_lock_state': {-1001: _is_closed_now(settings)}},
-        bot=SimpleNamespace(set_chat_permissions=fake_set_chat_permissions),
-    )
-
-    await task.execute(app)
-
-    assert sent == []
+# Durable unchanged-state and restart coverage: test_generic_admin_runtime_postgres.py.

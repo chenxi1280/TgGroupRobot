@@ -158,9 +158,12 @@ class AllianceLifecycleMixin:
         member = await cls.get_member(session, chat_id)
         if member is None:
             raise NotFoundError("当前群尚未加入联盟。")
-        alliance = await session.get(GroupAlliance, member.alliance_id)
+        alliance = await session.get(GroupAlliance, member.alliance_id, with_for_update=True)
         if alliance is None:
             raise NotFoundError("联盟不存在。")
+
+        if await cls.get_member(session,chat_id) is None:
+            raise NotFoundError('当前群已退出联盟。')
 
         active_members = await cls.list_members(session, alliance.alliance_id)
         if alliance.owner_chat_id == chat_id and len(active_members) > 1:

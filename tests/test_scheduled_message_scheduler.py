@@ -79,7 +79,9 @@ async def test_executor_sends_snapshot_and_returns_message_id() -> None:
 
     outcome = await executor.execute(_plan())
 
-    assert outcome == DeliveryOutcome.success(message_id=123)
+    assert outcome.status is DeliveryStatus.succeeded
+    assert outcome.message_id == 123
+    assert dict(outcome.metadata)["post_actions"] == {"delete_previous": "not_requested", "pin": "not_requested"}
     assert bot.calls[0][1]["text"] == "你好"
 
 

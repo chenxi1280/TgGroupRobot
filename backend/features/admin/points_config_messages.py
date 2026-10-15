@@ -4,6 +4,9 @@ from sqlalchemy import delete
 from telegram.ext import ConversationHandler, ContextTypes
 
 from backend.features.admin.points_config_shared import WAIT_VALUE, resolve_points_target_user, safe_edit_message, log
+from backend.features.admin.points_config_shared import (
+    MAX_ALIAS_LENGTH, can_configure_points, clear_points_input, nonnegative_config_value, valid_points_edit,
+)
 from backend.features.admin.ui.points import format_points_home_text, points_config_keyboard
 from backend.features.points.services.points_service import change_points
 from backend.platform.db.runtime.session import Database
@@ -11,6 +14,13 @@ from backend.platform.db.schema.models.core import PointsAccount, PointsTransact
 from backend.platform.db.schema.models.enums import PointsTxnType
 from backend.shared.services.chat_service import get_chat_settings
 _HANDLE_POINTS_CONFIG_MESSAGE_THRESHOLD_2 = 2
+LIMIT_FIELDS = {"message_daily_limit": "message_points_daily_limit", "invite_daily_limit": "invite_points_daily_limit",
+                "message_min_length": "message_min_length"}
+
+
+def _has_private_text(update):
+    return (update.effective_chat is not None and update.effective_message is not None
+            and update.effective_chat.type == "private" and bool(update.effective_message.text))
 
 
 
@@ -88,24 +98,34 @@ async def _apply_points_config_field(session, settings, update, *, field: str, t
         return await _apply_admin_points_adjustment(message, session, chat_id, text=text, field=field)
     if field == "clear_points":
         return await _clear_chat_points(message, session, chat_id, text=text)
+    return await _apply_points_setting(session, settings, update, field=field, text=text, chat_id=chat_id)
+
+
+async def _apply_points_setting(session, settings, update, *, field, text, chat_id):
+    message = update.effective_message
     if field == "sign_consecutive":
         parts = text.split(",")
         if len(parts) != _HANDLE_POINTS_CONFIG_MESSAGE_THRESHOLD_2:
             await message.reply_text("格式错误，请输入：天数,积分（例如 7,10）")
             return False
-        settings.sign_consecutive_days = int(parts[0].strip())
-        settings.sign_consecutive_bonus = int(parts[1].strip())
+        days, bonus = (nonnegative_config_value(part) for part in parts)
+        settings.sign_consecutive_days, settings.sign_consecutive_bonus = days, bonus
         return True
-    if field in {"message_daily_limit", "message_min_length", "invite_daily_limit"}:
-        value = int(text.strip())
-        setattr(settings, field, value if value > 0 else None)
+    if field in LIMIT_FIELDS:
+        value = nonnegative_config_value(text)
+        setattr(settings, LIMIT_FIELDS[field], value if value > 0 else None)
         return True
     if field in {"points_alias", "points_rank_alias"}:
-        setattr(settings, field, text.strip())
+        value = text.strip()
+        if not value or len(value) > MAX_ALIAS_LENGTH:
+            raise ValueError("别名需要1—32字")
+        setattr(settings, field, value)
         from backend.features.points.points_handler import get_points_alias_handler
         get_points_alias_handler().clear_cache(chat_id)
         return True
-    setattr(settings, field, int(text.strip()))
+    if field not in {"sign_points", "message_points", "invite_points"}:
+        raise ValueError("无效积分配置字段")
+    setattr(settings, field, nonnegative_config_value(text))
     return True
 
 
@@ -119,18 +139,17 @@ def _points_config_success_text(field: str) -> str:
 
 
 async def handle_points_config_message(update, context: ContextTypes.DEFAULT_TYPE) -> int | None:
-    if update.effective_chat is None or update.effective_message is None:
-        return ConversationHandler.END
-    if update.effective_chat.type != "private":
+    if not _has_private_text(update):
         return ConversationHandler.END
 
     text = update.effective_message.text
-    if not text:
-        return ConversationHandler.END
-
     field = context.user_data.get("points_edit_field")
     chat_id = context.user_data.get("points_edit_chat_id")
     if not field or chat_id is None:
+        return ConversationHandler.END
+    if not await valid_points_edit(update, context, field=field, chat_id=chat_id):
+        clear_points_input(context)
+        await update.effective_message.reply_text("权限或配置字段已失效，已退出编辑。")
         return ConversationHandler.END
 
     db: Database = context.application.bot_data["db"]
@@ -149,18 +168,18 @@ async def handle_points_config_message(update, context: ContextTypes.DEFAULT_TYP
 
         keyboard = points_config_keyboard(settings, chat_id)
         success_text = _points_config_success_text(field)
+        clear_points_input(context)
         await update.effective_message.reply_text(success_text, reply_markup=keyboard)
 
-        context.user_data.pop("points_edit_field", None)
-        context.user_data.pop("points_edit_chat_id", None)
         return ConversationHandler.END
 
-    except ValueError:
-        await update.effective_message.reply_text("输入格式错误，请输入有效的数字")
+    except ValueError as exc:
+        await update.effective_message.reply_text(f"输入格式错误：{exc}")
         return WAIT_VALUE
     except Exception as exc:
+        clear_points_input(context)
         log.error("points_config_error", error=str(exc))
-        await update.effective_message.reply_text(f"配置失败：{str(exc)}")
+        await update.effective_message.reply_text("配置失败，已退出编辑，请重新打开后重试。")
         return ConversationHandler.END
 
 
@@ -172,10 +191,9 @@ async def handle_points_config_cancel(
     safe_edit_func=safe_edit_message,
 ) -> int:
     chat_id = context.user_data.get("points_edit_chat_id")
-    context.user_data.pop("points_edit_field", None)
-    context.user_data.pop("points_edit_chat_id", None)
+    clear_points_input(context)
 
-    if update.callback_query and chat_id:
+    if update.callback_query and await can_configure_points(update, context, chat_id):
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
             settings = await get_chat_settings_func(session, chat_id)

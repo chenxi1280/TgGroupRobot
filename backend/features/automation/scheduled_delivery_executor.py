@@ -27,6 +27,7 @@ class ScheduledDeliveryPlan:
     task_id: str
     chat_id: int
     snapshot: dict[str, Any]
+    attempt_count: int | None = None
 
 
 class ScheduledDeliveryExecutor(Protocol):
@@ -39,36 +40,47 @@ class TelegramScheduledDeliveryExecutor:
         self._context = SimpleNamespace(bot=app.bot, application=app)
 
     async def execute(self, plan: ScheduledDeliveryPlan) -> DeliveryOutcome:
-        await self._delete_previous(plan)
+        deleted = await self._delete_previous(plan)
         try:
             result = await self._send(plan)
         except RetryAfter as exc:
-            return DeliveryOutcome.retryable_failure("telegram_retry_after", str(exc))
+            return DeliveryOutcome.retryable_failure("telegram_retry_after", str(exc),metadata={'post_actions':{'delete_previous':deleted}})
         except (Forbidden, BadRequest) as exc:
-            return DeliveryOutcome.permanent_failure(_telegram_error_code(exc), str(exc))
+            return DeliveryOutcome.permanent_failure(_telegram_error_code(exc), str(exc),metadata={'post_actions':{'delete_previous':deleted}})
         except NetworkError as exc:
-            return DeliveryOutcome.uncertain("telegram_network_unknown", str(exc))
+            return DeliveryOutcome.uncertain("telegram_network_unknown", str(exc),metadata={'post_actions':{'delete_previous':deleted}})
         except TelegramError as exc:
-            return DeliveryOutcome.uncertain("telegram_result_unknown", str(exc))
-        await self._pin(plan, int(result.message_id))
-        return DeliveryOutcome.success(message_id=int(result.message_id))
+            return DeliveryOutcome.uncertain("telegram_result_unknown", str(exc),metadata={'post_actions':{'delete_previous':deleted}})
+        from backend.features.automation.delivery_action_journal import record_receipt
+        await record_receipt(self._app,plan,message_id=int(result.message_id))
+        pinned = await self._pin(plan, int(result.message_id))
+        return DeliveryOutcome.success(message_id=int(result.message_id), metadata={
+            "post_actions": {"delete_previous": deleted, "pin": pinned},
+        })
 
-    async def _delete_previous(self, plan: ScheduledDeliveryPlan) -> None:
+    async def _delete_previous(self, plan: ScheduledDeliveryPlan) -> str:
         previous_id = plan.snapshot.get("last_sent_message_id")
         if not plan.snapshot.get("delete_previous") or not previous_id:
-            return
+            return "not_requested"
         try:
-            await PublishService.delete(self._context, chat_id=plan.chat_id, message_id=previous_id)
+            from backend.features.automation.delivery_action_journal import run_action
+            return await run_action(self._app,plan,action='delete_previous',message_id=previous_id)
         except TelegramError as exc:
             log.warning("scheduled_message_delete_previous_failed", occurrence_id=plan.occurrence_id, error=str(exc))
+            return "failed"
+        return "succeeded"
 
-    async def _pin(self, plan: ScheduledDeliveryPlan, message_id: int) -> None:
+    async def _pin(self, plan: ScheduledDeliveryPlan, message_id: int) -> str:
         if not plan.snapshot.get("pin_message"):
-            return
+            return "not_requested"
         try:
-            await PublishService.pin(self._context, chat_id=plan.chat_id, message_id=message_id)
-        except TelegramError as exc:
+            from backend.features.automation.delivery_action_journal import run_action
+            return await run_action(self._app,plan,action='pin',message_id=message_id)
+        except (BadRequest,Forbidden):
+            return 'failed'
+        except Exception as exc:
             log.warning("scheduled_message_pin_failed", occurrence_id=plan.occurrence_id, error=str(exc))
+            return "uncertain"
 
     async def _send(self, plan: ScheduledDeliveryPlan):
         snapshot = plan.snapshot

@@ -23,6 +23,7 @@ async def toggle_prompt_fail_open(
 ) -> None:
     async with db.session_factory() as session:
         settings = await get_chat_settings(session, chat_id)
+        await session.refresh(settings, with_for_update=True)
         current = verification_prompt_fail_open(settings)
         await update_module_config(
             session,

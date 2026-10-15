@@ -146,7 +146,7 @@ async def test_private_config_error_is_sanitized(monkeypatch) -> None:
         boom,
         SimpleNamespace(effective_user=SimpleNamespace(id=1), effective_message=object()),
         object(),
-        session=object(),
+        session=SimpleNamespace(rollback=AsyncMock()),
         state=SimpleNamespace(state_type="x", chat_id=1),
         message_text="hi",
         state_type="x",

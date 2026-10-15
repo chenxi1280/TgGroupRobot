@@ -98,7 +98,7 @@ async def _set_enabled(request: SetFieldRequest, task) -> bool:
             request.update,
             request.context,
             request.target_chat_id,
-            request.task_id,
+            task_id=request.task_id,
             toast="❌ 启用失败：请先设置文本或封面。下面可直接补齐后再预览、启用。",
         )
         return False

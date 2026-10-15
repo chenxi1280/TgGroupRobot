@@ -8,6 +8,8 @@ _CHAT_REWARD_DAY_LABELS = ["第一日", "第二日", "第三日", "第四日", "
 
 def _format_chat_reward_plan_lines(plan: list[int], reward_type: str, after_7d_mode: str) -> list[str]:
     values = plan or [30, 50, 70, 90, 110, 130, 150]
+    if reward_type == "daily":
+        return [f"每日激励：达标奖励 {values[0]} 积分（取奖励计划首日数额）"]
     title = "递增激励:" if reward_type == "daily_increment" else "周期激励:"
     lines = [title]
     for label, points in zip(_CHAT_REWARD_DAY_LABELS, values[:7]):
@@ -67,6 +69,7 @@ def _engagement_chat_reward_keyboard(reward, chat_id: int) -> InlineKeyboardMark
     rows = [
         [InlineKeyboardButton("状态:", callback_data=f"act:chat:{chat_id}:home"), InlineKeyboardButton("✅ 启动" if reward.enabled else "启动", callback_data=f"act:chat:{chat_id}:toggle:1"), InlineKeyboardButton("❌ 关闭" if not reward.enabled else "关闭", callback_data=f"act:chat:{chat_id}:toggle:0")],
         [InlineKeyboardButton("类型:", callback_data=f"act:chat:{chat_id}:home"), InlineKeyboardButton("✅ 递增" if reward.reward_type == "daily_increment" else "递增", callback_data=f"act:chat:{chat_id}:type:daily_increment"), InlineKeyboardButton("✅ 周期" if reward.reward_type == "weekly_cycle" else "周期", callback_data=f"act:chat:{chat_id}:type:weekly_cycle")],
+        [InlineKeyboardButton("✅ 每日" if reward.reward_type == "daily" else "每日", callback_data=f"act:chat:{chat_id}:type:daily")],
         [InlineKeyboardButton("⚙️ 发言数量", callback_data=f"act:chat:{chat_id}:target"), InlineKeyboardButton("⚙️ 水群奖励", callback_data=f"act:chat:{chat_id}:plan")],
         [InlineKeyboardButton("七日后:", callback_data=f"act:chat:{chat_id}:home"), InlineKeyboardButton("✅ 重置" if reward.after_7d_mode == "reset" else "重置", callback_data=f"act:chat:{chat_id}:after7:reset"), InlineKeyboardButton("✅ 延续" if reward.after_7d_mode == "continue" else "延续", callback_data=f"act:chat:{chat_id}:after7:continue")],
         [InlineKeyboardButton("⌨️ 领奖口令", callback_data=f"act:chat:{chat_id}:command"), InlineKeyboardButton("✅ 套用推荐规则", callback_data=f"act:chat:{chat_id}:preset:default")],
@@ -91,7 +94,7 @@ class EngagementAdminViewsMixin:
             reward = await get_engagement_chat_reward(session, chat_id)
             recent_stats = await get_recent_chat_reward_stats(session, chat_id, days=7)
             await session.commit()
-        reward_type_label = "📈 递增奖励" if reward.reward_type == "daily_increment" else "🔁 周期奖励"
+        reward_type_label = {"daily": "每日固定奖励", "daily_increment": "递增奖励", "weekly_cycle": "周期奖励"}.get(reward.reward_type, "未知模式")
         recent_claims = sum(item["claim_count"] for item in recent_stats)
         text = "\n".join(
             [

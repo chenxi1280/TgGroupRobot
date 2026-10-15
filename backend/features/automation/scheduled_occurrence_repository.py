@@ -7,6 +7,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.dialects.postgresql import insert
 
 from backend.features.automation.scheduled_delivery_executor import ScheduledDeliveryPlan
+from backend.features.automation.delivery_action_journal import merge_facts
 from backend.platform.db.schema.models.scheduled_message import ScheduledMessageLog, ScheduledMessageTask
 from backend.platform.delivery import DeliveryOutcome, DeliveryStatus, RetryPolicy, calculate_next_retry_at
 from backend.shared.time_helper import calculate_next_run_time, is_time_in_window
@@ -84,9 +85,10 @@ def finalize_occurrence(
     occurrence.error_code = outcome.error_code
     occurrence.error_message = outcome.message
     occurrence.completed_at = now if _is_terminal(status) else None
-    occurrence.message_id = outcome.message_id
-    occurrence.sent_at = now if status is DeliveryStatus.succeeded else None
+    occurrence.message_id = outcome.message_id or occurrence.message_id
+    occurrence.sent_at = now if status is DeliveryStatus.succeeded else occurrence.sent_at
     occurrence.success = _legacy_success(status)
+    occurrence.post_actions = merge_facts(getattr(occurrence,'post_actions',None),dict(outcome.metadata))
     if status is DeliveryStatus.succeeded:
         if outcome.message_id is None:
             raise RuntimeError(f"scheduled occurrence {occurrence.id} has no message id")
@@ -153,20 +155,22 @@ class SqlAlchemyScheduledOccurrenceStore:
 
     async def mark_send_started(self, plan: ScheduledDeliveryPlan, now: dt.datetime) -> None:
         async with self._db.session_factory() as session:
-            occurrence = await _load_processing(session, plan.occurrence_id)
+            occurrence = await _load_processing(session, plan.occurrence_id, attempt_count=plan.attempt_count)
+            if occurrence.lease_until is not None and occurrence.lease_until<=now:
+                raise RuntimeError('scheduled send claim lease expired before remote start')
             occurrence.send_started_at = now
             await session.commit()
 
     async def finalize(self, plan, outcome: DeliveryOutcome, *, now: dt.datetime) -> None:
         async with self._db.session_factory() as session:
-            occurrence = await _load_processing(session, plan.occurrence_id)
+            occurrence = await _load_processing(session, plan.occurrence_id, attempt_count=plan.attempt_count)
             task = await _load_task_for_update(session, occurrence.task_id)
             finalize_occurrence(occurrence, task, outcome, now=now, retry_policy=self._retry_policy)
             await session.commit()
 
     async def mark_finalize_uncertain(self, plan, error: Exception, *, now: dt.datetime) -> None:
         async with self._db.session_factory() as session:
-            occurrence = await _load_processing(session, plan.occurrence_id)
+            occurrence = await _load_processing(session, plan.occurrence_id, attempt_count=plan.attempt_count)
             outcome = DeliveryOutcome.uncertain("database_finalize_failed", str(error))
             task = await _load_task_for_update(session, occurrence.task_id)
             finalize_occurrence(occurrence, task, outcome, now=now, retry_policy=self._retry_policy)
@@ -241,10 +245,11 @@ def _claim(occurrence: ScheduledMessageLog, lease_until: dt.datetime) -> Schedul
         task_id=str(occurrence.task_id),
         chat_id=int(occurrence.chat_id),
         snapshot=dict(occurrence.content_snapshot),
+        attempt_count=occurrence.attempt_count,
     )
 
 
-async def _load_processing(session, occurrence_id: int) -> ScheduledMessageLog:
+async def _load_processing(session, occurrence_id: int, *, attempt_count=None) -> ScheduledMessageLog:
     result = await session.execute(
         select(ScheduledMessageLog)
         .where(
@@ -254,7 +259,7 @@ async def _load_processing(session, occurrence_id: int) -> ScheduledMessageLog:
         .with_for_update()
     )
     occurrence = result.scalar_one_or_none()
-    if occurrence is None:
+    if occurrence is None or (attempt_count is not None and occurrence.attempt_count!=attempt_count):
         raise RuntimeError(f"scheduled occurrence is not processing: {occurrence_id}")
     return occurrence
 

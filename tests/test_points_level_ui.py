@@ -44,7 +44,8 @@ def test_points_level_list_keyboard_marks_current_switches():
     assert enabled_rows[1] == ["👨‍🏫 排除老师：", "✅ 启动", "关闭"]
     assert disabled_rows[0] == ["⚙️ 状态：", "启动", "❌ 关闭"]
     assert disabled_rows[1] == ["👨‍🏫 排除老师：", "启动", "❌ 关闭"]
-    assert disabled_keyboard.inline_keyboard[2][0].callback_data == "adm:lvl:-1001:add"
+    assert any(button.callback_data == "adm:lvl:-1001:add" for row in disabled_keyboard.inline_keyboard for button in row)
+    assert any(button.callback_data == "ltag:-1001:0:view" for row in disabled_keyboard.inline_keyboard for button in row)
 
 
 @pytest.mark.asyncio

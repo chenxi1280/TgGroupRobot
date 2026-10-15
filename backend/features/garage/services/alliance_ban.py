@@ -5,7 +5,7 @@ import datetime as dt
 from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.platform.db.schema.models.alliance import GroupAllianceBanPool, GroupAllianceSetting
+from backend.platform.db.schema.models.alliance import GroupAlliance, GroupAllianceBanPool, GroupAllianceSetting, GroupAllianceMember
 from backend.shared.services.base import NotFoundError, ValidationError
 
 
@@ -45,10 +45,20 @@ class AllianceBanMixin:
         operator_user_id: int,
         target_user_id: int,
         reason: str | None = None,
+        punishment_type: str = "ban",
     ) -> GroupAllianceBanPool:
         member = await cls.get_member(session, chat_id)
         if member is None:
             raise ValidationError("当前群未加入联盟，无法使用联合封禁。")
+        if punishment_type not in {"ban", "mute"}:
+            raise ValidationError("无效的联盟处罚类型")
+        await session.execute(select(GroupAlliance.alliance_id).where(
+            GroupAlliance.alliance_id == member.alliance_id,
+        ).with_for_update())
+        if await cls.get_member(session,chat_id) is None:
+            raise ValidationError('当前群已退出联盟，未写入处罚池。')
+        from backend.shared.services.user_service import ensure_user
+        await ensure_user(session, user_id=target_user_id, username=None, first_name=None, last_name=None, language_code=None)
 
         stmt: Select[tuple[GroupAllianceBanPool]] = select(GroupAllianceBanPool).where(
             GroupAllianceBanPool.alliance_id == member.alliance_id,
@@ -56,6 +66,8 @@ class AllianceBanMixin:
         )
         existing = (await session.execute(stmt)).scalar_one_or_none()
         if existing is not None:
+            await cls._upgrade_joint_entry(session, existing, chat_id=chat_id,
+                operator_user_id=operator_user_id, punishment_type=punishment_type)
             return existing
 
         item = GroupAllianceBanPool(
@@ -64,6 +76,7 @@ class AllianceBanMixin:
             source_chat_id=chat_id,
             source_operator_user_id=operator_user_id,
             reason=reason,
+            punishment_type=punishment_type,
         )
         session.add(item)
         await cls.append_audit(
@@ -72,10 +85,20 @@ class AllianceBanMixin:
             alliance_id=member.alliance_id,
             action="joint_ban_add",
             operator_user_id=operator_user_id,
-            payload={"target_user_id": target_user_id, "reason": reason},
+            payload={"target_user_id": target_user_id, "reason": reason, "punishment_type": punishment_type},
         )
         await session.flush()
         return item
+
+    @classmethod
+    async def _upgrade_joint_entry(cls, session, entry, *, chat_id: int, operator_user_id: int, punishment_type: str):
+        if entry.punishment_type != "mute" or punishment_type != "ban":
+            return
+        entry.punishment_type = "ban"
+        await cls.append_audit(session, chat_id=chat_id, alliance_id=entry.alliance_id,
+            action="joint_ban_upgrade", operator_user_id=operator_user_id,
+            payload={"target_user_id": entry.target_user_id, "from": "mute", "to": "ban"})
+        await session.flush()
 
     @classmethod
     async def get_joint_ban_hit(
@@ -94,6 +117,8 @@ class AllianceBanMixin:
                 select(GroupAllianceBanPool).where(
                     GroupAllianceBanPool.alliance_id == setting.alliance_id,
                     GroupAllianceBanPool.target_user_id == target_user_id,
+                    select(GroupAllianceMember.id).where(GroupAllianceMember.chat_id==chat_id,
+                        GroupAllianceMember.alliance_id==setting.alliance_id,GroupAllianceMember.status=='active').exists(),
                 )
             )
         ).scalar_one_or_none()
@@ -133,6 +158,9 @@ class AllianceBanMixin:
         if member is None:
             raise NotFoundError("当前群尚未加入联盟。")
 
+        await session.execute(select(GroupAlliance.alliance_id).where(GroupAlliance.alliance_id==member.alliance_id).with_for_update())
+        if await cls.get_member(session,chat_id) is None:
+            raise NotFoundError('当前群已退出联盟。')
         item = (
             await session.execute(
                 select(GroupAllianceBanPool).where(

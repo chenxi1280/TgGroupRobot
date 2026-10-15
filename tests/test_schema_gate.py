@@ -334,7 +334,7 @@ def _full_tables() -> dict[str, dict]:
                 "id", "chat_id", "created_by_user_id", "title", "content", "image_file_id", "image_url",
                 "has_image", "schedule_time", "frequency", "last_sent_at", "send_locked", "enabled",
                 "start_time", "interval_hours", "max_send_count", "send_count",
-                "buttons", "sort_order", "end_time", "last_sent_message_id", "last_sent_cycle_no",
+                "buttons", "sort_order", "end_time", "last_sent_message_id", "last_sent_cycle_no", "expiry_notice",
                 "created_at", "updated_at",
             },
         },
@@ -353,7 +353,7 @@ def _full_tables() -> dict[str, dict]:
                 "cycle_no", "sort_order_snapshot", "title_snapshot", "created_at", "dispatch_key",
                 "scheduled_for", "content_snapshot", "rule_snapshot", "status", "attempt_count",
                 "next_retry_at", "lease_until", "send_started_at", "completed_at", "error_code",
-                "error_message", "replay_of_history_id", "replay_admin_id", "replay_reason",
+                "error_message", "replay_of_history_id", "replay_admin_id", "replay_reason", "post_actions",
             },
             "indexes": [
                 {"name": "uq_ad_rotation_history_dispatch_key", "column_names": ["dispatch_key"], "unique": True},
@@ -398,7 +398,7 @@ def _full_tables() -> dict[str, dict]:
             "columns": {
                 "id", "task_id", "chat_id", "run_key", "scheduled_for", "content_snapshot",
                 "status", "attempt_count", "next_retry_at", "lease_until", "send_started_at",
-                "completed_at", "error_code", "message_id", "sent_at", "success", "error_message",
+                "completed_at", "error_code", "message_id", "sent_at", "success", "error_message", "post_actions",
             },
             "indexes": [
                 {"name": "uq_sml_run_key", "column_names": ["run_key"], "unique": True},
@@ -428,7 +428,7 @@ def _full_tables() -> dict[str, dict]:
         "group_alliance_ban_pool": {
             "columns": {
                 "id", "alliance_id", "target_user_id", "source_chat_id",
-                "source_operator_user_id", "reason", "created_at",
+                "source_operator_user_id", "reason", "punishment_type", "created_at",
             },
             "uniques": [{"name": "uq_group_alliance_ban_pool", "column_names": ["alliance_id", "target_user_id"]}],
         },
@@ -555,12 +555,12 @@ def _full_tables() -> dict[str, dict]:
         "auction_settings": {
             "columns": {
                 "chat_id", "enabled", "pin_message_enabled", "auto_extend_enabled",
-                "create_permission", "points_mode", "updated_at",
+                "create_permission", "permission_enforced", "points_mode", "updated_at",
             },
         },
         "lottery_settings": {
             "columns": {
-                "chat_id", "publish_pin_enabled", "result_pin_enabled", "delete_join_message_enabled", "updated_at",
+                "chat_id", "publish_pin_enabled", "result_pin_enabled", "delete_join_message_enabled", "require_username", "updated_at",
             },
         },
         "auction_items": {
@@ -672,6 +672,17 @@ def _full_tables() -> dict[str, dict]:
                 "id", "chat_id", "old_user_id", "new_user_id",
                 "asset_snapshot", "result", "reason", "created_at",
             },
+        },
+        "admin_effects": {
+            "columns": {"id","effect_key","chat_id","kind","payload","status","attempts","next_run_at","expires_at","lease_until","started_at","completed_at","result","error"},
+            "uniques": [{"name":"admin_effects_effect_key_key", "column_names":["effect_key"]}],
+            "indexes": [{"name":"ix_admin_effect_due","column_names":["status","next_run_at"],"unique":False}],
+        },
+        "level_tag_states": {
+            "columns": {"chat_id","user_id","applied_tag","desired_tag","status","error","checked_at","retry_at"},
+        },
+        "notice_consents": {
+            "columns": {"chat_id","ad_id","user_id","version","enabled","updated_at"},
         },
         "ops_audit_events": {
             "columns": {

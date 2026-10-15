@@ -12,6 +12,7 @@ from backend.features.points.services.points_service_accounts import change_poin
 from backend.features.points.services.points_service_types import PointsResult, SignResult
 from backend.platform.db.schema.models.core import SignInLog, UserDailyStats
 from backend.platform.db.schema.models.enums import PointsTxnType
+from backend.shared.time_helper import LOCAL_TIMEZONE
 
 
 async def _get_or_create_daily_stats(
@@ -51,25 +52,37 @@ async def _get_or_create_daily_stats(
 
 
 async def _has_signed(session, chat_id: int, user_id: int, *, sign_date: dt.date) -> bool:
+    start = dt.datetime.combine(sign_date, dt.time.min, tzinfo=LOCAL_TIMEZONE).astimezone(dt.UTC)
     result = await session.execute(
         select(SignInLog.id).where(
             and_(
                 SignInLog.chat_id == chat_id,
                 SignInLog.user_id == user_id,
-                SignInLog.sign_date == sign_date,
+                SignInLog.created_at >= start,
+                SignInLog.created_at < start + dt.timedelta(days=1),
             )
         )
     )
-    return result.scalar_one_or_none() is not None
+    return result.scalars().first() is not None
 
 
 async def _update_sign_streak(session, chat_id: int, user_id: int, *, today: dt.date) -> UserDailyStats:
     stats = await _get_or_create_daily_stats(session, chat_id, user_id, stat_date=today, for_update=True)
-    signed_yesterday = await _has_signed(
-        session, chat_id, user_id, sign_date=today - dt.timedelta(days=1)
-    )
-    stats.consecutive_sign_days = stats.consecutive_sign_days + 1 if signed_yesterday else 1
+    previous = await _effective_streak(session,chat_id,user_id,sign_date=today-dt.timedelta(days=1))
+    stats.consecutive_sign_days = previous+1 if previous else 1
     return stats
+
+
+async def _effective_streak(session,chat_id,user_id,*,sign_date):
+    start=dt.datetime.combine(sign_date,dt.time.min,tzinfo=LOCAL_TIMEZONE).astimezone(dt.UTC)
+    signed=await session.scalar(select(SignInLog).where(SignInLog.chat_id==chat_id,SignInLog.user_id==user_id,
+        SignInLog.created_at>=start,SignInLog.created_at<start+dt.timedelta(days=1))
+        .order_by(SignInLog.created_at.desc(),SignInLog.id.desc()).limit(1))
+    if signed is None:
+        return 0
+    value=await session.scalar(select(UserDailyStats.consecutive_sign_days).where(UserDailyStats.chat_id==chat_id,
+        UserDailyStats.user_id==user_id,UserDailyStats.stat_date==signed.sign_date))
+    return max(1,int(value or 0))
 
 
 def _consecutive_bonus(streak: int, *, required_days: int, bonus_points: int) -> int:
@@ -84,7 +97,7 @@ async def _already_signed_result(session, chat_id: int, user_id: int, *, today: 
     return SignResult(
         success=False,
         balance=balance,
-        consecutive_days=stats.consecutive_sign_days,
+        consecutive_days=stats.consecutive_sign_days or await _effective_streak(session,chat_id,user_id,sign_date=today),
         bonus_points=0,
         reason="already_signed",
     )
@@ -96,6 +109,7 @@ async def _add_sign_log(session, *, chat_id: int, user_id: int, today: dt.date, 
             chat_id=chat_id,
             user_id=user_id,
             sign_date=today,
+            created_at=dt.datetime.now(dt.UTC),
             points_awarded=awarded,
         )
     )
@@ -112,7 +126,7 @@ async def _award_sign_points(session, chat_id: int, user_id: int, *, points: int
         reason="签到奖励",
     )
     if bonus > 0:
-        await change_points(
+        _, balance = await change_points(
             session,
             chat_id=chat_id,
             user_id=user_id,
@@ -132,7 +146,7 @@ async def sign_in(
     consecutive_days: int = 0,
     consecutive_bonus: int = 0,
 ) -> SignResult:
-    today = dt.datetime.now(dt.UTC).date()
+    today = dt.datetime.now(dt.UTC).astimezone(LOCAL_TIMEZONE).date()
     if await _has_signed(session, chat_id, user_id, sign_date=today):
         return await _already_signed_result(session, chat_id, user_id, today=today)
 
@@ -179,7 +193,7 @@ async def add_message_points(
         bal = await get_balance(session, chat_id, user_id)
         return PointsResult(success=False, balance=bal, reason="message_too_short")
 
-    today = dt.datetime.now(dt.UTC).date()
+    today = dt.datetime.now(dt.UTC).astimezone(LOCAL_TIMEZONE).date()
     stats = await _get_or_create_daily_stats(
         session, chat_id, user_id, stat_date=today, for_update=True
     )
@@ -220,7 +234,7 @@ async def add_invite_points(
     points: int,
     daily_limit: int | None = None,
 ) -> PointsResult:
-    today = dt.datetime.now(dt.UTC).date()
+    today = dt.datetime.now(dt.UTC).astimezone(LOCAL_TIMEZONE).date()
     stats = await _get_or_create_daily_stats(
         session, chat_id, inviter_user_id, stat_date=today, for_update=True
     )

@@ -86,3 +86,20 @@ async def test_auto_pause_surfaces_required_persistence_failure(monkeypatch) -> 
 
     assert task.enabled is False
     assert task.auto_paused is True
+
+
+@pytest.mark.asyncio
+async def test_shared_admin_workers_keep_polling_with_visible_failure_until_recovery() -> None:
+    from backend.platform.scheduler.tasks.admin_automation_task import AdminAutomationTask
+    from backend.platform.scheduler.tasks.group_lock_task import GroupLockTask
+    for task in (AdminAutomationTask(), GroupLockTask()):
+        assert task.auto_pause_on_failure is False
+    task = _FailingTask(name="shared", interval=60, max_consecutive_failures=2, auto_pause_on_failure=False)
+    for _ in range(3):
+        await task.run(SimpleNamespace())
+    assert task.enabled and not task.auto_paused and task.error_count == 3
+    assert task.get_status()["last_error"] == "boom"
+    # Explicit administrative pause remains authoritative.
+    task.enabled = False
+    await task.run(SimpleNamespace())
+    assert task.error_count == 3

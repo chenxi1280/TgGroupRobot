@@ -299,6 +299,8 @@ async def test_points_tasks_view_renders(monkeypatch):
 @pytest.mark.asyncio
 async def test_quick_publish_text_updates_draft(monkeypatch):
     from backend.platform.telegram.private_config_handler import PrivateConfigHandler
+    from unittest.mock import AsyncMock
+    monkeypatch.setattr("backend.shared.services.permission_service.PermissionPolicyService.can_manage", AsyncMock(return_value=True))
 
     calls: list[int] = []
 

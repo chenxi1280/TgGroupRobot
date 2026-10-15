@@ -92,6 +92,7 @@ def test_points_rule_keyboards_keep_existing_real_actions():
         ["⚙️ 状态：", "✅ 启动", "关闭"],
         ["🎯 设置获得数量"],
         ["🔥 连续奖励"],
+        ["签到反馈与排行"],
         ["🔙 返回"],
     ]
     assert speech_rows == [
@@ -144,10 +145,12 @@ def test_points_edit_conversation_back_button_exits_wait_state():
 
 @pytest.mark.asyncio
 async def test_toggle_all_enabled_updates_three_existing_switches(monkeypatch):
+    from unittest.mock import AsyncMock
     captured: dict[str, object] = {}
     settings = _build_settings()
     settings.sign_enabled = False
     session = _SessionContext(settings)
+    session.refresh = AsyncMock()
     context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(session)}))
     update = SimpleNamespace(
         callback_query=SimpleNamespace(data="pts:toggle:all_enabled:-1001:1"),
@@ -219,7 +222,7 @@ async def test_points_config_home_answers_callback_only_once(monkeypatch):
 async def test_points_config_cancel_returns_to_config_page(monkeypatch):
     settings = _build_settings()
     session = _SessionContext(settings)
-    callback_query = SimpleNamespace()
+    callback_query = SimpleNamespace(data="")
     edits: list[tuple[str, object]] = []
 
     async def fake_edit_message_text(text, reply_markup=None):
@@ -240,6 +243,9 @@ async def test_points_config_cancel_returns_to_config_page(monkeypatch):
         return session.settings
 
     monkeypatch.setattr(points_config_handler, "get_chat_settings", fake_get_chat_settings)
+
+    from unittest.mock import AsyncMock
+    monkeypatch.setattr("backend.features.admin.points_config_messages.can_configure_points", AsyncMock(return_value=True))
 
     result = await points_config_handler.points_config_cancel_callback(update, context)
 

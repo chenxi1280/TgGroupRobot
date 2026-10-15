@@ -281,39 +281,13 @@ async def test_night_mode_delete_failure_still_blocks_and_notifies_admin() -> No
 
 @pytest.mark.asyncio
 async def test_alliance_joint_ban_failure_still_stops_later_processing(monkeypatch) -> None:
-    bot = _Bot(restrict_fails=True)
-    hit = (SimpleNamespace(), SimpleNamespace(source_operator_user_id=99))
-
-    async def fake_get_joint_ban_hit(session, *, chat_id, target_user_id):
-        return hit
-
-    class _Session:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, exc_type, exc, tb):
-            return False
-
-        async def commit(self):
-            return None
-
-    class _Db:
-        def session_factory(self):
-            return _Session()
-
-    monkeypatch.setattr(moderation_hooks.AllianceService, "get_joint_ban_hit", fake_get_joint_ban_hit)
-
-    handled = await moderation_hooks._process_alliance_joint_ban(
-        _context(bot),
-        _Db(),
-        SimpleNamespace(id=-1001),
-        user=SimpleNamespace(id=42),
-        message=SimpleNamespace(message_id=31, sender_chat=None),
-    )
-
+    from unittest.mock import AsyncMock
+    delegated=AsyncMock(return_value=True)
+    monkeypatch.setattr('backend.features.group_ops.services.alliance_runtime.process_hit',delegated)
+    handled=await moderation_hooks._process_alliance_joint_ban(_context(_Bot()),object(),
+        SimpleNamespace(id=-1001),user=SimpleNamespace(id=42),message=SimpleNamespace(message_id=31))
     assert handled is True
-    assert bot.messages[0]["chat_id"] == 7001
-    assert "联盟封禁已命中" in bot.messages[0]["text"]
+    delegated.assert_awaited_once()
 
 
 @pytest.mark.asyncio

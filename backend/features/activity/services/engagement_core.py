@@ -4,6 +4,7 @@ import datetime as dt
 import re
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.platform.db.schema.models.expansion import (
@@ -56,12 +57,15 @@ async def get_or_create_chat_reward(session: AsyncSession, chat_id: int) -> Enga
 
 
 async def get_or_create_chat_stat(session: AsyncSession, chat_id: int, user_id: int, *, biz_date: dt.date) -> EngagementChatStat:
+    await session.execute(insert(EngagementChatStat).values(
+        chat_id=chat_id, user_id=user_id, biz_date=biz_date,
+    ).on_conflict_do_nothing(index_elements=["chat_id", "user_id", "biz_date"]))
     stmt = select(EngagementChatStat).where(
         EngagementChatStat.chat_id == chat_id,
         EngagementChatStat.user_id == user_id,
         EngagementChatStat.biz_date == biz_date,
     )
-    result = await session.execute(stmt)
+    result = await session.execute(stmt.with_for_update().execution_options(populate_existing=True))
     stat = result.scalar_one_or_none()
     if stat is None:
         stat = EngagementChatStat(chat_id=chat_id, user_id=user_id, biz_date=biz_date)

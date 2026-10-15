@@ -636,6 +636,9 @@ async def test_lottery_subscribe_notice_auto_deletes_after_30_seconds(monkeypatc
         scheduled.append((message, seconds, name))
 
     class _Session:
+        async def get(self, model, key):
+            return None
+
         async def __aenter__(self):
             return self
 

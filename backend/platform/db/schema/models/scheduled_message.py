@@ -87,4 +87,5 @@ class ScheduledMessageLog(Base):
     message_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     sent_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     success: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    post_actions: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}", nullable=False)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)

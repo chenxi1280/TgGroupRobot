@@ -383,6 +383,7 @@ class LotteryMenuMixin:
                 f"📌 发布置顶：{'✅ 开启' if setting.publish_pin_enabled else '❌ 关闭'}",
                 f"📣 结果置顶：{'✅ 开启' if setting.result_pin_enabled else '❌ 关闭'}",
                 f"🧹 删除参与消息：{'✅ 开启' if setting.delete_join_message_enabled else '❌ 关闭'}",
+                f"👤 主动参与需用户名：{'✅ 开启' if getattr(setting, 'require_username', False) else '❌ 关闭'}",
             ]
         )
         keyboard = InlineKeyboardMarkup(
@@ -403,6 +404,7 @@ class LotteryMenuMixin:
                         callback_data=f"lot:setting:{target_chat_id}:delete_join:{0 if setting.delete_join_message_enabled else 1}",
                     ),
                 ],
+                [InlineKeyboardButton("👤 主动参与需用户名", callback_data=f"lot:setting:{target_chat_id}:require_username:{0 if getattr(setting, 'require_username', False) else 1}")],
                 [
                     InlineKeyboardButton(
                         "🔙 返回", callback_data=f"adm:menu:lottery:{target_chat_id}"

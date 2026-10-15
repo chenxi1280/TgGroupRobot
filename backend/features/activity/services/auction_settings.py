@@ -18,6 +18,10 @@ async def get_or_create_setting(session: AsyncSession, chat_id: int) -> AuctionS
 
 
 async def update_setting(session: AsyncSession, chat_id: int, **updates) -> AuctionSetting:
+    if "create_permission" in updates:
+        if updates["create_permission"] not in {"all", "admin"}:
+            raise ValueError("创建权限只能为全员或管理员")
+        updates["permission_enforced"] = True
     setting = await get_or_create_setting(session, chat_id)
     for key, value in updates.items():
         if hasattr(setting, key):

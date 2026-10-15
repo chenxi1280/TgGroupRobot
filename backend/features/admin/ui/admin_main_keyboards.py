@@ -35,7 +35,7 @@ from backend.features.admin.feature_registry import ADMIN_CATEGORIES
 
 def admin_category_menu(category: str, chat_id: int) -> InlineKeyboardMarkup:
     _, features = ADMIN_CATEGORIES[category]
-    buttons = [InlineKeyboardButton(label, callback_data=f"adm:menu:{feature}:{chat_id}")
+    buttons = [InlineKeyboardButton(label, callback_data=f"adm:menu:{feature}:{chat_id}:category")
                for label, feature in features]
     rows = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
     rows.append([InlineKeyboardButton("返回管理首页", callback_data=f"adm:menu:main:{chat_id}")])
@@ -48,6 +48,13 @@ def admin_main_menu(chat_id: int | None = None) -> InlineKeyboardMarkup:
     buttons = [InlineKeyboardButton(title, callback_data=f"adm:menu:category_{key}:{chat_id}")
                for key, (title, _) in ADMIN_CATEGORIES.items()]
     rows = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
+    quick = [
+        InlineKeyboardButton("自动回复", callback_data=f"adm:menu:autoreply:{chat_id}:home"),
+        InlineKeyboardButton("定时消息", callback_data=f"adm:menu:scheduled:{chat_id}:home"),
+        InlineKeyboardButton("轮播广告", callback_data=f"adm:menu:ads:{chat_id}:home"),
+        InlineKeyboardButton("主积分", callback_data=f"adm:menu:points:{chat_id}:home"),
+    ]
+    rows = [quick[:2], quick[2:], *rows]
     rows.append([
         InlineKeyboardButton("切换群", callback_data="adm:switch_group"),
         InlineKeyboardButton("刷新页面", callback_data=f"adm:menu:main:{chat_id}"),

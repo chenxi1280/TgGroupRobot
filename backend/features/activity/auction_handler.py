@@ -58,9 +58,9 @@ async def _check_auction_create_allowed(
     chat_id: int,
     user_id: int,
 ) -> bool:
-    del context, chat_id, user_id
-    if not setting.enabled:
-        await _reply(update, "❌ 拍卖功能未开启，请联系管理员开启后再创建。")
+    from backend.features.activity.auction_permissions import can_create_auction
+    if not await can_create_auction(context, setting, chat_id=chat_id, user_id=user_id):
+        await _reply(update, "❌ 拍卖功能未开启或当前创建权限不允许，请联系管理员。")
         return False
     return True
 
@@ -248,6 +248,9 @@ async def _pin_auction_announcement(flow: _AuctionFlow, item, message_id: int) -
 
 
 async def _publish_auction_from_state(flow: _AuctionFlow, data: dict) -> None:
+    if not await _check_auction_create_allowed(flow.update, flow.context, flow.setting,
+        chat_id=flow.chat.id, user_id=flow.user.id):
+        return
     end_at = dt.datetime.fromisoformat(data["end_at"])
     if end_at.tzinfo is None:
         end_at = end_at.replace(tzinfo=dt.UTC)

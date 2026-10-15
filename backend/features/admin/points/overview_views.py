@@ -23,7 +23,8 @@ class PointsOverviewViewsMixin:
         chat_title = await self._get_chat_title(db, chat_id)
         text = format_points_home_text(settings, chat_title=chat_title)
 
-        keyboard = points_config_keyboard(settings, chat_id)
+        from backend.features.admin.menu_origins import with_menu_origin
+        keyboard = with_menu_origin(points_config_keyboard(settings, chat_id), context, chat_id=chat_id, feature="points")
 
         await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
 
@@ -106,7 +107,7 @@ class PointsOverviewViewsMixin:
                     f"文件{'✅' if level.allow_document else '❌'}",
                     f"提到{'✅' if level.allow_mention else '❌'}",
                 ]
-                level_lines.extend([f"{level.level_name}（积分门槛线 > {level.point_threshold}）", "└" + " ".join(perms), ""])
+                level_lines.extend([f"{level.level_name}（积分门槛线 ≥ {level.point_threshold}）", "└" + " ".join(perms), ""])
         else:
             level_lines.append("待配置（积分门槛线 > 0）")
             level_lines.append("")
@@ -116,6 +117,7 @@ class PointsOverviewViewsMixin:
                 "👨‍💻 积分等级",
                 "",
                 "通过主积分数量划分用户等级，并设置不同等级的权限",
+                "未匹配启用等级时沿用历史放行；负积分不匹配 0 门槛。标签显示独立配置；不覆盖其他来源标签。",
                 "",
                 *level_lines,
                 f"{len(levels)} 条数据，第 1 页/共 {total_pages} 页",

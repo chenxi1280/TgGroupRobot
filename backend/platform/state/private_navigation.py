@@ -5,7 +5,7 @@ from backend.platform.state.edit_drafts import suspend_inputs
 from backend.shared.services.permission_service import PermissionPolicyService
 
 _NAVIGATION = {"menu", "home", "list", "detail", "back", "back_to_main", "back_to_menu", "rule", "view", "whitelist"}
-_ADMIN_PREFIXES = {"adm", "ads", "auto_reply", "inv", "sm", "ali", "gfw", "grg", "tsearch", "crv", "auc", "btm", "gm", "guess", "act", "qpub", "btned", "gg", "pts"}
+_ADMIN_PREFIXES = {"adm", "ads", "auto_reply", "inv", "sm", "ali", "gfw", "grg", "tsearch", "crv", "auc", "btm", "gm", "guess", "act", "qpub", "btned", "gg", "pts", "gperm", "signcfg", "gnote", "anote", "eff", "ltag", "asan"}
 
 
 async def suspend_for_private_navigation(application, update):

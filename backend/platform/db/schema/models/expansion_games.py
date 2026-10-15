@@ -96,6 +96,7 @@ class LotterySetting(Base):
     publish_pin_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     result_pin_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     delete_join_message_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    require_username: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     updated_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: dt.datetime.now(dt.UTC),

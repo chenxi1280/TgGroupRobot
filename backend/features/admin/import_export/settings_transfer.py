@@ -3,6 +3,8 @@ from __future__ import annotations
 from backend.shared.callback_parser import CallbackData
 
 from backend.features.admin.support import *
+from backend.shared.services.base import ValidationError
+from backend.shared.services.permission_service import PermissionPolicyService
 
 
 class SettingsTransferAdminMixin:
@@ -43,6 +45,8 @@ class SettingsTransferAdminMixin:
                 "",
                 "导入会覆盖目标群组对应模块的配置。",
                 "欢迎/自动回复/违禁词会覆盖原有条目。",
+                "主积分含签到反馈；夜间管控含双权限/通知，保留目标群原权限快照。",
+                "积分等级与标签会重建等级编号映射；不复制余额、已有标签所有权或执行记录。已启用策略将由后台消费。",
             ]
         )
 
@@ -80,6 +84,8 @@ class SettingsTransferAdminMixin:
         if selected_chat_id is None or selected_chat_id == chat_id:
             await answer_callback_query_safely(update, f"{label}无效", show_alert=True)
             return
+        if not await _can_transfer_peer(update, context, selected_chat_id):
+            return
         state["source_chat_id" if mode == "import" else "target_chat_id"] = selected_chat_id
         await self._show_transfer_menu(update, context, chat_id, mode=mode)
 
@@ -102,11 +108,21 @@ class SettingsTransferAdminMixin:
         if not modules:
             await answer_callback_query_safely(update, "请至少选择一个模块", show_alert=True)
             return
+        if not await _can_transfer_peer(update, context, peer_chat_id):
+            return
         source_chat_id, target_chat_id = (peer_chat_id, chat_id) if mode == "import" else (chat_id, peer_chat_id)
         db: Database = context.application.bot_data["db"]
-        async with db.session_factory() as session:
-            await apply_import(session, source_chat_id=source_chat_id, target_chat_id=target_chat_id, modules=list(modules))
-            await session.commit()
+        try:
+            async with db.session_factory() as session:
+                await apply_import(session, source_chat_id=source_chat_id, target_chat_id=target_chat_id,
+                    modules=list(modules), context=context, actor_user_id=update.effective_user.id)
+                from backend.shared.services.ops_audit_service import record_ops_event
+                await record_ops_event(session,domain='settings_transfer',event_type=mode,chat_id=target_chat_id,
+                    user_id=update.effective_user.id,detail={'source_chat_id':source_chat_id,'modules':sorted(modules)})
+                await session.commit()
+        except ValidationError as exc:
+            await answer_callback_query_safely(update, str(exc), show_alert=True)
+            return
         state["modules"] = []
         result_label = "导入" if mode == "import" else "克隆"
         callback = "adm:menu:" + mode + f":{chat_id}"
@@ -189,6 +205,8 @@ class SettingsTransferAdminMixin:
                 "",
                 "克隆会覆盖目标群组对应模块的配置。",
                 "欢迎/自动回复/违禁词会覆盖原有条目。",
+                "主积分含签到反馈；夜间管控含双权限/通知，保留目标群原权限快照。",
+                "积分等级与标签会重建等级编号映射；不复制余额、已有标签所有权或执行记录。已启用策略将由后台消费。",
             ]
         )
 
@@ -225,3 +243,11 @@ class SettingsTransferAdminMixin:
         await self._handle_settings_transfer(
             update, context, chat_id, callback_data=callback_data, mode="clone"
         )
+
+
+async def _can_transfer_peer(update, context, peer_chat_id):
+    if isinstance(peer_chat_id, int) and peer_chat_id < 0:
+        if await PermissionPolicyService.can_manage(context, peer_chat_id, update.effective_user.id):
+            return True
+    await answer_callback_query_safely(update, "另一端群组无效或已失去管理权限，请重新选择。", show_alert=True)
+    return False

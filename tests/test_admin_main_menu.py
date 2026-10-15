@@ -9,11 +9,12 @@ def test_private_admin_main_menu_has_six_categories_and_scoped_features():
     from backend.features.admin.ui.admin_main_keyboards import ADMIN_CATEGORIES, admin_category_menu
     from backend.features.admin.core.menu_dispatch import ADMIN_MENU_HANDLERS
     keyboard = admin_main_menu(-100123).inline_keyboard
-    assert len(keyboard) == 5
-    assert all(len(row) == 2 for row in keyboard[:4])
-    assert [button.text for row in keyboard[:3] for button in row] == [
+    assert len(keyboard) == 7
+    assert all(len(row) == 2 for row in keyboard[:6])
+    assert [button.text for row in keyboard[2:5] for button in row] == [
         "群安全", "消息运营", "积分与增长", "活动互动", "车库业务", "系统管理",
     ]
+    assert [b.text for row in keyboard[:2] for b in row] == ["自动回复", "定时消息", "轮播广告", "主积分"]
     feature_ids = [feature for _, features in ADMIN_CATEGORIES.values() for _, feature in features]
     assert len(feature_ids) == len(set(feature_ids)) == 38
     assert "solitaire" in feature_ids
@@ -21,7 +22,7 @@ def test_private_admin_main_menu_has_six_categories_and_scoped_features():
     for category in ADMIN_CATEGORIES:
         for row in admin_category_menu(category, -100123).inline_keyboard:
             for button in row:
-                assert button.callback_data.endswith(":-100123")
+                assert ":-100123" in button.callback_data
                 assert len(button.callback_data.encode()) <= 64
 
 

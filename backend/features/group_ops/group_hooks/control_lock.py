@@ -31,16 +31,19 @@ def _is_closed_by_schedule(settings) -> bool | None:
 
     open_time, close_time = _get_group_lock_schedule_times(settings)
     if not open_time or not close_time:
-        return False
+        return None
 
     try:
         open_hour, open_minute = [int(x) for x in open_time.split(":", 1)]
         close_hour, close_minute = [int(x) for x in close_time.split(":", 1)]
+        dt.time(open_hour, open_minute)
+        dt.time(close_hour, close_minute)
     except Exception as exc:
         log.warning("group_lock_schedule_parse_failed", open_time=open_time, close_time=close_time, error=str(exc))
         return None
 
-    now = dt.datetime.now().time()
+    from backend.shared.time_helper import LOCAL_TIMEZONE
+    now = dt.datetime.now(dt.UTC).astimezone(LOCAL_TIMEZONE).time()
     now_min = now.hour * 60 + now.minute
     open_min = open_hour * 60 + open_minute
     close_min = close_hour * 60 + close_minute
@@ -53,12 +56,22 @@ def _is_closed_by_schedule(settings) -> bool | None:
 
 async def _apply_group_lock_permissions(context: ContextTypes.DEFAULT_TYPE, chat_id: int, closed: bool) -> None:
     permissions = ChatPermissions(can_send_messages=not closed)
+    independent = None
+    db = context.application.bot_data.get("db")
+    if db is not None:
+        from backend.platform.db.schema.models.chat import ChatSettings
+        from backend.features.group_ops.services.group_permission_profiles import profile_permissions, profile_values
+        async with db.session_factory() as session:
+            settings = await session.get(ChatSettings, chat_id)
+            permissions = profile_permissions(settings, closed=closed)
+            independent = True if profile_values(settings, closed=closed) is not None else None
     result = await execute_group_permission_action(
         context,
         chat_id=chat_id,
         permissions=permissions,
         feature="夜间管控",
         detail="按夜间管控配置调整群发言权限",
+        use_independent_chat_permissions=independent,
     )
     if result.failed:
         raise RuntimeError("; ".join(result.failures))
@@ -68,7 +81,15 @@ async def _sync_scheduled_lock(context, chat_id: int, settings, *, lock_cache: d
     desired_closed = _is_closed_by_schedule(settings)
     if desired_closed is None or lock_cache.get(chat_id) == desired_closed:
         return
-    await _apply_group_lock_permissions(context, chat_id, desired_closed)
+    db = context.application.bot_data.get("db")
+    if db is not None:
+        from backend.features.group_ops.services.lock_plans import plan_schedule
+        from backend.features.admin.services.effect_runtime import run_pending
+        now = dt.datetime.now(dt.UTC)
+        await plan_schedule(db, now=now, chat_id=chat_id)
+        await run_pending(context.application, now=now, kinds={"group_lock"}, chat_id=chat_id)
+    else:
+        await _apply_group_lock_permissions(context, chat_id, desired_closed)
     lock_cache[chat_id] = desired_closed
 
 
@@ -78,17 +99,28 @@ async def _can_use_lock_phrase(context, chat_id: int, user_id: int) -> bool:
 
 
 def _phrase_lock_state(settings, message_text: str) -> bool | None:
-    open_phrase = (getattr(settings, "group_lock_open_phrase", None) or "").strip()
-    close_phrase = (getattr(settings, "group_lock_close_phrase", None) or "").strip()
+    open_phrase = (getattr(settings, "group_lock_open_phrase", None) or "开群").strip()
+    close_phrase = (getattr(settings, "group_lock_close_phrase", None) or "关群").strip()
     normalized = message_text.strip()
     if not normalized or normalized not in {open_phrase, close_phrase}:
         return None
     return normalized == close_phrase
 
 
-async def _apply_phrase_lock(context, chat_id: int, user_id: int, *, closed: bool, lock_cache: dict[int, bool]) -> bool:
+async def _apply_phrase_lock(context, chat_id: int, user_id: int, *, closed: bool, lock_cache: dict[int, bool], message_id: int | None = None) -> bool:
     try:
-        await _apply_group_lock_permissions(context, chat_id, closed)
+        db = context.application.bot_data.get("db")
+        if db is not None and message_id is not None:
+            from backend.features.group_ops.services.lock_plans import plan_phrase
+            from backend.features.admin.services.effect_runtime import run_effect
+            now = dt.datetime.now(dt.UTC)
+            effect_id = await plan_phrase(db, chat_id=chat_id, message_id=message_id,
+                closed=closed, now=now, user_id=user_id)
+            status = await run_effect(context.application, effect_id, chat_id=chat_id, now=now)
+            if status != "succeeded":
+                return False
+        else:
+            await _apply_group_lock_permissions(context, chat_id, closed)
     except Exception as exc:
         log.warning("group_lock_phrase_apply_failed", chat_id=chat_id, user_id=user_id, error=str(exc))
         return False
@@ -125,6 +157,7 @@ async def _process_group_lock_controls(
         user.id,
         closed=close_now,
         lock_cache=lock_cache,
+        message_id=message.message_id,
     )
     if applied and getattr(settings, "group_lock_delete_notice_mode", "keep") == "delete":
         await delete_message_safely(

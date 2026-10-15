@@ -11,6 +11,42 @@ log = structlog.get_logger(__name__)
 
 WAIT_VALUE = 0
 
+TOGGLE_FIELDS = frozenset({"all_enabled", "sign_enabled", "message_points_enabled", "invite_points_enabled",
+    "points_display_rule_enabled", "points_speech_rank_enabled", "points_personal_speech_enabled"})
+EDIT_FIELDS = frozenset({"sign_points", "sign_consecutive", "message_points", "message_daily_limit",
+    "message_min_length", "invite_points", "invite_daily_limit", "points_alias", "points_rank_alias",
+    "transfer", "admin_add", "admin_deduct", "clear_points"})
+MAX_ALIAS_LENGTH = 32
+MAX_CONFIG_VALUE = 2147483647
+EXPLICIT_TOGGLE_INDEX = 4
+
+
+def valid_points_toggle(cb, field):
+    return field in TOGGLE_FIELDS and (cb.length() <= EXPLICIT_TOGGLE_INDEX or cb.get(EXPLICIT_TOGGLE_INDEX) in {"0", "1"})
+
+
+async def valid_points_edit(update, context, *, field, chat_id):
+    return field in EDIT_FIELDS and await can_configure_points(update, context, chat_id)
+
+
+def clear_points_input(context):
+    context.user_data.pop("points_edit_field", None)
+    context.user_data.pop("points_edit_chat_id", None)
+
+
+async def can_configure_points(update, context, chat_id):
+    from backend.shared.services.permission_service import PermissionPolicyService
+    return (update.effective_chat is not None and update.effective_chat.type == "private"
+            and update.effective_user is not None and isinstance(chat_id, int) and chat_id < 0
+            and await PermissionPolicyService.can_manage(context, chat_id, update.effective_user.id, capability="points"))
+
+
+def nonnegative_config_value(text):
+    value = int(text.strip())
+    if not 0 <= value <= MAX_CONFIG_VALUE:
+        raise ValueError("请输入0—2147483647之间的整数")
+    return value
+
 
 async def safe_edit_message(q, text: str, **kwargs) -> None:
     """安全地编辑消息。"""

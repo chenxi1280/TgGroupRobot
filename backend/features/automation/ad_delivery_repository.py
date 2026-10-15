@@ -8,6 +8,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.dialects.postgresql import insert
 
 from backend.features.automation.ad_delivery_executor import AdDeliveryPlan
+from backend.features.automation.delivery_action_journal import merge_facts
 from backend.platform.db.schema.models.automation import AdCampaign, AdRotationHistory, AdRotationRule
 from backend.platform.delivery import DeliveryOutcome, DeliveryStatus, RetryPolicy, calculate_next_retry_at
 from backend.shared.services.base import ValidationError
@@ -61,6 +62,7 @@ def finalize_history(
     history.error_code = outcome.error_code
     history.error_message = outcome.message
     history.completed_at = now if _is_terminal(status) else None
+    history.post_actions = merge_facts(getattr(history,'post_actions',None),dict(outcome.metadata))
     if status is DeliveryStatus.succeeded:
         _finalize_success(history, rule, item, outcome=outcome, now=now)
 
@@ -71,12 +73,18 @@ def _finalize_success(history, rule, item, *, outcome, now) -> None:
     metadata = dict(outcome.metadata)
     pinned_id = metadata.get("pinned_message_id")
     history.message_id = int(outcome.message_id)
-    history.pinned_message_id = int(pinned_id) if pinned_id is not None else None
-    history.sent_at = now
+    if pinned_id is not None:
+        history.pinned_message_id = int(pinned_id)
+    elif history.post_actions.get('pin') != 'succeeded':
+        history.pinned_message_id = None
+    history.sent_at = history.sent_at or now
     rule.last_sent_at = now
     rule.last_sent_item_id = history.campaign_id
     rule.last_sent_message_id = int(outcome.message_id)
-    rule.last_pinned_message_id = history.pinned_message_id
+    if history.pinned_message_id is not None:
+        rule.last_pinned_message_id = history.pinned_message_id
+    elif history.post_actions.get("unpin_previous") == "succeeded":
+        rule.last_pinned_message_id = None
     rule.current_order_cursor = int(history.rule_snapshot["next_cursor"])
     if item is None:
         return
@@ -143,13 +151,15 @@ class SqlAlchemyAdDeliveryStore:
 
     async def mark_send_started(self, plan: AdDeliveryPlan, now: dt.datetime) -> None:
         async with self._db.session_factory() as session:
-            history = await _load_processing(session, plan.history_id)
+            history = await _load_processing(session, plan.history_id, attempt_count=plan.attempt_count)
+            if history.lease_until is not None and history.lease_until<=now:
+                raise RuntimeError('ad send claim lease expired before remote start')
             history.send_started_at = now
             await session.commit()
 
     async def finalize(self, plan, outcome: DeliveryOutcome, *, now: dt.datetime) -> None:
         async with self._db.session_factory() as session:
-            history = await _load_processing(session, plan.history_id)
+            history = await _load_processing(session, plan.history_id, attempt_count=plan.attempt_count)
             rule = await _load_rule(session, history.chat_id)
             item = await _load_item(session, history.campaign_id)
             finalize_history(
@@ -164,7 +174,7 @@ class SqlAlchemyAdDeliveryStore:
 
     async def mark_finalize_uncertain(self, plan, error: Exception, *, now: dt.datetime) -> None:
         async with self._db.session_factory() as session:
-            history = await _load_processing(session, plan.history_id)
+            history = await _load_processing(session, plan.history_id, attempt_count=plan.attempt_count)
             history.status = DeliveryStatus.uncertain.value
             history.next_retry_at = None
             history.lease_until = None
@@ -319,10 +329,11 @@ def _claim(history: AdRotationHistory, lease_until: dt.datetime) -> AdDeliveryPl
         campaign_id=int(history.campaign_id),
         content_snapshot=dict(history.content_snapshot),
         rule_snapshot=dict(history.rule_snapshot),
+        attempt_count=history.attempt_count,
     )
 
 
-async def _load_processing(session, history_id: int):
+async def _load_processing(session, history_id: int, *, attempt_count=None):
     result = await session.execute(
         select(AdRotationHistory)
         .where(
@@ -332,7 +343,7 @@ async def _load_processing(session, history_id: int):
         .with_for_update()
     )
     history = result.scalar_one_or_none()
-    if history is None:
+    if history is None or (attempt_count is not None and history.attempt_count!=attempt_count):
         raise RuntimeError(f"ad delivery is not processing: {history_id}")
     return history
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from backend.features.admin.list_browser import with_list_return
 from backend.features.moderation.auto_reply_common import get_match_type_label
 from backend.features.moderation.services.auto_reply_service import (
     get_auto_reply_rule_in_chat,
@@ -90,7 +91,7 @@ async def show_auto_reply_rule_detail(
     if update.callback_query is not None:
         await update.callback_query.edit_message_text(
             format_auto_reply_rule_detail(rule),
-            reply_markup=auto_reply_detail_keyboard(rule, chat_id),
+            reply_markup=with_list_return(auto_reply_detail_keyboard(rule, chat_id), context, chat_id=chat_id, feature="autoreply"),
         )
 
 
@@ -106,49 +107,9 @@ def extract_auto_reply_list_page(callback_data: str | None) -> int:
         return 0
 
 
-async def render_auto_reply_list(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-    *,
-    target_chat_id: int,
-    page: int = 0,
-) -> None:
-    if update.callback_query is None:
-        return
-
-    db: Database = context.application.bot_data["db"]
-    async with db.session_factory() as session:
-        rules = await get_chat_auto_reply_rules(session, target_chat_id)
-        await session.commit()
-
-    page_size = 8
-    total_count = len(rules)
-    total_pages = max(1, (total_count + page_size - 1) // page_size)
-    current_page = min(max(page, 0), total_pages - 1)
-    page_rules = rules[current_page * page_size:(current_page + 1) * page_size]
-
-    text = "💬 自动回复\n\n可用于设置 导航/赞助等自动回复内容。\n\n"
-    if rules:
-        for rule in page_rules:
-            status = "✅ 启用" if rule.is_active else "❌ 关闭"
-            text += f"关键词： {_format_keywords(getattr(rule, 'keywords', None))} （状态: {status}）\n"
-            text += f"┝匹配: {_format_match_short(getattr(rule, 'match_type', ''))}\n"
-            text += f"┗顺序: {getattr(rule, 'sort_order', 0)}\n\n"
-
-    text += f"{total_count} 条数据，第 {current_page + 1} 页/共 {total_pages} 页"
-
-    from backend.features.moderation.ui.auto_reply import auto_reply_list_keyboard
-
-    await update.callback_query.edit_message_text(
-        text,
-        reply_markup=auto_reply_list_keyboard(
-            rules,
-            target_chat_id,
-            page=current_page,
-            page_size=page_size,
-            total_count=total_count,
-        ),
-    )
+async def render_auto_reply_list(update, context, *, target_chat_id: int, page: int | None = None) -> None:
+    from backend.features.admin.list_browser import render_list
+    await render_list(update, context, feature="autoreply", chat_id=target_chat_id, page=page)
 
 
 async def show_auto_reply_delay_page(

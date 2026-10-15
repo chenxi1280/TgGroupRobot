@@ -9,6 +9,17 @@ from backend.features.admin.activity.game_input import handle_game_admin_input
 from backend.features.admin.activity.guess_input import handle_guess_admin_input
 
 
+async def _authorized_activity_input(update, context, session, *, state, target_chat_id):
+    from backend.shared.services.permission_service import PermissionPolicyService
+    from backend.platform.state.state_service import clear_user_state
+    if await PermissionPolicyService.can_manage(context, target_chat_id, update.effective_user.id):
+        return True
+    await clear_user_state(session, state.chat_id, update.effective_user.id)
+    await session.commit()
+    await update.effective_message.reply_text("权限已失效，已退出活动配置。")
+    return False
+
+
 async def handle_bottom_button_input(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -26,6 +37,8 @@ async def handle_bottom_button_input(
         await update.effective_message.reply_text("底部按钮状态异常，请重新进入页面。")
         return
 
+    if not await _authorized_activity_input(update, context, session, state=state, target_chat_id=target_chat_id):
+        return
     if not await handle_bottom_button_admin_input(
         update,
         context,
@@ -53,6 +66,8 @@ async def handle_game_input(
         await update.effective_message.reply_text("游戏配置状态异常，请重新进入页面。")
         return
 
+    if not await _authorized_activity_input(update, context, session, state=state, target_chat_id=target_chat_id):
+        return
     if not await handle_game_admin_input(
         update,
         context,
@@ -80,6 +95,8 @@ async def handle_guess_input(
         await update.effective_message.reply_text("竞猜配置状态异常，请重新进入页面。")
         return
 
+    if not await _authorized_activity_input(update, context, session, state=state, target_chat_id=target_chat_id):
+        return
     if not await handle_guess_admin_input(
         update,
         context,
@@ -105,6 +122,8 @@ async def handle_engagement_input(
         await update.effective_message.reply_text("促活工具配置状态异常，请重新进入页面。")
         return
 
+    if not await _authorized_activity_input(update, context, session, state=state, target_chat_id=target_chat_id):
+        return
     if not await handle_engagement_admin_input(
         update,
         context,

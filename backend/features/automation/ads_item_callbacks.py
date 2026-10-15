@@ -72,7 +72,7 @@ async def ads_detail_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     if item_id <= 0:
         await answer_callback_query_safely(update, "轮播消息 ID 无效", show_alert=True)
         return
-    await _ads_handler.show_detail(update, context, target_chat_id, item_id)
+    await _ads_handler.show_detail(update, context, target_chat_id, item_id=item_id)
 
 
 async def ads_create_start_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -107,7 +107,7 @@ async def ads_create_start_callback(update: Update, context: ContextTypes.DEFAUL
         )
         await session.commit()
 
-    await _ads_handler.show_detail(update, context, target_chat_id, item.id)
+    await _ads_handler.show_detail(update, context, target_chat_id, item_id=item.id)
 
 
 async def ads_toggle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -130,7 +130,7 @@ async def ads_toggle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
             await answer_callback_query_safely(update, "轮播消息不存在", show_alert=True)
             return
         await session.commit()
-    await _ads_handler.show_detail(update, context, target_chat_id, item_id)
+    await _ads_handler.show_detail(update, context, target_chat_id, item_id=item_id)
 
 
 async def ads_item_set_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -168,7 +168,7 @@ async def ads_item_set_callback(update: Update, context: ContextTypes.DEFAULT_TY
             await answer_callback_query_safely(update, "无效操作", show_alert=True)
             return
         await session.commit()
-    await _ads_handler.show_detail(update, context, target_chat_id, item_id)
+    await _ads_handler.show_detail(update, context, target_chat_id, item_id=item_id)
 
 
 async def ads_delete_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -210,6 +210,8 @@ async def ads_item_input_callback(update: Update, context: ContextTypes.DEFAULT_
     target_chat_id = await _resolve_ads_target_chat_id(update, context)
     if target_chat_id is None:
         return
+    if not await _item_input_scope(update, context, chat_id=target_chat_id, item_id=item_id):
+        return
     if field == "buttons":
         await _show_ads_button_editor(update, context, target_chat_id=target_chat_id, item_id=item_id)
         return
@@ -239,6 +241,15 @@ def _parse_item_input_target(data: str) -> tuple[int, str | None]:
     if callback.has_int(4):
         return callback.require_int(4, label="item_id"), callback.get(5)
     return callback.require_int(3, label="item_id"), callback.get(4)
+
+
+async def _item_input_scope(update, context, *, chat_id, item_id):
+    async with context.application.bot_data['db'].session_factory() as session:
+        item = await get_rotation_item(session, item_id)
+        valid = item is not None and item.chat_id == chat_id
+    if not valid:
+        await answer_callback_query_safely(update, '轮播对象不属于该群，未进入编辑。', show_alert=True)
+    return valid
 
 
 async def _show_ads_button_editor(update: Update, context, *, target_chat_id: int, item_id: int) -> None:
@@ -290,7 +301,7 @@ async def _show_item_input_prompt(query, *, target_chat_id: int, item_id: int, f
         return
     await query.edit_message_text(
         prompt or "请输入配置内容。",
-        reply_markup=_item_back_keyboard(target_chat_id, item_id),
+        reply_markup=_item_back_keyboard(target_chat_id, item_id=item_id),
     )
 
 

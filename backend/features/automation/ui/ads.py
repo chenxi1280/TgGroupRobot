@@ -21,6 +21,7 @@ def ads_menu_keyboard(chat_id: int | None = None) -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton("📜 派发历史", callback_data=f"ads:history:{chat_id}:all"),
         ],
+        [InlineKeyboardButton('附加动作/清理恢复',callback_data=f'eff:{chat_id}:delivery_action:list')],
         [create_back_button(chat_id, "category_messages")],
     ])
 
@@ -138,6 +139,7 @@ def ads_item_detail_keyboard(chat_id: int, item, rule=None) -> InlineKeyboardMar
             InlineKeyboardButton("🏖️ 预览效果", callback_data=f"ads:item:preview:{chat_id}:{item.id}"),
             InlineKeyboardButton("🔁 轮播顺序", callback_data=f"ads:item:input:{chat_id}:{item.id}:order"),
         ],
+        [InlineKeyboardButton("到期私聊提醒", callback_data=f"anote:{chat_id}:{item.id}:view")],
         [
             InlineKeyboardButton("❌ 删除配置", callback_data=f"ads:item:delete:{chat_id}:{item.id}"),
             InlineKeyboardButton("🔙 返回", callback_data=f"ads:list:{chat_id}:0"),

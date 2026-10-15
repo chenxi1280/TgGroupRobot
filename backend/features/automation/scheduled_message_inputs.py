@@ -206,7 +206,7 @@ class ScheduledMessageInputMixin:
                 return
         toast_msg = _FSM_TOASTS[state_type]
         log.info("handle_fsm_input_showing_detail", task_id=task_id, toast_msg=toast_msg)
-        await self.show_detail(update, context, target_chat_id, task_id, toast=toast_msg)
+        await self.show_detail(update, context, target_chat_id, task_id=task_id, toast=toast_msg)
         log.info("handle_fsm_input_completed")
 
     async def handle_media_input(
@@ -241,4 +241,4 @@ class ScheduledMessageInputMixin:
             )
             if not saved:
                 return
-        await self.show_detail(update, context, target_chat_id, task_id, toast="✅ 媒体已保存")
+        await self.show_detail(update, context, target_chat_id, task_id=task_id, toast="✅ 媒体已保存")

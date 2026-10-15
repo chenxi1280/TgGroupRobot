@@ -293,7 +293,7 @@ def night_mode_text(view: NightModeView) -> str:
         f"口令开关群: {_enabled_text(view.phrase_enabled)}\n管理员豁免: {_enabled_text(view.exempt_admin)}\n"
         f"白名单: {view.whitelist_summary}\n删除触发消息: {_enabled_text(view.delete_message)}\n"
         f"提示消息: {_enabled_text(view.warn_enabled)}\n开群词/关群词: {view.open_phrase} / {view.close_phrase}\n"
-        f"口令通知删除: {'✅ 删除' if view.delete_notice else '保留'}\n"
+        f"触发口令清理: {'✅ 删除' if view.delete_notice else '保留'}\n"
         f"提示删除: {view.warn_delete}秒后删除\n\n当前提示文案:\n{view.warn_text}"
     )
 
@@ -318,7 +318,10 @@ def _night_policy_rows(view: NightModeView) -> list[list[InlineKeyboardButton]]:
         toggle_row("🗑 删除触发消息", enabled=view.delete_message, label_callback=f"adm:menu:night:{chat_id}", on_callback=f"adm:night:{chat_id}:set:delete_message:1", off_callback=f"adm:night:{chat_id}:set:delete_message:0"),
         toggle_row("💬 提示消息", enabled=view.warn_enabled, label_callback=f"adm:menu:night:{chat_id}", on_callback=f"adm:night:{chat_id}:set:warn_enabled:1", off_callback=f"adm:night:{chat_id}:set:warn_enabled:0"),
         [InlineKeyboardButton("✏️ 提示文案", callback_data=f"adm:night:{chat_id}:input:warn_text"), InlineKeyboardButton(f"🕒 删除提示（{view.warn_delete}秒）", callback_data=f"adm:night:{chat_id}:cycle:warn_delete")],
-        [InlineKeyboardButton(("🧹 口令通知") + " · " + ("删除" if view.delete_notice else "保留"), callback_data=f"adm:night:{chat_id}:notice:{next_notice}")],
+        [InlineKeyboardButton(("🧹 触发口令") + " · " + ("删除" if view.delete_notice else "保留"), callback_data=f"adm:night:{chat_id}:notice:{next_notice}")],
+        [InlineKeyboardButton("开群通知", callback_data=f"gnote:{chat_id}:open:view"), InlineKeyboardButton("关群通知", callback_data=f"gnote:{chat_id}:closed:view")],
+        [InlineKeyboardButton("执行/恢复记录", callback_data=f"eff:{chat_id}:group_lock:list")],
+        [InlineKeyboardButton("开群权限", callback_data=f"gperm:{chat_id}:open:view"), InlineKeyboardButton("关群权限", callback_data=f"gperm:{chat_id}:closed:view")],
         [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_safety:{chat_id}")],
     ]
 

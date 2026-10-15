@@ -111,8 +111,8 @@ class PointsExtendedLevelsMixin:
                 raise ValidationError("等级名称不能为空。")
             level.level_name = normalized_name
         if point_threshold is not None:
-            if int(point_threshold) <= 0:
-                raise ValidationError("积分门槛必须大于 0。")
+            if int(point_threshold) < 0:
+                raise ValidationError("积分门槛不能小于 0。")
             await PointsExtendedLevelsMixin._ensure_level_threshold_unique(
                 session,
                 chat_id=level.chat_id,
@@ -120,7 +120,10 @@ class PointsExtendedLevelsMixin:
                 exclude_level_id=level.id,
             )
             level.point_threshold = point_threshold
-        if perm_name is not None and perm_value is not None and hasattr(level, perm_name):
+        permissions = {"allow_text", "allow_audio", "allow_photo", "allow_video", "allow_sticker", "allow_document", "allow_mention"}
+        if perm_name is not None and perm_name not in permissions:
+            raise ValidationError("无效的等级权限字段")
+        if perm_name is not None and perm_value is not None:
             setattr(level, perm_name, perm_value)
         level.updated_at = dt.datetime.now(dt.UTC)
         await session.flush()

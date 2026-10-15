@@ -16,6 +16,7 @@ from backend.features.automation.services.ad_rotation_service import (
     parse_delay_seconds_text,
     parse_interval_hours_text,
     update_rotation_item,
+    get_rotation_item,
     update_rotation_rule,
 )
 from backend.platform.db.runtime.session import Database
@@ -101,12 +102,12 @@ async def _execute_ads_input_safely(data: _AdsInput) -> _InputDestination | None
     try:
         return await _dispatch_ads_input(data)
     except ValidationError as exc:
-        await data.session.commit()
+        await data.session.rollback()
         await data.message.reply_text(str(exc))
         return None
     except Exception as exc:
         log.exception("ads_private_input_failed", error=str(exc), state_type=data.state.state_type)
-        await data.session.commit()
+        await data.session.rollback()
         await data.message.reply_text("处理失败，请稍后重试")
         return None
 
@@ -118,12 +119,19 @@ async def _check_input_permission(data: _AdsInput) -> bool:
         data.user.id,
         capability="automation",
     )
-    if allowed:
+    if allowed and await _item_belongs_to_target(data):
         return True
+    await ConversationStateService.clear(data.session, data.chat.id, data.user.id)
     await data.session.commit()
-    if error_text:
-        await data.message.reply_text(error_text)
+    await data.message.reply_text(error_text or "轮播对象不属于该群，已退出编辑。")
     return False
+
+
+async def _item_belongs_to_target(data):
+    if data.item_id is None:
+        return True
+    item = await get_rotation_item(data.session, data.item_id)
+    return item is not None and item.chat_id == data.target_chat_id
 
 
 async def _dispatch_ads_input(data: _AdsInput) -> _InputDestination:
@@ -270,7 +278,7 @@ async def _show_input_destination(data: _AdsInput, destination: _InputDestinatio
             data.update,
             data.context,
             data.target_chat_id,
-            destination.item_id,
+            item_id=destination.item_id,
         )
 
 

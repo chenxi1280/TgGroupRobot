@@ -43,7 +43,9 @@ async def show_points_home(
         get_chat_settings_func=get_chat_settings_func,
     )
     text = format_points_home_text(settings, changed=changed)
-    await safe_edit_func(update.callback_query, text, reply_markup=points_config_keyboard(settings, chat_id))
+    from backend.features.admin.menu_origins import with_menu_origin
+    keyboard = with_menu_origin(points_config_keyboard(settings, chat_id), context, chat_id=chat_id, feature="points")
+    await safe_edit_func(update.callback_query, text, reply_markup=keyboard)
 
 
 async def show_rule_page(

@@ -304,7 +304,10 @@ async def _handle_sign_command(session, scope: _MessageScope, *, settings, deps:
         consecutive_bonus=int(getattr(settings, "sign_consecutive_bonus", 0) or 0),
     )
     await session.commit()
-    await scope.message.reply_text(_sign_message(result, sign_points, deps))
+    from backend.features.points.sign_feedback import feedback_text, schedule_feedback_delete
+    text = await feedback_text(session, settings, user_id=scope.user.id, result=result, original=_sign_message(result, sign_points, deps))
+    sent = await scope.message.reply_text(text)
+    schedule_feedback_delete(scope.context, settings, sent)
     return True
 
 

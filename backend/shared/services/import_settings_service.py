@@ -5,13 +5,15 @@ from typing import Any
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.platform.db.schema.models.core import AutoReplyRule, BannedWord, ChatSettings
+from backend.platform.db.schema.models.core import AutoReplyRule, BannedWord, ChatSettings, TgChat
 from backend.platform.db.schema.models.welcome import WelcomeMessage
+from backend.shared.services.base import ValidationError
 
 
 MODULE_DEFINITIONS: list[dict[str, Any]] = [
     {"key": "base", "label": "基础开关", "detail": "语言、广告、自动删除等"},
     {"key": "points", "label": "积分配置", "detail": "签到/发言/邀请规则"},
+    {"key": "points_level", "label": "积分等级与标签", "detail": "覆盖等级、媒体权限与标签配置，不复制余额或已有标签所有权"},
     {"key": "verification", "label": "入群验证", "detail": "验证/刷号/自助审核"},
     {"key": "force_subscribe", "label": "强制关注", "detail": "发言前关注校验与提示"},
     {"key": "new_member_limit", "label": "新成员限制", "detail": "入群窗口限制"},
@@ -202,19 +204,26 @@ async def apply_import(
     source_chat_id: int,
     target_chat_id: int,
     modules: list[str],
+    context=None,
+    actor_user_id: int | None = None,
 ) -> None:
-    if source_chat_id == target_chat_id:
-        return
-
-    source = await session.get(ChatSettings, source_chat_id)
-    target = await session.get(ChatSettings, target_chat_id)
+    _validate_import(source_chat_id, target_chat_id, modules=modules)
+    await session.execute(select(TgChat.id).where(TgChat.id.in_([source_chat_id,target_chat_id]))
+        .order_by(TgChat.id).with_for_update())
+    rows = (await session.scalars(select(ChatSettings).where(ChatSettings.chat_id.in_([source_chat_id,target_chat_id]))
+        .order_by(ChatSettings.chat_id).with_for_update().execution_options(populate_existing=True))).all()
+    settings = {item.chat_id:item for item in rows}
+    source, target = settings.get(source_chat_id), settings.get(target_chat_id)
     if source is None or target is None:
-        return
+        raise ValidationError("来源或目标配置已不存在，未执行覆盖。")
 
     fields = _filter_fields_for_modules(modules)
     for field in fields:
-        if hasattr(source, field) and hasattr(target, field):
-            setattr(target, field, getattr(source, field))
+        setattr(target, field, getattr(source, field))
+
+    from backend.shared.services.config_imports import copy_module_configuration
+    await copy_module_configuration(session,source=source,target=target,modules=modules,
+        context=context,actor_user_id=actor_user_id)
 
     if "welcome" in modules:
         await _copy_welcome_messages(session, source_chat_id, target_chat_id)
@@ -222,6 +231,12 @@ async def apply_import(
         await _copy_auto_reply_rules(session, source_chat_id, target_chat_id)
     if "banned_words" in modules:
         await _copy_banned_words(session, source_chat_id, target_chat_id)
+
+
+def _validate_import(source_chat_id, target_chat_id, *, modules):
+    allowed = CHAT_SETTINGS_FIELDS.keys() | {"auto_reply", "banned_words", "points_level"}
+    if source_chat_id == target_chat_id or not modules or not set(modules) <= allowed:
+        raise ValidationError("来源、目标或所选模块无效。")
 
 
 async def _copy_welcome_messages(

@@ -67,8 +67,9 @@ async def test_alliance_menu_shows_member_count_and_joint_ban_status(monkeypatch
     assert "联盟群使用 team 指令封禁用户" in text
     assert "联盟群使用 t 指令封禁用户" not in text
     assert keyboard.inline_keyboard[1][0].text == "📋 联合封禁名单"
-    assert keyboard.inline_keyboard[2][0].text == "⚙️ 联合封禁："
-    assert keyboard.inline_keyboard[2][2].text == "✅ 关闭"
+    assert keyboard.inline_keyboard[2][0].callback_data == "asan:-100123:list:0"
+    toggle_row = next(row for row in keyboard.inline_keyboard if row[0].text == "⚙️ 联合封禁：")
+    assert toggle_row[2].text == "✅ 关闭"
 
 
 @pytest.mark.asyncio

@@ -12,11 +12,14 @@ class EngagementAdminChatActionsMixin:
         reward = await get_engagement_chat_reward(session, chat_id)
         await session.commit()
         plan = reward.reward_points_plan or [30, 50, 70, 90, 110, 130, 150]
+        rewards = [f"每日固定奖励：{plan[0]} 积分"] if reward.reward_type == "daily" else [
+            f"连续奖励：{' / '.join(str(item) for item in plan)} 积分",
+            f"七日后：{'从首日重新计算' if reward.after_7d_mode == 'reset' else '延续最高档奖励'}",
+        ]
         text = "\n".join([
             "🍬 水群激励 | 群内展示预览", "",
             f"每日发言达到 {reward.daily_message_target} 条即可领取奖励。",
-            f"连续奖励：{' / '.join(str(item) for item in plan)} 积分",
-            f"七日后：{'从首日重新计算' if reward.after_7d_mode == 'reset' else '延续最高档奖励'}",
+            *rewards,
             f"领奖口令：{reward.command_keyword}",
         ])
         keyboard = InlineKeyboardMarkup(

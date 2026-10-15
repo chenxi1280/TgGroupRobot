@@ -59,47 +59,9 @@ def _task_detail_fields(task: ScheduledMessageTask, *, title: str, has_media: bo
 
 
 class ScheduledMessageListMixin:
-    async def show_list(
-        self,
-        update: Update,
-        context: ContextTypes.DEFAULT_TYPE,
-        target_chat_id: int,
-        *, page: int = 0,
-    ) -> None:
-        if not await self._check_permission(update, context, target_chat_id):
-            await self.message_helper.safe_edit(update, text="❌ 需要管理员权限")
-            return
-
-        db: Database = context.application.bot_data["db"]
-        async with db.session_factory() as session:
-            tasks = await ScheduledMessageService.list_tasks(session, target_chat_id)
-            await session.commit()
-
-        total_count = len(tasks)
-        page_size = 10
-        total_pages = max(1, (total_count + page_size - 1) // page_size)
-        current_page = min(max(page, 0), total_pages - 1)
-
-        if not tasks:
-            keyboard = sm_list_keyboard([], target_chat_id, current_page, page_size=page_size)
-            edited = await self.message_helper.safe_edit(
-                update,
-                text="⏰ 定时消息\n\n0 条数据，第 1 页/共 1 页\n\n暂无任务，点击「添加一条」开始。",
-                reply_markup=keyboard,
-            )
-            if not edited:
-                await self.message_helper.safe_reply(
-                    update,
-                    text="⏰ 定时消息\n\n0 条数据，第 1 页/共 1 页\n\n暂无任务，点击「添加一条」开始。",
-                    reply_markup=keyboard,
-                )
-            return
-
-        text = self._format_task_list(tasks, current_page, page_size)
-        keyboard = sm_list_keyboard(tasks, target_chat_id, current_page, page_size=page_size)
-        edited = await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
-        if not edited:
-            await self.message_helper.safe_reply(update, text=text, reply_markup=keyboard)
+    async def show_list(self, update, context, target_chat_id: int, *, page: int | None = None) -> None:
+        from backend.features.admin.list_browser import render_list
+        await render_list(update, context, feature="scheduled", chat_id=target_chat_id, page=page)
 
     def _format_task_list(
         self,
@@ -167,7 +129,8 @@ class ScheduledMessageListMixin:
             await session.commit()
 
         text = self._format_task_detail(task, toast=toast)
-        keyboard = sm_detail_keyboard(task, target_chat_id)
+        from backend.features.admin.list_browser import with_list_return
+        keyboard = with_list_return(sm_detail_keyboard(task, target_chat_id), context, chat_id=target_chat_id, feature="scheduled")
         edited = await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
         if not edited:
             await self.message_helper.safe_reply(update, text=text, reply_markup=keyboard)
