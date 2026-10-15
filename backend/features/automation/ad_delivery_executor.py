@@ -57,12 +57,12 @@ class TelegramAdDeliveryExecutor:
         rule = plan.rule_snapshot
         content = plan.content_snapshot
         actions = {"delete_previous": "not_requested", "unpin_previous": "not_requested"}
+        if rule["mode"] == "send_pin" and rule["unpin_previous"]:
+            actions["unpin_previous"] = await self._best_effort("unpin", plan, rule.get("last_pinned_message_id"))
         if rule["delete_policy"] == "delete_prev":
             actions["delete_previous"] = await self._best_effort("delete", plan, rule.get("last_sent_message_id"))
         elif rule["delete_policy"] == "delete_prev_cycle":
             actions["delete_previous"] = await self._best_effort("delete", plan, content.get("last_sent_message_id"))
-        if rule["mode"] == "send_pin" and rule["unpin_previous"]:
-            actions["unpin_previous"] = await self._best_effort("unpin", plan, rule.get("last_pinned_message_id"))
         return actions
 
     async def _best_effort(self, action: str, plan, message_id: int | None) -> str:

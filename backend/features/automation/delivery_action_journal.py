@@ -136,7 +136,9 @@ async def execute_action(bot, *, action, chat_id, message_id):
     try:
         result=await getattr(bot,METHODS[action])(chat_id=chat_id,message_id=message_id)
     except BadRequest as exc:
-        if action.startswith('delete') and 'message to delete not found' in str(exc).lower():
+        missing = ('message to delete not found' if action.startswith('delete')
+                   else 'message to unpin not found' if action == 'unpin_previous' else None)
+        if missing is not None and missing in str(exc).lower():
             return {'already_absent':True,'message_id':message_id}
         raise
     if result is not True:

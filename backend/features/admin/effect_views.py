@@ -124,10 +124,10 @@ def _result_text(result):
         return '已有其他来源处罚，未重复执行，未取得解除所有权'
     if result.get('permissions_applied'):
         return '权限已确认生效'
+    if result.get('already_absent'):
+        return '消息已不存在'
     if 'message_id' in result:
         return f"消息ID：{result['message_id']}"
     if 'deleted_message_id' in result:
         return f"已删除消息：{result['deleted_message_id']}"
-    if result.get('already_absent'):
-        return '消息已不存在'
     return '尚无已确认结果'
