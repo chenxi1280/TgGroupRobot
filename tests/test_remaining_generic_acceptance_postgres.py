@@ -229,3 +229,29 @@ async def test_long_unicode_summary_preserves_whole_link_within_message_limit():
     summary='\n'.join(['😀中文'*200]*10+[link])
     rendered=_item_lines(items,'ads',summaries={i:summary for i in range(8)})
     assert rendered.count(link)==8 and len(rendered.encode('utf-16-le'))//2<4096
+
+
+@pytest.mark.parametrize('end_time,expected', [
+    (dt.datetime(2026,10,17,15,0,tzinfo=dt.UTC),'2026-10-17 23:00'),
+    (None,'未设置'),
+])
+async def test_expiry_preview_uses_same_shanghai_time_as_real_private_notice(runtime,end_time,expected):
+    from backend.platform.db.schema.models.automation import AdCampaign
+    from backend.features.admin.services.effect_targets import _send_expiry
+    app,db,b,chat,user=runtime
+    async with db.session_factory() as session:
+        ad=AdCampaign(chat_id=chat,title='private timezone acceptance',content='',enabled=False,
+            end_time=end_time,expiry_notice={'text':'截止 {expiry}'})
+        session.add(ad)
+        await session.commit()
+        ad_id=ad.id
+    before=len(b.calls)
+    await app.process_update(callback_update(app,user,901,f'anote:{chat}:{ad_id}:preview'))
+    previews=[p for e,p in b.calls[before:] if e=='sendMessage']
+    assert len(previews)==1 and int(previews[0]['chat_id'])==user
+    assert previews[0]['text']==f'截止 {expected}'
+    if end_time is not None:
+        await _send_expiry(app,SimpleNamespace(chat_id=chat,payload={
+            'ad_id':ad_id,'recipient':user,'config':{'text':'截止 {expiry}'}}))
+        delivered=[p for e,p in b.calls if e=='sendMessage'][-1]
+        assert delivered['chat_id']==user and delivered['text']==previews[0]['text']

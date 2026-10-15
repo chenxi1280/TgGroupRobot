@@ -194,9 +194,11 @@ async def preview_notice(update, context, *, prefix, chat_id, target, config):
     from backend.features.admin.services.notice_config import send_notice
     values = {'chat_id':chat_id, 'state': '关群' if target == 'closed' else '开群'}
     if prefix == 'anote':
+        from backend.shared.time_helper import format_timestamp
         async with context.application.bot_data['db'].session_factory() as session:
             ad = await session.get(AdCampaign, int(target))
-            values = {'chat_id':chat_id, 'ad_id':ad.id, 'title':ad.title, 'expiry':str(ad.end_time or '未设置')}
+            expiry = format_timestamp(ad.end_time.timestamp()) if ad.end_time else '未设置'
+            values = {'chat_id':chat_id, 'ad_id':ad.id, 'title':ad.title, 'expiry':expiry}
     await MessageHelper.safe_answer(update)
     from telegram.error import TelegramError
     try:
