@@ -78,7 +78,7 @@ class SettingsTransferAdminMixin:
             rows.append([InlineKeyboardButton(f"{selected} {item['label']}", callback_data=callback)])
         rows.append([InlineKeyboardButton("🔙 返回", callback_data="adm:menu:" + mode + f":{chat_id}")])
         action_name = "导入" if mode == "import" else "克隆"
-        await self.message_helper.safe_edit(update, f"选择要{action_name}的模块：", reply_markup=admin_keyboard(rows))
+        await self.message_helper.safe_edit(update, f"群：{chat_id}\n选择要{action_name}的模块：\n点选切换勾选；返回设置页后再执行。", reply_markup=admin_keyboard(rows))
 
     async def _set_transfer_chat(self, update, context, chat_id: int, *, callback_data, state, mode: str) -> None:
         selected_chat_id = callback_data.get_int_optional(4)

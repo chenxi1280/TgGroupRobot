@@ -51,6 +51,8 @@ async def test_compact_module_picker_retains_selections_scope_and_return(runtime
     app, db, boundary, chat, user = runtime
     await app.process_update(callback_update(app, user, 200, f'adm:{mode}:{chat}:pick_modules'))
     rows = last_markup(boundary)
+    rendered = [params for endpoint, params in boundary.calls if endpoint in {'sendMessage', 'editMessageText'}][-1]
+    assert f'群：{chat}' in rendered['text'] and '点选切换勾选；返回设置页后再执行。' in rendered['text']
     assert all(len(row) == 2 for row in rows[:-2])
     assert len(rows[-1]) == 1 and '返回' in rows[-1][0]['text']
     selected = rows[0][1]['callback_data']
