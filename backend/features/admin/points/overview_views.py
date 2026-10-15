@@ -109,7 +109,7 @@ class PointsOverviewViewsMixin:
                 ]
                 level_lines.extend([f"{level.level_name}（积分门槛线 ≥ {level.point_threshold}）", "└" + " ".join(perms), ""])
         else:
-            level_lines.append("待配置（积分门槛线 > 0）")
+            level_lines.append("待配置（积分门槛可设为 0）")
             level_lines.append("")
         total_pages = 1
         text = "\n".join(
