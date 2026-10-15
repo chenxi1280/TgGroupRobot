@@ -56,4 +56,8 @@
 - [发布流水线38690585596](https://github.com/chenxi1280/TgGroupRobot/actions/runs/38690585596)：检查、构建及部署成功；1272项CI回归通过。
 - 本地`reports/2026-10-15-production-general-acceptance/`：preflight、backup、runtime-readback、postflight、source-verification、ci-status/ci-full、scope-before/after/final、health/health-final及截图。诊断报告不打入发布提交；凭据未保存至报告。
 - 私聊截图`after-home-crop.jpg`、`native-recovery.png`（原生截图含侧栏，仅内部留证），部署前私聊列表与竞品广告页对照截图也保留在同目录。截图证明所见界面，不替代群内业务结果。
-- 生产运行身份固定为`15c1247`。后续仅文档提交不推送`release-tg`，避免触发无必要重启；文档Git提交与运行镜像分开登记。
+- 本次首轮运行身份为`15c1247`；后续版本见追加记录。仅文档提交不推送`release-tg`，避免触发无必要重启；文档Git提交与运行镜像分开登记。
+
+## 后续通用分项补验
+
+用户要求继续先验收无需群消息的部分。已发现并修复提醒预览UTC格式和等级空页0门槛提示两项问题，最终发布`7044d73`，CI38695789653为1274 passed/75.78s，生产0017与136个源文件哈希匹配。真实私聊、计划提醒收件、版本更新后的去重、测试配置收尾及G1—G6群测试确认方案以[分项补验记录](./2026-10-15-non-group-general-acceptance.md)为准；本节不覆盖上面首轮事实，群内测试依然未执行。
