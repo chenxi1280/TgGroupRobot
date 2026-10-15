@@ -1,12 +1,12 @@
 # TgGroupRobot PRD 入口与代码对接索引
 
-> 版本：v1.12
+> 版本：v1.13
 > 日期：2026-10-15
-> 状态：通用部分已部署7044d73；私聊分项补验、两项修复及待确认群测试见最新记录，整体PRD未完成
+> 状态：通用及按钮布局修复已部署0e5152d；我方专用群轮播/定时/延删部分实测通过，管理权限待核对，整体PRD未完成
 
 本文档作为后续维护的 PRD 入口，避免引用空文件导致产品、架构、问题清单三套文档断开。
 
-当前新增需求见[竞品差距改造 PRD](./2026-10-15-competitor-gap-prd.md)，区分已有能力、待补齐项和待核实证据，并定义优先级及验收标准。[全功能复核清单](./2026-10-15-full-feature-review.md)逐项对应竞品 29 个业务入口和我方 38 个稳定 ID。各需求、38项自有功能与74条标准的实现状态见[独立实施与验收记录](./2026-10-15-implementation-and-own-feature-audit.md)。用户已追加授权发布，通用实现首轮部署15c1247，后续补验修复为7044d73；版本、CI、数据库回读、私聊对照及未验项见[生产发布与对照验收](./2026-10-15-production-general-acceptance.md)和[最新分项记录](./2026-10-15-non-group-general-acceptance.md)。未向真实群/频道发送测试消息，全部业务验收未完成。
+当前新增需求见[竞品差距改造 PRD](./2026-10-15-competitor-gap-prd.md)，区分已有能力、待补齐项和待核实证据，并定义优先级及验收标准。[全功能复核清单](./2026-10-15-full-feature-review.md)逐项对应竞品 29 个业务入口和我方 38 个稳定 ID。各需求、38项自有功能与74条标准的实现状态见[独立实施与验收记录](./2026-10-15-implementation-and-own-feature-audit.md)。用户已追加授权发布，通用实现首轮部署15c1247，后续补验修复为7044d73，按钮布局与新权限字段兼容续修为0e5152d；版本、CI、数据库回读、私聊对照及未验项见[生产发布与对照验收](./2026-10-15-production-general-acceptance.md)和[最新分项记录](./2026-10-15-non-group-general-acceptance.md)。用户随后允许在专用测试群验收我方机器人，已发送广告A/B及一次定时共3条消息，延删与上一条已删除的恢复通过；群测试详情和未验项见最新分项记录，全部业务验收未完成。
 
 2026-10-10 的[服务修复与交互统一 PRD](./2026-10-10-service-repair-prd.md)继续作为既有导航、权限、草稿与业务修复的设计基线；当日实施、部署和局部现场结果见[验收记录](./2026-10-10-service-repair-acceptance.md)最后追加章节。历史结果不概括为当前所有功能均已闭环，也不代表 2026-10-15 重新核验了线上版本。
 
@@ -15,9 +15,9 @@
 | 用途 | 文档 | 说明 |
 |------|------|------|
 | 管理按钮布局改造 | [2026-10-15-admin-keyboard-layout.md](./2026-10-15-admin-keyboard-layout.md) | 两列短选项、语义分组、长名称和确认保留、注册链与私聊验收 |
-| 剩余通用功能分项验收 | [2026-10-15-non-group-general-acceptance.md](./2026-10-15-non-group-general-acceptance.md) | 私聊通知、标签配置、提醒真实收件/跨进程去重、权限草稿和复制边界；群测试G1—G6待确认 |
+| 剩余通用功能分项验收 | [2026-10-15-non-group-general-acceptance.md](./2026-10-15-non-group-general-acceptance.md) | 私聊通知、标签配置、提醒真实收件/跨进程去重、权限草稿和复制边界；G2/G3部分实测；G1权限待核对，G4—G6缺测试对象 |
 | 竞品差距改造 PRD | [2026-10-15-competitor-gap-prd.md](./2026-10-15-competitor-gap-prd.md) | v0.7；19组需求/74条标准；通用部分已部署，整体未完成 |
-| 生产发布与对照验收 | [2026-10-15-production-general-acceptance.md](./2026-10-15-production-general-acceptance.md) | 15c1247、CI1272项通过、0017；真实私聊局部通过，群内副作用和全量业务仍未验 |
+| 生产发布与对照验收 | [2026-10-15-production-general-acceptance.md](./2026-10-15-production-general-acceptance.md) | 最新0e5152d、CI1283项通过、0017；私聊及专用群部分场景通过，完整业务仍未验 |
 | 剩余通用能力续建 | [2026-10-15-remaining-general-features.md](./2026-10-15-remaining-general-features.md) | 消息链接、持久清理及恢复、配置复制、联盟去重与本群解除、旧业务日兼容；历史本地候选记录；现已发布，现场范围见生产记录 |
 | 全面本地复核 | [2026-10-15-comprehensive-local-review.md](./2026-10-15-comprehensive-local-review.md) | 15项追加修复；38项覆盖深度、并发/权限/异常证据与未完成、未验证清单 |
 | 四项通用功能续建 | [2026-10-15-general-features-completion.md](./2026-10-15-general-features-completion.md) | 通知/持久计划、等级标签和到期提醒、异常恢复及自有逻辑复核；历史本地候选记录；现已发布，现场范围见生产记录 |
