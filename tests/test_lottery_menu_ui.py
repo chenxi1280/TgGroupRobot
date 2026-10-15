@@ -138,8 +138,7 @@ def test_lottery_draw_condition_keyboard_exposes_full_and_time_triggers():
         for button in row
     }
     assert rows == [
-        ["👥 满人开奖"],
-        ["⏰ 定时开奖"],
+        ["👥 满人开奖", "⏰ 定时开奖"],
         ["🔙 返回"],
     ]
     assert callbacks["👥 满人开奖"] == "lot:create:-1001:p:t:f"

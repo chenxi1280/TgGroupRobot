@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.shared.ui.admin_keyboard import admin_keyboard
+
 from backend.features.admin.support import *
 from backend.shared.services.command_config_service import command_config_revision
 
@@ -109,7 +111,7 @@ class ModerationConfigMenusMixin:
         enabled = bool(entry.get("enabled", True))
         text, alias_allowed = _command_detail_text(command_key, entry, definition)
         rows = _command_detail_rows(chat_id, command_key, enabled=enabled, alias_allowed=alias_allowed, revision=command_config_revision(settings))
-        keyboard = InlineKeyboardMarkup(rows)
+        keyboard = admin_keyboard(rows)
         await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
 
     async def _show_punishment_policy_menu(
@@ -147,7 +149,7 @@ class ModerationConfigMenusMixin:
             "提示：验证超时仅支持禁言/踢出，删除模式不会改动验证配置。",
         ]
 
-        keyboard = InlineKeyboardMarkup([
+        keyboard = admin_keyboard([
             [
                 InlineKeyboardButton("🗑 删除", callback_data=f"adm:punish:{chat_id}:preset:delete"),
                 InlineKeyboardButton("🔇 禁言", callback_data=f"adm:punish:{chat_id}:preset:mute"),

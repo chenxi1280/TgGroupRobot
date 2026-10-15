@@ -1,6 +1,8 @@
 """垃圾防护配置键盘"""
 from __future__ import annotations
 
+from backend.shared.ui.admin_keyboard import admin_keyboard
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from backend.features.admin.ui.antispam_controls import setting_row
@@ -176,7 +178,7 @@ def garbage_guard_home_keyboard(settings, chat_id: int) -> InlineKeyboardMarkup:
         ]
     )
     rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_safety:{chat_id}")])
-    return InlineKeyboardMarkup(rows)
+    return admin_keyboard(rows)
 
 
 def format_garbage_guard_home_text(chat_title: str, settings) -> str:
@@ -258,12 +260,12 @@ def garbage_guard_rule_keyboard(settings, chat_id: int, rule_id: str, *, banned_
 
     if rule_id == "quick_reply_actions":
         rows.extend(quick_reply_action_rows(rule, chat_id, rule_id, mute_seconds_label=_seconds_label(int(rule["mute_seconds"]))))
-        return InlineKeyboardMarkup(rows)
+        return admin_keyboard(rows)
 
     rows.extend(_standard_rule_action_rows(rule, chat_id, rule_id))
     rows.append(_whitelist_row(settings, chat_id))
     rows.append([InlineKeyboardButton("⬅️ 返回", callback_data=f"gg:home:{chat_id}")])
-    return InlineKeyboardMarkup(rows)
+    return admin_keyboard(rows)
 
 
 def _status_row(rule: dict, chat_id: int, rule_id: str) -> list[InlineKeyboardButton]:

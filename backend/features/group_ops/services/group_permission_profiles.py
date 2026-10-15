@@ -14,6 +14,7 @@ PERMISSION_FIELDS = {
     "preview": ("链接预览", "can_add_web_page_previews"), "poll": ("投票", "can_send_polls"),
     "invite": ("邀请成员", "can_invite_users"), "info": ("修改群信息", "can_change_info"),
     "pin": ("置顶消息", "can_pin_messages"), "topic": ("管理话题", "can_manage_topics"),
+    "react": ("消息表情回应", "can_react_to_messages"), "tag": ("修改自己的标签", "can_edit_tag"),
 }
 
 
@@ -27,7 +28,15 @@ def profile_permissions(settings, *, closed: bool):
     values = profile_values(settings, closed=closed)
     if values is None:
         return ChatPermissions(can_send_messages=not closed)
-    return ChatPermissions(**{field: bool(values.get(field, False)) for _, field in PERMISSION_FIELDS.values()})
+    return ChatPermissions.de_json(effective_permissions(values), bot=None)
+
+
+def effective_permissions(values: dict) -> dict[str, bool]:
+    result = {field: bool(values.get(field, False)) for _, field in PERMISSION_FIELDS.values()}
+    # New Bot API defaults also apply to existing profiles that lack these keys.
+    result['can_react_to_messages'] = bool(values.get('can_react_to_messages', result['can_send_messages']))
+    result['can_edit_tag'] = bool(values.get('can_edit_tag', result['can_pin_messages']))
+    return result
 
 
 def profile_fingerprint(settings):

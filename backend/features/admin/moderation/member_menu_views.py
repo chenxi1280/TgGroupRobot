@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.shared.ui.admin_keyboard import admin_keyboard
+
 from dataclasses import dataclass
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
@@ -163,7 +165,7 @@ def _force_policy_rows(view: ForceSubscribeView) -> list[list[InlineKeyboardButt
 
 
 def force_subscribe_keyboard(view: ForceSubscribeView) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(_force_target_rows(view) + _force_content_rows(view) + _force_policy_rows(view))
+    return admin_keyboard(_force_target_rows(view) + _force_content_rows(view) + _force_policy_rows(view))
 
 
 @dataclass(frozen=True)
@@ -231,7 +233,7 @@ def new_member_limit_keyboard(view: NewMemberLimitView) -> InlineKeyboardMarkup:
         [InlineKeyboardButton("✏️ 提示文案", callback_data=f"adm:nml:{chat_id}:input:warn_text"), InlineKeyboardButton(f"🕒 删除提示（{view.warn_delete}秒）", callback_data=f"adm:nml:{chat_id}:cycle:warn_delete")],
         [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_safety:{chat_id}")],
     ]
-    return InlineKeyboardMarkup(rows)
+    return admin_keyboard(rows)
 
 
 @dataclass(frozen=True)
@@ -327,4 +329,4 @@ def _night_policy_rows(view: NightModeView) -> list[list[InlineKeyboardButton]]:
 
 
 def night_mode_keyboard(view: NightModeView) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(_night_control_rows(view) + _night_policy_rows(view))
+    return admin_keyboard(_night_control_rows(view) + _night_policy_rows(view))

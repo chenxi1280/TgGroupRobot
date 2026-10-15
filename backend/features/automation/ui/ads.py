@@ -1,6 +1,8 @@
 """轮播广告界面键盘。"""
 from __future__ import annotations
 
+from backend.shared.ui.admin_keyboard import admin_keyboard
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from backend.features.automation.services.ad_rotation_service import (
@@ -13,7 +15,7 @@ from backend.shared.ui.base.helpers import create_back_button
 
 
 def ads_menu_keyboard(chat_id: int | None = None) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
+    return admin_keyboard([
         [
             InlineKeyboardButton("轮播规则设置", callback_data=f"ads:rules:{chat_id}" if chat_id else "ads:rules"),
             InlineKeyboardButton("轮播广告管理", callback_data=f"ads:list:{chat_id}:0" if chat_id else "ads:list:0"),
@@ -45,7 +47,7 @@ def ads_rules_keyboard(chat_id: int, rule) -> InlineKeyboardMarkup:
 
     interval_label = format_interval_seconds_label(getattr(rule, "interval_seconds", 7200))
 
-    return InlineKeyboardMarkup([
+    return admin_keyboard([
         [
             InlineKeyboardButton("状态：", callback_data=f"ads:rules:{chat_id}"),
             InlineKeyboardButton(enabled_on, callback_data=f"ads:rules:set:{chat_id}:enabled:1"),
@@ -114,7 +116,7 @@ def ads_item_detail_keyboard(chat_id: int, item, rule=None) -> InlineKeyboardMar
     time_configured = bool(getattr(item, "start_time", None) or getattr(item, "end_time", None))
     enabled_on = "✅ 启用" if item.enabled else "启用"
     enabled_off = "关闭" if item.enabled else "✅ 关闭"
-    return InlineKeyboardMarkup([
+    return admin_keyboard([
         [
             InlineKeyboardButton("状态：", callback_data=f"ads:detail:{chat_id}:{item.id}"),
             InlineKeyboardButton(enabled_on, callback_data=f"ads:item:set:{chat_id}:{item.id}:enabled:1"),
@@ -148,7 +150,7 @@ def ads_item_detail_keyboard(chat_id: int, item, rule=None) -> InlineKeyboardMar
 
 
 def ads_item_time_keyboard(chat_id: int, item_id: int) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
+    return admin_keyboard([
         [
             InlineKeyboardButton("开始时间", callback_data=f"ads:item:input:{chat_id}:{item_id}:start"),
             InlineKeyboardButton("结束时间", callback_data=f"ads:item:input:{chat_id}:{item_id}:end"),

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.shared.ui.admin_keyboard import admin_keyboard
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 
@@ -25,7 +27,7 @@ def custom_points_list_keyboard(items, chat_id: int) -> InlineKeyboardMarkup:
 
 def custom_point_detail_keyboard(item, chat_id: int) -> InlineKeyboardMarkup:
     enabled = bool(item.enabled)
-    return InlineKeyboardMarkup(
+    return admin_keyboard(
         [
             [
                 InlineKeyboardButton("⚙️ 状态：", callback_data=f"adm:cpt:{chat_id}:noop:{item.id}"),

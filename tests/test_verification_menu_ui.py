@@ -73,12 +73,9 @@ async def test_verification_menu_shows_timeout_operations_entry(monkeypatch):
 
     rows = [[button.text for button in row] for row in rendered["keyboard"]]
     assert rows == [
-        ["🤖 进群验证"],
-        ["👻 垃圾拦截"],
-        ["🛡️ 进群自助审核"],
-        ["🚧 禁止批量进群"],
-        ["⚠️ 超时失败任务"],
-        ["📨 提示失败：放行(fail-open)"],
+        ["🤖 进群验证", "👻 垃圾拦截"],
+        ["🛡️ 进群自助审核", "🚧 禁止批量进群"],
+        ["⚠️ 超时失败任务", "📨 提示失败：放行(fail-open)"],
         ["🔙 返回"],
     ]
     assert "进群验证 - 新人未通过验证则进行限制" in rendered["text"]
@@ -154,8 +151,7 @@ async def test_verification_rules_menu_uses_three_mutually_exclusive_rules(monke
 
     rows = [[button.text for button in row] for row in rendered["keyboard"]]
     assert rows == [
-        ["❌ 📄 简单接受条约"],
-        ["✅ 🔢 简单加减法"],
+        ["❌ 📄 简单接受条约", "✅ 🔢 简单加减法"],
         ["❌ 🤐 直接禁言新人"],
         ["🔙 返回"],
     ]

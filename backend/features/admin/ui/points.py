@@ -1,6 +1,8 @@
 """积分配置键盘"""
 from __future__ import annotations
 
+from backend.shared.ui.admin_keyboard import admin_keyboard
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 
@@ -56,7 +58,7 @@ def points_config_keyboard(settings, chat_id: int) -> InlineKeyboardMarkup:
     speech_rank_on, speech_rank_off = _toggle_labels(getattr(settings, "points_speech_rank_enabled", True), "开启")
     personal_speech_on, personal_speech_off = _toggle_labels(getattr(settings, "points_personal_speech_enabled", True), "开启")
 
-    return InlineKeyboardMarkup(_points_config_rows(
+    return admin_keyboard(_points_config_rows(
         chat_id,
         state_labels=(state_on, state_off),
         display_labels=(display_on, display_off),
@@ -134,7 +136,7 @@ def points_rule_keyboard(rule_type: str, settings, chat_id: int) -> InlineKeyboa
     """签到/发言/邀请规则页键盘。"""
     if rule_type == "checkin":
         on_label, off_label = _toggle_labels(settings.sign_enabled)
-        return InlineKeyboardMarkup([
+        return admin_keyboard([
             [
                 InlineKeyboardButton("⚙️ 状态：", callback_data=f"pts:rule:checkin:{chat_id}"),
                 InlineKeyboardButton(on_label, callback_data=f"pts:toggle:sign_enabled:{chat_id}:1"),
@@ -147,7 +149,7 @@ def points_rule_keyboard(rule_type: str, settings, chat_id: int) -> InlineKeyboa
         ])
     if rule_type == "speech":
         on_label, off_label = _toggle_labels(settings.message_points_enabled)
-        return InlineKeyboardMarkup([
+        return admin_keyboard([
             [
                 InlineKeyboardButton("⚙️ 状态：", callback_data=f"pts:rule:speech:{chat_id}"),
                 InlineKeyboardButton(on_label, callback_data=f"pts:toggle:message_points_enabled:{chat_id}:1"),
@@ -159,7 +161,7 @@ def points_rule_keyboard(rule_type: str, settings, chat_id: int) -> InlineKeyboa
             [InlineKeyboardButton("🔙 返回", callback_data=f"pts:home:{chat_id}")],
         ])
     on_label, off_label = _toggle_labels(settings.invite_points_enabled)
-    return InlineKeyboardMarkup([
+    return admin_keyboard([
         [
             InlineKeyboardButton("⚙️ 状态：", callback_data=f"pts:rule:invite:{chat_id}"),
             InlineKeyboardButton(on_label, callback_data=f"pts:toggle:invite_points_enabled:{chat_id}:1"),

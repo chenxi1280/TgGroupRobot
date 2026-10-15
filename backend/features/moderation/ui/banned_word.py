@@ -4,6 +4,8 @@
 """
 from __future__ import annotations
 
+from backend.shared.ui.admin_keyboard import admin_keyboard
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from backend.shared.ui.base.helpers import create_back_button
@@ -28,7 +30,7 @@ def banned_word_menu_keyboard(chat_id: int | None = None) -> InlineKeyboardMarku
     )
     back_button = create_back_button(chat_id, "main")
 
-    return InlineKeyboardMarkup([
+    return admin_keyboard([
         [InlineKeyboardButton("➕ 添加违禁词", callback_data=add_callback)],
         [InlineKeyboardButton("📋 查看列表", callback_data=list_callback)],
         [back_button],

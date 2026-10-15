@@ -30,11 +30,24 @@ ALLOWED_DYNAMIC_CALLBACK_BUILDERS = {
     ("backend/shared/ui/base/builders.py", 161),
 }
 
+# Match exact builder expressions rather than line numbers that drift on imports.
 ALLOWED_DYNAMIC_ADMIN_MENU_BUILDERS = {
-    ("backend/features/admin/core/navigation.py", 27),
-    ("backend/features/admin/ui/admin_main_keyboards.py", 38),
-    ("backend/features/admin/ui/admin_main_keyboards.py", 48),
+    "backend/features/admin/core/navigation.py": ["f'adm:menu:{mode}:{target_chat_id}'"],
+    "backend/features/admin/ui/admin_main_keyboards.py": [
+        "f'adm:menu:{feature}:{chat_id}:category'", "f'adm:menu:category_{key}:{chat_id}'",
+    ],
 }
+
+
+def _dynamic_admin_menu_locations():
+    locations = set()
+    for path, expressions in ALLOWED_DYNAMIC_ADMIN_MENU_BUILDERS.items():
+        allowed = {ast.dump(ast.parse(expr, mode="eval").body) for expr in expressions}
+        for node in ast.walk(ast.parse((PROJECT_ROOT / path).read_text())):
+            if isinstance(node, ast.Call) and _call_name(node) == "InlineKeyboardButton":
+                if any(k.arg == "callback_data" and ast.dump(k.value) in allowed for k in node.keywords):
+                    locations.add((path, node.lineno))
+    return locations
 
 
 def _call_name(node: ast.Call) -> str:
@@ -243,10 +256,11 @@ def test_critical_backend_feature_entries_are_audited() -> None:
 def test_adm_menu_callbacks_use_explicit_menu_actions() -> None:
     malformed: list[tuple[str, int, str]] = []
 
+    allowed_dynamic = _dynamic_admin_menu_locations()
     for path, line, callback_data in _callback_samples():
         if not callback_data.startswith("adm:menu:"):
             continue
-        if (path, line) in ALLOWED_DYNAMIC_ADMIN_MENU_BUILDERS:
+        if (path, line) in allowed_dynamic:
             continue
         parts = callback_data.split(":")
         menu_action = parts[2] if len(parts) > 2 else ""

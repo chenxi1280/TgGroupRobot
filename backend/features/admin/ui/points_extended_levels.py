@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.shared.ui.admin_keyboard import admin_keyboard
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 
@@ -57,4 +59,4 @@ def points_level_detail_keyboard(level, chat_id: int) -> InlineKeyboardMarkup:
     rows.append([InlineKeyboardButton("本级标签", callback_data=f"ltag:{chat_id}:{level.id}:view")])
     rows.append([InlineKeyboardButton("🗑 删除此等级", callback_data=f"adm:lvl:{chat_id}:delete_confirm:{level.id}")])
     rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:points_level:{chat_id}")])
-    return InlineKeyboardMarkup(rows)
+    return admin_keyboard(rows)

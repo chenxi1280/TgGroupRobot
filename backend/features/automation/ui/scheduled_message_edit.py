@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.shared.ui.admin_keyboard import admin_keyboard
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from backend.shared.time_ui import build_interval_keyboard
@@ -59,7 +61,7 @@ def sm_confirm_delete_keyboard(chat_id: int, task_id: str) -> InlineKeyboardMark
 
 
 def sm_time_range_keyboard(chat_id: int, task_id: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
+    return admin_keyboard([
         [
             InlineKeyboardButton("开始时间", callback_data=f"sm:edit:{chat_id}:{task_id}:start_at"),
             InlineKeyboardButton("结束时间", callback_data=f"sm:edit:{chat_id}:{task_id}:end_at"),

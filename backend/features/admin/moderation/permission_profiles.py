@@ -1,8 +1,10 @@
 """Private configuration only; reading/saving a permission profile never applies it."""
+
+from backend.shared.ui.admin_keyboard import admin_keyboard
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from sqlalchemy import select
 
-from backend.features.group_ops.services.group_permission_profiles import PERMISSION_FIELDS, profile_values
+from backend.features.group_ops.services.group_permission_profiles import PERMISSION_FIELDS, effective_permissions, profile_values
 from backend.platform.db.schema.models.chat import ChatSettings
 from backend.shared.callback_parser import CallbackParser
 from backend.shared.handlers.base.message_helper import MessageHelper
@@ -51,10 +53,7 @@ def _valid_target(update, chat_id, mode) -> bool:
 async def _save_profile(session, settings, *, mode: str, cb):
     key, value = _validate_change(cb)
     profiles = dict(get_module_config(settings, "group_lock").get("profiles", {}))
-    values = dict(profiles.get(mode, {}))
-    if not values:
-        values = {field: False for _, field in PERMISSION_FIELDS.values()}
-        values["can_send_messages"] = mode == "open"
+    values = effective_permissions(profiles.get(mode) or {"can_send_messages": mode == "open"})
     values[PERMISSION_FIELDS[key][1]] = value == "1"
     profiles[mode] = values
     await update_module_config(session, settings, module="group_lock", patch={"profiles": profiles})
@@ -62,7 +61,7 @@ async def _save_profile(session, settings, *, mode: str, cb):
 
 async def _show_profile(update, chat_id: int, *, mode: str, values, snapshot=None):
     configured = values is not None
-    values = values or {"can_send_messages": mode == "open"}
+    values = effective_permissions(values or {"can_send_messages": mode == "open"})
     text = f"{'开群' if mode == 'open' else '关群'}成员权限\n群：{chat_id}\n"
     text += "保存只更新方案；在下一次已启用的口令/定时开关群时执行。\n"
     text += "未配置的媒体权限默认关闭；公开群限制由 Telegram 决定。\n"
@@ -75,7 +74,7 @@ async def _show_profile(update, chat_id: int, *, mode: str, values, snapshot=Non
             InlineKeyboardButton("✅ 允许" if enabled else "允许", callback_data=f"gperm:{chat_id}:{mode}:set:{key}:1"),
             InlineKeyboardButton("不允许" if enabled else "✅ 不允许", callback_data=f"gperm:{chat_id}:{mode}:set:{key}:0")])
     rows.append([InlineKeyboardButton("返回夜间管控", callback_data=f"adm:menu:night:{chat_id}")])
-    await MessageHelper.safe_edit(update, text, reply_markup=InlineKeyboardMarkup(rows))
+    await MessageHelper.safe_edit(update, text, reply_markup=admin_keyboard(rows))
 
 
 def _validate_change(cb):

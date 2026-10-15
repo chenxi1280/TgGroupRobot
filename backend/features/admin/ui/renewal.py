@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.shared.ui.admin_keyboard import admin_keyboard
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 def renewal_entry_keyboard(
@@ -17,4 +19,4 @@ def renewal_entry_keyboard(
     elif contact_username:
         rows.append([InlineKeyboardButton(contact_label, url=f"https://t.me/{contact_username.lstrip('@')}")])
     rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_system:{chat_id}")])
-    return InlineKeyboardMarkup(rows)
+    return admin_keyboard(rows)

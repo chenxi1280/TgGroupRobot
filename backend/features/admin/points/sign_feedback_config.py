@@ -1,4 +1,6 @@
 """Sign feedback controls. Saving and previewing never sign in or award points."""
+
+from backend.shared.ui.admin_keyboard import admin_keyboard
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from sqlalchemy import select
 
@@ -68,7 +70,7 @@ async def _show_config(update, chat_id: int, *, config: dict):
     text = f"签到反馈\n群：{chat_id}\n保留时长：{config.get('delete_seconds', 0)} 秒（0 不删）\n"
     text += "签到人数按 Asia/Shanghai 当天的有效签到去重；签到名次与积分排行分别计算。\n"
     text += "当前文案：" + (config.get("template") or "默认文案")
-    await MessageHelper.safe_edit(update, text, reply_markup=InlineKeyboardMarkup(rows))
+    await MessageHelper.safe_edit(update, text, reply_markup=admin_keyboard(rows))
 
 
 async def handle_sign_feedback_input(update, context, session, *, state, message_text):

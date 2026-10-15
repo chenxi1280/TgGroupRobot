@@ -70,7 +70,7 @@ async def execute(app, row):
     if row.kind == 'group_lock':
         kwargs = {'use_independent_chat_permissions': True} if row.payload['independent'] else {}
         result = await app.bot.set_chat_permissions(chat_id=row.chat_id,
-            permissions=ChatPermissions(**row.payload['permissions']), **kwargs)
+            permissions=ChatPermissions.de_json(row.payload['permissions'], bot=app.bot), **kwargs)
         if result is not True:
             raise BadRequest('permission result not confirmed')
         return {'permissions_applied': True, 'closed': row.payload['closed']}

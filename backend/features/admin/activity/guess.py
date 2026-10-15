@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.shared.ui.admin_keyboard import admin_keyboard
+
 from backend.shared.callback_parser import CallbackData
 
 import secrets
@@ -109,7 +111,7 @@ class GuessAdminControllerMixin:
                 f"❌ 已取消：{counts['cancelled']}",
             ]
         )
-        keyboard = InlineKeyboardMarkup([
+        keyboard = admin_keyboard([
             [InlineKeyboardButton("🚀 发起竞猜", callback_data=f"guess:create:{chat_id}:start")],
             [
                 InlineKeyboardButton(f"🟡 待开奖 ({counts['pending']})", callback_data=f"guess:list:{chat_id}:pending"),
@@ -137,7 +139,7 @@ class GuessAdminControllerMixin:
     ) -> None:
         draft = _guess_draft_with_defaults(draft)
         text = format_event_preview(draft, toast=toast)
-        keyboard = InlineKeyboardMarkup([
+        keyboard = admin_keyboard([
             [
                 InlineKeyboardButton("🏷️ 活动名字", callback_data=f"guess:create:{chat_id}:title"),
                 InlineKeyboardButton("🖼️ 活动封面", callback_data=f"guess:create:{chat_id}:cover"),
@@ -184,7 +186,7 @@ class GuessAdminControllerMixin:
                 f"🧹 删除消息：{'🗑 删除' if setting.delete_message_mode == 'delete' else '💾 不删除'}",
             ]
         )
-        keyboard = InlineKeyboardMarkup([
+        keyboard = admin_keyboard([
             [
                 InlineKeyboardButton("💧 抽水比例", callback_data=f"guess:settings:{chat_id}:rake_ratio"),
                 InlineKeyboardButton("👤 抽水归属", callback_data=f"guess:settings:{chat_id}:rake_owner"),
@@ -242,7 +244,7 @@ class GuessAdminControllerMixin:
             keyboard_rows.extend([open_buttons[i:i+2] for i in range(0, len(open_buttons), 2)])
             keyboard_rows.append([InlineKeyboardButton("❌ 取消活动", callback_data=f"guess:cancel:{chat_id}:{event.id}")])
         keyboard_rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"guess:list:{chat_id}:{event.status}")])
-        await self.message_helper.safe_edit(update, format_event_runtime(event), parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard_rows))
+        await self.message_helper.safe_edit(update, format_event_runtime(event), parse_mode="Markdown", reply_markup=admin_keyboard(keyboard_rows))
 
     async def _begin_guess_input(
         self, update, session, *, chat_id: int, sub: str, draft: dict

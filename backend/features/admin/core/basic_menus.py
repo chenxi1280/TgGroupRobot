@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.shared.ui.admin_keyboard import admin_keyboard
+
 from backend.features.admin.support import *
 
 
@@ -125,7 +127,7 @@ class CoreBasicMenusMixin:
 
         chat_title = await self._get_chat_title(db, chat_id)
         text = _format_group_stats(chat_title, stats)
-        keyboard = InlineKeyboardMarkup([
+        keyboard = admin_keyboard([
             [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_system:{chat_id}")],
         ])
         await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)

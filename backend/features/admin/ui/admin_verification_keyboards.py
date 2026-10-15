@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.shared.ui.admin_keyboard import admin_keyboard
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 
@@ -15,7 +17,7 @@ def verification_mode_menu(current_mode: str, chat_id: int | None = None) -> Inl
         back_callback = "adm:menu:verification"
         callbacks = ["adm:vfy_mode:button", "adm:vfy_mode:math", "adm:vfy_mode:mute"]
 
-    return InlineKeyboardMarkup(
+    return admin_keyboard(
         [
             [InlineKeyboardButton("📄 简单接受条约", callback_data=callbacks[0])],
             [InlineKeyboardButton("🔢 简单加减法", callback_data=callbacks[1])],
@@ -63,7 +65,7 @@ def verification_config_menu(
             [InlineKeyboardButton(f"{restrict_prefix} 限制发言", callback_data="adm:vfy_restrict")],
             [InlineKeyboardButton("🔙 返回", callback_data="adm:menu:verification")],
         ]
-    return InlineKeyboardMarkup(buttons)
+    return admin_keyboard(buttons)
 
 
 def verification_timeout_action_menu(current_action: str, chat_id: int | None = None) -> InlineKeyboardMarkup:
@@ -73,7 +75,7 @@ def verification_timeout_action_menu(current_action: str, chat_id: int | None = 
     else:
         back_callback = "adm:vfy_config"
         callbacks = ["adm:vfy_action:none", "adm:vfy_action:mute", "adm:vfy_action:kick"]
-    return InlineKeyboardMarkup(
+    return admin_keyboard(
         [
             [InlineKeyboardButton("不额外处理", callback_data=callbacks[0])],
             [InlineKeyboardButton("🔇 禁言", callback_data=callbacks[1])],

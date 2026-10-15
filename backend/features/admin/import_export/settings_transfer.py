@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.shared.ui.admin_keyboard import admin_keyboard
+
 from backend.shared.callback_parser import CallbackData
 
 from backend.features.admin.support import *
@@ -50,7 +52,7 @@ class SettingsTransferAdminMixin:
             ]
         )
 
-        keyboard = InlineKeyboardMarkup([
+        keyboard = admin_keyboard([
             [InlineKeyboardButton("👥 选择来源群", callback_data=f"adm:import:{chat_id}:pick_source")],
             [InlineKeyboardButton("🧩 选择模块", callback_data=f"adm:import:{chat_id}:pick_modules")],
             [
@@ -76,7 +78,7 @@ class SettingsTransferAdminMixin:
             rows.append([InlineKeyboardButton(f"{selected} {item['label']}", callback_data=callback)])
         rows.append([InlineKeyboardButton("🔙 返回", callback_data="adm:menu:" + mode + f":{chat_id}")])
         action_name = "导入" if mode == "import" else "克隆"
-        await self.message_helper.safe_edit(update, f"选择要{action_name}的模块：", reply_markup=InlineKeyboardMarkup(rows))
+        await self.message_helper.safe_edit(update, f"选择要{action_name}的模块：", reply_markup=admin_keyboard(rows))
 
     async def _set_transfer_chat(self, update, context, chat_id: int, *, callback_data, state, mode: str) -> None:
         selected_chat_id = callback_data.get_int_optional(4)
@@ -210,7 +212,7 @@ class SettingsTransferAdminMixin:
             ]
         )
 
-        keyboard = InlineKeyboardMarkup([
+        keyboard = admin_keyboard([
             [InlineKeyboardButton("🎯 选择目标群", callback_data=f"adm:clone:{chat_id}:pick_target")],
             [InlineKeyboardButton("🧩 选择模块", callback_data=f"adm:clone:{chat_id}:pick_modules")],
             [

@@ -4,6 +4,8 @@
 """
 from __future__ import annotations
 
+from backend.shared.ui.admin_keyboard import admin_keyboard
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from backend.features.activity.services.lottery_service_parsing import (
@@ -26,7 +28,7 @@ def lottery_menu_keyboard(chat_id: int | None = None) -> InlineKeyboardMarkup:
     setting_callback = f"lot:settings:{chat_id}" if chat_id else "lot:settings"
     back_button = create_back_button(chat_id, "category_activities")
 
-    return InlineKeyboardMarkup([
+    return admin_keyboard([
         [
             InlineKeyboardButton("🚀 发起抽奖活动", callback_data=create_menu_callback),
             InlineKeyboardButton("📋 活动列表", callback_data=list_callback),
@@ -79,11 +81,11 @@ def lottery_draw_condition_keyboard(chat_id: int, lottery_type: str, selection_m
     full_trigger = encode_draw_trigger("full_participants")
     deadline_trigger = encode_draw_trigger("time_deadline")
     if selection_mode == "ranking_random":
-        return InlineKeyboardMarkup([
+        return admin_keyboard([
             [InlineKeyboardButton("⏰ 定时开奖", callback_data=f"lot:create:{chat_id}:{type_code}:{mode_code}:{deadline_trigger}")],
             [InlineKeyboardButton("🔙 返回", callback_data=f"lot:create_menu:{chat_id}")],
         ])
-    return InlineKeyboardMarkup([
+    return admin_keyboard([
         [InlineKeyboardButton("👥 满人开奖", callback_data=f"lot:create:{chat_id}:{type_code}:{mode_code}:{full_trigger}")],
         [InlineKeyboardButton("⏰ 定时开奖", callback_data=f"lot:create:{chat_id}:{type_code}:{mode_code}:{deadline_trigger}")],
         [InlineKeyboardButton("🔙 返回", callback_data=f"lot:create_menu:{chat_id}")],

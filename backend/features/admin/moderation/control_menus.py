@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.shared.ui.admin_keyboard import admin_keyboard
+
 from backend.features.admin.support import *
 
 
@@ -39,7 +41,7 @@ class ModerationControlMenusMixin:
             f"当前策略：{current_label}\n\n"
             "当前统一影响以下管理能力：设置页、风控页、功能工作台。"
         )
-        await self.message_helper.safe_edit(update, text=text, reply_markup=InlineKeyboardMarkup(buttons))
+        await self.message_helper.safe_edit(update, text=text, reply_markup=admin_keyboard(buttons))
 
     async def _show_group_lock_menu(
         self,
@@ -71,7 +73,7 @@ class ModerationControlMenusMixin:
             f"删除提示消息: {delete_after}秒后删除\n\n"
             f"当前文案:\n{template}"
         )
-        keyboard = InlineKeyboardMarkup([
+        keyboard = admin_keyboard([
             [
                 InlineKeyboardButton("⚙️ 状态：", callback_data=f"adm:menu:renamewatch:{chat_id}"),
                 InlineKeyboardButton("✅ 启用" if enabled else "启用", callback_data=f"adm:rm:{chat_id}:set:enabled:1"),

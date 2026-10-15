@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.shared.ui.admin_keyboard import admin_keyboard
+
 from backend.features.admin.support import *
 
 
@@ -48,7 +50,7 @@ def _engagement_egg_keyboard(event, chat_id: int, *, status: str = "all", page: 
         [InlineKeyboardButton("⏸ 暂停" if event.status == "running" else "▶️ 恢复", callback_data=f"act:egg:{chat_id}:status:{event.id}:{status_value}"), InlineKeyboardButton("♻️ 重置活动", callback_data=f"act:egg:{chat_id}:reset:{event.id}")],
         [InlineKeyboardButton("🔙 返回列表", callback_data=f"act:egg:{chat_id}:list:{status}:{page}")],
     ]
-    return InlineKeyboardMarkup(rows)
+    return admin_keyboard(rows)
 
 
 def _engagement_chat_reward_text(reward) -> str:
@@ -76,7 +78,7 @@ def _engagement_chat_reward_keyboard(reward, chat_id: int) -> InlineKeyboardMark
         [InlineKeyboardButton("📈 近7日统计", callback_data=f"act:chat:{chat_id}:stats"), InlineKeyboardButton("🧾 领奖记录", callback_data=f"act:chat:{chat_id}:history")],
         [InlineKeyboardButton("🔙 返回", callback_data=f"act:home:{chat_id}")],
     ]
-    return InlineKeyboardMarkup(rows)
+    return admin_keyboard(rows)
 
 
 class EngagementAdminViewsMixin:
@@ -117,7 +119,7 @@ class EngagementAdminViewsMixin:
                 f"└ 近7日领取次数：{recent_claims}",
             ]
         )
-        keyboard = InlineKeyboardMarkup([
+        keyboard = admin_keyboard([
             [
                 InlineKeyboardButton("➕ 添加彩蛋", callback_data=f"act:egg:{chat_id}:new"),
                 InlineKeyboardButton("🥚 彩蛋管理", callback_data=f"act:egg:{chat_id}:list:all"),
@@ -192,7 +194,7 @@ class EngagementAdminViewsMixin:
             await self.message_helper.safe_edit(
                 update,
                 "❌ 彩蛋活动不存在或已删除。",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"act:egg:{chat_id}:list:all")]]),
+                reply_markup=admin_keyboard([[InlineKeyboardButton("🔙 返回", callback_data=f"act:egg:{chat_id}:list:all")]]),
             )
             return
         await self.message_helper.safe_edit(

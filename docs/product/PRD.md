@@ -1,6 +1,6 @@
 # TgGroupRobot PRD 入口与代码对接索引
 
-> 版本：v1.11
+> 版本：v1.12
 > 日期：2026-10-15
 > 状态：通用部分已部署7044d73；私聊分项补验、两项修复及待确认群测试见最新记录，整体PRD未完成
 
@@ -14,6 +14,7 @@
 
 | 用途 | 文档 | 说明 |
 |------|------|------|
+| 管理按钮布局改造 | [2026-10-15-admin-keyboard-layout.md](./2026-10-15-admin-keyboard-layout.md) | 两列短选项、语义分组、长名称和确认保留、注册链与私聊验收 |
 | 剩余通用功能分项验收 | [2026-10-15-non-group-general-acceptance.md](./2026-10-15-non-group-general-acceptance.md) | 私聊通知、标签配置、提醒真实收件/跨进程去重、权限草稿和复制边界；群测试G1—G6待确认 |
 | 竞品差距改造 PRD | [2026-10-15-competitor-gap-prd.md](./2026-10-15-competitor-gap-prd.md) | v0.7；19组需求/74条标准；通用部分已部署，整体未完成 |
 | 生产发布与对照验收 | [2026-10-15-production-general-acceptance.md](./2026-10-15-production-general-acceptance.md) | 15c1247、CI1272项通过、0017；真实私聊局部通过，群内副作用和全量业务仍未验 |

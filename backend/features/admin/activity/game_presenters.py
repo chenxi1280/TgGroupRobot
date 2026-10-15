@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.shared.ui.admin_keyboard import admin_keyboard
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 
@@ -94,7 +96,7 @@ def build_game_menu_keyboard(
     rows = _game_toggle_rows(setting, chat_id)
     rows.extend(_game_config_rows(setting, chat_id, points_chat_label))
     rows.extend(_game_footer_rows(setting, chat_id))
-    return InlineKeyboardMarkup(rows)
+    return admin_keyboard(rows)
 
 
 def build_game_points_keyboard(
@@ -119,7 +121,7 @@ def build_game_points_keyboard(
             ]
         )
     rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"gm:home:{chat_id}")])
-    return InlineKeyboardMarkup(rows)
+    return admin_keyboard(rows)
 
 
 def format_game_points_text(current_label: str, has_alternative: bool) -> str:

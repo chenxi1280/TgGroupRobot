@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.shared.ui.admin_keyboard import admin_keyboard
+
 from backend.shared.callback_parser import CallbackData
 
 from backend.features.admin.support import *
@@ -63,7 +65,7 @@ def _health_warnings(settings, *, garbage_enabled: bool) -> list[str]:
 
 
 def _health_keyboard(chat_id: int) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
+    return admin_keyboard([
         [
             InlineKeyboardButton("🛡️ 新人验证", callback_data=f"adm:menu:verification:{chat_id}"),
             InlineKeyboardButton("☂️ 垃圾防护", callback_data=f"adm:menu:antispam:{chat_id}"),

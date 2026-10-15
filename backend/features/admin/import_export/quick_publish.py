@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.shared.ui.admin_keyboard import admin_keyboard
+
 from backend.shared.callback_parser import CallbackData
 
 from backend.features.admin.support import *
@@ -163,7 +165,7 @@ class QuickPublishAdminMixin:
             ],
         )
 
-        keyboard = InlineKeyboardMarkup([
+        keyboard = admin_keyboard([
             [
                 action_button("设置文本", f"qpub:input:{chat_id}:text", configured=text_configured),
                 action_button("设置媒体", f"qpub:input:{chat_id}:media", configured=media_configured),

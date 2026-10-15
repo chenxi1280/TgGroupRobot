@@ -110,7 +110,7 @@ async def test_rename_monitor_menu_uses_delete_label_with_colon(monkeypatch):
     await admin_handler._admin_handler._show_rename_monitor_menu(update, context, -100123)
 
     keyboard = rendered[0]
-    assert keyboard.inline_keyboard[3][0].text == "🧹 删除提示消息："
+    assert keyboard.inline_keyboard[2][0].text == "🧹 删除提示消息："
 
 
 @pytest.mark.asyncio
@@ -298,7 +298,7 @@ def test_garbage_guard_banned_words_rule_exposes_add_entry() -> None:
     rows = [[button.text for button in row] for row in keyboard.inline_keyboard]
     callbacks = [button.callback_data for row in keyboard.inline_keyboard for button in row]
 
-    assert ["➕ 添加违禁词"] in rows
+    assert any("➕ 添加违禁词" in row for row in rows)
     assert "banned_word:add:-100123" in callbacks
     assert "实际触发条件: 包含/模糊匹配，命中词库后触发（当前 0 个词）" in text
 

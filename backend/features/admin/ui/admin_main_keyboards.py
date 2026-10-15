@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.shared.ui.admin_keyboard import admin_keyboard
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 
@@ -66,4 +68,4 @@ def admin_main_menu(chat_id: int | None = None) -> InlineKeyboardMarkup:
 def toggle_menu(rows: list[tuple[str, str, bool]]) -> InlineKeyboardMarkup:
     keyboard = [[InlineKeyboardButton(f"{'✅' if enabled else '❌'} {label}", callback_data=f"adm:toggle:{key}")] for label, key, enabled in rows]
     keyboard.append([InlineKeyboardButton("🔙 返回", callback_data="adm:menu:main")])
-    return InlineKeyboardMarkup(keyboard)
+    return admin_keyboard(keyboard)

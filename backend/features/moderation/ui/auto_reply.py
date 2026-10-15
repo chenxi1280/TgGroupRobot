@@ -4,6 +4,8 @@
 """
 from __future__ import annotations
 
+from backend.shared.ui.admin_keyboard import admin_keyboard
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from backend.shared.ui.message_config_panel import action_button, button_count, mark_configured
@@ -28,7 +30,7 @@ def auto_reply_menu_keyboard(chat_id: int | None = None) -> InlineKeyboardMarkup
     )
     back_button = create_back_button(chat_id, "main")
 
-    return InlineKeyboardMarkup([
+    return admin_keyboard([
         [InlineKeyboardButton("➕ 添加一条", callback_data=create_callback)],
         [InlineKeyboardButton("📋 规则列表", callback_data=list_callback)],
         [back_button],
@@ -154,7 +156,7 @@ def auto_reply_detail_keyboard(rule, chat_id: int) -> InlineKeyboardMarkup:
     content_configured = bool(str(getattr(rule, "reply_content", "") or "").strip())
     buttons_configured = button_count(getattr(rule, "buttons", None)) > 0
     delay_configured = int(getattr(rule, "delete_reply_delay_seconds", 0) or 0) > 0
-    return InlineKeyboardMarkup([
+    return admin_keyboard([
         [
             InlineKeyboardButton("状态：", callback_data=f"auto_reply:detail:{chat_id}:{rule.id}"),
             InlineKeyboardButton(status_on, callback_data=f"auto_reply:set:{chat_id}:{rule.id}:active:1"),

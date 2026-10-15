@@ -1,6 +1,8 @@
 """Generic notice configuration in private chat; preview and save have no group effects."""
 from __future__ import annotations
 
+from backend.shared.ui.admin_keyboard import admin_keyboard
+
 from sqlalchemy import select
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from backend.features.admin.services.notice_config import parse_value
@@ -125,7 +127,7 @@ async def show_notice(update, context, *, prefix, chat_id, target, config):
         text += await _consent_text(context, chat_id, target=target, config=config)
     else:
         text += f"\n通知保留：{config.get('delete_seconds', 0)}秒（0不删）；与触发口令清理独立。"
-    await MessageHelper.safe_edit(update, text, reply_markup=InlineKeyboardMarkup(rows))
+    await MessageHelper.safe_edit(update, text, reply_markup=admin_keyboard(rows))
 
 
 def _summary(prefix, chat_id, *, target, config):

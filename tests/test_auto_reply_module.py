@@ -375,8 +375,8 @@ def test_auto_reply_menu_keyboard_uses_short_labels() -> None:
     keyboard = auto_reply_menu_keyboard(chat_id=-100456)
 
     assert keyboard.inline_keyboard[0][0].text == "➕ 添加一条"
-    assert keyboard.inline_keyboard[1][0].text == "📋 规则列表"
-    assert keyboard.inline_keyboard[2][0].callback_data == "adm:menu:main:-100456"
+    assert keyboard.inline_keyboard[0][1].text == "📋 规则列表"
+    assert keyboard.inline_keyboard[1][0].callback_data == "adm:menu:main:-100456"
 
 
 def test_format_auto_reply_rule_detail_has_new_fields() -> None:

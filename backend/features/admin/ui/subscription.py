@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.shared.ui.admin_keyboard import admin_keyboard
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 
@@ -17,4 +19,4 @@ def subscription_menu_keyboard(
         rows.append([InlineKeyboardButton(contact_label, callback_data=f"sub:contact:{chat_id}")])
 
     rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_system:{chat_id}")])
-    return InlineKeyboardMarkup(rows)
+    return admin_keyboard(rows)

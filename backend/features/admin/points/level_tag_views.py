@@ -1,4 +1,6 @@
 """Independent global/per-level display policy, ownership diagnostics and safe input."""
+
+from backend.shared.ui.admin_keyboard import admin_keyboard
 from sqlalchemy import func, select
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from backend.features.admin.notice_views import authorized
@@ -115,7 +117,7 @@ async def show_tags(update, context, *, chat_id, target):
     rows.append([InlineKeyboardButton('刷新状态', callback_data=prefix+':view')])
     back = f'adm:lvl:{chat_id}:detail:{target}' if target else f'adm:menu:points_level:{chat_id}'
     rows.append([InlineKeyboardButton('返回', callback_data=back)])
-    await MessageHelper.safe_edit(update, text, reply_markup=InlineKeyboardMarkup(rows))
+    await MessageHelper.safe_edit(update, text, reply_markup=admin_keyboard(rows))
 
 
 def _summary(level, *, chat_id, config, option, counts, failures):

@@ -1,6 +1,8 @@
 """删除系统提示配置键盘。"""
 from __future__ import annotations
 
+from backend.shared.ui.admin_keyboard import admin_keyboard
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 
@@ -47,4 +49,4 @@ def auto_delete_config_keyboard(settings, chat_id: int) -> InlineKeyboardMarkup:
         ],
         [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_safety:{chat_id}")],
     ]
-    return InlineKeyboardMarkup(buttons)
+    return admin_keyboard(buttons)

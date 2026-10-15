@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.shared.ui.admin_keyboard import admin_keyboard
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from backend.shared.time_helper import get_interval_description
@@ -12,7 +14,7 @@ def sm_detail_keyboard(task, chat_id: int) -> InlineKeyboardMarkup:
     text_configured = bool(str(getattr(task, "text", "") or "").strip())
     buttons_configured = button_count(getattr(task, "buttons", None)) > 0
     time_configured = bool(getattr(task, "start_at", None) or getattr(task, "end_at", None))
-    return InlineKeyboardMarkup([
+    return admin_keyboard([
         [
             InlineKeyboardButton("⚙️ 状态:", callback_data=f"sm:open:{chat_id}:{task.short_id}"),
             InlineKeyboardButton(mark_configured("启用", bool(task.enabled)), callback_data=f"sm:set:{chat_id}:{task.short_id}:enabled:1"),

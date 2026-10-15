@@ -1,4 +1,6 @@
 """Scoped effect history and safe recovery of explicit failures only."""
+
+from backend.shared.ui.admin_keyboard import admin_keyboard
 import datetime as dt
 from sqlalchemy import func, select
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
@@ -46,7 +48,7 @@ async def effect_callback(update, context):
     buttons.extend([[InlineKeyboardButton('刷新', callback_data=f'eff:{chat_id}:{kind}:list')],
         [InlineKeyboardButton('返回', callback_data=_back_callback(chat_id, kind=kind))]])
     await MessageHelper.safe_edit(update, f'执行与异常恢复（共{total}条，第{page+1}页）\n'+'\n\n'.join(lines or ['暂无记录'])+
-        '\n结果未知须核实远端，系统不会自动重发。', reply_markup=InlineKeyboardMarkup(buttons))
+        '\n结果未知须核实远端，系统不会自动重发。', reply_markup=admin_keyboard(buttons))
 
 
 def _render_rows(rows, *, chat_id):

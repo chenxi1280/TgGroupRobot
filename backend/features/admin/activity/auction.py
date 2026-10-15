@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.shared.ui.admin_keyboard import admin_keyboard
+
 from backend.shared.callback_parser import CallbackData
 
 from backend.features.admin.support import *
@@ -17,7 +19,7 @@ def _auction_menu_text(chat_title: str, setting, auctions) -> str:
 def _auction_menu_keyboard(setting, chat_id: int) -> InlineKeyboardMarkup:
     from backend.features.activity.auction_permissions import creation_policy
     policy = creation_policy(setting)
-    return InlineKeyboardMarkup(_auction_core_rows(setting, chat_id) + [
+    return admin_keyboard(_auction_core_rows(setting, chat_id) + [
         [InlineKeyboardButton(("✅ " if policy == "admin" else "") + "管理员创建", callback_data=f"auc:perm:{chat_id}:admin"),
          InlineKeyboardButton(("✅ " if policy == "all" else "") + "全员创建", callback_data=f"auc:perm:{chat_id}:all")],
         [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_activities:{chat_id}")],
@@ -129,7 +131,7 @@ class AuctionAdminControllerMixin:
             await self.message_helper.safe_edit(
                 update,
                 text="❌ 拍卖不存在",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回列表", callback_data=f"auc:list:{chat_id}:0")]]),
+                reply_markup=admin_keyboard([[InlineKeyboardButton("🔙 返回列表", callback_data=f"auc:list:{chat_id}:0")]]),
             )
             return
         text = "\n".join(
@@ -148,7 +150,7 @@ class AuctionAdminControllerMixin:
         await self.message_helper.safe_edit(
             update,
             text=text,
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回列表", callback_data=f"auc:list:{chat_id}:0")]]),
+            reply_markup=admin_keyboard([[InlineKeyboardButton("🔙 返回列表", callback_data=f"auc:list:{chat_id}:0")]]),
         )
 
     async def _handle_auction(

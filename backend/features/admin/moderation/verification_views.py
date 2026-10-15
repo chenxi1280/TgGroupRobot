@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.shared.ui.admin_keyboard import admin_keyboard
+
 from backend.features.admin.support import *
 
 
@@ -164,7 +166,7 @@ class VerificationViewsMixin:
             ],
             [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_safety:{chat_id}")],
         ]
-        keyboard = InlineKeyboardMarkup(buttons)
+        keyboard = admin_keyboard(buttons)
         await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
 
     async def _show_verification_rules_menu(
@@ -190,7 +192,7 @@ class VerificationViewsMixin:
             "只能启用一个验证，开启一个规则时，会自动关闭其他规则。",
             f"当前启用：{active_label}",
         ]
-        keyboard = InlineKeyboardMarkup(
+        keyboard = admin_keyboard(
             [
                 [
                     InlineKeyboardButton(
@@ -244,7 +246,7 @@ class VerificationViewsMixin:
                 f"⛔ 超时处理：{_verification_action_label(settings.verification_timeout_action)}",
             ]
         )
-        keyboard = InlineKeyboardMarkup([
+        keyboard = admin_keyboard([
             [
                 InlineKeyboardButton("✅ 启动" if not active else "✅ 已启动", callback_data=f"adm:vfy_home:{chat_id}:rule:button:toggle"),
                 InlineKeyboardButton("❌ 关闭", callback_data=f"adm:vfy_home:{chat_id}:rule:button:disable"),
@@ -289,7 +291,7 @@ class VerificationViewsMixin:
                 f"❓ 答错处理：{_verification_action_label(getattr(settings, 'verification_wrong_action', 'none'))}",
             ]
         )
-        keyboard = InlineKeyboardMarkup([
+        keyboard = admin_keyboard([
             [
                 InlineKeyboardButton("✅ 启动" if not active else "✅ 已启动", callback_data=f"adm:vfy_home:{chat_id}:rule:math:toggle"),
                 InlineKeyboardButton("❌ 关闭", callback_data=f"adm:vfy_home:{chat_id}:rule:math:disable"),
@@ -334,7 +336,7 @@ class VerificationViewsMixin:
                 "管理员可回复用户消息发送“解封”，或发送“解封 @用户”手动解禁。",
             ]
         )
-        keyboard = InlineKeyboardMarkup([
+        keyboard = admin_keyboard([
             [
                 InlineKeyboardButton("✅ 启动" if not active else "✅ 已启动", callback_data=f"adm:vfy_home:{chat_id}:rule:mute:toggle"),
                 InlineKeyboardButton("❌ 关闭", callback_data=f"adm:vfy_home:{chat_id}:rule:mute:disable"),
@@ -365,7 +367,7 @@ class VerificationViewsMixin:
             f"👢 踢出新人：{'✅ 开启' if settings.join_spam_kick_member_enabled else '❌ 关闭'}",
             f"⏱️ 提示删除：{settings.join_spam_tip_delete_after_seconds} 秒",
         ]
-        keyboard = InlineKeyboardMarkup([
+        keyboard = admin_keyboard([
             [
                 InlineKeyboardButton("✅ 状态" if settings.join_spam_guard_enabled else "❌ 状态", callback_data=f"adm:vfy_home:{chat_id}:spam:toggle:enabled"),
                 InlineKeyboardButton(f"🧪 阈值 {settings.join_spam_detect_rules_count}", callback_data=f"adm:vfy_home:{chat_id}:spam:cycle:rules"),
@@ -420,7 +422,7 @@ class VerificationViewsMixin:
             f"👢 踢出：{'✅ 开启' if settings.join_burst_kick_enabled else '❌ 关闭'}",
             f"💬 提示策略：{tip_mode_label}",
         ]
-        keyboard = InlineKeyboardMarkup([
+        keyboard = admin_keyboard([
             [
                 InlineKeyboardButton("✅ 状态" if settings.join_burst_enabled else "❌ 状态", callback_data=f"adm:vfy_home:{chat_id}:burst:toggle:enabled"),
                 InlineKeyboardButton(f"🪟 窗口 {settings.join_burst_window_seconds}s", callback_data=f"adm:vfy_home:{chat_id}:burst:cycle:window"),

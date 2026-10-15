@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.shared.ui.admin_keyboard import admin_keyboard
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 
@@ -7,7 +9,7 @@ def points_mall_home_keyboard(setting, chat_id: int) -> InlineKeyboardMarkup:
     enabled = bool(setting.enabled)
     auto_unlist = bool(setting.auto_unlist_when_out_of_stock)
     notice_text = "不删除" if setting.redeem_notice_delete_seconds <= 0 else f"{setting.redeem_notice_delete_seconds}秒后删除"
-    return InlineKeyboardMarkup(
+    return admin_keyboard(
         [
             [
                 InlineKeyboardButton("⚙️ 状态：", callback_data=f"adm:mall:{chat_id}:noop"),
@@ -62,7 +64,7 @@ def points_mall_products_keyboard(products, chat_id: int, *, page: int = 0, tota
 def points_mall_product_detail_keyboard(product, chat_id: int) -> InlineKeyboardMarkup:
     sale_toggle = "❎ 下架停售" if product.status == "on_sale" else "✅ 上架销售"
     sale_value = 0 if product.status == "on_sale" else 1
-    return InlineKeyboardMarkup(
+    return admin_keyboard(
         [
             [
                 InlineKeyboardButton("🏷️ 商品名称", callback_data=f"adm:mall:{chat_id}:product:edit:{product.product_id}:name"),
@@ -116,7 +118,7 @@ def points_mall_order_detail_keyboard(chat_id: int, order, *, status: str = "all
     status_code = {"all": "a", "created": "c", "fulfilled": "f", "canceled": "x", "refunded": "r"}[normalized_status]
     product_token = product_id if product_id is not None else 0
     back_target = f"adm:mall:{chat_id}:orders_status:{status_code}:{product_token}:{page}"
-    return InlineKeyboardMarkup(
+    return admin_keyboard(
         [
             [
                 InlineKeyboardButton("📦 完成发货", callback_data=f"adm:mall:{chat_id}:order:fulfill:{order.order_id}:{status_code}:{product_token}:{page}"),
@@ -129,7 +131,7 @@ def points_mall_order_detail_keyboard(chat_id: int, order, *, status: str = "all
 
 
 def points_mall_cover_keyboard(chat_id: int) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
+    return admin_keyboard(
         [
             [
                 InlineKeyboardButton("🖼️ 上传封面", callback_data=f"adm:mall:{chat_id}:edit:cover"),
@@ -147,11 +149,11 @@ def points_mall_notice_keyboard(chat_id: int, current_seconds: int) -> InlineKey
         prefix = "✅ " if current == seconds else ""
         rows.append([InlineKeyboardButton(f"{prefix}{label}", callback_data=f"adm:mall:{chat_id}:notice:{seconds}")])
     rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:points_mall:{chat_id}")])
-    return InlineKeyboardMarkup(rows)
+    return admin_keyboard(rows)
 
 
 def points_mall_command_keyboard(chat_id: int) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:points_mall:{chat_id}")]])
+    return admin_keyboard([[InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:points_mall:{chat_id}")]])
 
 
 def user_points_mall_keyboard(chat_id: int, products) -> InlineKeyboardMarkup:

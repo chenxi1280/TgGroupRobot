@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.shared.ui.admin_keyboard import admin_keyboard
+
 from backend.shared.callback_parser import CallbackData
 
 from backend.features.admin.support import *
@@ -148,7 +150,7 @@ class CoreMenuDispatchMixin:
 
         handler = self._menu_dispatch().get(menu_action)
         if handler is None:
-            keyboard = InlineKeyboardMarkup([
+            keyboard = admin_keyboard([
                 [InlineKeyboardButton("🔙 返回主菜单", callback_data=f"adm:menu:main:{chat_id}")],
             ])
             await self.message_helper.safe_edit(
@@ -199,7 +201,7 @@ class CoreMenuDispatchMixin:
                 "如需该功能，请从主菜单重新进入。",
             ]
         )
-        keyboard = InlineKeyboardMarkup([
+        keyboard = admin_keyboard([
             [InlineKeyboardButton("🔙 返回主菜单", callback_data=f"adm:menu:main:{chat_id}")],
         ])
         await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)

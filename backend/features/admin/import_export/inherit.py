@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.shared.ui.admin_keyboard import admin_keyboard
+
 from backend.features.admin.support import *
 
 
@@ -28,7 +30,7 @@ class AccountInheritAdminMixin:
                 "旧号生成一次性 token，新号在私聊里使用 token 继承主积分和自定义积分。",
             ]
         )
-        keyboard = InlineKeyboardMarkup([
+        keyboard = admin_keyboard([
             [
                 InlineKeyboardButton("允许继承：", callback_data=f"inh:manage:{chat_id}"),
                 InlineKeyboardButton("允许" + (" ✅" if enabled else ""), callback_data=f"inh:toggle:{chat_id}:1"),

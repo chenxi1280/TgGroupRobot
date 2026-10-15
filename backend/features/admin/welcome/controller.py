@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.shared.ui.admin_keyboard import admin_keyboard
+
 from backend.shared.callback_parser import CallbackData
 
 from backend.features.admin.support import *
@@ -77,7 +79,7 @@ def _welcome_detail_keyboard(item, chat_id: int, welcome_id: int, *, config: dic
         [InlineKeyboardButton("🏖️ 预览效果", callback_data=f"adm:wel:{chat_id}:preview:{welcome_id}"), InlineKeyboardButton(mark_configured("🕘 延迟删除", delay_configured), callback_data=f"adm:wel:{chat_id}:cycle_delete:{welcome_id}")],
         [InlineKeyboardButton("❌ 删除配置", callback_data=f"adm:wel:{chat_id}:delete:{welcome_id}"), InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:welcome:{chat_id}")],
     ]
-    return InlineKeyboardMarkup(rows)
+    return admin_keyboard(rows)
 
 
 class WelcomeAdminControllerMixin:

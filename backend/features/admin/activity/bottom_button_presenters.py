@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.shared.ui.admin_keyboard import admin_keyboard
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 
@@ -44,7 +46,7 @@ def build_bottom_home(
         ],
         [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_messages:{chat_id}")],
     ]
-    return text, InlineKeyboardMarkup(rows)
+    return text, admin_keyboard(rows)
 
 
 def build_bottom_detail(
@@ -83,7 +85,7 @@ def build_bottom_detail(
             InlineKeyboardButton("🔙 返回", callback_data=f"btm:layout:{chat_id}:edit"),
         ],
     ]
-    return text, InlineKeyboardMarkup(rows)
+    return text, admin_keyboard(rows)
 
 
 def build_bottom_event_categories(
@@ -117,7 +119,7 @@ def build_bottom_event_categories(
             "选择一个内置功能事件，或使用自定义触发词兼容群内已有入口。",
         ]
     )
-    return text, InlineKeyboardMarkup(rows)
+    return text, admin_keyboard(rows)
 
 
 def _bottom_event_rows(layout, events, chat_id: int, *, encode_key):
