@@ -1,12 +1,12 @@
 # TgGroupRobot PRD 入口与代码对接索引
 
-> 版本：v1.9
+> 版本：v1.10
 > 日期：2026-10-15
-> 状态：通用部分已本地实现及部分验证；整体PRD未完成、未部署
+> 状态：通用部分已于2026-10-15部署15c1247并完成局部生产验收；整体PRD未完成
 
 本文档作为后续维护的 PRD 入口，避免引用空文件导致产品、架构、问题清单三套文档断开。
 
-当前新增需求见[竞品差距改造 PRD](./2026-10-15-competitor-gap-prd.md)，区分已有能力、待补齐项和待核实证据，并定义优先级及验收标准。[全功能复核清单](./2026-10-15-full-feature-review.md)逐项对应竞品 29 个业务入口和我方 38 个稳定 ID。后续用户已授权实现，通用管理功能已有本地修改；各需求、38项自有功能与74条标准的实际状态见[独立实施与验收记录](./2026-10-15-implementation-and-own-feature-audit.md)。未部署，未向真实群/频道发送测试消息。
+当前新增需求见[竞品差距改造 PRD](./2026-10-15-competitor-gap-prd.md)，区分已有能力、待补齐项和待核实证据，并定义优先级及验收标准。[全功能复核清单](./2026-10-15-full-feature-review.md)逐项对应竞品 29 个业务入口和我方 38 个稳定 ID。各需求、38项自有功能与74条标准的实现状态见[独立实施与验收记录](./2026-10-15-implementation-and-own-feature-audit.md)。用户已追加授权发布，通用实现于2026-10-15部署为15c1247；版本、CI、数据库回读、私聊对照及未验项见[生产发布与对照验收](./2026-10-15-production-general-acceptance.md)。未向真实群/频道发送测试消息，全部业务验收未完成。
 
 2026-10-10 的[服务修复与交互统一 PRD](./2026-10-10-service-repair-prd.md)继续作为既有导航、权限、草稿与业务修复的设计基线；当日实施、部署和局部现场结果见[验收记录](./2026-10-10-service-repair-acceptance.md)最后追加章节。历史结果不概括为当前所有功能均已闭环，也不代表 2026-10-15 重新核验了线上版本。
 
@@ -14,10 +14,11 @@
 
 | 用途 | 文档 | 说明 |
 |------|------|------|
-| 竞品差距改造 PRD | [2026-10-15-competitor-gap-prd.md](./2026-10-15-competitor-gap-prd.md) | v0.7；19组需求/74条标准；通用部分本地实现，整体未完成，未部署 |
-| 剩余通用能力续建 | [2026-10-15-remaining-general-features.md](./2026-10-15-remaining-general-features.md) | 消息链接、持久清理及恢复、配置复制、联盟去重与本群解除、旧业务日兼容；本地候选，未部署 |
+| 竞品差距改造 PRD | [2026-10-15-competitor-gap-prd.md](./2026-10-15-competitor-gap-prd.md) | v0.7；19组需求/74条标准；通用部分已部署，整体未完成 |
+| 生产发布与对照验收 | [2026-10-15-production-general-acceptance.md](./2026-10-15-production-general-acceptance.md) | 15c1247、CI1272项通过、0017；真实私聊局部通过，群内副作用和全量业务仍未验 |
+| 剩余通用能力续建 | [2026-10-15-remaining-general-features.md](./2026-10-15-remaining-general-features.md) | 消息链接、持久清理及恢复、配置复制、联盟去重与本群解除、旧业务日兼容；历史本地候选记录；现已发布，现场范围见生产记录 |
 | 全面本地复核 | [2026-10-15-comprehensive-local-review.md](./2026-10-15-comprehensive-local-review.md) | 15项追加修复；38项覆盖深度、并发/权限/异常证据与未完成、未验证清单 |
-| 四项通用功能续建 | [2026-10-15-general-features-completion.md](./2026-10-15-general-features-completion.md) | 通知/持久计划、等级标签和到期提醒、异常恢复及自有逻辑复核；本地候选，未部署 |
+| 四项通用功能续建 | [2026-10-15-general-features-completion.md](./2026-10-15-general-features-completion.md) | 通知/持久计划、等级标签和到期提醒、异常恢复及自有逻辑复核；历史本地候选记录；现已发布，现场范围见生产记录 |
 | 本地实施及自有功能检查 | [2026-10-15-implementation-and-own-feature-audit.md](./2026-10-15-implementation-and-own-feature-audit.md) | 19组状态、38项自有检查、74条标准证据与开放项 |
 | 全功能复核清单 | [2026-10-15-full-feature-review.md](./2026-10-15-full-feature-review.md) | 竞品 29 业务入口/1 导航，我方 38 ID，逐项页面/代码依据、具体差距与未执行分支；不是全量业务通过证明 |
 | 既有修复 PRD | [2026-10-10-service-repair-prd.md](./2026-10-10-service-repair-prd.md) | 问题基线、六类导航、公共交互、业务补全及验收场景；实施状态以验收记录为准 |
