@@ -1,0 +1,10 @@
+/data/tggrouprobot/releases/20261020154451_131872a
+image=ghcr.io/chenxi1280/tggrouprobot-bot:131872a3f6042185dff17405b0699014aed9ee2b status=running started=2026-10-20T15:45:41.298126516Z restarts=0
+OK static release: /data/infra/www/robot.telema.cn/current/index.html
+OK container: tggrouprobot-bot status=running health=none image=ghcr.io/chenxi1280/tggrouprobot-bot:131872a3f6042185dff17405b0699014aed9ee2b
+OK admin local: http://127.0.0.1:8088/admin/ -> HTTP 200
+OK host nginx health: https://robot.telema.cn/healthz -> ok
+OK docs via host nginx https: https://robot.telema.cn/ -> HTTP 200
+OK admin via host nginx https: https://robot.telema.cn/admin/ -> HTTP 200
+SKIP public DNS checks (set TGGROUPROBOT_CHECK_PUBLIC_URLS=1 to enable)
+TgGroupRobot web checks passed

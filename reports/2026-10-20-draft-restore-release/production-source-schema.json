@@ -1,0 +1,16 @@
+{
+  "alembic": [
+    "0017_generic_admin_delivery"
+  ],
+  "schema_gate": "passed",
+  "source_hashes": {
+    "backend/features/admin/draft_pages.py": "f925792a60c2a0fa4ad7bcc93322ff8753075615dfd442224d7bb5575e41401f",
+    "backend/features/automation/scheduled_message_inputs.py": "d4cfd46c3ae2f2d37c61637a90db3ded8b36adbf118996c679ed1b75918dc65f",
+    "backend/features/automation/ads_input_callbacks.py": "1049a7407207dfa81a396ee9ec686eb5469f424e11c89f286fb9442b1ecb53e1",
+    "backend/platform/telegram/private_config_adapters.py": "981e17d1880102e1b35d0ad9002356b29ee33c7bb9d88a65a88b8b99108774b8",
+    "backend/platform/telegram/private_config_registry.py": "dcaf956896acb41f9840f129f3752ebaf4cbc52acaec1393e34c3cb95eee8c7f",
+    "backend/shared/ui/datetime_picker.py": "0bcf9ee4b87daeab7fb464e161a43cff7ba7a326c031e8b700a6d059f0fe4ac7",
+    "backend/features/activity/date_picker_handler.py": "67e604e6cf35dfa1b80770368dc5a5e19f355e7660427750a318028a43f79e30"
+  },
+  "local_hash_match": true
+}

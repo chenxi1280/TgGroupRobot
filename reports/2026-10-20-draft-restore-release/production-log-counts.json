@@ -1,0 +1,5 @@
+{
+  "sample": "container logs since 5m",
+  "lines": 16,
+  "error_or_traceback_lines": 0
+}
