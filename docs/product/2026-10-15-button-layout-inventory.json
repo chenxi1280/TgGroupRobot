@@ -1,0 +1,3123 @@
+{
+  "baseline_commit": "31d098550750ed1df59dca235b48e8c814b159cb",
+  "date": "2026-10-15",
+  "scope": "backend/**/*.py 中直接以名称调用的三种键盘构造点；不含别名或属性调用的推断",
+  "interpretation": "调用点不是页面数或缺陷数；同页可有多个构造点，包装器可服务多个页面。literal_input_row_sizes 是输入字面量形状，未经 admin_keyboard 转换，不代表最终布局。",
+  "counts": {
+    "InlineKeyboardMarkup": 235,
+    "admin_keyboard": 79,
+    "ReplyKeyboardMarkup": 1
+  },
+  "unique_files": 130,
+  "entries": [
+    {
+      "file": "backend/app/update_pipeline.py",
+      "line": 96,
+      "function": "_dispatch_private",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/activity/game_panels.py",
+      "line": 45,
+      "function": "k3_panel_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/activity/game_panels.py",
+      "line": 49,
+      "function": "blackjack_panel_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        3,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/activity/game_panels.py",
+      "line": 62,
+      "function": "blackjack_round_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        2,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/activity/lottery_creation.py",
+      "line": 152,
+      "function": "_creation_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/activity/lottery_creation.py",
+      "line": 264,
+      "function": "_legacy_success_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/activity/lottery_creation_callbacks.py",
+      "line": 76,
+      "function": "_handle_back",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/activity/lottery_creation_callbacks.py",
+      "line": 189,
+      "function": "_publish_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/activity/lottery_creation_views.py",
+      "line": 331,
+      "function": "_preset_confirm_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/activity/lottery_creation_views.py",
+      "line": 339,
+      "function": "_wizard_nav_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/activity/lottery_creation_views.py",
+      "line": 355,
+      "function": "_prize_action_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/activity/lottery_creation_views.py",
+      "line": 372,
+      "function": "_point_type_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/activity/lottery_list_keyboard.py",
+      "line": 100,
+      "function": "build_activity_list_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/activity/lottery_menus.py",
+      "line": 148,
+      "function": "_activity_detail_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/activity/lottery_menus.py",
+      "line": 152,
+      "function": "_activity_list_back_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/activity/lottery_menus.py",
+      "line": 389,
+      "function": "show_settings_menu",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        2,
+        1,
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/activity/services/lottery_subscription.py",
+      "line": 115,
+      "function": "build_lottery_subscribe_markup",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/activity/solitaire_creation_config.py",
+      "line": 184,
+      "function": "_publish_created_solitaire",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/activity/solitaire_creation_start.py",
+      "line": 60,
+      "function": "solitaire_create_start_callback",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1,
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/activity/ui/lottery.py",
+      "line": 31,
+      "function": "lottery_menu_keyboard",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": [
+        2,
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/activity/ui/lottery.py",
+      "line": 52,
+      "function": "lottery_type_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        2,
+        2,
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/activity/ui/lottery.py",
+      "line": 71,
+      "function": "lottery_mode_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1,
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/activity/ui/lottery.py",
+      "line": 84,
+      "function": "lottery_draw_condition_keyboard",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": [
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/activity/ui/lottery.py",
+      "line": 88,
+      "function": "lottery_draw_condition_keyboard",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": [
+        1,
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/activity/ui/lottery.py",
+      "line": 143,
+      "function": "manual_draw_prize_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/activity/ui/lottery.py",
+      "line": 171,
+      "function": "manual_draw_summary_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/activity/ui/lottery.py",
+      "line": 212,
+      "function": "manual_draw_summary_keyboard_with_winners",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/activity/ui/lottery.py",
+      "line": 224,
+      "function": "get_join_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/activity/ui/solitaire.py",
+      "line": 24,
+      "function": "solitaire_menu_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1,
+        2,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/activity/ui/solitaire.py",
+      "line": 83,
+      "function": "solitaire_list_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/activity/ui/solitaire.py",
+      "line": 115,
+      "function": "solitaire_detail_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/activity/ui/solitaire.py",
+      "line": 120,
+      "function": "solitaire_create_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/activity/ui/solitaire.py",
+      "line": 135,
+      "function": "get_join_solitaire_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/activity/auction.py",
+      "line": 22,
+      "function": "_auction_menu_keyboard",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/activity/auction.py",
+      "line": 117,
+      "function": "_show_auction_list",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/activity/auction.py",
+      "line": 134,
+      "function": "_show_auction_detail",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/activity/auction.py",
+      "line": 153,
+      "function": "_show_auction_detail",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/activity/bottom_button.py",
+      "line": 122,
+      "function": "_show_bottom_button_layout_menu",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/activity/bottom_button_actions.py",
+      "line": 102,
+      "function": "_handle_bottom_general",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/activity/bottom_button_actions.py",
+      "line": 300,
+      "function": "_start_bottom_button_input",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/activity/bottom_button_presenters.py",
+      "line": 49,
+      "function": "build_bottom_home",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/activity/bottom_button_presenters.py",
+      "line": 88,
+      "function": "build_bottom_detail",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/activity/bottom_button_presenters.py",
+      "line": 122,
+      "function": "build_bottom_event_categories",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/activity/bottom_button_presenters.py",
+      "line": 172,
+      "function": "build_bottom_event_list",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/activity/engagement_chat_actions.py",
+      "line": 25,
+      "function": "_show_engagement_chat_preview",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/activity/engagement_chat_actions.py",
+      "line": 76,
+      "function": "_start_engagement_chat_input",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/activity/engagement_egg_actions.py",
+      "line": 79,
+      "function": "_start_egg_template_input",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/activity/engagement_egg_actions.py",
+      "line": 151,
+      "function": "_preview_egg_event",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/activity/engagement_egg_actions.py",
+      "line": 166,
+      "function": "_publish_egg_clue",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/activity/engagement_views.py",
+      "line": 53,
+      "function": "_engagement_egg_keyboard",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/activity/engagement_views.py",
+      "line": 81,
+      "function": "_engagement_chat_reward_keyboard",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/activity/engagement_views.py",
+      "line": 122,
+      "function": "_show_engagement_home",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": [
+        2,
+        2,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/activity/engagement_views.py",
+      "line": 179,
+      "function": "_show_engagement_egg_list",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/activity/engagement_views.py",
+      "line": 197,
+      "function": "_show_engagement_egg",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/activity/engagement_views.py",
+      "line": 244,
+      "function": "_show_engagement_chat_stats",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/activity/engagement_views.py",
+      "line": 262,
+      "function": "_show_engagement_chat_history",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/activity/engagement_views.py",
+      "line": 286,
+      "function": "_show_engagement_egg_history",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/activity/game.py",
+      "line": 135,
+      "function": "_show_game_rounds",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/activity/game.py",
+      "line": 155,
+      "function": "_show_game_round_detail",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/activity/game.py",
+      "line": 169,
+      "function": "_show_game_round_detail",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/activity/game.py",
+      "line": 203,
+      "function": "_show_game_help",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/activity/game.py",
+      "line": 302,
+      "function": "_show_game_points_error",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/activity/game.py",
+      "line": 409,
+      "function": "_start_game_input",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/activity/game_presenters.py",
+      "line": 99,
+      "function": "build_game_menu_keyboard",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/activity/game_presenters.py",
+      "line": 124,
+      "function": "build_game_points_keyboard",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/activity/guess.py",
+      "line": 114,
+      "function": "_show_guess_home",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": [
+        1,
+        2,
+        2,
+        2
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/activity/guess.py",
+      "line": 142,
+      "function": "_show_guess_create_menu",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": [
+        3,
+        3,
+        3,
+        2,
+        2
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/activity/guess.py",
+      "line": 189,
+      "function": "_show_guess_settings",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": [
+        2,
+        2,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/activity/guess.py",
+      "line": 221,
+      "function": "_show_guess_event_list",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/activity/guess.py",
+      "line": 247,
+      "function": "_show_guess_event_detail",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/activity/guess.py",
+      "line": 285,
+      "function": "_begin_guess_input",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/activity/guess.py",
+      "line": 374,
+      "function": "_handle_guess_create",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/activity/guess.py",
+      "line": 413,
+      "function": "_handle_guess_settings",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/alliance_effect_views.py",
+      "line": 56,
+      "function": "_show_confirmation",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/alliance_effect_views.py",
+      "line": 79,
+      "function": "_show_history",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/callback_flow.py",
+      "line": 20,
+      "function": "private_admin_callback_impl",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/command_flow.py",
+      "line": 58,
+      "function": "_handle_group_admin_command",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/core/basic_menus.py",
+      "line": 130,
+      "function": "_show_stats_menu",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/core/menu_dispatch.py",
+      "line": 153,
+      "function": "_handle_menu",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/core/menu_dispatch.py",
+      "line": 204,
+      "function": "_show_unimplemented_feature",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/core/navigation.py",
+      "line": 28,
+      "function": "_build_import_source_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/draft_pages.py",
+      "line": 39,
+      "function": "draft_callback",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/effect_views.py",
+      "line": 51,
+      "function": "effect_callback",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/garage/alliance.py",
+      "line": 11,
+      "function": "_empty_alliance_view",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1,
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/garage/alliance.py",
+      "line": 38,
+      "function": "_alliance_view",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/garage/alliance.py",
+      "line": 93,
+      "function": "_show_alliance_members_menu",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/garage/alliance.py",
+      "line": 137,
+      "function": "_show_alliance_joint_ban_menu",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/garage/alliance.py",
+      "line": 155,
+      "function": "_handle_alliance_input",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/garage/auth_actions.py",
+      "line": 18,
+      "function": "_start_garage_auth_input",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/garage/auth_actions.py",
+      "line": 166,
+      "function": "_handle_garage_summary",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/garage/auth_actions.py",
+      "line": 245,
+      "function": "_garage_identity_detail",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/garage/auth_views.py",
+      "line": 87,
+      "function": "_show_garage_auth_menu",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        null,
+        null
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/garage/auth_views.py",
+      "line": 116,
+      "function": "_show_garage_summary_menu",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        3,
+        3,
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/garage/auth_views.py",
+      "line": 190,
+      "function": "_show_garage_teacher_list_menu",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/garage/auth_views.py",
+      "line": 229,
+      "function": "_show_garage_whitelist_menu",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/garage/forward.py",
+      "line": 236,
+      "function": "_handle_forward_input",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/garage/forward.py",
+      "line": 274,
+      "function": "_apply_forward_buttons",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/garage/forward_operations.py",
+      "line": 44,
+      "function": "_show_garage_forward_tasks",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/garage/forward_operations.py",
+      "line": 82,
+      "function": "_show_garage_replay_confirmation",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/garage/forward_presenters.py",
+      "line": 135,
+      "function": "build_forward_home_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/garage/forward_presenters.py",
+      "line": 197,
+      "function": "build_forward_audit_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/garage/review_actions.py",
+      "line": 53,
+      "function": "_start_review_input",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/garage/review_actions.py",
+      "line": 106,
+      "function": "_handle_review_field_input",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/garage/review_submit.py",
+      "line": 183,
+      "function": "_notify_review_approver",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1,
+        2
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/garage/review_views.py",
+      "line": 84,
+      "function": "_review_home_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/garage/review_views.py",
+      "line": 159,
+      "function": "_review_report_detail_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/garage/review_views.py",
+      "line": 219,
+      "function": "_show_car_review_fields_menu",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/garage/review_views.py",
+      "line": 251,
+      "function": "_show_car_review_reports_menu",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/garage/review_views.py",
+      "line": 301,
+      "function": "_show_car_review_publish_menu",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/garage/teacher_search_actions.py",
+      "line": 17,
+      "function": "_start_teacher_search_input",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/garage/teacher_search_presenters.py",
+      "line": 189,
+      "function": "_teacher_search_home_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/garage/teacher_search_presenters.py",
+      "line": 246,
+      "function": "_attendance_mode_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/garage/teacher_search_presenters.py",
+      "line": 279,
+      "function": "build_attendance_source_menu",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/garage/teacher_search_presenters.py",
+      "line": 305,
+      "function": "build_attendance_source_mode_menu",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/garage/teacher_search_presenters.py",
+      "line": 343,
+      "function": "build_attendance_detail",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/garage/teacher_search_views.py",
+      "line": 167,
+      "function": "_show_teacher_search_footer_menu",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/garage/teacher_search_views.py",
+      "line": 244,
+      "function": "_show_teacher_search_open_course_menu",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/garage/teacher_self.py",
+      "line": 27,
+      "function": "_teacher_self_list_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/garage/teacher_self.py",
+      "line": 31,
+      "function": "_teacher_self_home_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/garage/teacher_self.py",
+      "line": 162,
+      "function": "_start_teacher_self_state",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/garage/teacher_self.py",
+      "line": 204,
+      "function": "_dispatch_teacher_self_action",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/import_export/inherit.py",
+      "line": 33,
+      "function": "_show_account_inherit_menu",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": [
+        3,
+        2,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/import_export/quick_publish.py",
+      "line": 35,
+      "function": "_start_quick_publish_input",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/import_export/quick_publish.py",
+      "line": 168,
+      "function": "_show_quick_publish_menu",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": [
+        2,
+        2,
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/import_export/settings_transfer.py",
+      "line": 55,
+      "function": "_show_import_settings_menu",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": [
+        1,
+        1,
+        2,
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/import_export/settings_transfer.py",
+      "line": 81,
+      "function": "_show_transfer_module_picker",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/import_export/settings_transfer.py",
+      "line": 131,
+      "function": "_apply_settings_transfer",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/import_export/settings_transfer.py",
+      "line": 215,
+      "function": "_show_clone_settings_menu",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": [
+        1,
+        1,
+        2,
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/list_browser.py",
+      "line": 47,
+      "function": "with_list_return",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/list_browser.py",
+      "line": 88,
+      "function": "_list_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/list_browser.py",
+      "line": 121,
+      "function": "_show_query_failure",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1,
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/list_browser.py",
+      "line": 201,
+      "function": "_start_search",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/menu_origins.py",
+      "line": 18,
+      "function": "with_menu_origin",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/moderation/config_actions.py",
+      "line": 54,
+      "function": "_start_command_alias_input",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/moderation/config_menus.py",
+      "line": 89,
+      "function": "_show_command_config_menu",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/moderation/config_menus.py",
+      "line": 114,
+      "function": "_show_command_config_detail",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/moderation/config_menus.py",
+      "line": 152,
+      "function": "_show_punishment_policy_menu",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": [
+        3,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/moderation/control_actions.py",
+      "line": 141,
+      "function": "_start_group_lock_input",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/moderation/control_actions.py",
+      "line": 222,
+      "function": "_start_rename_monitor_text_input",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/moderation/control_actions.py",
+      "line": 227,
+      "function": "_show_rename_monitor_preview",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/moderation/control_menus.py",
+      "line": 44,
+      "function": "_show_control_permission_menu",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/moderation/control_menus.py",
+      "line": 76,
+      "function": "_show_rename_monitor_menu",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": [
+        3,
+        1,
+        1,
+        2,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/moderation/member_actions.py",
+      "line": 30,
+      "function": "_build_force_subscribe_delete_after_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/moderation/member_actions.py",
+      "line": 142,
+      "function": "_start_member_force_subscribe_input",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/moderation/member_actions.py",
+      "line": 260,
+      "function": "_start_new_member_input",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/moderation/member_actions.py",
+      "line": 355,
+      "function": "_start_night_input",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/moderation/member_menu_views.py",
+      "line": 168,
+      "function": "force_subscribe_keyboard",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/moderation/member_menu_views.py",
+      "line": 236,
+      "function": "new_member_limit_keyboard",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/moderation/member_menu_views.py",
+      "line": 332,
+      "function": "night_mode_keyboard",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/moderation/permission_profiles.py",
+      "line": 77,
+      "function": "_show_profile",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/moderation/verification_config_start.py",
+      "line": 86,
+      "function": "_handle_verification_config_start",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/moderation/verification_home_actions.py",
+      "line": 303,
+      "function": "_start_verification_rule_input",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/moderation/verification_home_actions.py",
+      "line": 342,
+      "function": "_show_verification_rule_preview",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/moderation/verification_home_actions.py",
+      "line": 352,
+      "function": "_show_verification_rule_preview",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/moderation/verification_home_actions.py",
+      "line": 460,
+      "function": "_start_force_subscribe_input",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/moderation/verification_timeout_operations.py",
+      "line": 42,
+      "function": "_show_verification_timeout_tasks",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/moderation/verification_timeout_operations.py",
+      "line": 82,
+      "function": "_show_timeout_replay_confirmation",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/moderation/verification_views.py",
+      "line": 38,
+      "function": "_self_review_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        2,
+        1,
+        1,
+        2,
+        2,
+        2,
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/moderation/verification_views.py",
+      "line": 169,
+      "function": "_show_verification_menu",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/moderation/verification_views.py",
+      "line": 195,
+      "function": "_show_verification_rules_menu",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/moderation/verification_views.py",
+      "line": 249,
+      "function": "_show_verification_agreement_detail",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": [
+        2,
+        2,
+        1,
+        2,
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/moderation/verification_views.py",
+      "line": 294,
+      "function": "_show_verification_math_detail",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": [
+        2,
+        2,
+        1,
+        2,
+        1,
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/moderation/verification_views.py",
+      "line": 339,
+      "function": "_show_verification_mute_detail",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": [
+        2,
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/moderation/verification_views.py",
+      "line": 370,
+      "function": "_show_join_spam_guard_menu",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": [
+        2,
+        2,
+        2,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/moderation/verification_views.py",
+      "line": 425,
+      "function": "_show_join_burst_guard_menu",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": [
+        2,
+        2,
+        2,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/module_settings/force_subscribe_inputs.py",
+      "line": 81,
+      "function": "build_force_subscribe_preview_markup",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/module_settings/force_subscribe_inputs.py",
+      "line": 101,
+      "function": "build_force_subscribe_preview_markup_async",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/notice_views.py",
+      "line": 82,
+      "function": "configure",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/notice_views.py",
+      "line": 130,
+      "function": "show_notice",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/points/custom_points.py",
+      "line": 31,
+      "function": "_show_custom_point_confirmation",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/points/custom_points.py",
+      "line": 104,
+      "function": "_start_custom_point_input",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/points/detail_pages.py",
+      "line": 88,
+      "function": "_show_points_level_delete_confirm",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/points/level_actions.py",
+      "line": 49,
+      "function": "_edit_points_level",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/points/level_tag_views.py",
+      "line": 50,
+      "function": "_configure",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/points/level_tag_views.py",
+      "line": 120,
+      "function": "show_tags",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/points/mall_actions.py",
+      "line": 39,
+      "function": "_start_mall_input",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/points/mall_actions.py",
+      "line": 126,
+      "function": "_handle_mall_order",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/points/mall_actions.py",
+      "line": 199,
+      "function": "_confirm_mall_product_delete",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/points/sign_feedback_config.py",
+      "line": 56,
+      "function": "_start_input",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/points/sign_feedback_config.py",
+      "line": 73,
+      "function": "_show_config",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/runtime.py",
+      "line": 126,
+      "function": "process",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/subscription/controller.py",
+      "line": 68,
+      "function": "_health_keyboard",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": [
+        2,
+        1,
+        3,
+        2,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/ui/admin_main_keyboards.py",
+      "line": 28,
+      "function": "create_group_selection_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/ui/admin_main_keyboards.py",
+      "line": 32,
+      "function": "create_guide_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/ui/admin_main_keyboards.py",
+      "line": 44,
+      "function": "admin_category_menu",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/ui/admin_main_keyboards.py",
+      "line": 49,
+      "function": "admin_main_menu",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/ui/admin_main_keyboards.py",
+      "line": 65,
+      "function": "admin_main_menu",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/ui/admin_main_keyboards.py",
+      "line": 71,
+      "function": "toggle_menu",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/ui/admin_verification_keyboards.py",
+      "line": 20,
+      "function": "verification_mode_menu",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/ui/admin_verification_keyboards.py",
+      "line": 68,
+      "function": "verification_config_menu",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/ui/admin_verification_keyboards.py",
+      "line": 78,
+      "function": "verification_timeout_action_menu",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/ui/antispam.py",
+      "line": 181,
+      "function": "garbage_guard_home_keyboard",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/ui/antispam.py",
+      "line": 263,
+      "function": "garbage_guard_rule_keyboard",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/ui/antispam.py",
+      "line": 268,
+      "function": "garbage_guard_rule_keyboard",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/ui/antispam.py",
+      "line": 346,
+      "function": "garbage_guard_whitelist_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1,
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/ui/auto_delete.py",
+      "line": 52,
+      "function": "auto_delete_config_keyboard",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/ui/points.py",
+      "line": 61,
+      "function": "points_config_keyboard",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/ui/points.py",
+      "line": 139,
+      "function": "points_rule_keyboard",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": [
+        3,
+        1,
+        1,
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/ui/points.py",
+      "line": 152,
+      "function": "points_rule_keyboard",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": [
+        3,
+        1,
+        1,
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/ui/points.py",
+      "line": 164,
+      "function": "points_rule_keyboard",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": [
+        3,
+        1,
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/ui/points.py",
+      "line": 179,
+      "function": "back_button",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/ui/points_extended_custom.py",
+      "line": 25,
+      "function": "custom_points_list_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/ui/points_extended_custom.py",
+      "line": 30,
+      "function": "custom_point_detail_keyboard",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": [
+        3,
+        2,
+        2,
+        2,
+        2,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/ui/points_extended_levels.py",
+      "line": 28,
+      "function": "points_level_list_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/ui/points_extended_levels.py",
+      "line": 62,
+      "function": "points_level_detail_keyboard",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/ui/points_extended_mall.py",
+      "line": 12,
+      "function": "points_mall_home_keyboard",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": [
+        3,
+        3,
+        2,
+        2,
+        1,
+        1,
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/ui/points_extended_mall.py",
+      "line": 61,
+      "function": "points_mall_products_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/ui/points_extended_mall.py",
+      "line": 67,
+      "function": "points_mall_product_detail_keyboard",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": [
+        3,
+        3,
+        2,
+        2,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/ui/points_extended_mall.py",
+      "line": 113,
+      "function": "points_mall_orders_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/ui/points_extended_mall.py",
+      "line": 121,
+      "function": "points_mall_order_detail_keyboard",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": [
+        2,
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/ui/points_extended_mall.py",
+      "line": 134,
+      "function": "points_mall_cover_keyboard",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": [
+        2,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/ui/points_extended_mall.py",
+      "line": 152,
+      "function": "points_mall_notice_keyboard",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/ui/points_extended_mall.py",
+      "line": 156,
+      "function": "points_mall_command_keyboard",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/ui/points_extended_mall.py",
+      "line": 163,
+      "function": "user_points_mall_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/ui/renewal.py",
+      "line": 22,
+      "function": "renewal_entry_keyboard",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/ui/subscription.py",
+      "line": 22,
+      "function": "subscription_menu_keyboard",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/welcome/controller.py",
+      "line": 82,
+      "function": "_welcome_detail_keyboard",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/welcome/controller.py",
+      "line": 127,
+      "function": "_show_welcome_list_menu",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/admin/welcome/controller.py",
+      "line": 240,
+      "function": "_start_welcome_input",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/automation/ads_creation_actions.py",
+      "line": 88,
+      "function": "ads_create_start_action",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/automation/ads_creation_actions.py",
+      "line": 175,
+      "function": "_publish_ad_creation_success",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/automation/ads_item_callbacks.py",
+      "line": 330,
+      "function": "_item_back_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/automation/ads_operations.py",
+      "line": 141,
+      "function": "_show_replay_confirmation",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/automation/ads_operations.py",
+      "line": 181,
+      "function": "_history_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/automation/ads_operations.py",
+      "line": 203,
+      "function": "_pool_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/automation/ads_rule_callbacks.py",
+      "line": 131,
+      "function": "_rules_back_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/automation/notice_consent.py",
+      "line": 44,
+      "function": "handle_consent_start",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        2
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/automation/scheduled_message_mutation_helpers.py",
+      "line": 52,
+      "function": "_build_task_buttons",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/automation/scheduled_message_operations.py",
+      "line": 65,
+      "function": "confirm_uncertain_replay",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/automation/scheduled_message_operations.py",
+      "line": 137,
+      "function": "_history_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/automation/services/ad_rotation_formatting.py",
+      "line": 115,
+      "function": "build_item_markup",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/automation/ui/ads.py",
+      "line": 18,
+      "function": "ads_menu_keyboard",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": [
+        2,
+        1,
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/automation/ui/ads.py",
+      "line": 50,
+      "function": "ads_rules_keyboard",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": [
+        3,
+        3,
+        2,
+        1,
+        2,
+        1,
+        4,
+        2,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/automation/ui/ads.py",
+      "line": 108,
+      "function": "ads_manage_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/automation/ui/ads.py",
+      "line": 119,
+      "function": "ads_item_detail_keyboard",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": [
+        3,
+        2,
+        2,
+        2,
+        2,
+        1,
+        2
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/automation/ui/ads.py",
+      "line": 153,
+      "function": "ads_item_time_keyboard",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": [
+        2,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/automation/ui/scheduled_message_detail.py",
+      "line": 17,
+      "function": "sm_detail_keyboard",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": [
+        3,
+        2,
+        2,
+        2,
+        3,
+        3,
+        2,
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/automation/ui/scheduled_message_edit.py",
+      "line": 38,
+      "function": "sm_day_period_start_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/automation/ui/scheduled_message_edit.py",
+      "line": 53,
+      "function": "sm_day_period_end_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/automation/ui/scheduled_message_edit.py",
+      "line": 64,
+      "function": "sm_time_range_keyboard",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": [
+        2,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/automation/ui/scheduled_message_edit.py",
+      "line": 74,
+      "function": "sm_edit_text_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/automation/ui/scheduled_message_edit.py",
+      "line": 78,
+      "function": "sm_edit_media_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/automation/ui/scheduled_message_edit.py",
+      "line": 82,
+      "function": "sm_edit_buttons_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/automation/ui/scheduled_message_list.py",
+      "line": 36,
+      "function": "sm_list_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/garage/services/garage_forward_config.py",
+      "line": 162,
+      "function": "build_button_markup",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/group_ops/group_hooks/car_review.py",
+      "line": 242,
+      "function": "_reply_car_review_submit_entry",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/group_ops/group_hooks/control_force_subscribe.py",
+      "line": 299,
+      "function": "_custom_force_subscribe_markup",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/group_ops/group_hooks/control_force_subscribe.py",
+      "line": 309,
+      "function": "_bound_force_subscribe_markup",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/group_ops/group_hooks/teacher_search_format.py",
+      "line": 81,
+      "function": "build_teacher_keyword_search_markup",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/group_ops/group_hooks/teacher_search_queries.py",
+      "line": 41,
+      "function": "build_private_location_markup",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/group_ops/group_hooks/teacher_search_queries.py",
+      "line": 53,
+      "function": "build_private_teacher_location_markup",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/group_ops/services/bottom_button_service.py",
+      "line": 248,
+      "function": "build_runtime_markup",
+      "constructor": "ReplyKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/group_ops/start_handler.py",
+      "line": 79,
+      "function": "_build_private_home_markup",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/group_ops/start_payloads.py",
+      "line": 45,
+      "function": "handle_invite_relay_start",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/invite/account_inherit_handler.py",
+      "line": 25,
+      "function": "_user_home_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        2,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/invite/account_inherit_handler.py",
+      "line": 133,
+      "function": "_inherit_back_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/invite/invite_admin_config_callbacks.py",
+      "line": 54,
+      "function": "invite_link_cover_callback",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/invite/invite_admin_config_callbacks.py",
+      "line": 76,
+      "function": "invite_link_text_callback",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/invite/invite_shared.py",
+      "line": 184,
+      "function": "format_invite_preview",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/invite/invite_user_callbacks.py",
+      "line": 278,
+      "function": "user_invite_list_callback",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/invite/invite_user_callbacks.py",
+      "line": 286,
+      "function": "user_invite_list_callback",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/invite/invite_user_callbacks.py",
+      "line": 309,
+      "function": "user_invite_rank_callback",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/invite/invite_user_callbacks.py",
+      "line": 317,
+      "function": "user_invite_rank_callback",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/invite/ui/invite_link.py",
+      "line": 55,
+      "function": "invite_link_menu_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        3,
+        3,
+        3,
+        2,
+        2,
+        2,
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/invite/ui/invite_link.py",
+      "line": 143,
+      "function": "invite_link_list_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/invite/ui/invite_link.py",
+      "line": 152,
+      "function": "invite_link_detail_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        2,
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/invite/ui/invite_link.py",
+      "line": 164,
+      "function": "invite_link_create_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/invite/ui/invite_link.py",
+      "line": 172,
+      "function": "user_invite_menu_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1,
+        2,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/moderation/auto_reply_edit_actions.py",
+      "line": 72,
+      "function": "_show_edit_prompt",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/moderation/auto_reply_payloads.py",
+      "line": 69,
+      "function": "build_auto_reply_markup",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/moderation/auto_reply_runtime.py",
+      "line": 173,
+      "function": "_parse_auto_reply_config",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1,
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/moderation/auto_reply_runtime.py",
+      "line": 310,
+      "function": "_handle_auto_reply_edit_input",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/moderation/banned_word_create.py",
+      "line": 101,
+      "function": "banned_word_add_start_impl",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/moderation/banned_word_runtime.py",
+      "line": 221,
+      "function": "_parse_banned_word_config",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/moderation/garbage_guard_config_handler.py",
+      "line": 148,
+      "function": "_start_garbage_config_input",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/moderation/ui/auto_reply.py",
+      "line": 33,
+      "function": "auto_reply_menu_keyboard",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": [
+        1,
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/moderation/ui/auto_reply.py",
+      "line": 142,
+      "function": "auto_reply_list_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/moderation/ui/auto_reply.py",
+      "line": 159,
+      "function": "auto_reply_detail_keyboard",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": [
+        3,
+        3,
+        3,
+        2,
+        2,
+        2,
+        2
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/moderation/ui/auto_reply.py",
+      "line": 200,
+      "function": "auto_reply_delay_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        4,
+        2
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/moderation/ui/auto_reply.py",
+      "line": 215,
+      "function": "auto_reply_delete_confirm_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        2
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/moderation/ui/auto_reply.py",
+      "line": 224,
+      "function": "auto_reply_preview_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/moderation/ui/banned_word.py",
+      "line": 33,
+      "function": "banned_word_menu_keyboard",
+      "constructor": "admin_keyboard",
+      "literal_input_row_sizes": [
+        1,
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/moderation/ui/banned_word.py",
+      "line": 76,
+      "function": "banned_word_list_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/nearby/ui/nearby.py",
+      "line": 8,
+      "function": "nearby_manage_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1,
+        2,
+        1,
+        1,
+        1,
+        2
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/nearby/ui/nearby.py",
+      "line": 27,
+      "function": "nearby_clear_confirm_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        2
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/nearby/ui/nearby.py",
+      "line": 67,
+      "function": "nearby_list_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/nearby/ui/nearby.py",
+      "line": 71,
+      "function": "nearby_detail_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/points/mall_order_handler.py",
+      "line": 39,
+      "function": "_page",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/points/mall_order_handler.py",
+      "line": 147,
+      "function": "show_order_lookup",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/points/mall_presentation.py",
+      "line": 26,
+      "function": "send_mall_page",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/points/points_mall_actions.py",
+      "line": 171,
+      "function": "show_mall_catalog_action.paged_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/points/services/mall_notifications.py",
+      "line": 110,
+      "function": "_send_notification",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/subscription/renewal_handler.py",
+      "line": 96,
+      "function": "start_renewal_card_input",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/verification/verification_admin_config.py",
+      "line": 157,
+      "function": "parse_verification_config_impl",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/features/verification/welcome_service.py",
+      "line": 98,
+      "function": "build_markup",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/shared/button_layout_editor.py",
+      "line": 155,
+      "function": "_start_input",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/shared/button_layout_editor.py",
+      "line": 220,
+      "function": "_discard_layout",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/shared/button_layout_editor.py",
+      "line": 248,
+      "function": "_preview_layout",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/shared/button_layout_editor.py",
+      "line": 269,
+      "function": "_start_message_field",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/shared/button_layout_persistence.py",
+      "line": 151,
+      "function": "_show_module_detail",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/shared/button_layout_views.py",
+      "line": 70,
+      "function": "build_layout_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/shared/button_layout_views.py",
+      "line": 124,
+      "function": "build_detail_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/shared/time_ui.py",
+      "line": 53,
+      "function": "build_back_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/shared/time_ui.py",
+      "line": 54,
+      "function": "build_back_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/shared/time_ui.py",
+      "line": 61,
+      "function": "build_copy_time_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/shared/time_ui.py",
+      "line": 71,
+      "function": "build_copy_options_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/shared/time_ui.py",
+      "line": 185,
+      "function": "build_interval_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/shared/ui/admin_keyboard.py",
+      "line": 63,
+      "function": "admin_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/shared/ui/base/builders.py",
+      "line": 215,
+      "function": "build",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/shared/ui/common/keyboard.py",
+      "line": 65,
+      "function": "confirm_delete_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        2
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/shared/ui/common/keyboard.py",
+      "line": 79,
+      "function": "keyboard_with_back",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": null,
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/shared/ui/common/start.py",
+      "line": 22,
+      "function": "create_start_guide_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/shared/ui/common/verification.py",
+      "line": 18,
+      "function": "verification_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        2
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/shared/ui/common/verification.py",
+      "line": 36,
+      "function": "admin_verify_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        2
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    },
+    {
+      "file": "backend/shared/ui/common/verification.py",
+      "line": 50,
+      "function": "verification_timeout_help_keyboard",
+      "constructor": "InlineKeyboardMarkup",
+      "literal_input_row_sizes": [
+        1,
+        1
+      ],
+      "review_status": "待逐页渲染与路由归属确认"
+    }
+  ]
+}

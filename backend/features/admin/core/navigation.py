@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from backend.shared.callback_parser import CallbackData
+from backend.shared.ui.menu_layout import page_slice, page_navigation
 
 from backend.features.admin.support import *
 
@@ -16,14 +17,14 @@ class CoreNavigationMixin:
     ) -> InlineKeyboardMarkup:
         db: Database = context.application.bot_data["db"]
         chats = await get_user_managed_chats(db, update.effective_user.id, context.bot)
-        rows: list[list[InlineKeyboardButton]] = []
-        for chat_id, title, _ in chats:
-            if mode == "import":
-                rows.append([InlineKeyboardButton(f"{title}", callback_data=f"adm:import:{target_chat_id}:source:{chat_id}")])
-            else:
-                if chat_id == target_chat_id:
-                    continue
-                rows.append([InlineKeyboardButton(f"{title}", callback_data=f"adm:clone:{target_chat_id}:target:{chat_id}")])
+        chats = [item for item in chats if item[0] != target_chat_id]
+        callback = CallbackParser.parse(update.callback_query.data or "")
+        chats, total, page = page_slice(chats, callback.get_int_optional(4) or 0)
+        operation, pick = ("source", "pick_source") if mode == "import" else ("target", "pick_target")
+        rows = [[InlineKeyboardButton(f"{title[:22]} · {chat_id}",
+                                      callback_data=f"adm:{mode}:{target_chat_id}:{operation}:{chat_id}")]
+                for chat_id, title, _ in chats]
+        rows.extend(page_navigation(page, total, lambda value: f"adm:{mode}:{target_chat_id}:{pick}:{value}"))
         rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:{mode}:{target_chat_id}")])
         return InlineKeyboardMarkup(rows)
 

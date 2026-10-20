@@ -527,6 +527,10 @@ async def test_scheduled_button_fsm_accepts_line_format(monkeypatch):
         fake_update_buttons,
     )
     monkeypatch.setattr(handler, "show_detail", fake_show_detail)
+    from unittest.mock import AsyncMock
+    monkeypatch.setattr(handler, "_check_permission", AsyncMock(return_value=True))
+    from backend.features.automation.services.scheduled_message_service import ScheduledMessageService
+    monkeypatch.setattr(ScheduledMessageService, "get_task_in_chat_or_404", AsyncMock())
 
     update = SimpleNamespace(
         effective_chat=SimpleNamespace(id=9001, type="private"),

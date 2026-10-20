@@ -1296,7 +1296,7 @@ def build_flows() -> dict[str, dict[str, Any]]:
             slug,
             coverage(
                 ["sm:list:", "sm:add:", "sm:open:", "sm:set:", "sm:edit:", "sm:preview:", "sm:del_confirm:", "sm:del_do:", "sm:del_cancel:"],
-                ["sm_edit_title", "sm_edit_text", "sm_edit_media", "sm_edit_buttons", "sm_edit_start_at", "sm_edit_end_at"],
+                ["sm_edit_title", "sm_edit_text", "sm_edit_media", "sm_edit_buttons", "sm_edit_start_at", "sm_edit_end_at", "sm_edit_repeat"],
                 ["backend/features/automation/scheduled_message_router.py", "backend/features/automation/ui/scheduled_message_list.py", "backend/features/automation/ui/scheduled_message_detail.py", "backend/features/automation/ui/scheduled_message_edit.py", "backend/features/automation/scheduled_message_inputs.py"],
             ),
             [
@@ -1341,6 +1341,7 @@ def build_flows() -> dict[str, dict[str, Any]]:
                         ],
                         [
                             button("每 60 分钟", f"sm:set:{CHAT}:{TASK}:repeat:60", "toggle", "result", "发送频率已设为 60 分钟。"),
+                            button("自定义间隔", f"sm:edit:{CHAT}:{TASK}:repeat_custom", "input", "repeat_input", "请输入整数分钟。"),
                             button("置顶", f"sm:set:{CHAT}:{TASK}:pin_message:1", "toggle", "result", "置顶已开启。"),
                             button("删除上条", f"sm:set:{CHAT}:{TASK}:delete_previous:1", "toggle", "result", "删除上条已开启。"),
                         ],
@@ -1352,10 +1353,11 @@ def build_flows() -> dict[str, dict[str, Any]]:
                     ],
                 ),
                 screen("enable_error", "启用失败", ["真实后端会检查任务是否有文本或封面；缺少内容时不会启用。"], [[button("设置文本", f"sm:edit:{CHAT}:{TASK}:text", "input", "text_input", "去设置文本。"), button("返回详情", f"sm:open:{CHAT}:{TASK}", "back", "detail", "已返回详情。")]]),
+                input_screen("repeat_input", "自定义间隔", "输入 1—525600 的整数分钟；取消后不再接收输入", "90", f"sm:open:{CHAT}:{TASK}", "detail", "text", [("90 分钟", "90", "result")], clear=None),
                 input_screen("title_input", "设置标题备注", "发送备注文本", "每日公告", f"sm:open:{CHAT}:{TASK}", "detail", "text", [("备注", "每日公告", "result"), ("清空", "/clear", "result")]),
                 input_screen("media_input", "设置封面", "发送图片、视频、文档、贴纸、动画，或 /clear", "image.jpg", f"sm:open:{CHAT}:{TASK}", "detail", "media", [("图片", "image.jpg", "result"), ("清空", "/clear", "result")]),
                 input_screen("text_input", "设置文本", "发送消息正文，支持 /clear", "今晚 8 点开始活动。", f"sm:open:{CHAT}:{TASK}", "detail", "text", [("正文", "今晚 8 点开始活动。", "result"), ("清空", "/clear", "result")]),
-                input_screen("buttons_input", "设置按钮", "支持逐行格式、分号同排和 JSON", "官网 - https://example.com", f"sm:open:{CHAT}:{TASK}", "detail", "buttons", [("逐行", "官网 - https://example.com", "result"), ("同排", "官网 - https://a.com;客服 - https://b.com", "result"), ("JSON", "[{\"text\":\"官网\",\"url\":\"https://example.com\"}]", "result")]),
+                input_screen("buttons_input", "设置按钮", "支持逐行格式、分号同排和 JSON", "官网|https://example.com", f"sm:open:{CHAT}:{TASK}", "detail", "buttons", [("逐行", "官网|https://example.com", "result"), ("同排", "官网|https://a.com;客服|https://b.com", "result"), ("JSON", "[{\"text\":\"官网\",\"url\":\"https://example.com\"}]", "result")]),
                 input_screen("start_input", "设置开始时间", "格式：YYYY-MM-DD HH:MM", "2026-04-18 20:00", f"sm:open:{CHAT}:{TASK}", "detail", "datetime", [("开始时间", "2026-04-18 20:00", "result")], clear="/clear"),
                 input_screen("end_input", "设置结束时间", "格式：YYYY-MM-DD HH:MM", "2026-04-30 23:00", f"sm:open:{CHAT}:{TASK}", "detail", "datetime", [("结束时间", "2026-04-30 23:00", "result")], clear="/clear"),
                 screen("delete_confirm", "删除确认", ["确认后任务会删除。"], [[button("确认删除", f"sm:del_do:{CHAT}:{TASK}", "confirm", "result", "任务已删除。"), button("取消", f"sm:del_cancel:{CHAT}:{TASK}", "back", "detail", "已取消。")]]),
@@ -2042,7 +2044,9 @@ def normalize_toggle_targets(payload: dict[str, Any]) -> None:
 
 def main() -> int:
     FLOWS_DIR.mkdir(parents=True, exist_ok=True)
-    flows = build_flows()
+    from update_ui_pages_20261020 import apply_updates
+    from update_activity_calendars import update_activities
+    flows = update_activities(apply_updates(build_flows()))
     expected = set(CATALOG)
     missing = expected - set(flows)
     extra = set(flows) - expected

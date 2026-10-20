@@ -62,11 +62,19 @@ class ModerationMemberMenusMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
+        *, section: str | None = None,
     ) -> None:
+        positions = context.user_data.setdefault("night_sections", {})
+        if update.callback_query and update.callback_query.data == f"adm:menu:night:{chat_id}":
+            section = "home"
+        section = section or positions.get(chat_id, "home")
+        if section not in {"home", "phrases", "policy", "notices", "permissions"}:
+            section = "home"
+        positions[chat_id] = section
         settings = await _load_member_settings(self, update, context, chat_id=chat_id)
         view = build_night_mode_view(settings, chat_id)
         await self.message_helper.safe_edit(
             update,
             text=night_mode_text(view),
-            reply_markup=night_mode_keyboard(view),
+            reply_markup=night_mode_keyboard(view, section=section),
         )

@@ -21,14 +21,15 @@ def sm_repeat_keyboard(chat_id: int, task_id: str, current_repeat_min: int) -> I
         ],
         callback_factory=lambda value: f"sm:set:{chat_id}:{task_id}:repeat:{value}",
         back_callback=f"sm:open:{chat_id}:{task_id}",
+        custom_callback=f"sm:edit:{chat_id}:{task_id}:repeat_custom",
     )
 
 
-def sm_day_period_start_keyboard(chat_id: int, task_id: str) -> InlineKeyboardMarkup:
+def sm_day_period_start_keyboard(chat_id: int, task_id: str, current_hour: int | None = None) -> InlineKeyboardMarkup:
     buttons = []
     row = []
     for hour in range(24):
-        row.append(InlineKeyboardButton(f"{hour:02d}:00", callback_data=f"sm:set:{chat_id}:{task_id}:day_start:{hour}"))
+        row.append(InlineKeyboardButton(("✅ " if hour == current_hour else "") + f"{hour:02d}:00", callback_data=f"sm:set:{chat_id}:{task_id}:day_start:{hour}"))
         if len(row) == _SM_DAY_PERIOD_START_KEYBOARD_THRESHOLD_4:
             buttons.append(row)
             row = []
@@ -38,11 +39,11 @@ def sm_day_period_start_keyboard(chat_id: int, task_id: str) -> InlineKeyboardMa
     return InlineKeyboardMarkup(buttons)
 
 
-def sm_day_period_end_keyboard(chat_id: int, task_id: str, start_hour: int) -> InlineKeyboardMarkup:
+def sm_day_period_end_keyboard(chat_id: int, task_id: str, start_hour: int, *, token: str | None = None) -> InlineKeyboardMarkup:
     buttons = []
     row = []
     for hour in range(24):
-        row.append(InlineKeyboardButton(f"{hour:02d}:00", callback_data=f"sm:set:{chat_id}:{task_id}:day_end:{hour}"))
+        row.append(InlineKeyboardButton(f"{hour:02d}:59", callback_data=f"sm:set:{chat_id}:{task_id}:day_end:{hour}" + (f":{token}" if token else "")))
         if len(row) == _SM_DAY_PERIOD_END_KEYBOARD_THRESHOLD_4:
             buttons.append(row)
             row = []

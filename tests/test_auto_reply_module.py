@@ -346,12 +346,9 @@ def test_auto_reply_list_keyboard_contains_management_callbacks() -> None:
     keyboard = auto_reply_list_keyboard(rules, chat_id=-100456)
 
     row = keyboard.inline_keyboard[0]
-    assert row[0].text == "顺序 2"
+    assert len(row) == 1
+    assert row[0].text == "✓ #9 顺序 2"
     assert row[0].callback_data == "auto_reply:detail:-100456:9"
-    assert row[1].text == "✅ 启用"
-    assert row[1].callback_data == "auto_reply:set:-100456:9:active:0"
-    assert row[2].callback_data == "auto_reply:detail:-100456:9"
-    assert row[3].callback_data == "auto_reply:delete:-100456:9:confirm"
     assert keyboard.inline_keyboard[1][0].text == "➕ 添加一条"
 
 

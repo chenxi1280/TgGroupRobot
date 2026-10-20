@@ -25,7 +25,7 @@ def _task_detail_footer(task: ScheduledMessageTask, *, has_payload: bool) -> lis
     period = (
         "全天"
         if task.day_start_hour == 0 and task.day_end_hour == _FORMAT_TASK_DETAIL_THRESHOLD_23
-        else f"{task.day_start_hour:02d}:00-{task.day_end_hour:02d}:00"
+        else f"{task.day_start_hour:02d}:00—{'次日 ' if task.day_end_hour < task.day_start_hour else ''}{task.day_end_hour:02d}:59（含结束小时）"
     )
     lines = [
         f"⚙️ 状态: {'✅ 启用' if task.enabled else '❌ 关闭'}",

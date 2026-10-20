@@ -22,6 +22,12 @@ class AdminRouter(BaseRouter):
     def register(self, app: Application) -> None:
         log.debug(f"Registering {self.name} router")
 
+        from backend.features.activity.date_picker_handler import activity_date_callback
+        app.add_handler(CallbackQueryHandler(activity_date_callback, pattern=r"^acal:"))
+
+        from backend.shared.datetime_picker_handler import datetime_picker_callback
+        app.add_handler(CallbackQueryHandler(datetime_picker_callback, pattern=r"^dtp:"))
+
         from backend.features.admin.moderation.permission_profiles import permission_profile_callback
         app.add_handler(CallbackQueryHandler(permission_profile_callback, pattern=r"^gperm:"))
         from backend.features.admin.points.sign_feedback_config import sign_feedback_callback

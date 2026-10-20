@@ -23,7 +23,7 @@ def test_next_top_of_hour_rounds_up_in_local_timezone() -> None:
     assert rounded == dt.datetime(2026, 4, 14, 2, 0, tzinfo=dt.UTC)
 
 
-def test_build_datetime_prompt_text_supports_tg_time_without_copy_hint() -> None:
+def test_build_datetime_prompt_text_keeps_editable_business_time_without_copy_hint() -> None:
     text = build_datetime_prompt_text(
         title="🎠 轮播消息 | 编辑开始时间",
         sample_time_text="2026-04-14 10:00",
@@ -33,8 +33,9 @@ def test_build_datetime_prompt_text_supports_tg_time_without_copy_hint() -> None
         extra_tips=["发送 /clear 可清空开始时间"],
     )
 
-    assert "最近整点示例" in text
-    assert '<tg-time unix="1776124800" format="wDT">2026-04-14 10:00</tg-time>' in text
+    assert "北京时间 UTC+8" in text
+    assert "<code>2026-04-14 10:00</code>" in text
+    assert "<tg-time" not in text
     assert "点击下方蓝色按钮可直接复制" not in text
     assert "发送 /clear 可清空开始时间" in text
 

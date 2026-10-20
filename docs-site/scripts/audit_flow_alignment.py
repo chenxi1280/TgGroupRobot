@@ -353,6 +353,36 @@ def is_broad_route_pattern(pattern: str) -> bool:
     return bool(re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*(?::|_).*", stripped))
 
 
+def composed_callback_patterns(node):
+    """Resolve explicit action tables and the shared confirmation suffix contract."""
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        empty_defaults = {arg.arg for arg, default in zip(node.args.kwonlyargs, node.args.kw_defaults)
+                          if isinstance(default, ast.Constant) and default.value == ""}
+        for part in ast.walk(node):
+            if isinstance(part, ast.keyword) and part.arg == "callback_data" and isinstance(part.value, ast.JoinedStr):
+                last = part.value.values[-1]
+                if isinstance(last, ast.FormattedValue) and isinstance(last.value, ast.Name) and last.value.id in empty_defaults:
+                    for pattern, raw in expression_to_patterns(part.value):
+                        yield pattern.removesuffix(r"[^:]+") + r"[^:]*", raw
+    if isinstance(node, ast.Call) and call_name(node) == "confirm_action":
+        for keyword in node.keywords:
+            if keyword.arg == "callback":
+                for pattern, raw in expression_to_patterns(keyword.value):
+                    yield pattern + r":ok:[^:]+", raw + ":ok:{token}"
+    if not isinstance(node, ast.ListComp) or not isinstance(node.elt, ast.Call):
+        return
+    names = [k.value.id for k in node.elt.keywords if k.arg == "callback_data" and isinstance(k.value, ast.Name)]
+    for gen in node.generators:
+        if not isinstance(gen.target, ast.Tuple) or not isinstance(gen.iter, (ast.List, ast.Tuple)):
+            continue
+        for index, target in enumerate(gen.target.elts):
+            if not isinstance(target, ast.Name) or target.id not in names:
+                continue
+            for row in gen.iter.elts:
+                if isinstance(row, (ast.List, ast.Tuple)) and len(row.elts) > index:
+                    yield from expression_to_patterns(row.elts[index])
+
+
 def callback_evidence_from_backend() -> list[CallbackEvidence]:
     evidence: list[CallbackEvidence] = []
     for path in BACKEND_DIR.rglob("*.py"):
@@ -365,6 +395,8 @@ def callback_evidence_from_backend() -> list[CallbackEvidence]:
 
         rel_path = str(path.relative_to(ROOT))
         for node in ast.walk(module):
+            for pattern, raw in composed_callback_patterns(node):
+                evidence.append(CallbackEvidence(kind="template", raw=raw, path=rel_path, regex=re.compile(f"^{pattern}$")))
             if isinstance(node, ast.Assign):
                 for pattern, raw in expression_to_patterns(node.value):
                     if ":" in raw:

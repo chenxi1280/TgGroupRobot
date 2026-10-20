@@ -392,16 +392,25 @@
       "id": "deadline_input",
       "title": "设置截止时间",
       "message": [
-        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+        "填写未来截止时间，或使用日历；确认后返回竞猜草稿，保留标题、选项等配置，发布仍须单独确认。"
       ],
       "keyboard": [
         [
           {
-            "label": "返回",
-            "callbackData": "guess:create:{chat_id}:start",
+            "label": "日历选择",
+            "callbackData": "acal:{token}:0:open:",
+            "action": "goto",
+            "target": "activity_calendar_day",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          }
+        ],
+        [
+          {
+            "label": "返回草稿",
+            "callbackData": "guess:create:{chat_id}:preview",
             "action": "back",
             "target": "create",
-            "feedback": "已返回上一层。"
+            "feedback": "打开对应页面；本示意不执行真实操作。"
           }
         ]
       ],
@@ -477,6 +486,146 @@
       ],
       "stateLines": [
         "审计：回调来自后端真实路由"
+      ]
+    },
+    {
+      "id": "activity_calendar_day",
+      "title": "选择日期",
+      "message": [
+        "北京时间 UTC+8；示意仅展示一个选项，真实日历支持翻月、跨年和全部小时/分钟。",
+        "日历确认只更新草稿或推进原步骤，不发布活动；旧按钮、权限失效或草稿变化时拒绝保存。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "31日",
+            "callbackData": "acal:{token}:1:day:2099-12-31",
+            "action": "goto",
+            "target": "activity_calendar_hour",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          }
+        ],
+        [
+          {
+            "label": "手动输入",
+            "callbackData": "acal:{token}:1:manual:",
+            "action": "goto",
+            "target": "deadline_input",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          },
+          {
+            "label": "取消并返回",
+            "callbackData": "acal:{token}:1:cancel:",
+            "action": "back",
+            "target": "deadline_input",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "activity_calendar_hour",
+      "title": "选择小时",
+      "message": [
+        "北京时间 UTC+8；示意仅展示一个选项，真实日历支持翻月、跨年和全部小时/分钟。",
+        "日历确认只更新草稿或推进原步骤，不发布活动；旧按钮、权限失效或草稿变化时拒绝保存。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "23:00",
+            "callbackData": "acal:{token}:2:hour:23",
+            "action": "goto",
+            "target": "activity_calendar_minute",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          }
+        ],
+        [
+          {
+            "label": "手动输入",
+            "callbackData": "acal:{token}:2:manual:",
+            "action": "goto",
+            "target": "deadline_input",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          },
+          {
+            "label": "取消并返回",
+            "callbackData": "acal:{token}:2:cancel:",
+            "action": "back",
+            "target": "deadline_input",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "activity_calendar_minute",
+      "title": "选择分钟",
+      "message": [
+        "北京时间 UTC+8；示意仅展示一个选项，真实日历支持翻月、跨年和全部小时/分钟。",
+        "日历确认只更新草稿或推进原步骤，不发布活动；旧按钮、权限失效或草稿变化时拒绝保存。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "00分",
+            "callbackData": "acal:{token}:3:minute:0",
+            "action": "goto",
+            "target": "activity_calendar_confirm",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          }
+        ],
+        [
+          {
+            "label": "手动输入",
+            "callbackData": "acal:{token}:3:manual:",
+            "action": "goto",
+            "target": "deadline_input",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          },
+          {
+            "label": "取消并返回",
+            "callbackData": "acal:{token}:3:cancel:",
+            "action": "back",
+            "target": "deadline_input",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "activity_calendar_confirm",
+      "title": "确认草稿日期",
+      "message": [
+        "北京时间 UTC+8；示意仅展示一个选项，真实日历支持翻月、跨年和全部小时/分钟。",
+        "日历确认只更新草稿或推进原步骤，不发布活动；旧按钮、权限失效或草稿变化时拒绝保存。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "确认应用",
+            "callbackData": "acal:{token}:4:apply:",
+            "action": "confirm",
+            "target": "create",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          }
+        ],
+        [
+          {
+            "label": "手动输入",
+            "callbackData": "acal:{token}:4:manual:",
+            "action": "goto",
+            "target": "deadline_input",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          },
+          {
+            "label": "取消并返回",
+            "callbackData": "acal:{token}:4:cancel:",
+            "action": "back",
+            "target": "deadline_input",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          }
+        ]
       ]
     }
   ]

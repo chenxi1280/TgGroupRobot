@@ -134,51 +134,82 @@
       "keyboard": [
         [
           {
+            "label": "状态",
+            "callbackData": "pts:home:{chat_id}",
+            "action": "toast",
+            "target": "home",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          },
+          {
+            "label": "启用",
+            "callbackData": "pts:toggle:all_enabled:{chat_id}:1",
+            "action": "toast",
+            "target": "home",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          },
+          {
+            "label": "关闭",
+            "callbackData": "pts:toggle:all_enabled:{chat_id}:0",
+            "action": "toast",
+            "target": "home",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          }
+        ],
+        [
+          {
             "label": "签到规则",
             "callbackData": "pts:rule:checkin:{chat_id}",
             "action": "goto",
             "target": "sign_rule",
-            "feedback": "打开签到积分规则。"
+            "feedback": "打开对应页面；本示意不执行真实操作。"
           },
           {
             "label": "发言规则",
             "callbackData": "pts:rule:speech:{chat_id}",
             "action": "goto",
             "target": "speech_rule",
-            "feedback": "打开发言积分规则。"
-          },
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          }
+        ],
+        [
           {
             "label": "邀请规则",
             "callbackData": "pts:rule:invite:{chat_id}",
             "action": "goto",
             "target": "invite_rule",
-            "feedback": "打开邀请积分规则。",
-            "highlight": true
-          }
-        ],
-        [
-          {
-            "label": "积分展示规则",
-            "callbackData": "pts:view:display_rules:{chat_id}",
-            "action": "goto",
-            "target": "display_rules",
-            "feedback": "打开积分展示规则。"
+            "feedback": "打开对应页面；本示意不执行真实操作。"
           },
           {
-            "label": "额外规则",
-            "callbackData": "pts:view:extra_rules:{chat_id}",
+            "label": "展示与排行",
+            "callbackData": "pts:home:{chat_id}:display",
             "action": "goto",
-            "target": "extra_rules",
-            "feedback": "打开额外规则说明。"
+            "target": "display_section",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
           }
         ],
         [
           {
-            "label": "返回主菜单",
-            "callbackData": "adm:menu:main:{chat_id}",
+            "label": "积分管理",
+            "callbackData": "pts:home:{chat_id}:manage",
+            "action": "goto",
+            "target": "manage_section",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          },
+          {
+            "label": "积分抽奖",
+            "callbackData": "adm:menu:lottery:{chat_id}",
+            "action": "goto",
+            "target": "result",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          }
+        ],
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:menu:category_growth:{chat_id}",
             "action": "back",
             "target": "entry",
-            "feedback": "已返回主菜单。"
+            "feedback": "打开对应页面；本示意不执行真实操作。"
           }
         ]
       ],
@@ -591,6 +622,177 @@
             "action": "back",
             "target": "home",
             "feedback": "已返回积分中心。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "display_section",
+      "title": "展示与排行",
+      "message": [
+        "当前状态与完整规则显示在正文。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "展示规则",
+            "callbackData": "pts:view:display_rules:{chat_id}",
+            "action": "goto",
+            "target": "result",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          },
+          {
+            "label": "开启",
+            "callbackData": "pts:toggle:points_display_rule_enabled:{chat_id}:1",
+            "action": "toast",
+            "target": "display_section",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          },
+          {
+            "label": "关闭",
+            "callbackData": "pts:toggle:points_display_rule_enabled:{chat_id}:0",
+            "action": "toast",
+            "target": "display_section",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          }
+        ],
+        [
+          {
+            "label": "发言总排行",
+            "callbackData": "pts:view:speech_rank:{chat_id}",
+            "action": "goto",
+            "target": "result",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          },
+          {
+            "label": "开启",
+            "callbackData": "pts:toggle:points_speech_rank_enabled:{chat_id}:1",
+            "action": "toast",
+            "target": "display_section",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          },
+          {
+            "label": "关闭",
+            "callbackData": "pts:toggle:points_speech_rank_enabled:{chat_id}:0",
+            "action": "toast",
+            "target": "display_section",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          }
+        ],
+        [
+          {
+            "label": "个人发言量",
+            "callbackData": "pts:view:personal_speech:{chat_id}",
+            "action": "goto",
+            "target": "result",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          },
+          {
+            "label": "开启",
+            "callbackData": "pts:toggle:points_personal_speech_enabled:{chat_id}:1",
+            "action": "toast",
+            "target": "display_section",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          },
+          {
+            "label": "关闭",
+            "callbackData": "pts:toggle:points_personal_speech_enabled:{chat_id}:0",
+            "action": "toast",
+            "target": "display_section",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          }
+        ],
+        [
+          {
+            "label": "返回主积分",
+            "callbackData": "pts:home:{chat_id}:main",
+            "action": "back",
+            "target": "home",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "manage_section",
+      "title": "积分管理",
+      "message": [
+        "清空仍需输入 CONFIRM。退出输入保留已保存值。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "转让积分",
+            "callbackData": "pts:edit:transfer:{chat_id}",
+            "action": "input",
+            "target": "points_input",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          },
+          {
+            "label": "积分查询词",
+            "callbackData": "pts:edit:points_alias:{chat_id}",
+            "action": "input",
+            "target": "text_input",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          }
+        ],
+        [
+          {
+            "label": "排行查询词",
+            "callbackData": "pts:edit:points_rank_alias:{chat_id}",
+            "action": "input",
+            "target": "text_input",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          },
+          {
+            "label": "增加积分",
+            "callbackData": "pts:edit:admin_add:{chat_id}",
+            "action": "input",
+            "target": "points_input",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          }
+        ],
+        [
+          {
+            "label": "扣除积分",
+            "callbackData": "pts:edit:admin_deduct:{chat_id}",
+            "action": "input",
+            "target": "points_input",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          },
+          {
+            "label": "额外规则",
+            "callbackData": "pts:view:extra_rules:{chat_id}",
+            "action": "goto",
+            "target": "extra_rules",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          }
+        ],
+        [
+          {
+            "label": "导出操作日志",
+            "callbackData": "pts:view:export_logs:{chat_id}",
+            "action": "goto",
+            "target": "result",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          }
+        ],
+        [
+          {
+            "label": "清空积分",
+            "callbackData": "pts:edit:clear_points:{chat_id}",
+            "action": "input",
+            "target": "points_input",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          }
+        ],
+        [
+          {
+            "label": "返回主积分",
+            "callbackData": "pts:home:{chat_id}:main",
+            "action": "back",
+            "target": "home",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
           }
         ]
       ]

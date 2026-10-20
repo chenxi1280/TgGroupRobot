@@ -130,26 +130,28 @@
       "keyboard": [
         [
           {
-            "label": "消息拦截",
+            "label": "🧹 消息拦截",
             "callbackData": "adm:menu:night:{chat_id}",
-            "action": "toast",
+            "action": "back",
             "target": "home",
-            "feedback": "显示当前配置，不修改开关。"
+            "feedback": "已返回设置页。"
           },
           {
-            "label": "启用",
+            "label": "启动",
             "callbackData": "adm:night:{chat_id}:set:enabled:1",
             "action": "toast",
             "target": "home",
             "feedback": "已启用；重复点击保持相同状态。"
           },
           {
-            "label": "关闭",
+            "label": "✅ 关闭",
             "callbackData": "adm:night:{chat_id}:set:enabled:0",
             "action": "toast",
             "target": "home",
             "feedback": "已关闭；重复点击保持相同状态。"
-          },
+          }
+        ],
+        [
           {
             "label": "管控开始",
             "callbackData": "adm:night:{chat_id}:input:start",
@@ -167,42 +169,44 @@
         ],
         [
           {
-            "label": "全员禁言模式",
+            "label": "🔒 全员禁言模式",
             "callbackData": "adm:menu:night:{chat_id}",
-            "action": "toast",
+            "action": "back",
             "target": "home",
-            "feedback": "显示当前配置，不修改开关。"
+            "feedback": "已返回设置页。"
           },
           {
-            "label": "启用",
+            "label": "启动",
             "callbackData": "adm:night:{chat_id}:set:lock_schedule:1",
             "action": "toast",
             "target": "home",
             "feedback": "已启用；重复点击保持相同状态。"
           },
           {
-            "label": "关闭",
+            "label": "✅ 关闭",
             "callbackData": "adm:night:{chat_id}:set:lock_schedule:0",
             "action": "toast",
             "target": "home",
             "feedback": "已关闭；重复点击保持相同状态。"
-          },
+          }
+        ],
+        [
           {
-            "label": "口令开关群",
+            "label": "🗣 口令开关群",
             "callbackData": "adm:menu:night:{chat_id}",
-            "action": "toast",
+            "action": "back",
             "target": "home",
-            "feedback": "显示当前配置，不修改开关。"
+            "feedback": "已返回设置页。"
           },
           {
-            "label": "启用",
+            "label": "启动",
             "callbackData": "adm:night:{chat_id}:set:lock_phrase:1",
             "action": "toast",
             "target": "home",
             "feedback": "已启用；重复点击保持相同状态。"
           },
           {
-            "label": "关闭",
+            "label": "✅ 关闭",
             "callbackData": "adm:night:{chat_id}:set:lock_phrase:0",
             "action": "toast",
             "target": "home",
@@ -211,127 +215,48 @@
         ],
         [
           {
-            "label": "开群词",
-            "callbackData": "adm:night:{chat_id}:input:open_phrase",
-            "action": "input",
-            "target": "open_phrase_input",
-            "feedback": "请输入开群词。"
+            "label": "口令设置",
+            "callbackData": "adm:night:{chat_id}:section:phrases",
+            "action": "goto",
+            "target": "night_phrases",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
           },
           {
-            "label": "关群词",
-            "callbackData": "adm:night:{chat_id}:input:close_phrase",
-            "action": "input",
-            "target": "close_phrase_input",
-            "feedback": "请输入关群词。"
+            "label": "例外与提示",
+            "callbackData": "adm:night:{chat_id}:section:policy",
+            "action": "goto",
+            "target": "night_policy",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
           }
         ],
         [
           {
-            "label": "管理员豁免",
-            "callbackData": "adm:menu:night:{chat_id}",
-            "action": "toast",
-            "target": "home",
-            "feedback": "显示当前配置，不修改开关。"
+            "label": "通知设置",
+            "callbackData": "adm:night:{chat_id}:section:notices",
+            "action": "goto",
+            "target": "night_notices",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
           },
           {
-            "label": "启用",
-            "callbackData": "adm:night:{chat_id}:set:exempt_admin:1",
-            "action": "toast",
-            "target": "home",
-            "feedback": "已启用；重复点击保持相同状态。"
-          },
-          {
-            "label": "关闭",
-            "callbackData": "adm:night:{chat_id}:set:exempt_admin:0",
-            "action": "toast",
-            "target": "home",
-            "feedback": "已关闭；重复点击保持相同状态。"
-          },
-          {
-            "label": "删除消息",
-            "callbackData": "adm:menu:night:{chat_id}",
-            "action": "toast",
-            "target": "home",
-            "feedback": "显示当前配置，不修改开关。"
-          },
-          {
-            "label": "启用",
-            "callbackData": "adm:night:{chat_id}:set:delete_message:1",
-            "action": "toast",
-            "target": "home",
-            "feedback": "已启用；重复点击保持相同状态。"
-          },
-          {
-            "label": "关闭",
-            "callbackData": "adm:night:{chat_id}:set:delete_message:0",
-            "action": "toast",
-            "target": "home",
-            "feedback": "已关闭；重复点击保持相同状态。"
-          },
-          {
-            "label": "提示开关",
-            "callbackData": "adm:menu:night:{chat_id}",
-            "action": "toast",
-            "target": "home",
-            "feedback": "显示当前配置，不修改开关。"
-          },
-          {
-            "label": "启用",
-            "callbackData": "adm:night:{chat_id}:set:warn_enabled:1",
-            "action": "toast",
-            "target": "home",
-            "feedback": "已启用；重复点击保持相同状态。"
-          },
-          {
-            "label": "关闭",
-            "callbackData": "adm:night:{chat_id}:set:warn_enabled:0",
-            "action": "toast",
-            "target": "home",
-            "feedback": "已关闭；重复点击保持相同状态。"
+            "label": "权限方案",
+            "callbackData": "adm:night:{chat_id}:section:permissions",
+            "action": "goto",
+            "target": "night_permissions",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
           }
         ],
         [
           {
-            "label": "白名单",
-            "callbackData": "adm:night:{chat_id}:input:whitelist",
-            "action": "input",
-            "target": "whitelist_input",
-            "feedback": "请输入白名单。"
-          },
-          {
-            "label": "提示文本",
-            "callbackData": "adm:night:{chat_id}:input:warn_text",
-            "action": "input",
-            "target": "warn_input",
-            "feedback": "请输入提示文本。"
-          },
-          {
-            "label": "提示删除",
-            "callbackData": "adm:night:{chat_id}:cycle:warn_delete",
-            "action": "toggle",
-            "target": "home",
-            "feedback": "已切换提示删除时间。"
+            "label": "执行/恢复记录",
+            "callbackData": "eff:{chat_id}:group_lock:list",
+            "action": "goto",
+            "target": "result",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
           }
         ],
         [
           {
-            "label": "删除口令通知",
-            "callbackData": "adm:night:{chat_id}:notice:delete",
-            "action": "toggle",
-            "target": "home",
-            "feedback": "口令通知会删除。"
-          },
-          {
-            "label": "保留口令通知",
-            "callbackData": "adm:night:{chat_id}:notice:keep",
-            "action": "toggle",
-            "target": "home",
-            "feedback": "口令通知会保留。"
-          }
-        ],
-        [
-          {
-            "label": "返回群安全",
+            "label": "🔙 返回",
             "callbackData": "adm:menu:category_safety:{chat_id}",
             "action": "back",
             "target": "entry",
@@ -422,9 +347,9 @@
         [
           {
             "label": "返回",
-            "callbackData": "adm:menu:night:{chat_id}",
+            "callbackData": "adm:night:{chat_id}:section:policy",
             "action": "back",
-            "target": "home",
+            "target": "night_policy",
             "feedback": "已返回上一层。"
           }
         ]
@@ -457,9 +382,9 @@
         [
           {
             "label": "返回",
-            "callbackData": "adm:menu:night:{chat_id}",
+            "callbackData": "adm:night:{chat_id}:section:policy",
             "action": "back",
-            "target": "home",
+            "target": "night_policy",
             "feedback": "已返回上一层。"
           }
         ]
@@ -492,9 +417,9 @@
         [
           {
             "label": "返回",
-            "callbackData": "adm:menu:night:{chat_id}",
+            "callbackData": "adm:night:{chat_id}:section:phrases",
             "action": "back",
-            "target": "home",
+            "target": "night_phrases",
             "feedback": "已返回上一层。"
           }
         ]
@@ -527,9 +452,9 @@
         [
           {
             "label": "返回",
-            "callbackData": "adm:menu:night:{chat_id}",
+            "callbackData": "adm:night:{chat_id}:section:phrases",
             "action": "back",
-            "target": "home",
+            "target": "night_phrases",
             "feedback": "已返回上一层。"
           }
         ]
@@ -572,6 +497,229 @@
       ],
       "stateLines": [
         "审计：回调来自后端真实路由"
+      ]
+    },
+    {
+      "id": "night_phrases",
+      "title": "开关群口令",
+      "message": [
+        "原有功能按用途分组；返回保留当前群，退出输入不会修改原值。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "开群口令",
+            "callbackData": "adm:night:{chat_id}:input:open_phrase",
+            "action": "input",
+            "target": "open_phrase_input",
+            "feedback": "请输入开群词。"
+          },
+          {
+            "label": "关群口令",
+            "callbackData": "adm:night:{chat_id}:input:close_phrase",
+            "action": "input",
+            "target": "close_phrase_input",
+            "feedback": "请输入关群词。"
+          }
+        ],
+        [
+          {
+            "label": "返回夜间管控",
+            "callbackData": "adm:night:{chat_id}:section:home",
+            "action": "goto",
+            "target": "home",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "night_policy",
+      "title": "例外与提示",
+      "message": [
+        "原有功能按用途分组；返回保留当前群，退出输入不会修改原值。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "🛡️ 管理员豁免",
+            "callbackData": "adm:menu:night:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回设置页。"
+          },
+          {
+            "label": "✅ 启动",
+            "callbackData": "adm:night:{chat_id}:set:exempt_admin:1",
+            "action": "toast",
+            "target": "night_policy",
+            "feedback": "已启用；重复点击保持相同状态。"
+          },
+          {
+            "label": "关闭",
+            "callbackData": "adm:night:{chat_id}:set:exempt_admin:0",
+            "action": "toast",
+            "target": "night_policy",
+            "feedback": "已关闭；重复点击保持相同状态。"
+          }
+        ],
+        [
+          {
+            "label": "白名单",
+            "callbackData": "adm:night:{chat_id}:input:whitelist",
+            "action": "input",
+            "target": "whitelist_input",
+            "feedback": "请输入白名单。"
+          }
+        ],
+        [
+          {
+            "label": "🗑 删除触发消息",
+            "callbackData": "adm:menu:night:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回设置页。"
+          },
+          {
+            "label": "✅ 启动",
+            "callbackData": "adm:night:{chat_id}:set:delete_message:1",
+            "action": "toast",
+            "target": "night_policy",
+            "feedback": "已启用；重复点击保持相同状态。"
+          },
+          {
+            "label": "关闭",
+            "callbackData": "adm:night:{chat_id}:set:delete_message:0",
+            "action": "toast",
+            "target": "night_policy",
+            "feedback": "已关闭；重复点击保持相同状态。"
+          }
+        ],
+        [
+          {
+            "label": "💬 提示消息",
+            "callbackData": "adm:menu:night:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "已返回设置页。"
+          },
+          {
+            "label": "✅ 启动",
+            "callbackData": "adm:night:{chat_id}:set:warn_enabled:1",
+            "action": "toast",
+            "target": "night_policy",
+            "feedback": "已启用；重复点击保持相同状态。"
+          },
+          {
+            "label": "关闭",
+            "callbackData": "adm:night:{chat_id}:set:warn_enabled:0",
+            "action": "toast",
+            "target": "night_policy",
+            "feedback": "已关闭；重复点击保持相同状态。"
+          }
+        ],
+        [
+          {
+            "label": "✏️ 提示文案",
+            "callbackData": "adm:night:{chat_id}:input:warn_text",
+            "action": "input",
+            "target": "warn_input",
+            "feedback": "请输入提示文本。"
+          },
+          {
+            "label": "提示保留时间",
+            "callbackData": "adm:night:{chat_id}:cycle:warn_delete",
+            "action": "toggle",
+            "target": "night_policy",
+            "feedback": "已切换提示删除时间。"
+          }
+        ],
+        [
+          {
+            "label": "返回夜间管控",
+            "callbackData": "adm:night:{chat_id}:section:home",
+            "action": "goto",
+            "target": "home",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "night_notices",
+      "title": "通知设置",
+      "message": [
+        "原有功能按用途分组；返回保留当前群，退出输入不会修改原值。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "🧹 触发口令 · 保留",
+            "callbackData": "adm:night:{chat_id}:notice:delete",
+            "action": "toggle",
+            "target": "night_notices",
+            "feedback": "口令通知会删除。"
+          }
+        ],
+        [
+          {
+            "label": "开群通知",
+            "callbackData": "gnote:{chat_id}:open:view",
+            "action": "goto",
+            "target": "result",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          },
+          {
+            "label": "关群通知",
+            "callbackData": "gnote:{chat_id}:closed:view",
+            "action": "goto",
+            "target": "result",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          }
+        ],
+        [
+          {
+            "label": "返回夜间管控",
+            "callbackData": "adm:night:{chat_id}:section:home",
+            "action": "goto",
+            "target": "home",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "night_permissions",
+      "title": "权限方案",
+      "message": [
+        "原有功能按用途分组；返回保留当前群，退出输入不会修改原值。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "开群权限",
+            "callbackData": "gperm:{chat_id}:open:view",
+            "action": "goto",
+            "target": "result",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          },
+          {
+            "label": "关群权限",
+            "callbackData": "gperm:{chat_id}:closed:view",
+            "action": "goto",
+            "target": "result",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          }
+        ],
+        [
+          {
+            "label": "返回夜间管控",
+            "callbackData": "adm:night:{chat_id}:section:home",
+            "action": "goto",
+            "target": "home",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          }
+        ]
       ]
     }
   ]

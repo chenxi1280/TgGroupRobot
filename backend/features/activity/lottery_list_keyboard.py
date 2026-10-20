@@ -27,6 +27,8 @@ def _activity_filter_rows(chat_id: int, status: str, lottery_type: str):
             InlineKeyboardButton(
                 "🎁 通用", callback_data=f"lot:list:{chat_id}:{status}:common:0"
             ),
+        ],
+        [
             InlineKeyboardButton(
                 "💰 积分", callback_data=f"lot:list:{chat_id}:{status}:points:0"
             ),

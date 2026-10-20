@@ -52,7 +52,7 @@ async def test_night_mode_time_prompt_uses_unified_copy_ui(monkeypatch):
 
     assert started and started[0][1]["field"] == "start"
     assert rendered and rendered[0][2] == "HTML"
-    assert "最近整点示例" in rendered[0][0]
+    assert "UTC+8" in rendered[0][0]
     assert rendered[0][1].inline_keyboard[0][0].to_dict()["copy_text"]["text"]
 
 
@@ -82,7 +82,7 @@ async def test_group_lock_time_prompt_uses_unified_copy_ui(monkeypatch):
 
     assert started and started[0][1]["target_chat_id"] == -1001
     assert rendered and rendered[0][2] == "HTML"
-    assert "点击下方蓝色按钮可直接复制" in rendered[0][0]
+    assert "复制" in rendered[0][0] and "粘贴" in rendered[0][0]
     assert "夜间管控" in rendered[0][0]
     assert rendered[0][1].inline_keyboard[0][0].to_dict()["copy_text"]["text"]
 
@@ -157,5 +157,5 @@ async def test_game_auto_start_prompt_uses_unified_copy_ui(monkeypatch):
 
     assert started and started[0][0] == "game_wait_auto_start_time"
     assert rendered and rendered[0][2] == "HTML"
-    assert "最近整点示例" in rendered[0][0]
+    assert "UTC+8" in rendered[0][0]
     assert rendered[0][1].inline_keyboard[0][0].to_dict()["copy_text"]["text"]

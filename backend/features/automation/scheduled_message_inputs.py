@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import traceback
+from contextlib import nullcontext
 from dataclasses import dataclass
 from typing import Awaitable, Callable
 
@@ -17,7 +18,7 @@ from backend.platform.db.runtime.session import Database
 from backend.platform.db.schema.models.enums import ConversationStateType
 from backend.platform.state.conversation_state_service import ConversationStateService
 from backend.platform.telegram.errors import build_public_error_text
-from backend.shared.services.base import ValidationError
+from backend.shared.services.base import ValidationError, NotFoundError
 
 log = structlog.get_logger(__name__)
 
@@ -73,7 +74,15 @@ async def _edit_end_at(edit: _FsmEdit) -> None:
         raise ValidationError("日期时间格式错误，请重新输入")
 
 
+async def _edit_repeat(edit: _FsmEdit) -> None:
+    raw = edit.text.strip()
+    if not raw.isdecimal():
+        raise ValidationError("请输入 1—525600 的整数分钟数，例如 90；返回可取消。")
+    await ScheduledMessageService.update_task_repeat(edit.session, edit.task_id, int(raw))
+
+
 _FSM_EDIT_HANDLERS: dict[str, Callable[[_FsmEdit], Awaitable[None]]] = {
+    "sm_edit_repeat": _edit_repeat,
     ConversationStateType.sm_edit_title.value: _edit_title,
     ConversationStateType.sm_edit_text.value: _edit_text,
     ConversationStateType.sm_edit_buttons.value: _edit_buttons,
@@ -81,6 +90,7 @@ _FSM_EDIT_HANDLERS: dict[str, Callable[[_FsmEdit], Awaitable[None]]] = {
     ConversationStateType.sm_edit_end_at.value: _edit_end_at,
 }
 _FSM_TOASTS = {
+    "sm_edit_repeat": "✅ 重复间隔已保存",
     ConversationStateType.sm_edit_title.value: "✅ 标题备注已保存",
     ConversationStateType.sm_edit_text.value: "✅ 文本已保存",
     ConversationStateType.sm_edit_buttons.value: "✅ 按钮已保存",
@@ -165,6 +175,20 @@ async def _save_media_edit(update: Update, session, *, state_chat_id: int, user_
         return False
 
 
+async def _task_input_allowed(owner, update, context, *, session, state, chat_id) -> bool:
+    allowed = await owner._check_permission(update, context, chat_id)
+    if allowed:
+        try:
+            await ScheduledMessageService.get_task_in_chat_or_404(session, chat_id, state.state_data["task_id"])
+            return True
+        except (NotFoundError, ValueError):
+            pass
+    await ConversationStateService.clear(session, state.chat_id, update.effective_user.id)
+    await session.commit()
+    await update.effective_message.reply_text("权限已失效或任务不属于当前群，已退出输入；请重新打开任务。")
+    return False
+
+
 class ScheduledMessageInputMixin:
     async def handle_fsm_input(
         self,
@@ -173,6 +197,7 @@ class ScheduledMessageInputMixin:
         target_chat_id: int,
         *, user_id: int,
         text: str,
+        session=None,
     ) -> None:
         log.info(
             "=== handle_fsm_input CALLED ===",
@@ -184,7 +209,7 @@ class ScheduledMessageInputMixin:
         if update.effective_message is None:
             return
         db: Database = context.application.bot_data["db"]
-        async with db.session_factory() as session:
+        async with (nullcontext(session) if session is not None else db.session_factory()) as session:
             state_chat_id = update.effective_chat.id if update.effective_chat else target_chat_id
             state, task_id = await _load_task_state(
                 session,
@@ -192,6 +217,8 @@ class ScheduledMessageInputMixin:
                 user_id=user_id,
             )
             if state is None or task_id is None:
+                return
+            if not await _task_input_allowed(self, update, context, session=session, state=state, chat_id=target_chat_id):
                 return
             state_type = state.state_type or ""
             log.info("handle_fsm_input_updating", task_id=task_id, state_type=state_type)
@@ -215,6 +242,7 @@ class ScheduledMessageInputMixin:
         context: ContextTypes.DEFAULT_TYPE,
         target_chat_id: int,
         *, user_id: int,
+        session=None,
     ) -> None:
         if update.effective_message is None:
             return
@@ -223,10 +251,12 @@ class ScheduledMessageInputMixin:
             await update.effective_message.reply_text("❌ 不支持的媒体类型")
             return
         db: Database = context.application.bot_data["db"]
-        async with db.session_factory() as session:
+        async with (nullcontext(session) if session is not None else db.session_factory()) as session:
             state_chat_id = update.effective_chat.id if update.effective_chat else target_chat_id
             state, task_id = await _load_task_state(session, state_chat_id=state_chat_id, user_id=user_id)
             if state is None or task_id is None:
+                return
+            if not await _task_input_allowed(self, update, context, session=session, state=state, chat_id=target_chat_id):
                 return
             if state.state_type != ConversationStateType.sm_edit_media.value:
                 await session.commit()

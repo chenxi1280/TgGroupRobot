@@ -9,7 +9,7 @@ from backend.features.automation.services.ad_rotation_service import (
     describe_delete_policy,
     format_interval_seconds_label,
 )
-from backend.shared.time_ui import build_back_keyboard, build_interval_keyboard
+from backend.shared.time_ui import build_copy_time_keyboard, build_interval_keyboard
 from backend.shared.ui.message_config_panel import action_button, button_count
 from backend.shared.ui.base.helpers import create_back_button
 
@@ -83,18 +83,11 @@ def ads_rules_keyboard(chat_id: int, rule) -> InlineKeyboardMarkup:
 
 
 def ads_manage_keyboard(chat_id: int, item, *, page: int, total_pages: int) -> InlineKeyboardMarkup:
-    status_label = "✅ 启用" if item.enabled else "❌ 关闭"
+    status_label = "✓" if item.enabled else "停用"
     rows: list[list[InlineKeyboardButton]] = [
-        [
-            InlineKeyboardButton(f"顺序: {item.sort_order}", callback_data=f"ads:item:input:{chat_id}:{item.id}:order"),
-            InlineKeyboardButton(status_label, callback_data=f"ads:item:set:{chat_id}:{item.id}:enabled:{0 if item.enabled else 1}"),
-            InlineKeyboardButton("修改", callback_data=f"ads:detail:{chat_id}:{item.id}"),
-            InlineKeyboardButton("删除", callback_data=f"ads:item:delete:{chat_id}:{item.id}"),
-        ],
-        [
-            InlineKeyboardButton("➕ 添加一条", callback_data=f"ads:create:{chat_id}"),
-            InlineKeyboardButton("➖ 过期清理", callback_data=f"ads:cleanup:{chat_id}"),
-        ],
+        [InlineKeyboardButton(f"{status_label} #{item.id} 顺序 {item.sort_order}", callback_data=f"ads:detail:{chat_id}:{item.id}")],
+        [InlineKeyboardButton("➕ 添加一条", callback_data=f"ads:create:{chat_id}")],
+        [InlineKeyboardButton("➖ 过期清理", callback_data=f"ads:cleanup:{chat_id}")],
     ]
     if total_pages > 1:
         nav_row: list[InlineKeyboardButton] = []
@@ -176,8 +169,8 @@ def ads_rules_interval_keyboard(chat_id: int, current_interval_seconds: int | No
     )
 
 
-def ads_copy_time_keyboard(back_callback: str, sample_time: str) -> InlineKeyboardMarkup:
-    return build_back_keyboard(back_callback)
+def ads_copy_time_keyboard(back_callback: str, sample_time: str, *, picker: dict | None = None) -> InlineKeyboardMarkup:
+    return build_copy_time_keyboard(back_callback, sample_time, picker=picker)
 
 
 def describe_manage_delete_policy(rule) -> str:

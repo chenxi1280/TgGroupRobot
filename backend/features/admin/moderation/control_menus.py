@@ -23,9 +23,9 @@ class ModerationControlMenusMixin:
         current = getattr(settings, "control_permission_policy", ControlPermissionPolicy.can_promote_members.value)
         rows = [
             ("所有管理员", ControlPermissionPolicy.all_admins.value),
-            ("拥有封禁权限", ControlPermissionPolicy.can_restrict_members.value),
-            ("拥有更改群组权限", ControlPermissionPolicy.can_change_info.value),
-            ("拥有添加管理员权限", ControlPermissionPolicy.can_promote_members.value),
+            ("可限制成员", ControlPermissionPolicy.can_restrict_members.value),
+            ("可更改群信息", ControlPermissionPolicy.can_change_info.value),
+            ("可添加管理员", ControlPermissionPolicy.can_promote_members.value),
             ("仅创建者", ControlPermissionPolicy.owner_only.value),
         ]
         buttons = []

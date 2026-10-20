@@ -77,6 +77,11 @@ async def _get_guess_draft_state(session, user_id: int, chat_id: int):
 async def _start_guess_input_state(session, *, user_id: int, chat_id: int, state_type: str, draft: dict) -> None:
     draft = {**draft, "publication_token": draft.get("publication_token") or secrets.token_hex(12)}
     await clear_private_admin_state(session, target_chat_id=chat_id, user_id=user_id)
+    from backend.features.activity.date_picker import clean, fingerprint
+    if state_type != "guess_wait_deadline":
+        draft = clean(draft)
+    if "__datetime_picker__" in draft:
+        draft["__datetime_picker__"] = {**draft["__datetime_picker__"], "base": fingerprint({"target_chat_id": chat_id, **draft})}
     await set_user_state(
         session,
         chat_id=user_id,
@@ -139,31 +144,8 @@ class GuessAdminControllerMixin:
     ) -> None:
         draft = _guess_draft_with_defaults(draft)
         text = format_event_preview(draft, toast=toast)
-        keyboard = admin_keyboard([
-            [
-                InlineKeyboardButton("🏷️ 活动名字", callback_data=f"guess:create:{chat_id}:title"),
-                InlineKeyboardButton("🖼️ 活动封面", callback_data=f"guess:create:{chat_id}:cover"),
-                InlineKeyboardButton("📝 活动说明", callback_data=f"guess:create:{chat_id}:description"),
-            ],
-            [
-                InlineKeyboardButton("👑 本局庄家", callback_data=f"guess:create:{chat_id}:banker"),
-                InlineKeyboardButton("🏦 公共奖池", callback_data=f"guess:create:{chat_id}:pool"),
-                InlineKeyboardButton("🎯 竞猜选项", callback_data=f"guess:create:{chat_id}:options"),
-            ],
-            [
-                InlineKeyboardButton("⌨️ 群内指令", callback_data=f"guess:create:{chat_id}:command"),
-                InlineKeyboardButton("⏰ 截止时间", callback_data=f"guess:create:{chat_id}:deadline"),
-                InlineKeyboardButton("下注限制", callback_data=f"guess:create:{chat_id}:repeat"),
-            ],
-            [
-                InlineKeyboardButton("🏖️ 预览效果", callback_data=f"guess:create:{chat_id}:preview"),
-                InlineKeyboardButton("✅ 发布活动", callback_data=f"guess:create:{chat_id}:publish"),
-            ],
-            [
-                InlineKeyboardButton("❌ 清空配置", callback_data=f"guess:create:{chat_id}:clear"),
-                InlineKeyboardButton("⬅️ 返回", callback_data=f"guess:home:{chat_id}"),
-            ],
-        ])
+        from backend.features.admin.activity.guess_keyboard import guess_draft_keyboard
+        keyboard = guess_draft_keyboard(chat_id)
         await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
 
     async def _show_guess_settings(
@@ -264,6 +246,9 @@ class GuessAdminControllerMixin:
         state_type = state_map.get(sub)
         if state_type is None:
             return False
+        from backend.features.activity.date_picker import attach
+        if sub == "deadline":
+            draft = attach(draft, back=f"guess:create:{chat_id}:preview", initial=draft.get("deadline_at"))
         await _start_guess_input_state(
             session, user_id=update.effective_user.id, chat_id=chat_id,
             state_type=state_type, draft=draft,
@@ -277,7 +262,7 @@ class GuessAdminControllerMixin:
                 sample_time_unix=int(sample_dt.timestamp()), input_hint="👉 请输入截止时间：",
                 extra_tips=["本步只输入截止时间。"],
             )
-            keyboard = build_copy_time_keyboard(f"guess:create:{chat_id}:preview", sample_text)
+            keyboard = build_copy_time_keyboard(f"guess:create:{chat_id}:preview", sample_text, picker=draft.get("__datetime_picker__"))
             await self.message_helper.safe_edit(
                 update, text, parse_mode="HTML", reply_markup=keyboard
             )
@@ -294,6 +279,10 @@ class GuessAdminControllerMixin:
         if sub == "repeat":
             next_draft = {**draft, "allow_repeat_bet": not bool(draft.get("allow_repeat_bet", False))}
         elif sub == "clear":
+            from backend.shared.ui.action_confirmation import confirm_action
+            if not await confirm_action(update, context, callback=f"guess:create:{chat_id}:clear",
+                back=f"guess:create:{chat_id}:preview", text=f"群：{chat_id}\n确认清空当前竞猜草稿？已发布活动不受影响。", version=draft):
+                return True
             await clear_private_admin_state(
                 session, target_chat_id=chat_id, user_id=update.effective_user.id
             )

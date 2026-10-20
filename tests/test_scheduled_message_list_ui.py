@@ -16,10 +16,9 @@ def test_scheduled_message_list_keyboard_matches_document_layout() -> None:
 
     keyboard = sm_list_keyboard(tasks, chat_id=-100123)
 
-    assert keyboard.inline_keyboard[0][0].text == "🔢 编号:abcd1234"
-    assert keyboard.inline_keyboard[0][1].text == "❌ 关闭"
-    assert keyboard.inline_keyboard[0][2].text == "✏️ 修改"
-    assert keyboard.inline_keyboard[0][3].text == "🗑 删除"
+    assert len(keyboard.inline_keyboard[0]) == 1
+    assert keyboard.inline_keyboard[0][0].text == "✓ #abcd1234 未命名"
+    assert keyboard.inline_keyboard[0][0].callback_data == "sm:open:-100123:abcd1234"
     assert keyboard.inline_keyboard[1][0].text == "➕ 添加一条"
     assert keyboard.inline_keyboard[2][0].callback_data == "adm:menu:category_messages:-100123"
 

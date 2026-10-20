@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 
+from contextlib import nullcontext
 import structlog
 from dataclasses import dataclass
 from typing import Awaitable, Callable, Literal
@@ -58,13 +59,13 @@ InputHandler = Callable[[_AdsInput], Awaitable[_InputDestination]]
 
 RULES_DESTINATION = _InputDestination("rules")
 
-async def ads_create_config_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def ads_create_config_message(update: Update, context: ContextTypes.DEFAULT_TYPE, *, session=None) -> None:
     if not _has_ads_input_context(update):
         return
 
     message, user, chat = update.effective_message, update.effective_user, update.effective_chat
     db: Database = context.application.bot_data["db"]
-    async with db.session_factory() as session:
+    async with (nullcontext(session) if session is not None else db.session_factory()) as session:
         state = await ConversationStateService.get(session, chat.id, user.id)
         if not state or not state.state_type.startswith("ads_"):
             await session.commit()

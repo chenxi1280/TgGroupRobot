@@ -11,6 +11,7 @@ from backend.platform.state.edit_drafts import suspend_inputs
 from backend.shared.handlers.base.message_helper import MessageHelper
 from backend.shared.services.permission_service import PermissionPolicyService
 from backend.shared.callback_parser import CallbackParser
+from backend.shared.ui.menu_layout import action_rows, navigation_row
 
 SEARCH_STATE = "admin_list_search_input"
 log = structlog.get_logger(__name__)
@@ -68,7 +69,7 @@ def _list_keyboard(items, feature: str, *, context, chat_id: int, total: int, op
     rows = []
     for item in items:
         key, title = _item_label(item, feature)
-        rows.append([InlineKeyboardButton(f"#{key} {title}"[:60], callback_data=_detail_callback(feature, chat_id, key))])
+        rows.append([InlineKeyboardButton(f"#{key} {'✓' if (item.is_active if feature == 'autoreply' else item.enabled) else '○'} {title[:22]}", callback_data=_detail_callback(feature, chat_id, key))])
     pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
     page = options["page"]
     nav = [InlineKeyboardButton("上一页", callback_data=list_callback(feature, chat_id, value=page-1))] if page else []
@@ -76,14 +77,16 @@ def _list_keyboard(items, feature: str, *, context, chat_id: int, total: int, op
         nav.append(InlineKeyboardButton("下一页", callback_data=list_callback(feature, chat_id, value=page+1)))
     if nav:
         rows.append(nav)
-    rows.append([InlineKeyboardButton("修改搜索", callback_data=list_callback(feature, chat_id, action="search")),
-        InlineKeyboardButton("清除搜索", callback_data=list_callback(feature, chat_id, action="clear"))])
-    rows.append([InlineKeyboardButton(("✅ " if options["status"] == key else "") + title,
-        callback_data=list_callback(feature, chat_id, action="filter", value=key)) for key, title in FILTERS.items()])
-    rows.extend([[InlineKeyboardButton("➕ 添加一条", callback_data=_create_callback(feature, chat_id))],
-        [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_messages:{chat_id}")]])
-    if feature in {'ads','scheduled'}:
-        rows.insert(-1,[InlineKeyboardButton('附加动作/清理恢复',callback_data=f'eff:{chat_id}:delivery_action:list')])
+    tools = [InlineKeyboardButton("添加一条", callback_data=_create_callback(feature, chat_id)),
+             InlineKeyboardButton("修改搜索", callback_data=list_callback(feature, chat_id, action="search")),
+             InlineKeyboardButton("清除搜索", callback_data=list_callback(feature, chat_id, action="clear"))]
+    if feature in {"ads", "scheduled"}:
+        tools.append(InlineKeyboardButton("执行恢复", callback_data=f"eff:{chat_id}:delivery_action:list"))
+    rows.extend(action_rows(tools))
+    rows.extend(action_rows([InlineKeyboardButton(("✓ " if options["status"] == key else "") + title,
+        callback_data=list_callback(feature, chat_id, action="filter", value=key)) for key, title in FILTERS.items()]))
+    rows.append(navigation_row(f"adm:menu:category_messages:{chat_id}",
+                              refresh=list_callback(feature, chat_id, value=page)))
     from backend.features.admin.menu_origins import with_menu_origin
     return with_menu_origin(InlineKeyboardMarkup(rows), context, chat_id=chat_id, feature=feature)
 
@@ -198,7 +201,7 @@ async def _start_search(update, context, *, feature: str, chat_id: int):
         await set_user_state(session, update.effective_user.id, update.effective_user.id,
             state_type=SEARCH_STATE, state_data={"target_chat_id": chat_id, "feature": feature})
         await session.commit()
-    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("取消搜索", callback_data=list_callback(feature, chat_id))]])
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("取消搜索", callback_data=list_callback(feature, chat_id, value=list_options(context, feature, chat_id)["page"]))]])
     await MessageHelper.safe_edit(update, "请输入关键词、标题或编号（1—100 字）；取消后不再接收搜索文本。", reply_markup=keyboard)
 
 

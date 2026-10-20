@@ -156,8 +156,8 @@ async def ads_rules_input_callback(update: Update, context: ContextTypes.DEFAULT
     if state_type is None:
         await answer_callback_query_safely(update, "无效配置项", show_alert=True)
         return
-    await _start_rule_input_state(update, context, chat_id=chat_id, state_type=state_type)
-    await _show_rule_input_prompt(q, chat_id=chat_id, field=field)
+    picker = await _start_rule_input_state(update, context, chat_id=chat_id, state_type=state_type)
+    await _show_rule_input_prompt(q, chat_id=chat_id, field=field, picker=picker)
 
 
 async def _show_interval_choices(context, query, *, chat_id: int) -> None:
@@ -171,7 +171,9 @@ async def _show_interval_choices(context, query, *, chat_id: int) -> None:
     )
 
 
-async def _start_rule_input_state(update: Update, context, *, chat_id: int, state_type: str) -> None:
+async def _start_rule_input_state(update: Update, context, *, chat_id: int, state_type: str) -> dict | None:
+    from backend.shared.ui.datetime_picker import KEY, new_picker
+    picker = new_picker(f"ads:rules:{chat_id}", format_local_datetime(next_top_of_hour())[:16]) if state_type == "ads_rule_edit_start" else None
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
         await ConversationStateService.start(
@@ -179,25 +181,28 @@ async def _start_rule_input_state(update: Update, context, *, chat_id: int, stat
             chat_id=update.effective_chat.id,
             user_id=update.effective_user.id,
             state_type=state_type,
-            state_data={"target_chat_id": chat_id},
+            state_data={"target_chat_id": chat_id, **({KEY: picker} if picker else {})},
         )
         await session.commit()
 
 
-async def _show_rule_input_prompt(query, *, chat_id: int, field: str) -> None:
+    return picker
+
+
+async def _show_rule_input_prompt(query, *, chat_id: int, field: str, picker: dict | None = None) -> None:
     if field == "start":
         sample_time = next_top_of_hour()
-        sample_label = format_local_datetime(sample_time, empty="")
+        sample_label = format_local_datetime(sample_time, empty="")[:16]
         await query.edit_message_text(
             build_datetime_prompt_text(
                 title="🎠 轮播规则 | 编辑开始时间",
                 sample_time_text=sample_label,
                 sample_time_unix=int(sample_time.timestamp()),
-                show_copy_hint=False,
+                show_copy_hint=True,
                 input_hint="👉🏻 现在输入定时开始时间:",
             ),
             parse_mode="HTML",
-            reply_markup=ads_copy_time_keyboard(f"ads:rules:{chat_id}", sample_label),
+            reply_markup=ads_copy_time_keyboard(f"ads:rules:{chat_id}", sample_label, picker=picker),
         )
         return
     prompt = {

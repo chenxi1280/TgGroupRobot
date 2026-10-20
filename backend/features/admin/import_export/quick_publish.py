@@ -3,6 +3,7 @@ from __future__ import annotations
 from backend.shared.ui.admin_keyboard import admin_keyboard
 
 from backend.shared.callback_parser import CallbackData
+from backend.shared.ui.action_confirmation import confirm_action
 
 from backend.features.admin.support import *
 from backend.shared.ui.message_config_panel import (
@@ -120,6 +121,8 @@ class QuickPublishAdminMixin:
             )
             return
 
+        if action in {"clear", "send"} and not await _confirm_publish_action(update, context, chat_id=chat_id, action=action):
+            return
         if action == "clear":
             draft = _get_quick_publish_draft(context, chat_id)
             draft.update({"text": "", "media_type": None, "media_file_id": None, "buttons": []})
@@ -172,9 +175,24 @@ class QuickPublishAdminMixin:
             ],
             [
                 action_button("设置按钮", f"qpub:input:{chat_id}:buttons", configured=buttons_configured),
+            ],
+            [
                 InlineKeyboardButton("🧹 清空草稿", callback_data=f"qpub:clear:{chat_id}"),
             ],
             [InlineKeyboardButton("🚀 立即发送", callback_data=f"qpub:send:{chat_id}")],
             [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_messages:{chat_id}")],
         ])
         await self.message_helper.safe_edit(update, lines, reply_markup=keyboard)
+
+
+async def _confirm_publish_action(update, context, *, chat_id, action):
+    from backend.platform.state.edit_drafts import suspend_inputs
+
+    db = context.application.bot_data["db"]
+    async with db.session_factory() as session:
+        await suspend_inputs(session, update.effective_user.id)
+        await session.commit()
+    draft = _get_quick_publish_draft(context, chat_id)
+    verb = "发送到该群" if action == "send" else "清空当前草稿"
+    return await confirm_action(update, context, callback=f"qpub:{action}:{chat_id}",
+        back=f"qpub:home:{chat_id}", text=f"群：{chat_id}\n确认{verb}？\n正文预览：{(draft.get('text') or '')[:250]}", version=draft)

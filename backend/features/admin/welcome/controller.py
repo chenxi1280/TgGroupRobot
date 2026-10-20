@@ -3,6 +3,8 @@ from __future__ import annotations
 from backend.shared.ui.admin_keyboard import admin_keyboard
 
 from backend.shared.callback_parser import CallbackData
+from backend.shared.ui.menu_layout import page_navigation, navigation_row
+from backend.shared.ui.action_confirmation import confirm_action
 
 from backend.features.admin.support import *
 from backend.shared.button_layout_editor import ButtonEditorContext, show_layout_menu
@@ -77,7 +79,8 @@ def _welcome_detail_keyboard(item, chat_id: int, welcome_id: int, *, config: dic
         [action_button("标题备注", f"adm:wel:{chat_id}:input:{welcome_id}:title", configured=config["title_configured"]), action_button("设置封面", f"adm:wel:{chat_id}:input:{welcome_id}:cover", configured=config["cover_configured"])],
         [action_button("设置文本", f"adm:wel:{chat_id}:input:{welcome_id}:text", configured=config["text_configured"]), action_button("设置按钮", f"btned:open:welcome:{chat_id}:{welcome_id}", configured=config["buttons_configured"])],
         [InlineKeyboardButton("🏖️ 预览效果", callback_data=f"adm:wel:{chat_id}:preview:{welcome_id}"), InlineKeyboardButton(mark_configured("🕘 延迟删除", delay_configured), callback_data=f"adm:wel:{chat_id}:cycle_delete:{welcome_id}")],
-        [InlineKeyboardButton("❌ 删除配置", callback_data=f"adm:wel:{chat_id}:delete:{welcome_id}"), InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:welcome:{chat_id}")],
+        [InlineKeyboardButton("❌ 删除配置", callback_data=f"adm:wel:{chat_id}:delete:{welcome_id}"),  ],
+        [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:welcome:{chat_id}")],
     ]
     return admin_keyboard(rows)
 
@@ -88,16 +91,18 @@ class WelcomeAdminControllerMixin:
         update: Update,
         context: ContextTypes.DEFAULT_TYPE,
         chat_id: int,
+        *, page: int | None = None,
     ) -> None:
         from backend.features.verification.welcome_service import WelcomeService
 
         db: Database = context.application.bot_data["db"]
         await self._set_current_chat(db, update.effective_user.id, chat_id)
+        pages = context.user_data.setdefault("welcome_pages", {})
         async with db.session_factory() as session:
-            items = await WelcomeService.list_messages(session, chat_id)
+            items, total, page = await WelcomeService.list_messages_page(session, chat_id, pages.get(chat_id, 0) if page is None else page)
             await session.commit()
-
-        page_total = 1
+        pages[chat_id] = page
+        page_total = max(1, (total + 7) // 8)
         lines = [
             "🎉 进群欢迎",
             "",
@@ -109,21 +114,16 @@ class WelcomeAdminControllerMixin:
         else:
             for item in items:
                 status = "✅ 启用" if item.enabled else "❌ 关闭"
-                lines.append(f"标题：{item.title}（状态：{status}）")
+                lines.append(f"标题：{item.title[:40]}（状态：{status}）")
                 lines.append(f"┗编号：{item.id}")
                 lines.append("")
-            lines.append(f"{len(items)} 条数据，第 1 页/共 {page_total} 页")
+            lines.append(f"{total} 条数据，第 {page + 1} 页/共 {page_total} 页")
 
-        keyboard_rows: list[list[InlineKeyboardButton]] = []
-        for item in items:
-            keyboard_rows.append([
-                InlineKeyboardButton(f"编号:{item.id}", callback_data=f"adm:wel:{chat_id}:detail:{item.id}"),
-                InlineKeyboardButton("✅启用" if item.enabled else "❌关闭", callback_data=f"adm:wel:{chat_id}:toggle:{item.id}"),
-                InlineKeyboardButton("修改", callback_data=f"adm:wel:{chat_id}:detail:{item.id}"),
-                InlineKeyboardButton("删除", callback_data=f"adm:wel:{chat_id}:delete:{item.id}"),
-            ])
-        keyboard_rows.append([InlineKeyboardButton("➕ 添加一条", callback_data=f"adm:wel:{chat_id}:add")])
-        keyboard_rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_safety:{chat_id}")])
+        keyboard_rows = [[InlineKeyboardButton(f"#{item.id} {item.title[:22]} · {'✓' if item.enabled else '○'}",
+                          callback_data=f"adm:wel:{chat_id}:detail:{item.id}")] for item in items]
+        keyboard_rows.extend(page_navigation(page, total, lambda value: f"adm:wel:{chat_id}:page:{value}"))
+        keyboard_rows.append([InlineKeyboardButton("添加一条", callback_data=f"adm:wel:{chat_id}:add")])
+        keyboard_rows.append(navigation_row(f"adm:menu:category_safety:{chat_id}", refresh=f"adm:wel:{chat_id}:page:{page}"))
         await self.message_helper.safe_edit(update, "\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard_rows))
 
     async def _show_welcome_detail_menu(
@@ -150,21 +150,23 @@ class WelcomeAdminControllerMixin:
 
     async def _handle_welcome_record_action(self, update, context, chat_id: int, *, op: str, callback_data, service, mode_enum) -> bool:
         db: Database = context.application.bot_data["db"]
-        if op == "add":
-            async with db.session_factory() as session:
-                item = await service.create_message(session, chat_id)
-                await session.commit()
-            await self._show_welcome_detail_menu(update, context, chat_id, welcome_id=item.id)
-            return True
-        if op == "detail":
-            welcome_id = callback_data.require_int(4, label="welcome_id")
-            await self._show_welcome_detail_menu(update, context, chat_id, welcome_id=welcome_id)
-            return True
+        if op in {"page", "add", "detail"}:
+            return await self._welcome_record_navigation(update, context, chat_id, op=op, callback_data=callback_data, service=service)
         if op not in {"toggle", "mode", "delete"}:
             return False
         welcome_id = callback_data.require_int(4, label="welcome_id")
         async with db.session_factory() as session:
             if op == "delete":
+                from backend.platform.state.edit_drafts import suspend_inputs
+                await suspend_inputs(session, update.effective_user.id)
+                item = await service.get_message(session, chat_id, welcome_id)
+                await session.refresh(item, with_for_update=True)
+                if not await confirm_action(update, context, callback=f"adm:wel:{chat_id}:delete:{welcome_id}",
+                        back=f"adm:wel:{chat_id}:detail:{welcome_id}",
+                        text=f"删除群 {chat_id} 的欢迎消息 #{welcome_id}？\n{item.title}\n确认后删除，无法撤销。",
+                        version={"id": item.id, "updated": getattr(item, "updated_at", None)}):
+                    await session.commit()
+                    return True
                 await service.delete_message(session, chat_id, welcome_id)
             else:
                 item = await service.get_message(session, chat_id, welcome_id)
@@ -179,6 +181,25 @@ class WelcomeAdminControllerMixin:
         else:
             await self._show_welcome_detail_menu(update, context, chat_id, welcome_id=welcome_id)
         return True
+
+    async def _welcome_record_navigation(self, update, context, chat_id, *, op, callback_data, service):
+        db = context.application.bot_data["db"]
+        if op == "page":
+            await self._show_welcome_list_menu(update, context, chat_id, page=callback_data.get_int_optional(4) or 0)
+            return True
+        if op == "add":
+            async with db.session_factory() as session:
+                item = await service.create_message(session, chat_id)
+                _, _, page = await service.list_messages_page(session, chat_id, 2**31)
+                context.user_data.setdefault("welcome_pages", {})[chat_id] = page
+                await session.commit()
+            await self._show_welcome_detail_menu(update, context, chat_id, welcome_id=item.id)
+            return True
+        if op == "detail":
+            welcome_id = callback_data.require_int(4, label="welcome_id")
+            await self._show_welcome_detail_menu(update, context, chat_id, welcome_id=welcome_id)
+            return True
+        return False
 
     async def _preview_welcome(self, update, context, chat_id: int, *, welcome_id: int, service) -> None:
         db: Database = context.application.bot_data["db"]

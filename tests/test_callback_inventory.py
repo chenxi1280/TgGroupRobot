@@ -84,6 +84,9 @@ def _sample_formatted(node: ast.AST) -> str:
         return str(node.value)
     if isinstance(node, ast.Name):
         name = node.id.lower()
+        if name == "callback":
+            # Shared confirmation appends a token to an already-routed caller action.
+            return "qpub:clear:-100123"
         if name == "prefix":
             return "btned"
         if name in {"chat_id", "target_chat_id", "source_chat_id"} or name.endswith("chat_id"):

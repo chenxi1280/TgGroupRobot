@@ -21,6 +21,19 @@ from backend.platform.telegram.conversation_callback_handler import PerUserConve
 
 log = structlog.get_logger(__name__)
 
+class PendingPointsInputFilter(filters.MessageFilter):
+    """An exited points conversation must not consume another editor's text."""
+    def __init__(self, application):
+        super().__init__(name="PendingPointsInput")
+        self.application = application
+
+    def filter(self, message):
+        if message.from_user is None:
+            return False
+        state = self.application.user_data.get(message.from_user.id, {})
+        return bool(state.get("points_edit_field") and state.get("points_edit_chat_id"))
+
+
 class PointsRouter(BaseRouter):
     """积分功能路由器"""
 
@@ -46,12 +59,12 @@ class PointsRouter(BaseRouter):
             entry_points=[PerUserConversationCallbackHandler(points_config_callback, pattern=r"^pts:edit:")],
             states={
                 PTS_WAIT_VALUE: [
-                    MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND, points_config_message_handler)
+                    MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND & PendingPointsInputFilter(app), points_config_message_handler)
                 ],
             },
             fallbacks=[
                 CommandHandler("cancel", points_config_cancel_callback),
-                PerUserConversationCallbackHandler(points_config_cancel_callback, pattern=r"^pts:home:-?\d+$"),
+                PerUserConversationCallbackHandler(points_config_cancel_callback, pattern=r"^pts:home:-?\d+(?::(?:main|display|manage))?$"),
                 PerUserConversationCallbackHandler(points_config_cancel_callback, pattern=r"^adm:menu:"),
             ],
             per_chat=True,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, User
 from telegram.ext import ContextTypes
@@ -42,6 +42,14 @@ class WelcomeService:
             .order_by(WelcomeMessage.id.asc())
         )
         return list(result.scalars().all())
+
+    @staticmethod
+    async def list_messages_page(session: AsyncSession, chat_id: int, page: int, *, size: int = 8):
+        total = int(await session.scalar(select(func.count()).select_from(WelcomeMessage).where(WelcomeMessage.chat_id == chat_id)))
+        page = min(max(0, page), max(0, (total - 1) // size))
+        items = list((await session.scalars(select(WelcomeMessage).where(WelcomeMessage.chat_id == chat_id)
+            .order_by(WelcomeMessage.id).offset(page * size).limit(size))).all())
+        return items, total, page
 
     @staticmethod
     async def get_message(session: AsyncSession, chat_id: int, welcome_id: int) -> WelcomeMessage:

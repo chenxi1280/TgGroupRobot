@@ -45,10 +45,10 @@ async def effect_callback(update, context):
     lines, buttons = _render_rows(rows, chat_id=chat_id)
     nav = _page_buttons(chat_id, kind=kind, page=page, total=total)
     buttons.extend([nav] if nav else [])
-    buttons.extend([[InlineKeyboardButton('刷新', callback_data=f'eff:{chat_id}:{kind}:list')],
-        [InlineKeyboardButton('返回', callback_data=_back_callback(chat_id, kind=kind))]])
+    buttons.append([InlineKeyboardButton('返回', callback_data=_back_callback(chat_id, kind=kind)),
+        InlineKeyboardButton('刷新', callback_data=f'eff:{chat_id}:{kind}:list:{page}')])
     await MessageHelper.safe_edit(update, f'执行与异常恢复（共{total}条，第{page+1}页）\n'+'\n\n'.join(lines or ['暂无记录'])+
-        '\n结果未知须核实远端，系统不会自动重发。', reply_markup=admin_keyboard(buttons))
+        '\n结果未知须核实远端，系统不会自动重发。', reply_markup=InlineKeyboardMarkup(buttons))
 
 
 def _render_rows(rows, *, chat_id):

@@ -101,7 +101,7 @@ def test_points_mall_orders_keyboard_has_status_tabs_and_short_callbacks():
     assert first_row[0].text.startswith("📋 全部")
     assert first_row[1].text.startswith("✅ 🟡 待处理")
     assert first_row[1].callback_data == "adm:mall:-100123:orders_status:c:7"
-    detail_btn = keyboard.inline_keyboard[1][0]
+    detail_btn = next(button for row in keyboard.inline_keyboard for button in row if ":order:detail:" in (button.callback_data or ""))
     assert detail_btn.callback_data == "adm:mall:-100123:order:detail:99:c:7:0"
 
 

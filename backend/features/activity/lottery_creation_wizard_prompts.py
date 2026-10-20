@@ -148,9 +148,11 @@ def _prize_action_spec(request: PromptRequest) -> PromptSpec:
 def _draw_spec(request: PromptRequest) -> PromptSpec:
     if request.data.get("draw_trigger") == "full_participants":
         return _guided_spec(request, _full_participants_prompt(), next_step="填写玩法门槛或确认发布")
+    from backend.features.activity.date_picker import with_calendar
     return _guided_spec(
         request,
         _deadline_prompt(),
+        reply_markup=with_calendar(request.nav_keyboard, request.data),
         next_step="填写玩法门槛或确认发布",
         parse_mode="HTML",
     )
@@ -215,7 +217,7 @@ async def _send_prompt(update: Update, spec: PromptSpec) -> None:
 
 
 async def _reply_next_prompt(update: Update, session, state: object, *, data: dict, next_step: str) -> None:
-    next_data = {**data, "step": next_step}
+    next_data = _calendar_data({**data, "step": next_step})
     _save_state_data(state, next_data)
     if next_step == "point_type":
         await _reply_point_type_prompt(update, session, state, data=next_data)
@@ -276,7 +278,7 @@ async def _edit_wizard_step_prompt(
     data: dict,
     step: str,
 ) -> None:
-    data["step"] = step
+    data = _calendar_data({**data, "step": step})
     _save_state_data(state, data)
     request = _prompt_request(data)
     if step == "point_type":
@@ -290,3 +292,11 @@ async def _edit_wizard_step_prompt(
         spec = builder(request)
     await _edit_prompt(query, spec)
 
+
+
+def _calendar_data(data):
+    from backend.features.activity.date_picker import attach, clean
+    data = clean(data)
+    if data["step"] == "draw_param" and data.get("draw_trigger") != "full_participants":
+        return attach(data, back=_wizard_back_callback(int(data["target_chat_id"])), initial=data.get("draw_time"))
+    return data

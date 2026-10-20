@@ -249,7 +249,7 @@ async def test_solitaire_deadline_prompt_uses_unified_copy_ui(monkeypatch):
     assert rendered and rendered[0][1] == "HTML"
     assert "本步只输入截止时间" in rendered[0][0]
     assert "完整示例：" in rendered[0][0]
-    assert "最近整点示例" in rendered[0][0]
+    assert "北京时间 UTC+8" in rendered[0][0]
     assert rendered[0][2].inline_keyboard[0][0].to_dict()["copy_text"]["text"]
 
 
@@ -332,7 +332,7 @@ async def test_solitaire_batch_config_page_exposes_copyable_deadline(monkeypatch
     assert started and started[0][2] == "solitaire_create"
     assert edited and edited[0][1] == "Markdown"
     assert "完整示例：" in edited[0][0]
-    assert edited[0][2].inline_keyboard[0][0].to_dict()["copy_text"]["text"]
+    assert any(button.to_dict().get("copy_text", {}).get("text") for row in edited[0][2].inline_keyboard for button in row)
     button_texts = [button.text for row in edited[0][2].inline_keyboard for button in row]
     callbacks = {
         button.text: button.callback_data

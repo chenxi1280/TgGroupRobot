@@ -79,7 +79,7 @@ async def test_solitaire_create_config_message_returns_wait_config_when_publish_
             return _SessionContext(self.sessions.pop(0))
 
     async def fake_get_user_state(session, chat_id: int, user_id: int):
-        return SimpleNamespace(state_data={"target_chat_id": -1001})
+        return SimpleNamespace(state_type="solitaire_create", state_data={"target_chat_id": -1001})
 
     async def fake_create_solitaire(session, **kwargs):
         return SimpleNamespace(success=True, entity=SimpleNamespace(id=9))
@@ -105,3 +105,25 @@ async def test_solitaire_create_config_message_returns_wait_config_when_publish_
 
     assert result == WAIT_CONFIG
     assert replies == ["❌ 接龙创建失败，请检查机器人在目标群的发言权限后重试。"]
+
+
+@pytest.mark.asyncio
+async def test_calendar_deadline_fallback_and_explicit_override():
+    replies = []
+
+    async def reply(text):
+        replies.append(text)
+
+    for suffix, expected in [("", "2099-12-30"), ("\n截止时间: 2099-12-31 12:00", "2099-12-31"),
+                             ("\n截止时间:", None)]:
+        message = SimpleNamespace(text="标题" + suffix, reply_text=reply)
+        parsed = await solitaire_creation_config._validate_solitaire_creation_input(
+            message, calendar_deadline="2099-12-30 12:00")
+        assert parsed is not None
+        assert (parsed["deadline"].date().isoformat() if parsed["deadline"] else None) == expected
+    assert not replies
+
+
+def test_explicit_invalid_deadline_is_not_silently_unlimited():
+    with pytest.raises(ValueError, match="截止时间格式错误"):
+        solitaire_creation_config._parse_solitaire_config("标题\n截止时间: 明天")

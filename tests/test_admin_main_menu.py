@@ -10,7 +10,9 @@ def test_private_admin_main_menu_has_six_categories_and_scoped_features():
     from backend.features.admin.core.menu_dispatch import ADMIN_MENU_HANDLERS
     keyboard = admin_main_menu(-100123).inline_keyboard
     assert len(keyboard) == 7
-    assert all(len(row) == 2 for row in keyboard[:6])
+    assert keyboard[5][0].callback_data == "draft:list:-100123:0"
+    assert len(keyboard[-1]) == 2
+    assert all(len(row) == 2 for row in keyboard[:5])
     assert [button.text for row in keyboard[2:5] for button in row] == [
         "群安全", "消息运营", "积分与增长", "活动互动", "车库业务", "系统管理",
     ]

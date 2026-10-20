@@ -139,6 +139,8 @@ async def _apply_guess_draft_input(flow: _GuessInput):
 
 
 async def _save_guess_draft(flow: _GuessInput, context, draft: dict) -> None:
+    from backend.features.activity.date_picker import clean
+    draft = clean(draft)
     await clear_private_admin_state(
         flow.session, target_chat_id=flow.target_chat_id, user_id=flow.user_id
     )

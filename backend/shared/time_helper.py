@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import datetime as dt
+import re
+import unicodedata
 from typing import TYPE_CHECKING
 _GET_INTERVAL_DESCRIPTION_THRESHOLD_1440 = 1440
 _GET_INTERVAL_DESCRIPTION_THRESHOLD_60 = 60
 _IS_TIME_IN_WINDOW_THRESHOLD_23 = 23
+_DATETIME_SECONDS_COLONS = 2
 
 
 if TYPE_CHECKING:
@@ -148,7 +151,13 @@ def parse_date_time_string(date_str: str) -> int | None:
         Unix 时间戳，解析失败返回 None
     """
     try:
-        local_dt = dt.datetime.strptime(date_str, "%Y-%m-%d %H:%M").replace(tzinfo=LOCAL_TIMEZONE)
+        raw = unicodedata.normalize("NFKC", date_str).strip().replace("/", "-")
+        raw = re.sub(r"\s+", " ", raw)
+        pattern = r"[0-9]{4}-[0-9]{1,2}-[0-9]{1,2} [0-9]{1,2}:[0-9]{2}(?::[0-9]{2})?"
+        if not re.fullmatch(pattern, raw):
+            return None
+        date_format = "%Y-%m-%d %H:%M:%S" if raw.count(":") == _DATETIME_SECONDS_COLONS else "%Y-%m-%d %H:%M"
+        local_dt = dt.datetime.strptime(raw, date_format).replace(tzinfo=LOCAL_TIMEZONE)
         return int(local_dt.astimezone(dt.UTC).timestamp())
     except (ValueError, TypeError):
         return None
@@ -179,14 +188,16 @@ def get_interval_description(minutes: int) -> str:
     Returns:
         友好的时间描述
     """
-    if minutes < _GET_INTERVAL_DESCRIPTION_THRESHOLD_60:
-        return f"每 {minutes} 分钟"
     if minutes == _GET_INTERVAL_DESCRIPTION_THRESHOLD_60:
         return "每小时"
-    if minutes < _GET_INTERVAL_DESCRIPTION_THRESHOLD_1440:
-        hours = minutes // 60
-        return f"每 {hours} 小时"
     if minutes == _GET_INTERVAL_DESCRIPTION_THRESHOLD_1440:
         return "每天"
-    days = minutes // 1440
-    return f"每 {days} 天"
+    return f"每 {format_duration_minutes(minutes, separator=' ')}"
+
+
+def format_duration_minutes(minutes: int, *, separator: str = "") -> str:
+    days, remainder = divmod(minutes, 1440)
+    hours, remaining_minutes = divmod(remainder, 60)
+    parts = [(days, "天"), (hours, "小时"), (remaining_minutes, "分钟")]
+    labels = [f"{value}{separator}{unit}" for value, unit in parts if value]
+    return separator.join(labels) if labels else f"0{separator}分钟"

@@ -36,7 +36,7 @@ def _game_config_rows(
     setting, chat_id: int, points_chat_label: str
 ) -> list[list[InlineKeyboardButton]]:
     return [
-        [InlineKeyboardButton(("🔗 关联积分") + " · " + (points_chat_label), callback_data=f"gm:points:{chat_id}:menu")],
+        [InlineKeyboardButton("关联积分", callback_data=f"gm:points:{chat_id}:menu")],
         [
             InlineKeyboardButton(
                 "💧 抽水比例", callback_data=f"gm:rake:{chat_id}:ratio"

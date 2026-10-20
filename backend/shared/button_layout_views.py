@@ -18,6 +18,7 @@ from backend.shared.button_layout_service import (
     ButtonLayoutEditorService,
 )
 from backend.shared.services.base import ValidationError
+from backend.shared.ui.copy import copy_value_rows
 
 
 def _item_callback_data(editor_ctx: ButtonEditorContext, item: dict[str, Any]) -> str:
@@ -60,11 +61,15 @@ def build_layout_keyboard(editor_ctx: ButtonEditorContext, grid: ButtonGrid) -> 
                 f"{editor_ctx.target_chat_id}:{editor_ctx.entity_id}"
             ),
         ),
-        InlineKeyboardButton("🔙 返回", callback_data=_module_return_callback(editor_ctx)),
     ])
+    clear_row = rows.pop()
     rows.append([InlineKeyboardButton("预览", callback_data=detail_callback_data(editor_ctx, "preview")),
                  InlineKeyboardButton("保存", callback_data=detail_callback_data(editor_ctx, "save"))])
+    rows.append([InlineKeyboardButton("导出正文", callback_data=detail_callback_data(editor_ctx, "export_body")),
+                 InlineKeyboardButton("导出按钮", callback_data=detail_callback_data(editor_ctx, "export_buttons"))])
+    rows.append(clear_row)
     rows.append([InlineKeyboardButton("放弃修改/重新载入", callback_data=detail_callback_data(editor_ctx, "discard"))])
+    rows.append([InlineKeyboardButton("🔙 返回", callback_data=_module_return_callback(editor_ctx))])
     rows.insert(0, [InlineKeyboardButton("编辑正文", callback_data=detail_callback_data(editor_ctx, "body")),
                     InlineKeyboardButton("编辑封面", callback_data=detail_callback_data(editor_ctx, "cover"))])
     return InlineKeyboardMarkup(rows)
@@ -96,7 +101,7 @@ def _detail_action_button(
     )
 
 
-def build_detail_keyboard(editor_ctx: ButtonEditorContext) -> InlineKeyboardMarkup:
+def build_detail_keyboard(editor_ctx: ButtonEditorContext, cell: dict | None = None) -> InlineKeyboardMarkup:
     rows = [[
         _detail_action_button(editor_ctx, "编辑按钮文字", "text"),
         _detail_action_button(editor_ctx, "编辑跳转链接", "url"),
@@ -104,13 +109,13 @@ def build_detail_keyboard(editor_ctx: ButtonEditorContext) -> InlineKeyboardMark
     if editor_ctx.module_type == "auto_reply":
         rows.append([_detail_action_button(editor_ctx, "编辑触发文字", "payload")])
     rows.extend([
-        [_detail_action_button(editor_ctx, "⬆️ 上移", "move", extra="up")],
+        [_detail_action_button(editor_ctx, "⬆️ 上移", "move", extra="up"),
+         _detail_action_button(editor_ctx, "⬇️ 下移", "move", extra="down")],
         [
             _detail_action_button(editor_ctx, "⬅️ 左移", "move", extra="left"),
             _detail_action_button(editor_ctx, "➡️ 右移", "move", extra="right"),
         ],
         [
-            _detail_action_button(editor_ctx, "⬇️ 下移", "move", extra="down"),
             _detail_action_button(editor_ctx, "❌ 删除按钮", "delete"),
         ],
         [InlineKeyboardButton(
@@ -121,6 +126,10 @@ def build_detail_keyboard(editor_ctx: ButtonEditorContext) -> InlineKeyboardMark
             ),
         )],
     ])
+    if cell:
+        values = [("复制按钮文字", cell.get("text", "")), ("复制链接", cell.get("url", "")),
+                  ("复制触发文字", cell.get("payload", ""))]
+        rows[1:1] = copy_value_rows(values)
     return InlineKeyboardMarkup(rows)
 
 
@@ -203,7 +212,7 @@ async def _render_detail(
     await _reply_or_edit(
         update,
         text=_detail_text(editor_ctx.module_type, cell),
-        reply_markup=build_detail_keyboard(editor_ctx),
+        reply_markup=build_detail_keyboard(editor_ctx, cell),
     )
 
 

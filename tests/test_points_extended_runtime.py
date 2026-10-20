@@ -789,7 +789,7 @@ async def test_points_handler_replies_when_custom_point_rank_command_is_disabled
 
 
 @pytest.mark.asyncio
-async def test_handle_points_level_add_returns_to_list(monkeypatch):
+async def test_handle_points_level_add_opens_created_detail(monkeypatch):
     created: list[int] = []
     menu_calls: list[int] = []
 
@@ -797,21 +797,25 @@ async def test_handle_points_level_add_returns_to_list(monkeypatch):
         created.append(chat_id)
         return SimpleNamespace(id=9, level_name="待配置", point_threshold=1)
 
-    async def fake_show_menu(update, context, chat_id: int):
-        menu_calls.append(chat_id)
+    async def fake_show_menu(update, context, chat_id: int, *, level_id):
+        menu_calls.append((chat_id, level_id))
 
     monkeypatch.setattr(admin_handler.PointsExtendedService, "create_level", fake_create_level)
-    monkeypatch.setattr(admin_handler._admin_handler, "_show_points_level_menu", fake_show_menu)
+    monkeypatch.setattr(admin_handler._admin_handler, "_show_points_level_detail", fake_show_menu)
 
+    from backend.features.admin.points import overview_views
+    async def fake_page(*args, **kwargs):
+        return [], 9, 1
+    monkeypatch.setattr(overview_views, "point_page", fake_page)
     session = _FakeSession()
     update = SimpleNamespace(callback_query=SimpleNamespace())
-    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(session)}))
+    context = SimpleNamespace(user_data={}, application=SimpleNamespace(bot_data={"db": _FakeDb(session)}))
     cb = CallbackParser.parse("adm:lvl:-1001:add")
 
     await admin_handler._admin_handler._handle_points_level(update, context, -1001, callback_data=cb)
 
     assert created == [-1001]
-    assert menu_calls == [-1001]
+    assert menu_calls == [(-1001, 9)]
     assert session.commits == 1
 
 
@@ -1114,11 +1118,14 @@ async def test_show_points_level_menu_uses_one_page_when_empty(monkeypatch):
 
     monkeypatch.setattr(admin_handler._admin_handler, "_set_current_chat", fake_set_current_chat)
     monkeypatch.setattr(admin_handler.PointsExtendedService, "get_or_create_level_setting", fake_get_setting)
-    monkeypatch.setattr(admin_handler.PointsExtendedService, "list_levels", fake_list_levels)
+    from backend.features.admin.points import overview_views
+    async def empty_page(*args, **kwargs):
+        return [], 0, 0
+    monkeypatch.setattr(overview_views, "point_page", empty_page)
     monkeypatch.setattr(admin_handler._admin_handler.message_helper, "safe_edit", fake_safe_edit)
 
     update = SimpleNamespace(effective_user=SimpleNamespace(id=42))
-    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(_FakeSession())}))
+    context = SimpleNamespace(user_data={}, application=SimpleNamespace(bot_data={"db": _FakeDb(_FakeSession())}))
 
     await admin_handler._admin_handler._show_points_level_menu(update, context, -1001)
 

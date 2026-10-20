@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 from backend.shared.services.base import ValidationError
 from backend.shared.time_helper import parse_date_time_string
 _VALIDATE_DAY_PERIOD_THRESHOLD_23 = 23
+MAX_REPEAT_MINUTES = 525600
 
 
 def _expand_button_url(url: str) -> str:
@@ -131,10 +132,8 @@ class ScheduledMessageValidationMixin:
 
     @classmethod
     def validate_repeat_interval(cls, repeat_interval_min: int) -> None:
-        if repeat_interval_min not in cls._VALID_REPEAT_INTERVALS:
-            raise ValidationError(
-                f"无效的重复间隔，必须是以下值之一: {cls._VALID_REPEAT_INTERVALS}"
-            )
+        if type(repeat_interval_min) is not int or not 1 <= repeat_interval_min <= MAX_REPEAT_MINUTES:
+            raise ValidationError("重复间隔须为 1—525600 的整数分钟数")
 
     @staticmethod
     def validate_day_period(day_start_hour: int, day_end_hour: int) -> None:

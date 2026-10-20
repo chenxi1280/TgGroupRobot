@@ -122,12 +122,11 @@ def test_lottery_mode_keyboard_exposes_threshold_and_ranking_modes():
         for button in row
     }
     assert rows == [
-        ["👥 邀请抽奖 | 达标随机"],
-        ["👥 邀请抽奖 | 排名入围随机"],
+        ["达标随机", "排名入围"],
         ["🔙 返回"],
     ]
-    assert callbacks["👥 邀请抽奖 | 达标随机"] == "lot:draw_cond:-1001:i:t"
-    assert callbacks["👥 邀请抽奖 | 排名入围随机"] == "lot:draw_cond:-1001:i:r"
+    assert callbacks["达标随机"] == "lot:draw_cond:-1001:i:t"
+    assert callbacks["排名入围"] == "lot:draw_cond:-1001:i:r"
 
 
 def test_lottery_draw_condition_keyboard_exposes_full_and_time_triggers():

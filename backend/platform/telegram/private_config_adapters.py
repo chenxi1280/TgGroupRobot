@@ -191,7 +191,6 @@ async def scheduled_message_text_input(
     *, state: Any,
     message_text: str,
 ) -> None:
-    del session
     if update.effective_user is None:
         return
 
@@ -206,6 +205,7 @@ async def scheduled_message_text_input(
         target_chat_id,
         user_id=update.effective_user.id,
         text=message_text,
+        session=session,
     )
 
 
@@ -216,7 +216,7 @@ async def scheduled_message_media_input(
     *, state: Any,
     message_text: str,
 ) -> None:
-    del session, message_text
+    del message_text
     if update.effective_user is None:
         return
 
@@ -230,7 +230,13 @@ async def scheduled_message_media_input(
         context,
         target_chat_id,
         user_id=update.effective_user.id,
+        session=session,
     )
+
+
+async def ads_text_input(update, context, session, *, state, message_text):
+    handler = _resolve_attr("backend.features.automation.ads_handler", "ads_create_config_message")
+    await handler(update, context, session=session)
 
 
 async def nearby_text_input(

@@ -8,7 +8,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from backend.features.automation.services.scheduled_message_service import ScheduledMessageService
 from backend.platform.db.schema.models.automation import AdCampaign, AdRotationRule
 from backend.shared.services.base import ValidationError
-from backend.shared.time_helper import LOCAL_TIMEZONE, parse_date_time_string
+from backend.shared.time_helper import LOCAL_TIMEZONE, parse_date_time_string, format_duration_minutes
 from backend.shared.ui.button_input import parse_button_rows
 
 SECONDS_PER_MINUTE = 60
@@ -62,15 +62,7 @@ def parse_interval_minutes_text(value: str) -> int:
 def format_interval_seconds_label(interval_seconds: int | None) -> str:
     seconds = max(int(interval_seconds or DEFAULT_ROTATION_INTERVAL_SECONDS), MIN_ROTATION_INTERVAL_SECONDS)
     minutes = seconds // SECONDS_PER_MINUTE
-    if minutes < MINUTES_PER_HOUR:
-        return f"{minutes}分钟"
-    if minutes == MINUTES_PER_HOUR:
-        return "1小时"
-    if minutes < MINUTES_PER_DAY:
-        return f"{minutes // MINUTES_PER_HOUR}小时"
-    if minutes == MINUTES_PER_DAY:
-        return "1天"
-    return f"{minutes // MINUTES_PER_DAY}天"
+    return format_duration_minutes(minutes)
 
 
 def parse_interval_hours_text(value: str) -> int:

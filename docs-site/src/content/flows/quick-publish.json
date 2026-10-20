@@ -140,7 +140,9 @@
             "action": "input",
             "target": "media_input",
             "feedback": "请发送媒体。"
-          },
+          }
+        ],
+        [
           {
             "label": "设置按钮",
             "callbackData": "qpub:input:{chat_id}:buttons",
@@ -153,25 +155,27 @@
           {
             "label": "清空草稿",
             "callbackData": "qpub:clear:{chat_id}",
-            "action": "confirm",
-            "target": "result",
-            "feedback": "草稿已清空。"
-          },
-          {
-            "label": "发送",
-            "callbackData": "qpub:send:{chat_id}",
-            "action": "confirm",
-            "target": "result",
-            "feedback": "已发送。"
+            "action": "goto",
+            "target": "clear_confirm",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
           }
         ],
         [
           {
-            "label": "返回消息运营",
+            "label": "立即发送",
+            "callbackData": "qpub:send:{chat_id}",
+            "action": "goto",
+            "target": "send_confirm",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          }
+        ],
+        [
+          {
+            "label": "返回",
             "callbackData": "adm:menu:category_messages:{chat_id}",
             "action": "back",
             "target": "entry",
-            "feedback": "已回到消息运营分类。"
+            "feedback": "打开对应页面；本示意不执行真实操作。"
           }
         ]
       ],
@@ -304,6 +308,56 @@
       ],
       "stateLines": [
         "审计：回调来自后端真实路由"
+      ]
+    },
+    {
+      "id": "clear_confirm",
+      "title": "确认清空草稿",
+      "message": [
+        "核对目标群与草稿；仅确认后执行。令牌过期或草稿变化时拒绝。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "取消",
+            "callbackData": "qpub:home:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          },
+          {
+            "label": "确认执行",
+            "callbackData": "qpub:clear:{chat_id}:ok:{token}",
+            "action": "confirm",
+            "target": "result",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "send_confirm",
+      "title": "确认立即发送",
+      "message": [
+        "核对目标群与草稿；仅确认后执行。令牌过期或草稿变化时拒绝。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "取消",
+            "callbackData": "qpub:home:{chat_id}",
+            "action": "back",
+            "target": "home",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          },
+          {
+            "label": "确认执行",
+            "callbackData": "qpub:send:{chat_id}:ok:{token}",
+            "action": "confirm",
+            "target": "result",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          }
+        ]
       ]
     }
   ]

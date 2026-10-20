@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from backend.shared.callback_parser import CallbackData
+from backend.features.admin.activity.bottom_button_confirmation import confirm_bottom_removal
 
 from dataclasses import dataclass
 from typing import Callable
@@ -130,6 +131,8 @@ class BottomButtonActionMixin:
             ):
                 return
         elif sub == "clear":
+            if not await confirm_bottom_removal(update, context, session, chat_id=chat_id):
+                return
             await self._bottom_button_dependencies().clear_layouts(session, chat_id)
         else:
             return
@@ -331,6 +334,8 @@ class BottomButtonActionMixin:
             )
             show_detail = True
         elif sub == "delete":
+            if not await confirm_bottom_removal(update, context, session, chat_id=chat_id, layout_id=layout_id):
+                return
             await self._bottom_button_dependencies().delete_layout(
                 session, chat_id, layout_id
             )

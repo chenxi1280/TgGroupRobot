@@ -294,6 +294,9 @@ async def _publish_legacy_config(
 
 
 async def parse_lottery_config_message(update: Update, context: ContextTypes.DEFAULT_TYPE, session, *, state: object, text: str) -> None:
+    from backend.features.activity.date_picker import block_text
+    if await block_text(update, state):
+        return
     state_step = (getattr(state, "state_data", None) or {}).get("step")
     if state_step in LOTTERY_CREATE_STEPS:
         await _handle_lottery_wizard_message(update, context, session, state=state, text=text)

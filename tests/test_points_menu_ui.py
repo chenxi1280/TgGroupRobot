@@ -69,16 +69,18 @@ def test_points_home_keyboard_matches_doc_style_layout():
 
     assert rows == [
         ["状态：", "✅ 启动", "关闭"],
-        ["展示规则：", "✅ 开启", "关闭"],
-        ["发言总排行", "✅ 开启", "关闭"],
-        ["个人发言量", "✅ 开启", "关闭"],
-        ["⚙️ 签到规则", "⚙️ 发言规则", "⚙️ 邀请规则"],
-        ["⚙️ 转让积分", "⚙️ 积分别名", "⚙️ 排行别名"],
-        ["➕ 增加积分", "➖ 扣除积分"],
-        ["🎁 积分抽奖", "📝 额外规则"],
-        ["🧾 导出操作日志", "🗑 清空积分"],
+        ["签到规则", "发言规则"],
+        ["邀请规则", "展示与排行"],
+        ["积分管理", "积分抽奖"],
         ["🔙 返回"],
     ]
+    display = points_config_keyboard(_build_settings(), -1001, section="display").inline_keyboard
+    assert [len(row) for row in display] == [3, 3, 3, 1]
+    manage = points_config_keyboard(_build_settings(), -1001, section="manage").inline_keyboard
+    assert len(manage) <= 8
+    assert [button.text for button in manage[-2]] == ["清空积分"]
+    assert manage[-1][0].callback_data == "pts:home:-1001:main"
+
 
 
 def test_points_rule_keyboards_keep_existing_real_actions():

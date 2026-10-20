@@ -64,13 +64,12 @@ def lottery_type_keyboard(chat_id: int | None = None) -> InlineKeyboardMarkup:
 
 
 def lottery_mode_keyboard(chat_id: int, lottery_type: str) -> InlineKeyboardMarkup:
-    type_label = "👥 邀请抽奖" if lottery_type == "invite" else "🔥 群活跃抽奖"
     type_code = encode_lottery_type(lottery_type)
     threshold_mode = encode_selection_mode("threshold_random")
     ranking_mode = encode_selection_mode("ranking_random")
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton(f"{type_label} | 达标随机", callback_data=f"lot:draw_cond:{chat_id}:{type_code}:{threshold_mode}")],
-        [InlineKeyboardButton(f"{type_label} | 排名入围随机", callback_data=f"lot:draw_cond:{chat_id}:{type_code}:{ranking_mode}")],
+        [InlineKeyboardButton("达标随机", callback_data=f"lot:draw_cond:{chat_id}:{type_code}:{threshold_mode}"),
+         InlineKeyboardButton("排名入围", callback_data=f"lot:draw_cond:{chat_id}:{type_code}:{ranking_mode}")],
         [InlineKeyboardButton("🔙 返回", callback_data=f"lot:create_menu:{chat_id}")],
     ])
 

@@ -82,6 +82,8 @@ def build_bottom_detail(
             InlineKeyboardButton(
                 "❌ 删除按钮", callback_data=f"btm:button:{chat_id}:delete:{layout.id}"
             ),
+        ],
+        [
             InlineKeyboardButton("🔙 返回", callback_data=f"btm:layout:{chat_id}:edit"),
         ],
     ]

@@ -43,26 +43,9 @@ def _auto_reply_rule_row(rule, chat_id: int | None) -> list[InlineKeyboardButton
         if chat_id is not None
         else f"auto_reply:detail::{rule.id}"
     )
-    next_active = "0" if rule.is_active else "1"
-    status_callback = (
-        f"auto_reply:set:{chat_id}:{rule.id}:active:{next_active}"
-        if chat_id is not None
-        else f"auto_reply:toggle::{rule.id}"
-    )
-    delete_callback = (
-        f"auto_reply:delete:{chat_id}:{rule.id}:confirm"
-        if chat_id is not None
-        else f"auto_reply:delete::{rule.id}:confirm"
-    )
-    return [
-        InlineKeyboardButton(f"顺序 {rule.sort_order}", callback_data=detail_callback),
-        InlineKeyboardButton(
-            "✅ 启用" if rule.is_active else "❌ 关闭",
-            callback_data=status_callback,
-        ),
-        InlineKeyboardButton("修改 🔧", callback_data=detail_callback),
-        InlineKeyboardButton("删除 🗑️", callback_data=delete_callback),
-    ]
+    title = str("、".join(getattr(rule, "keywords", []) or []) or f"顺序 {rule.sort_order}")[:24]
+    status = "✓" if rule.is_active else "停用"
+    return [InlineKeyboardButton(f"{status} #{rule.id} {title}", callback_data=detail_callback)]
 
 
 def _auto_reply_list_callback(chat_id: int | None, page: int) -> str:
@@ -186,6 +169,8 @@ def auto_reply_detail_keyboard(rule, chat_id: int) -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton("❌ 删除配置", callback_data=f"auto_reply:delete:{chat_id}:{rule.id}:confirm"),
+        ],
+        [
             InlineKeyboardButton("🔙 返回", callback_data=f"auto_reply:list:{chat_id}"),
         ],
     ])

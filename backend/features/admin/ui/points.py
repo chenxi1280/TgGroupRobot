@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from backend.shared.ui.admin_keyboard import admin_keyboard
+from backend.shared.ui.menu_layout import action_rows
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -50,7 +51,7 @@ def format_points_home_text(settings, *, changed: bool = False, chat_title: str 
     return "\n".join(lines)
 
 
-def points_config_keyboard(settings, chat_id: int) -> InlineKeyboardMarkup:
+def points_config_keyboard(settings, chat_id: int, *, section: str = "main") -> InlineKeyboardMarkup:
     """主积分首页键盘"""
     all_enabled = bool(settings.sign_enabled or settings.message_points_enabled or settings.invite_points_enabled)
     state_on, state_off = _toggle_labels(all_enabled)
@@ -58,13 +59,28 @@ def points_config_keyboard(settings, chat_id: int) -> InlineKeyboardMarkup:
     speech_rank_on, speech_rank_off = _toggle_labels(getattr(settings, "points_speech_rank_enabled", True), "开启")
     personal_speech_on, personal_speech_off = _toggle_labels(getattr(settings, "points_personal_speech_enabled", True), "开启")
 
-    return admin_keyboard(_points_config_rows(
+    rows = _points_config_rows(
         chat_id,
         state_labels=(state_on, state_off),
         display_labels=(display_on, display_off),
         speech_rank_labels=(speech_rank_on, speech_rank_off),
         personal_speech_labels=(personal_speech_on, personal_speech_off),
-    ))
+    )
+    back = [InlineKeyboardButton("🔙 返回主积分", callback_data=f"pts:home:{chat_id}:main")]
+    if section == "display":
+        return InlineKeyboardMarkup(rows[1:4] + [back])
+    if section == "manage":
+        return InlineKeyboardMarkup(_points_admin_rows(chat_id)[:-1] + [back])
+    return InlineKeyboardMarkup([rows[0], *action_rows([
+        InlineKeyboardButton(label, callback_data=callback) for label, callback in [
+            ("签到规则", f"pts:rule:checkin:{chat_id}"),
+            ("发言规则", f"pts:rule:speech:{chat_id}"),
+            ("邀请规则", f"pts:rule:invite:{chat_id}"),
+            ("展示与排行", f"pts:home:{chat_id}:display"),
+            ("积分管理", f"pts:home:{chat_id}:manage"),
+            ("积分抽奖", f"adm:menu:lottery:{chat_id}"),
+        ]
+    ]), [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_growth:{chat_id}")]])
 
 
 def _points_config_rows(
@@ -105,31 +121,17 @@ def _points_config_rows(
 
 
 def _points_admin_rows(chat_id: int) -> list[list[InlineKeyboardButton]]:
-    return [
-        [
-            InlineKeyboardButton("⚙️ 签到规则", callback_data=f"pts:rule:checkin:{chat_id}"),
-            InlineKeyboardButton("⚙️ 发言规则", callback_data=f"pts:rule:speech:{chat_id}"),
-            InlineKeyboardButton("⚙️ 邀请规则", callback_data=f"pts:rule:invite:{chat_id}"),
-        ],
-        [
-            InlineKeyboardButton("⚙️ 转让积分", callback_data=f"pts:edit:transfer:{chat_id}"),
-            InlineKeyboardButton("⚙️ 积分别名", callback_data=f"pts:edit:points_alias:{chat_id}"),
-            InlineKeyboardButton("⚙️ 排行别名", callback_data=f"pts:edit:points_rank_alias:{chat_id}"),
-        ],
-        [
-            InlineKeyboardButton("➕ 增加积分", callback_data=f"pts:edit:admin_add:{chat_id}"),
-            InlineKeyboardButton("➖ 扣除积分", callback_data=f"pts:edit:admin_deduct:{chat_id}"),
-        ],
-        [
-            InlineKeyboardButton("🎁 积分抽奖", callback_data=f"adm:menu:lottery:{chat_id}"),
-            InlineKeyboardButton("📝 额外规则", callback_data=f"pts:view:extra_rules:{chat_id}"),
-        ],
-        [
-            InlineKeyboardButton("🧾 导出操作日志", callback_data=f"pts:view:export_logs:{chat_id}"),
-            InlineKeyboardButton("🗑 清空积分", callback_data=f"pts:edit:clear_points:{chat_id}"),
-        ],
-        [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_growth:{chat_id}")],
+    ordinary = [
+        ("转让积分", f"pts:edit:transfer:{chat_id}"),
+        ("积分查询词", f"pts:edit:points_alias:{chat_id}"), ("排行查询词", f"pts:edit:points_rank_alias:{chat_id}"),
+        ("增加积分", f"pts:edit:admin_add:{chat_id}"), ("扣除积分", f"pts:edit:admin_deduct:{chat_id}"),
+        ("额外规则", f"pts:view:extra_rules:{chat_id}"),
+        ("导出操作日志", f"pts:view:export_logs:{chat_id}"),
     ]
+    rows = action_rows([InlineKeyboardButton(label, callback_data=callback) for label, callback in ordinary])
+    rows.append([InlineKeyboardButton("清空积分", callback_data=f"pts:edit:clear_points:{chat_id}")])
+    rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_growth:{chat_id}")])
+    return rows
 
 
 def points_rule_keyboard(rule_type: str, settings, chat_id: int) -> InlineKeyboardMarkup:

@@ -23,6 +23,7 @@ class PointsMallProductPagesMixin:
             [
                 "🛍️ 管理商品 | 编辑商品",
                 "",
+                f"群：{chat_id} · 商品 #{product.product_id}",
                 f"🎁 商品名称： {product.name}",
                 f"🖼️ 封面设置： {'未设置' if not product.cover_file_id else '已设置'}",
                 f"🪙 兑换价格： {product.price_points}",

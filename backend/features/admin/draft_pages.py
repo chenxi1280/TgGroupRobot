@@ -100,8 +100,13 @@ async def _resume_draft(session, draft, *, user_id, chat_id, back):
     if draft.state_chat_id != user_id:
         await ConversationStateService.start(session, user_id, user_id,
             state_type=SELECTED_CHAT_STATE, state_data={"managed_chat_id": chat_id})
+    data = dict(draft.state_data)
+    from backend.features.activity.date_picker import STATES, clean
+    from backend.shared.ui.datetime_picker import SUPPORTED_STATES
+    if draft.state_type in STATES | SUPPORTED_STATES:
+        data = clean(data)  # Transient calendar tokens must not survive draft restoration.
     await ConversationStateService.start(session, draft.state_chat_id, user_id,
-        state_type=draft.state_type, state_data=dict(draft.state_data))
+        state_type=draft.state_type, state_data=data)
     await session.delete(draft)
     text, rows = f"已继续编辑群 {chat_id} 的草稿。请发送下一项内容；/cancel 可退出并保留草稿。", [back]
     return text, rows

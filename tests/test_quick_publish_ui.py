@@ -67,4 +67,5 @@ async def test_quick_publish_menu_uses_shared_message_panel(monkeypatch):
     assert "⭕ 设置按钮: 已设置 1 个" in rendered["text"]
     assert "🚀 可发送: 已就绪" in rendered["text"]
     assert rows[0] == ["✅ 设置文本", "✅ 设置媒体"]
-    assert rows[1] == ["✅ 设置按钮", "🧹 清空草稿"]
+    assert rows[1] == ["✅ 设置按钮"]
+    assert rows[2] == ["🧹 清空草稿"]

@@ -138,7 +138,8 @@ def test_button_layout_editor_detail_move_callbacks_work_for_non_auto_reply() ->
     assert keyboard.inline_keyboard[1][0].callback_data.endswith(":up")
     assert keyboard.inline_keyboard[2][0].callback_data.endswith(":left")
     assert keyboard.inline_keyboard[2][1].callback_data.endswith(":right")
-    assert keyboard.inline_keyboard[3][0].callback_data.endswith(":down")
+    assert keyboard.inline_keyboard[1][1].callback_data.endswith(":down")
+    assert len(keyboard.inline_keyboard[3]) == 1
 
 
 def test_button_layout_editor_move_supports_horizontal_and_vertical() -> None:
@@ -178,7 +179,8 @@ def test_build_layout_keyboard_shows_add_and_existing_buttons() -> None:
     assert first_row[1].text == "➕ 按钮"
     assert first_row[1].callback_data == "btned:add:ads:-1001:9:0:1"
     assert keyboard.inline_keyboard[-3][0].text == "♻️ 清空按钮"
-    assert keyboard.inline_keyboard[-3][1].text == "🔙 返回"
+    assert len(keyboard.inline_keyboard[-3]) == 1
+    assert keyboard.inline_keyboard[-1][0].text == "🔙 返回"
 
 
 def test_build_layout_keyboard_uses_four_columns_and_clickable_holes() -> None:
@@ -206,6 +208,9 @@ def test_button_layout_editor_clear_buttons_exports_empty() -> None:
 
 @pytest.mark.asyncio
 async def test_button_layout_editor_clear_callback_updates_only_draft(monkeypatch) -> None:
+    from unittest.mock import AsyncMock
+    clear_input = AsyncMock()
+    monkeypatch.setattr(button_layout_editor.ConversationStateService, "clear", clear_input)
     saved: list[list[dict[str, str]]] | None = None
     shown: list[ButtonEditorContext] = []
 
@@ -232,12 +237,14 @@ async def test_button_layout_editor_clear_callback_updates_only_draft(monkeypatc
         },
     )
     update = SimpleNamespace(
-        callback_query=_CallbackQuery("btned:clear:auto_reply:-1001:10"),
+        callback_query=_CallbackQuery("btned:clear_confirm:auto_reply:-1001:10"),
         effective_user=SimpleNamespace(id=42),
+        effective_chat=SimpleNamespace(id=42),
     )
 
     await button_layout_editor_callback(update, context)
 
+    clear_input.assert_awaited_once()
     assert saved is None
     assert context.user_data["button_editor_drafts"]["auto_reply:-1001:10"] == [[]]
     assert shown and shown[0].module_type == "auto_reply"

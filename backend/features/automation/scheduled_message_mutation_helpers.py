@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import secrets
 from typing import Any
 
 import structlog
@@ -24,7 +25,7 @@ from backend.platform.state.conversation_state_service import ConversationStateS
 from backend.platform.telegram.errors import answer_callback_query_safely
 from backend.shared.services.base import ValidationError
 from backend.shared.services.module_settings_service import ModuleSettingsService
-from backend.shared.time_ui import build_back_keyboard, build_datetime_prompt_text, next_top_of_hour
+from backend.shared.time_ui import build_copy_time_keyboard, build_datetime_prompt_text, next_top_of_hour
 from backend.shared.time_helper import format_timestamp
 
 log = structlog.get_logger(__name__)
@@ -132,6 +133,8 @@ def _request_user_id(request: SetFieldRequest) -> int:
 async def _set_day_start(request: SetFieldRequest) -> bool:
     state_chat_id = resolve_state_chat_id(request.update, request.target_chat_id)
     start_hour = int(request.value)
+    ScheduledMessageService.validate_day_period(start_hour, start_hour)
+    picker_token = secrets.token_hex(4)
     await ConversationStateService.start(
         request.session,
         state_chat_id,
@@ -140,17 +143,19 @@ async def _set_day_start(request: SetFieldRequest) -> bool:
         state_data={
             "task_id": request.task_id,
             "start_hour": start_hour,
+            "picker_token": picker_token,
             "target_chat_id": request.target_chat_id,
         },
     )
     await request.session.commit()
     await request.owner.message_helper.safe_edit(
         request.update,
-        text="请选择时段结束时间",
+        text="选择结束小时（北京时间 UTC+8，含该小时全部分钟）。早于开始小时表示跨天；返回不保存。",
         reply_markup=sm_day_period_end_keyboard(
             request.target_chat_id,
             request.task_id,
             start_hour,
+            token=picker_token,
         ),
     )
     return False
@@ -160,8 +165,14 @@ async def _set_day_end(request: SetFieldRequest) -> bool:
     state_chat_id = resolve_state_chat_id(request.update, request.target_chat_id)
     user_id = _request_user_id(request)
     state = await ConversationStateService.get(request.session, state_chat_id, user_id)
-    if not state or "start_hour" not in state.state_data:
-        raise ValidationError("状态错误，请重新开始")
+    data = state.state_data if state else {}
+    if (not state or state.state_type != ConversationStateType.sm_edit_day_start.value
+            or "start_hour" not in data or data.get("target_chat_id") != request.target_chat_id
+            or str(data.get("task_id")) != request.task_id):
+        raise ValidationError("此时段选择已过期或属于其他任务，请重新选择开始时间")
+    token = data.get("picker_token")
+    if token and not request.update.callback_query.data.endswith(f":{token}"):
+        raise ValidationError("此时间选择器已过期，请使用最新的选择器")
     await ScheduledMessageService.update_task_day_period(
         request.session,
         request.task_id,
@@ -224,6 +235,11 @@ class EditFieldSpec:
 
 def _static_edit_spec(field: str, target_chat_id: int, task_id: str) -> EditFieldSpec | None:
     definitions = {
+        "repeat_custom": (
+            "sm_edit_repeat",
+            "输入重复间隔的整数分钟数（1—525600），例如 90；发送后保存，返回取消。",
+            sm_edit_text_keyboard,
+        ),
         "title": (
             ConversationStateType.sm_edit_title.value,
             "📮 编辑标题备注\n\n请输入新的标题备注，或输入 /clear 清空标题备注",
@@ -246,7 +262,7 @@ def _static_edit_spec(field: str, target_chat_id: int, task_id: str) -> EditFiel
         ),
         "day_period": (
             ConversationStateType.sm_edit_day_start.value,
-            "🕐 选择时段开始时间",
+            "🕐 选择开始小时（北京时间 UTC+8）。选择结束小时后才保存；返回不保存。",
             sm_day_period_start_keyboard,
         ),
     }
@@ -257,7 +273,7 @@ def _static_edit_spec(field: str, target_chat_id: int, task_id: str) -> EditFiel
     return EditFieldSpec(state_type, text, keyboard_builder(target_chat_id, task_id))
 
 
-def _datetime_edit_spec(field: str, target_chat_id: int, task_id: str) -> EditFieldSpec | None:
+def _datetime_edit_spec(field: str, target_chat_id: int, task_id: str, *, current_timestamp: int | None = None) -> EditFieldSpec | None:
     definitions = {
         "start_at": (
             ConversationStateType.sm_edit_start_at.value,
@@ -284,11 +300,15 @@ def _datetime_edit_spec(field: str, target_chat_id: int, task_id: str) -> EditFi
         title=title,
         sample_time_text=format_timestamp(sample_unix),
         sample_time_unix=sample_unix,
-        show_copy_hint=False,
+        show_copy_hint=True,
         input_hint=input_hint,
         extra_tips=[clear_tip],
     )
-    keyboard = build_back_keyboard(f"sm:edit:{target_chat_id}:{task_id}:time_range")
+    current = format_timestamp(current_timestamp) if current_timestamp is not None else None
+    if current:
+        text += f"\n当前值：<code>{current}</code>"
+    keyboard = build_copy_time_keyboard(f"sm:edit:{target_chat_id}:{task_id}:time_range",
+        format_timestamp(sample_unix), current_value=current)
     return EditFieldSpec(state_type, text, keyboard, "HTML")
 
 
@@ -310,7 +330,7 @@ async def _show_repeat_editor(
     task_id: str,
 ) -> None:
     keyboard = sm_repeat_keyboard(target_chat_id, task_id, task.repeat_interval_min)
-    await owner.message_helper.safe_edit(update, text="请选择轮播间隔", reply_markup=keyboard)
+    await owner.message_helper.safe_edit(update, text="选择定时消息重复间隔；选择后立即保存，或输入自定义分钟数。", reply_markup=keyboard)
 
 
 async def _show_time_range_editor(
@@ -324,7 +344,7 @@ async def _show_time_range_editor(
     start_text = format_timestamp(task.start_at) if task.start_at else "【等待设置】"
     end_text = format_timestamp(task.end_at) if task.end_at else "【等待设置】"
     text = (
-        "⏰ 定时消息 | 时间范围\n\n"
+        "⏰ 定时消息 | 时间范围（北京时间 UTC+8）\n\n"
         f"开始时间：{start_text}\n"
         f"结束时间：{end_text}\n\n"
         "未设置开始时间时，从启用后的下一个调度点开始。"
@@ -400,17 +420,29 @@ async def _prepare_edit_field(request: EditFieldRequest) -> EditFieldSpec | None
         )
         return None
     spec = _edit_field_spec(request.field, request.target_chat_id, request.task_id)
+    if request.field in {"start_at", "end_at"}:
+        spec = _datetime_edit_spec(request.field, request.target_chat_id, request.task_id,
+            current_timestamp=getattr(request.task, request.field))
+    if request.field == "day_period":
+        spec = EditFieldSpec(spec.state_type, spec.text, sm_day_period_start_keyboard(
+            request.target_chat_id, request.task_id, request.task.day_start_hour))
     state_chat_id = resolve_state_chat_id(request.update, request.target_chat_id)
     user_id = request.update.effective_user.id if request.update.effective_user else 0
+    data = {"task_id": request.task_id, "target_chat_id": request.target_chat_id}
+    if request.field in {"start_at", "end_at"}:
+        from backend.shared.ui.datetime_picker import KEY, new_picker, entry_button
+        sample = format_timestamp(getattr(request.task, request.field) or int(next_top_of_hour().timestamp()))
+        picker = new_picker(f"sm:edit:{request.target_chat_id}:{request.task_id}:time_range", sample)
+        data[KEY] = picker
+        rows = list(spec.keyboard.inline_keyboard)
+        rows.insert(-1, [entry_button(picker)])
+        spec = EditFieldSpec(spec.state_type, spec.text, InlineKeyboardMarkup(rows), spec.parse_mode)
     await ConversationStateService.start(
         request.session,
         state_chat_id,
         user_id,
         state_type=spec.state_type,
-        state_data={
-            "task_id": request.task_id,
-            "target_chat_id": request.target_chat_id,
-        },
+        state_data=data,
     )
     return spec
 

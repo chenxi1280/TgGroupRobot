@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import datetime as dt
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
@@ -32,10 +31,19 @@ async def solitaire_create_start_callback(update: Update, context: ContextTypes.
     chat = update.effective_chat
     user = update.effective_user
     db: Database = context.application.bot_data["db"]
+    from backend.features.activity.date_picker import attach
+    data = attach({"target_chat_id": target_chat_id}, back=f"adm:menu:solitaire:{target_chat_id}")
     async with db.session_factory() as session:
-        await set_user_state(session, chat.id, user.id, state_type="solitaire_create", state_data={"target_chat_id": target_chat_id})
+        await set_user_state(session, chat.id, user.id, state_type="solitaire_create", state_data=data)
         await session.commit()
 
+    await show_solitaire_config_prompt(update, data)
+    return WAIT_CONFIG
+
+
+async def show_solitaire_config_prompt(update, data):
+    from backend.features.activity.date_picker import with_calendar
+    target_chat_id = data["target_chat_id"]
     deadline_example = next_top_of_hour(days_offset=1).astimezone(LOCAL_TIMEZONE)
     deadline_text = deadline_example.strftime('%Y-%m-%d %H:%M')
     text = (
@@ -64,5 +72,6 @@ async def solitaire_create_start_callback(update: Update, context: ContextTypes.
             [InlineKeyboardButton("❌ 取消配置", callback_data=f"solitaire:cancel:{target_chat_id}")],
         ]
     )
-    await q.edit_message_text(text, parse_mode="Markdown", reply_markup=keyboard)
-    return WAIT_CONFIG
+    if data.get("calendar_deadline"):
+        text += f"\n日历暂存截止时间：{data['calendar_deadline']}\n配置省略截止时间行时使用该值；填写该行则以配置为准，留空该行可清除。"
+    await update.callback_query.edit_message_text(text, parse_mode="Markdown", reply_markup=with_calendar(keyboard, data))

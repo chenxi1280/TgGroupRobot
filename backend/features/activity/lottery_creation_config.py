@@ -49,6 +49,9 @@ def _state_data(state: object) -> dict:
 
 
 def _save_state_data(state: object, data: dict) -> None:
+    from backend.features.activity.date_picker import clean
+    if data.get("step") != "draw_param" or data.get("draw_trigger") == "full_participants":
+        data = clean(data)
     state.state_data = {
         **data,
         "updated_at": dt.datetime.now(dt.timezone.utc).isoformat(),

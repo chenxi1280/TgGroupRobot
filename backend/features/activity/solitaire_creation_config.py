@@ -38,8 +38,11 @@ async def _load_solitaire_target(update, session, chat_id: int, *, user_id: int)
     return None
 
 
-async def _validate_solitaire_creation_input(message) -> dict[str, object] | None:
+async def _validate_solitaire_creation_input(message, *, calendar_deadline=None) -> dict[str, object] | None:
     parsed = _parse_solitaire_config(message.text)
+    explicit = any(line.strip().startswith(("截止时间:", "截止时间：")) for line in message.text.splitlines()[1:])
+    if not explicit and calendar_deadline:
+        parsed["deadline"] = _parse_deadline_config(f"截止时间: {calendar_deadline}")
     if not parsed["title"]:
         await message.reply_text("❌ 标题不能为空\n\n请重新输入配置")
         return None
@@ -82,12 +85,16 @@ async def solitaire_create_config_message(update: Update, context: ContextTypes.
     chat = update.effective_chat
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
+        state, blocked = await _active_input(session, update)
+        if state is None:
+            return await _leave_inactive_input(update, context, blocked=blocked)
+        calendar_deadline = (state.state_data or {}).get("calendar_deadline")
         target_chat_id = await _load_solitaire_target(update, session, chat.id, user_id=user.id)
     if target_chat_id is None:
         return ConversationHandler.END
 
     try:
-        parsed = await _validate_solitaire_creation_input(update.effective_message)
+        parsed = await _validate_solitaire_creation_input(update.effective_message, calendar_deadline=calendar_deadline)
         if parsed is None:
             return WAIT_CONFIG
         completed = await _create_configured_solitaire(
@@ -111,13 +118,13 @@ def _parse_int_config(line: str, label: str, *, minimum: int) -> int | None:
 
 
 def _parse_deadline_config(line: str) -> dt.datetime | None:
-    try:
-        value = _parse_config_value(line, "截止时间")
-        if not value:
-            return None
-        local_time = dt.datetime.strptime(value, "%Y-%m-%d %H:%M")
-    except ValueError:
+    value = _parse_config_value(line, "截止时间")
+    if not value:
         return None
+    try:
+        local_time = dt.datetime.strptime(value, "%Y-%m-%d %H:%M")
+    except ValueError as exc:
+        raise ValueError("截止时间格式错误，请使用 YYYY-MM-DD HH:MM，或留空该行") from exc
     local_tz = dt.timezone(dt.timedelta(hours=8))
     return local_time.replace(tzinfo=local_tz).astimezone(dt.timezone.utc)
 
@@ -194,3 +201,21 @@ async def _publish_created_solitaire(
     await clear_user_state(session, state_chat_id, user_id)
     await session.commit()
     return True
+
+
+async def _active_input(session, update):
+    from backend.features.activity.date_picker import block_text
+    state = await get_user_state(session, update.effective_chat.id, update.effective_user.id)
+    if state is None or state.state_type != "solitaire_create":
+        return None, False
+    if await block_text(update, state):
+        return None, True
+    return state, False
+
+
+async def _leave_inactive_input(update, context, *, blocked):
+    if blocked:
+        return WAIT_CONFIG
+    from backend.app.update_pipeline import MessageDispatcher
+    await MessageDispatcher().dispatch(update, context)
+    return ConversationHandler.END

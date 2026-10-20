@@ -30,8 +30,8 @@ class SettingsTransferAdminMixin:
         lines = [
             "📥 导入设置",
             "",
-            f"目标群组：{chat_title}",
-            f"来源群组：{source_title}",
+            f"目标群组：{chat_title}（{chat_id}）",
+            f"来源群组：{source_title}（{source_chat_id or '未选择'}）",
             "",
             "已选模块：",
         ]
@@ -190,8 +190,8 @@ class SettingsTransferAdminMixin:
         lines = [
             "📋 克隆设置",
             "",
-            f"来源群组：{source_title}",
-            f"目标群组：{target_title}",
+            f"来源群组：{source_title}（{chat_id}）",
+            f"目标群组：{target_title}（{target_chat_id or '未选择'}）",
             "",
             "已选模块：",
         ]

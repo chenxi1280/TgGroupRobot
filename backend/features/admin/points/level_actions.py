@@ -40,16 +40,21 @@ class PointsLevelActionsMixin:
             await answer_callback_query_safely(update, "未识别的等级字段", show_alert=True)
             return
         async with db.session_factory() as session:
+            level = await PointsExtendedService.get_level(session, chat_id, level_id)
+            if level is None:
+                await answer_callback_query_safely(update, "等级不存在，请返回列表", show_alert=True)
+                return
+            current = str(level.level_name if field == "name" else level.point_threshold)
             await set_user_state(
                 session, chat_id=update.effective_user.id, user_id=update.effective_user.id,
                 state_type=config[0],
                 state_data={"target_chat_id": chat_id, "level_id": level_id},
             )
             await session.commit()
-        keyboard = InlineKeyboardMarkup(
-            [[InlineKeyboardButton("🔙 返回", callback_data=f"adm:lvl:{chat_id}:detail:{level_id}")]]
-        )
-        await self.message_helper.safe_edit(update, text=config[1], reply_markup=keyboard)
+        from backend.shared.ui.copy import copy_value_rows
+        keyboard = InlineKeyboardMarkup(copy_value_rows([("复制当前值", current)]) +
+            [[InlineKeyboardButton("取消并返回", callback_data=f"adm:lvl:{chat_id}:detail:{level_id}")]])
+        await self.message_helper.safe_edit(update, text=f"群：{chat_id} · 等级 #{level_id}\n当前值：{current}\n\n{config[1]}", reply_markup=keyboard)
 
     async def _toggle_points_level_permission(
         self, update, context, *, db, chat_id: int, callback_data
@@ -102,11 +107,12 @@ class PointsLevelActionsMixin:
                 update, context, db=db, chat_id=chat_id, callback_data=callback_data
             )
             return
-        if op == "add":
-            async with db.session_factory() as session:
-                await PointsExtendedService.create_level(session, chat_id)
-                await session.commit()
-            await self._show_points_level_menu(update, context, chat_id)
+        navigation = {
+            "add": lambda: self._show_points_level_add_entry(update, context, chat_id),
+            "page": lambda: self._show_points_level_menu(update, context, chat_id, page=callback_data.get_int_optional(4) or 0),
+        }
+        if op in navigation:
+            await navigation[op]()
             return
         if op == "detail":
             await self._show_points_level_detail(update, context, chat_id, level_id=callback_data.get_int(4))

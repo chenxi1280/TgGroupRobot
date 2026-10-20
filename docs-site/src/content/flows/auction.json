@@ -187,7 +187,21 @@
       ],
       "stateLines": [
         "当前群组：演示群"
-      ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "群内创建拍卖流程示意",
+        "placeholder": "拍卖",
+        "examples": [
+          {
+            "label": "查看日期步骤",
+            "value": "拍卖",
+            "target": "auction_date_input",
+            "feedback": "实际先填写物品、标题和起拍价，此处直接展示后续日期步骤。"
+          }
+        ],
+        "errors": []
+      }
     },
     {
       "id": "list",
@@ -254,6 +268,184 @@
       ],
       "stateLines": [
         "审计：回调来自后端真实路由"
+      ]
+    },
+    {
+      "id": "auction_date_input",
+      "title": "群内拍卖：截止时间",
+      "message": [
+        "群内发送“拍卖”，填写物品、标题和起拍价后进入本步。可输入未来截止时间或使用日历。",
+        "群内日历绑定创建者，其他成员不能修改；选择后仍先私聊预览、再由创建者确认发布。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "日历选择",
+            "callbackData": "acal:{token}:0:open:",
+            "action": "goto",
+            "target": "activity_calendar_day",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "auction_date_confirm",
+      "title": "拍卖原确认步骤",
+      "message": [
+        "已保存截止时间并生成私聊预览。仍需发送“确认”发布，或“取消”退出并保留草稿。",
+        "下方仅为文档导航；真实确认步骤使用文字指令。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "查看拍卖设置（文档导航）",
+            "callbackData": "auc:home:{chat_id}",
+            "action": "goto",
+            "target": "home",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "activity_calendar_day",
+      "title": "选择日期",
+      "message": [
+        "北京时间 UTC+8；示意仅展示一个选项，真实日历支持翻月、跨年和全部小时/分钟。",
+        "日历确认只更新草稿或推进原步骤，不发布活动；旧按钮、权限失效或草稿变化时拒绝保存。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "31日",
+            "callbackData": "acal:{token}:1:day:2099-12-31",
+            "action": "goto",
+            "target": "activity_calendar_hour",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          }
+        ],
+        [
+          {
+            "label": "手动输入",
+            "callbackData": "acal:{token}:1:manual:",
+            "action": "goto",
+            "target": "auction_date_input",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          },
+          {
+            "label": "取消并返回",
+            "callbackData": "acal:{token}:1:cancel:",
+            "action": "back",
+            "target": "auction_date_input",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "activity_calendar_hour",
+      "title": "选择小时",
+      "message": [
+        "北京时间 UTC+8；示意仅展示一个选项，真实日历支持翻月、跨年和全部小时/分钟。",
+        "日历确认只更新草稿或推进原步骤，不发布活动；旧按钮、权限失效或草稿变化时拒绝保存。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "23:00",
+            "callbackData": "acal:{token}:2:hour:23",
+            "action": "goto",
+            "target": "activity_calendar_minute",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          }
+        ],
+        [
+          {
+            "label": "手动输入",
+            "callbackData": "acal:{token}:2:manual:",
+            "action": "goto",
+            "target": "auction_date_input",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          },
+          {
+            "label": "取消并返回",
+            "callbackData": "acal:{token}:2:cancel:",
+            "action": "back",
+            "target": "auction_date_input",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "activity_calendar_minute",
+      "title": "选择分钟",
+      "message": [
+        "北京时间 UTC+8；示意仅展示一个选项，真实日历支持翻月、跨年和全部小时/分钟。",
+        "日历确认只更新草稿或推进原步骤，不发布活动；旧按钮、权限失效或草稿变化时拒绝保存。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "00分",
+            "callbackData": "acal:{token}:3:minute:0",
+            "action": "goto",
+            "target": "activity_calendar_confirm",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          }
+        ],
+        [
+          {
+            "label": "手动输入",
+            "callbackData": "acal:{token}:3:manual:",
+            "action": "goto",
+            "target": "auction_date_input",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          },
+          {
+            "label": "取消并返回",
+            "callbackData": "acal:{token}:3:cancel:",
+            "action": "back",
+            "target": "auction_date_input",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "activity_calendar_confirm",
+      "title": "确认草稿日期",
+      "message": [
+        "北京时间 UTC+8；示意仅展示一个选项，真实日历支持翻月、跨年和全部小时/分钟。",
+        "日历确认只更新草稿或推进原步骤，不发布活动；旧按钮、权限失效或草稿变化时拒绝保存。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "确认应用",
+            "callbackData": "acal:{token}:4:apply:",
+            "action": "confirm",
+            "target": "auction_date_confirm",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          }
+        ],
+        [
+          {
+            "label": "手动输入",
+            "callbackData": "acal:{token}:4:manual:",
+            "action": "goto",
+            "target": "auction_date_input",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          },
+          {
+            "label": "取消并返回",
+            "callbackData": "acal:{token}:4:cancel:",
+            "action": "back",
+            "target": "auction_date_input",
+            "feedback": "打开对应页面；本示意不执行真实操作。"
+          }
+        ]
       ]
     }
   ]

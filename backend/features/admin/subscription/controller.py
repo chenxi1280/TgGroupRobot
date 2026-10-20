@@ -70,9 +70,11 @@ def _health_keyboard(chat_id: int) -> InlineKeyboardMarkup:
             InlineKeyboardButton("🛡️ 新人验证", callback_data=f"adm:menu:verification:{chat_id}"),
             InlineKeyboardButton("☂️ 垃圾防护", callback_data=f"adm:menu:antispam:{chat_id}"),
         ],
-        [InlineKeyboardButton("🧑‍🍼 新成员限制", callback_data=f"adm:menu:newmem:{chat_id}")],
         [
+            InlineKeyboardButton("🧑‍🍼 新成员限制", callback_data=f"adm:menu:newmem:{chat_id}"),
             InlineKeyboardButton("📣 强制关注", callback_data=f"adm:menu:forcesub:{chat_id}"),
+        ],
+        [
             InlineKeyboardButton("🌙 夜间管控", callback_data=f"adm:menu:night:{chat_id}"),
             InlineKeyboardButton("⏰ 定时消息", callback_data=f"sm:list:{chat_id}:0"),
         ],

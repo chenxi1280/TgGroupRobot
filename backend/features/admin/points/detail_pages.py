@@ -51,6 +51,7 @@ class PointsDetailPagesMixin:
                 "",
                 "通过各种激励方法，促进群友持续水群发言",
                 "",
+                f"群：{chat_id} · 等级 #{level.id}",
                 f"等级名称：{level.level_name}",
                 f"积分门槛线：{level.point_threshold}",
             ]
@@ -76,6 +77,7 @@ class PointsDetailPagesMixin:
             [
                 "👨‍💻 积分等级 | 删除等级",
                 "",
+                f"群：{chat_id} · 等级 #{level.id}",
                 f"等级名称：{level.level_name}",
                 f"积分门槛线：{level.point_threshold}",
                 "",

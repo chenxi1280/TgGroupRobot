@@ -40,8 +40,8 @@ def _self_review_keyboard(settings, chat_id: int, labels: dict[str, object]) -> 
             InlineKeyboardButton("✅ 状态" if settings.join_self_review_enabled else "❌ 状态", callback_data=f"adm:vfy_home:{chat_id}:self_review:toggle:enabled"),
             InlineKeyboardButton(f"⏱️ 超时 {settings.join_self_review_timeout_seconds}s", callback_data=f"adm:vfy_home:{chat_id}:self_review:cycle:timeout"),
         ],
-        [InlineKeyboardButton(str(labels["timeout"]), callback_data=f"adm:vfy_home:{chat_id}:self_review:cycle:timeout_action")],
-        [InlineKeyboardButton(str(labels["wrong"]), callback_data=f"adm:vfy_home:{chat_id}:self_review:cycle:wrong_action")],
+        [InlineKeyboardButton("超时处理", callback_data=f"adm:vfy_home:{chat_id}:self_review:cycle:timeout_action"),
+         InlineKeyboardButton("答错处理", callback_data=f"adm:vfy_home:{chat_id}:self_review:cycle:wrong_action")],
         [
             InlineKeyboardButton("📣 关注 ✅" if labels["force_enabled"] else "📣 关注 ❌", callback_data=f"adm:vfy_home:{chat_id}:self_review:fs_toggle:enabled"),
             InlineKeyboardButton(f"🎯 {labels['check_mode']}", callback_data=f"adm:vfy_home:{chat_id}:self_review:fs_cycle:check_mode"),

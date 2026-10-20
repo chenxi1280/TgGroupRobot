@@ -70,7 +70,8 @@ async def test_welcome_detail_keyboard_matches_doc_style(monkeypatch):
         ["✅ 标题备注", "设置封面"],
         ["✅ 设置文本", "设置按钮"],
         ["🏖️ 预览效果", "✅ 🕘 延迟删除"],
-        ["❌ 删除配置", "🔙 返回"],
+        ["❌ 删除配置"],
+        ["🔙 返回"],
     ]
     assert rendered["keyboard"][3][1].callback_data == "btned:open:welcome:-1001:9"
     assert "📮 标题备注: 欢迎词 1" in rendered["text"]

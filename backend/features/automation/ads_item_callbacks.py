@@ -226,14 +226,14 @@ async def ads_item_input_callback(update: Update, context: ContextTypes.DEFAULT_
     if state_type is None:
         await answer_callback_query_safely(update, "无效配置项", show_alert=True)
         return
-    await _start_item_input_state(
+    picker = await _start_item_input_state(
         update,
         context,
         target_chat_id=target_chat_id,
         item_id=item_id,
         state_type=state_type,
     )
-    await _show_item_input_prompt(q, target_chat_id=target_chat_id, item_id=item_id, field=field)
+    await _show_item_input_prompt(q, target_chat_id=target_chat_id, item_id=item_id, field=field, picker=picker)
 
 
 def _parse_item_input_target(data: str) -> tuple[int, str | None]:
@@ -271,7 +271,12 @@ async def _start_item_input_state(
     target_chat_id: int,
     item_id: int,
     state_type: str,
-) -> None:
+) -> dict | None:
+    from backend.shared.ui.datetime_picker import KEY, new_picker
+    picker = None
+    if state_type in {"ads_item_edit_start", "ads_item_edit_end"}:
+        sample = format_local_datetime(next_top_of_hour(days_offset=int(state_type.endswith("end"))))[:16]
+        picker = new_picker(f"ads:detail:{target_chat_id}:{item_id}", sample)
     db: Database = context.application.bot_data["db"]
     async with db.session_factory() as session:
         await ConversationStateService.start(
@@ -279,12 +284,15 @@ async def _start_item_input_state(
             chat_id=update.effective_chat.id,
             user_id=update.effective_user.id,
             state_type=state_type,
-            state_data={"target_chat_id": target_chat_id, "item_id": item_id},
+            state_data={"target_chat_id": target_chat_id, "item_id": item_id, **({KEY: picker} if picker else {})},
         )
         await session.commit()
 
 
-async def _show_item_input_prompt(query, *, target_chat_id: int, item_id: int, field: str) -> None:
+    return picker
+
+
+async def _show_item_input_prompt(query, *, target_chat_id: int, item_id: int, field: str, picker: dict | None = None) -> None:
     prompt = {
         "title": "🎠 轮播消息 | 标题备注\n\n请输入标题备注，例如：周末活动通知。\n输入“清空”可恢复默认标题。",
         "text": "🎠 轮播消息 | 文本内容\n\n请输入要轮播发送到群里的正文。\n可以直接发送多行文本，输入“清空”可清空文本。",
@@ -297,6 +305,7 @@ async def _show_item_input_prompt(query, *, target_chat_id: int, item_id: int, f
             target_chat_id=target_chat_id,
             item_id=item_id,
             field=field,
+            picker=picker,
         )
         return
     await query.edit_message_text(
@@ -305,23 +314,24 @@ async def _show_item_input_prompt(query, *, target_chat_id: int, item_id: int, f
     )
 
 
-async def _show_item_time_prompt(query, *, target_chat_id: int, item_id: int, field: str) -> None:
+async def _show_item_time_prompt(query, *, target_chat_id: int, item_id: int, field: str, picker: dict | None = None) -> None:
     is_end = field == "end"
     sample_time = next_top_of_hour(days_offset=1) if is_end else next_top_of_hour()
-    sample_label = format_local_datetime(sample_time, empty="")
+    sample_label = format_local_datetime(sample_time, empty="")[:16]
     field_label = "结束" if is_end else "开始"
     await query.edit_message_text(
         build_datetime_prompt_text(
             title=f"🎠 轮播消息 | 编辑{field_label}时间",
             sample_time_text=sample_label,
             sample_time_unix=int(sample_time.timestamp()),
-            show_copy_hint=False,
+            show_copy_hint=True,
             input_hint=f"👉🏻 现在输入定时{field_label}时间:",
         ),
         parse_mode="HTML",
         reply_markup=ads_copy_time_keyboard(
             f"ads:detail:{target_chat_id}:{item_id}",
             sample_label,
+            picker=picker,
         ),
     )
 

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from backend.shared.ui.admin_keyboard import admin_keyboard
+from backend.shared.ui.menu_layout import page_navigation, navigation_row
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 
-def points_level_list_keyboard(setting, levels, chat_id: int) -> InlineKeyboardMarkup:
+def points_level_list_keyboard(setting, levels, chat_id: int, *, page: int = 0, total: int | None = None) -> InlineKeyboardMarkup:
     enabled = bool(setting.enabled)
     exclude_teacher = bool(setting.exclude_teacher_enabled)
     rows: list[list[InlineKeyboardButton]] = [
@@ -20,11 +21,13 @@ def points_level_list_keyboard(setting, levels, chat_id: int) -> InlineKeyboardM
             InlineKeyboardButton("关闭" if exclude_teacher else "❌ 关闭", callback_data=f"adm:lvl:{chat_id}:toggle:exclude_teacher:0"),
         ],
     ]
-    rows.append([InlineKeyboardButton("全局等级标签", callback_data=f"ltag:{chat_id}:0:view")])
-    if levels:
-        rows.extend([[InlineKeyboardButton(f"{level.level_name} / {level.point_threshold}", callback_data=f"adm:lvl:{chat_id}:detail:{level.id}")] for level in levels])
-    rows.append([InlineKeyboardButton("➕ 添加一个等级", callback_data=f"adm:lvl:{chat_id}:add")])
-    rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:category_growth:{chat_id}")])
+    rows.extend([[InlineKeyboardButton(f"#{level.id} {level.level_name[:20]} · ≥{level.point_threshold}",
+                                     callback_data=f"adm:lvl:{chat_id}:detail:{level.id}")] for level in levels])
+    rows.extend(page_navigation(page, len(levels) if total is None else total,
+                                lambda value: f"adm:lvl:{chat_id}:page:{value}"))
+    rows.append([InlineKeyboardButton("添加等级", callback_data=f"adm:lvl:{chat_id}:add"),
+                 InlineKeyboardButton("全局标签", callback_data=f"ltag:{chat_id}:0:view")])
+    rows.append(navigation_row(f"adm:menu:category_growth:{chat_id}", refresh=f"adm:lvl:{chat_id}:page:{page}"))
     return InlineKeyboardMarkup(rows)
 
 
@@ -41,11 +44,11 @@ def points_level_detail_keyboard(level, chat_id: int) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = [
         [
             InlineKeyboardButton("🏷️ 等级名称：", callback_data=f"adm:lvl:{chat_id}:noop"),
-            InlineKeyboardButton(level.level_name or "未配置", callback_data=f"adm:lvl:{chat_id}:edit:name:{level.id}"),
+            InlineKeyboardButton("修改名称", callback_data=f"adm:lvl:{chat_id}:edit:name:{level.id}"),
         ],
         [
             InlineKeyboardButton("📏 积分门槛线：", callback_data=f"adm:lvl:{chat_id}:noop"),
-            InlineKeyboardButton(str(level.point_threshold), callback_data=f"adm:lvl:{chat_id}:edit:threshold:{level.id}"),
+            InlineKeyboardButton("修改门槛", callback_data=f"adm:lvl:{chat_id}:edit:threshold:{level.id}"),
         ],
     ]
     for label, perm, enabled in perms:

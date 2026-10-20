@@ -169,7 +169,8 @@ async def _handle_auction_start_price(flow: _AuctionFlow, data: dict) -> bool:
     if amount is None or amount <= 0:
         await _reply(flow.update, "❌ 起拍价必须是正整数。")
         return True
-    next_data = {**data, "start_price": amount}
+    from backend.features.activity.date_picker import attach
+    next_data = attach({**data, "start_price": amount}, back="auction:date:input")
     await set_user_state(
         flow.session,
         flow.chat.id,
@@ -191,7 +192,7 @@ async def _handle_auction_start_price(flow: _AuctionFlow, data: dict) -> bool:
         flow.update,
         prompt,
         parse_mode="HTML",
-        reply_markup=build_copy_time_keyboard(None, sample_text),
+        reply_markup=build_copy_time_keyboard(None, sample_text, picker=next_data.get("__datetime_picker__")),
     )
     return True
 
@@ -202,7 +203,8 @@ async def _handle_auction_end_at(flow: _AuctionFlow, data: dict) -> bool:
     except ValidationError as exc:
         await _reply(flow.update, f"❌ {exc}")
         return True
-    next_data = {**data, "end_at": end_at.isoformat(), "publication_token": data.get("publication_token") or secrets.token_hex(12)}
+    from backend.features.activity.date_picker import clean
+    next_data = {**clean(data), "end_at": end_at.isoformat(), "publication_token": data.get("publication_token") or secrets.token_hex(12)}
     await set_user_state(
         flow.session,
         flow.chat.id,
@@ -298,6 +300,9 @@ async def _handle_auction_confirm(flow: _AuctionFlow, data: dict) -> bool:
 
 
 async def _handle_auction_state(flow: _AuctionFlow, state) -> bool:
+    from backend.features.activity.date_picker import block_text
+    if await block_text(flow.update, state):
+        return True
     handlers = {
         ConversationStateType.auction_wait_title.value: _handle_auction_title,
         ConversationStateType.auction_wait_start_price.value: _handle_auction_start_price,

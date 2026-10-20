@@ -69,8 +69,8 @@ async def test_legacy_group_lock_menu_renders_night_control(monkeypatch):
     monkeypatch.setattr(admin_handler, "get_chat_settings", fake_get_chat_settings)
     monkeypatch.setattr(admin_handler._admin_handler.message_helper, "safe_edit", fake_safe_edit)
 
-    update = SimpleNamespace(effective_user=SimpleNamespace(id=1))
-    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}))
+    update = SimpleNamespace(callback_query=None, effective_user=SimpleNamespace(id=1))
+    context = SimpleNamespace(user_data={}, application=SimpleNamespace(bot_data={"db": _Db()}))
 
     await admin_handler._admin_handler._show_group_lock_menu(update, context, -100123)
 
@@ -104,8 +104,8 @@ async def test_rename_monitor_menu_uses_delete_label_with_colon(monkeypatch):
     monkeypatch.setattr(admin_handler, "get_chat_settings", fake_get_chat_settings)
     monkeypatch.setattr(admin_handler._admin_handler.message_helper, "safe_edit", fake_safe_edit)
 
-    update = SimpleNamespace(effective_user=SimpleNamespace(id=1))
-    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}))
+    update = SimpleNamespace(callback_query=None, effective_user=SimpleNamespace(id=1))
+    context = SimpleNamespace(user_data={}, application=SimpleNamespace(bot_data={"db": _Db()}))
 
     await admin_handler._admin_handler._show_rename_monitor_menu(update, context, -100123)
 
@@ -131,8 +131,8 @@ async def test_control_permission_menu_includes_current_policy_summary(monkeypat
     monkeypatch.setattr(admin_handler, "get_chat_settings", fake_get_chat_settings)
     monkeypatch.setattr(admin_handler._admin_handler.message_helper, "safe_edit", fake_safe_edit)
 
-    update = SimpleNamespace(effective_user=SimpleNamespace(id=1))
-    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}))
+    update = SimpleNamespace(callback_query=None, effective_user=SimpleNamespace(id=1))
+    context = SimpleNamespace(user_data={}, application=SimpleNamespace(bot_data={"db": _Db()}))
 
     await admin_handler._admin_handler._show_control_permission_menu(update, context, -100123)
 
@@ -166,8 +166,8 @@ async def test_auto_delete_menu_shows_enabled_type_summary(monkeypatch):
     monkeypatch.setattr(admin_handler, "get_chat_settings", fake_get_chat_settings)
     monkeypatch.setattr(admin_handler._admin_handler.message_helper, "safe_edit", fake_safe_edit)
 
-    update = SimpleNamespace(effective_user=SimpleNamespace(id=1))
-    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}))
+    update = SimpleNamespace(callback_query=None, effective_user=SimpleNamespace(id=1))
+    context = SimpleNamespace(user_data={}, application=SimpleNamespace(bot_data={"db": _Db()}))
 
     await admin_handler._admin_handler._show_auto_delete_menu(update, context, -100123)
 
@@ -224,8 +224,8 @@ def test_garbage_guard_home_keyboard_uses_screenshot_order() -> None:
     assert rows[2] == ["❌ 禁止发送按钮", "❌ 禁止垃圾用户"]
     assert rows[3] == ["❌ 禁止转发引用", "❌ 禁止发言刷屏"]
     assert rows[4] == ["❌ 人工警告", "❌ 离群封禁"]
-    assert rows[5] == ["❌ 快捷回复操作"]
-    assert rows[6][0].startswith("📄 总白名单管理")
+    assert rows[5] == ["❌ 快捷回复操作", "总白名单 · 0人"]
+    assert rows[6] == ["🔙 返回"]
 
 
 @pytest.mark.asyncio
@@ -364,8 +364,8 @@ async def test_engagement_home_shows_recent_summary_and_stats_entry(monkeypatch)
     monkeypatch.setattr(admin_handler, "get_recent_chat_reward_stats", fake_recent_stats)
     monkeypatch.setattr(admin_handler._admin_handler.message_helper, "safe_edit", fake_safe_edit)
 
-    update = SimpleNamespace(effective_user=SimpleNamespace(id=1))
-    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}))
+    update = SimpleNamespace(callback_query=None, effective_user=SimpleNamespace(id=1))
+    context = SimpleNamespace(user_data={}, application=SimpleNamespace(bot_data={"db": _Db()}))
 
     await admin_handler._admin_handler._show_engagement_home(update, context, -100123)
 
@@ -405,7 +405,7 @@ async def test_engagement_egg_menu_exposes_publish_and_pause_controls(monkeypatc
     monkeypatch.setattr(admin_handler._admin_handler.message_helper, "safe_edit", fake_safe_edit)
 
     update = SimpleNamespace()
-    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}))
+    context = SimpleNamespace(user_data={}, application=SimpleNamespace(bot_data={"db": _Db()}))
 
     await admin_handler._admin_handler._show_engagement_egg(update, context, -100123, event_id=7)
 
@@ -450,15 +450,15 @@ async def test_game_menu_exposes_rounds_and_help(monkeypatch):
     monkeypatch.setattr(admin_handler, "get_game_rake_owner_label", fake_get_rake_owner)
     monkeypatch.setattr(admin_handler._admin_handler.message_helper, "safe_edit", fake_safe_edit)
 
-    update = SimpleNamespace(effective_user=SimpleNamespace(id=1))
-    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}))
+    update = SimpleNamespace(callback_query=None, effective_user=SimpleNamespace(id=1))
+    context = SimpleNamespace(user_data={}, application=SimpleNamespace(bot_data={"db": _Db()}))
 
     await admin_handler._admin_handler._show_game_menu(update, context, -100123)
 
     keyboard = rendered[0]
     row_texts = [[button.text for button in row] for row in keyboard.inline_keyboard]
     assert ["📋 最近牌局", "📘 指令帮助"] in row_texts
-    assert ["🔗 关联积分 · 本群分"] in row_texts
+    assert ["关联积分"] in row_texts
 
 
 @pytest.mark.asyncio
@@ -478,8 +478,8 @@ async def test_game_toggle_start_publishes_runtime_panel(monkeypatch):
     monkeypatch.setattr(game_admin_module, "show_k3_panel", fake_show_k3_panel)
     monkeypatch.setattr(admin_handler._admin_handler, "_show_game_menu", fake_show_game_menu)
 
-    update = SimpleNamespace(effective_user=SimpleNamespace(id=1))
-    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}))
+    update = SimpleNamespace(callback_query=None, effective_user=SimpleNamespace(id=1))
+    context = SimpleNamespace(user_data={}, application=SimpleNamespace(bot_data={"db": _Db()}))
 
     await admin_handler._admin_handler._handle_game(
         update,
@@ -547,8 +547,8 @@ async def test_health_menu_surfaces_conflicts_and_shortcuts(monkeypatch):
     monkeypatch.setattr(admin_handler.ScheduledMessageService, "list_tasks", fake_list_tasks)
     monkeypatch.setattr(admin_handler._admin_handler.message_helper, "safe_edit", fake_safe_edit)
 
-    update = SimpleNamespace(effective_user=SimpleNamespace(id=1))
-    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _Db()}))
+    update = SimpleNamespace(callback_query=None, effective_user=SimpleNamespace(id=1))
+    context = SimpleNamespace(user_data={}, application=SimpleNamespace(bot_data={"db": _Db()}))
 
     await admin_handler._admin_handler._show_health_menu(update, context, -100123)
 
@@ -562,4 +562,4 @@ async def test_health_menu_surfaces_conflicts_and_shortcuts(monkeypatch):
 
     row_texts = [[button.text for button in row] for row in keyboard.inline_keyboard]
     assert ["🛡️ 新人验证", "☂️ 垃圾防护"] in row_texts
-    assert ["📣 强制关注", "🌙 夜间管控", "⏰ 定时消息"] in row_texts
+    assert ["🌙 夜间管控", "⏰ 定时消息"] in row_texts

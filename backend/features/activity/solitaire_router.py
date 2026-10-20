@@ -27,8 +27,7 @@ from backend.features.activity.solitaire_handler import (
 from backend.features.activity.solitaire_handler import solitaire_create_start_callback as solitaire_create_start
 from backend.app.router_base import BaseRouter
 
-# ConversationHandler 状态常量
-WAIT_CONFIG = "config"
+from backend.features.activity.solitaire_shared import WAIT_CONFIG
 
 log = structlog.get_logger(__name__)
 

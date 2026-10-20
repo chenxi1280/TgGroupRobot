@@ -6,7 +6,8 @@ from collections.abc import Callable
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-from backend.shared.time_helper import LOCAL_TIMEZONE
+from backend.shared.time_helper import LOCAL_TIMEZONE, format_duration_minutes
+from backend.shared.ui.copy import copy_button
 _FORMAT_INTERVAL_MINUTES_LABEL_THRESHOLD_1440 = 1440
 _FORMAT_INTERVAL_MINUTES_LABEL_THRESHOLD_60 = 60
 
@@ -36,13 +37,12 @@ def build_datetime_prompt_text(
     if tip_lines:
         tip_lines = f"{tip_lines}\n\n"
     sample_text = html.escape(sample_time_text)
-    sample_markup = f'<tg-time unix="{int(sample_time_unix)}" format="wDT">{sample_text}</tg-time>' if sample_time_unix is not None else f"<b>{sample_text}</b>"
-    copy_hint = "点击下方蓝色按钮可直接复制\n\n" if show_copy_hint else ""
+    sample_markup = f"<code>{sample_text}</code>"
+    copy_hint = "点击复制示例，再粘贴到输入框修改并发送；复制本身不会保存。\n\n" if show_copy_hint else ""
     return (
         f"{title}\n\n"
-        "格式：YYYY-MM-DD HH:MM\n"
+        "时区：北京时间 UTC+8\n格式：YYYY-MM-DD HH:MM\n"
         f"完整示例：{sample_markup}\n\n"
-        f"最近整点示例：{sample_markup}\n"
         f"{copy_hint}"
         f"{tip_lines}{input_hint}"
     )
@@ -54,18 +54,22 @@ def build_back_keyboard(back_callback: str | None) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=back_callback)]])
 
 
-def build_copy_time_keyboard(back_callback: str | None, sample_time_text: str) -> InlineKeyboardMarkup:
-    rows = [[InlineKeyboardButton(f"📋 复制 {sample_time_text}", api_kwargs={"copy_text": {"text": sample_time_text}})]]
+def build_copy_time_keyboard(back_callback: str | None, sample_time_text: str, *, current_value: str | None = None, picker: dict | None = None) -> InlineKeyboardMarkup:
+    row = [copy_button("📋 复制示例", sample_time_text)]
+    if current_value:
+        row.insert(0, copy_button("复制当前值", current_value))
+    rows = [row]
+    if picker:
+        from backend.shared.ui.datetime_picker import entry_button
+        rows.append([entry_button(picker)])
     if back_callback:
         rows.append([InlineKeyboardButton("🔙 返回", callback_data=back_callback)])
     return InlineKeyboardMarkup(rows)
 
 
 def build_copy_options_keyboard(back_callback: str | None, options: list[tuple[str, str]]) -> InlineKeyboardMarkup:
-    rows = [
-        [InlineKeyboardButton(label, api_kwargs={"copy_text": {"text": value}})]
-        for label, value in options
-    ]
+    buttons = [copy_button(label, value) for label, value in options]
+    rows = [buttons[index:index + 2] for index in range(0, len(buttons), 2)]
     if back_callback:
         rows.append([InlineKeyboardButton("🔙 返回", callback_data=back_callback)])
     return InlineKeyboardMarkup(rows)
@@ -91,10 +95,9 @@ def build_hhmm_prompt_text(
         tip_lines = f"{tip_lines}\n\n"
     return (
         f"{title}\n\n"
-        "格式：HH:MM\n"
-        f"完整示例：<b>{html.escape(sample_time_text)}</b>\n\n"
-        f"最近整点示例：<b>{html.escape(sample_time_text)}</b>\n"
-        "点击下方蓝色按钮可直接复制\n\n"
+        "时区：北京时间 UTC+8\n格式：HH:MM\n"
+        f"完整示例：<code>{html.escape(sample_time_text)}</code>\n\n"
+        "点击复制示例，再粘贴修改并发送；复制本身不会保存。\n\n"
         f"{tip_lines}{input_hint}"
     )
 
@@ -114,9 +117,9 @@ def build_minutes_or_hhmm_prompt_text(
     return (
         f"{title}\n\n"
         "支持两种格式：分钟数 或 HH:MM\n"
-        f"完整示例：<b>{html.escape(minutes_sample_text)}</b> 或 <b>{html.escape(hhmm_sample_text)}</b>\n\n"
-        f"快捷示例：<b>{html.escape(minutes_sample_text)}</b> / <b>{html.escape(hhmm_sample_text)}</b>\n"
-        "点击下方蓝色按钮可直接复制\n\n"
+        f"完整示例：<code>{html.escape(minutes_sample_text)}</code> 或 <code>{html.escape(hhmm_sample_text)}</code>\n\n"
+        f"快捷示例：<code>{html.escape(minutes_sample_text)}</code> / <code>{html.escape(hhmm_sample_text)}</code>\n"
+        "点击复制示例，再粘贴修改并发送；复制本身不会保存。\n\n"
         f"{tip_lines}{input_hint}"
     )
 
@@ -136,23 +139,15 @@ def build_numeric_duration_prompt_text(
     return (
         f"{title}\n\n"
         f"格式：纯数字（单位：{unit_label}）\n"
-        f"完整示例：<b>{html.escape(sample_value_text)}</b>\n\n"
-        f"快捷示例：<b>{html.escape(sample_value_text)}</b>\n"
-        "点击下方蓝色按钮可直接复制\n\n"
+        f"完整示例：<code>{html.escape(sample_value_text)}</code>\n\n"
+        f"快捷示例：<code>{html.escape(sample_value_text)}</code>\n"
+        "点击复制示例，再粘贴修改并发送；复制本身不会保存。\n\n"
         f"{tip_lines}{input_hint}"
     )
 
 
 def format_interval_minutes_label(minutes: int) -> str:
-    if minutes < _FORMAT_INTERVAL_MINUTES_LABEL_THRESHOLD_60:
-        return f"{minutes}分钟"
-    if minutes == _FORMAT_INTERVAL_MINUTES_LABEL_THRESHOLD_60:
-        return "1小时"
-    if minutes < _FORMAT_INTERVAL_MINUTES_LABEL_THRESHOLD_1440:
-        return f"{minutes // 60}小时"
-    if minutes == _FORMAT_INTERVAL_MINUTES_LABEL_THRESHOLD_1440:
-        return "1天"
-    return f"{minutes // 1440}天"
+    return format_duration_minutes(minutes)
 
 
 def build_interval_keyboard(

@@ -70,12 +70,12 @@ async def test_force_subscribe_menu_shows_action_row(monkeypatch):
     assert "🧩 按钮来源: 跟随绑定目标按钮" in text
     assert keyboard.inline_keyboard[0][0].text == "⚙️ 状态："
     assert keyboard.inline_keyboard[0][1].text == "✅ 启动"
-    assert keyboard.inline_keyboard[3][0].text == "设置封面"
-    assert keyboard.inline_keyboard[3][1].text == "✅ 设置文案"
-    assert keyboard.inline_keyboard[4][0].text == "设置按钮"
-    assert keyboard.inline_keyboard[5][0].text == "⚙️ 关注判定："
-    assert keyboard.inline_keyboard[6][0].text == "⚙️ 未关注时处理："
-    assert keyboard.inline_keyboard[6][1].text == "仅提示关注"
+    assert keyboard.inline_keyboard[2][0].text == "设置封面"
+    assert keyboard.inline_keyboard[2][1].text == "✅ 设置文案"
+    assert keyboard.inline_keyboard[3][0].text == "设置按钮"
+    assert keyboard.inline_keyboard[4][0].text == "⚙️ 关注判定："
+    assert keyboard.inline_keyboard[5][0].text == "⚙️ 未关注时处理："
+    assert keyboard.inline_keyboard[5][1].text == "仅提示关注"
 
 
 @pytest.mark.asyncio
@@ -119,7 +119,7 @@ async def test_force_subscribe_menu_resolves_link_target_title(monkeypatch):
 
     text, keyboard = rendered[0]
     assert "📡 绑定频道/群组1: 官方群组" in text
-    assert keyboard.inline_keyboard[1][0].text == "⚙️ 绑定频道/群组1： · 官方群组"
+    assert keyboard.inline_keyboard[1][0].text == "设置频道 1"
 
 
 @pytest.mark.asyncio
@@ -162,7 +162,7 @@ async def test_force_subscribe_menu_surfaces_invalid_legacy_target(monkeypatch):
 
     text, keyboard = rendered[0]
     assert "⚠️ 绑定目标1格式无效，请重新绑定公开频道/群组的 @用户名。" in text
-    assert keyboard.inline_keyboard[1][0].text == "⚙️ 绑定频道/群组1： · TgMgtPrd_bot"
+    assert keyboard.inline_keyboard[1][0].text == "设置频道 1"
 
 
 @pytest.mark.asyncio

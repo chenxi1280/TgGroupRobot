@@ -47,7 +47,8 @@ def _engagement_egg_keyboard(event, chat_id: int, *, status: str = "all", page: 
     rows = [
         [InlineKeyboardButton("✅ 状态" if event.enabled else "❌ 状态", callback_data=f"act:egg:{chat_id}:toggle:{event.id}:{0 if event.enabled else 1}"), InlineKeyboardButton("🧩 编辑模板", callback_data=f"act:egg:{chat_id}:template:{event.id}")],
         [InlineKeyboardButton("👀 预览配置", callback_data=f"act:egg:{chat_id}:preview:{event.id}"), InlineKeyboardButton("📤 立即发布", callback_data=f"act:egg:{chat_id}:publish:{event.id}")],
-        [InlineKeyboardButton("⏸ 暂停" if event.status == "running" else "▶️ 恢复", callback_data=f"act:egg:{chat_id}:status:{event.id}:{status_value}"), InlineKeyboardButton("♻️ 重置活动", callback_data=f"act:egg:{chat_id}:reset:{event.id}")],
+        [InlineKeyboardButton("⏸ 暂停" if event.status == "running" else "▶️ 恢复", callback_data=f"act:egg:{chat_id}:status:{event.id}:{status_value}")],
+        [InlineKeyboardButton("♻️ 重置活动", callback_data=f"act:egg:{chat_id}:reset:{event.id}")],
         [InlineKeyboardButton("🔙 返回列表", callback_data=f"act:egg:{chat_id}:list:{status}:{page}")],
     ]
     return admin_keyboard(rows)

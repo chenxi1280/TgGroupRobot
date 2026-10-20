@@ -5,6 +5,7 @@ from collections.abc import Iterable
 
 from backend.platform.telegram.private_config_adapters import (
     ConfigHandler,
+    ads_text_input,
     full_args_handler,
     handle_invite_link_config,
     handle_quick_publish_input,
@@ -53,11 +54,11 @@ def _automation_specs() -> tuple[HandlerSpec, ...]:
     )
     return (
         _update(("lottery_create",), "backend.features.activity.lottery_handler", "lottery_message_handler"),
-        _update(ad_states, "backend.features.automation.ads_handler", "ads_create_config_message"),
+        (ad_states, ads_text_input),
         _update(("solitaire_create",), "backend.features.activity.solitaire_handler", "solitaire_create_config_message"),
         (("invite_link_create", "invite_link_cover_input", "invite_link_text_input"), handle_invite_link_config),
         (("quick_publish_input",), handle_quick_publish_input),
-        (("sm_edit_title", "sm_edit_text", "sm_edit_buttons", "sm_edit_start_at", "sm_edit_end_at"), scheduled_message_text_input),
+        (("sm_edit_repeat", "sm_edit_title", "sm_edit_text", "sm_edit_buttons", "sm_edit_start_at", "sm_edit_end_at"), scheduled_message_text_input),
         (("sm_edit_media",), scheduled_message_media_input),
     )
 

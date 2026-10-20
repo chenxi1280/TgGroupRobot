@@ -66,11 +66,14 @@ async def test_show_points_level_menu_uses_one_page_when_empty(monkeypatch):
 
     monkeypatch.setattr(admin_handler._admin_handler, "_set_current_chat", fake_set_current_chat)
     monkeypatch.setattr(admin_handler.PointsExtendedService, "get_or_create_level_setting", fake_get_setting)
-    monkeypatch.setattr(admin_handler.PointsExtendedService, "list_levels", fake_list_levels)
+    from backend.features.admin.points import overview_views
+    async def empty_page(*args, **kwargs):
+        return [], 0, 0
+    monkeypatch.setattr(overview_views, "point_page", empty_page)
     monkeypatch.setattr(admin_handler._admin_handler.message_helper, "safe_edit", fake_safe_edit)
 
     update = SimpleNamespace(effective_user=SimpleNamespace(id=42))
-    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(_FakeSession())}))
+    context = SimpleNamespace(user_data={}, application=SimpleNamespace(bot_data={"db": _FakeDb(_FakeSession())}))
 
     await admin_handler._admin_handler._show_points_level_menu(update, context, -1001)
 

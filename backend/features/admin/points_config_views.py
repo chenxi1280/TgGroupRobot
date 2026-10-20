@@ -44,7 +44,10 @@ async def show_points_home(
     )
     text = format_points_home_text(settings, changed=changed)
     from backend.features.admin.menu_origins import with_menu_origin
-    keyboard = with_menu_origin(points_config_keyboard(settings, chat_id), context, chat_id=chat_id, feature="points")
+    section = points_section(context, chat_id, update.callback_query.data)
+    keyboard = points_config_keyboard(settings, chat_id, section=section)
+    if section == "main":
+        keyboard = with_menu_origin(keyboard, context, chat_id=chat_id, feature="points")
     await safe_edit_func(update.callback_query, text, reply_markup=keyboard)
 
 
@@ -288,3 +291,14 @@ async def handle_todo(
         )
         return None
     return await edit_handler(update, context, chat_id, field=action[1])
+
+
+_SECTION_CALLBACK_PARTS = 4
+
+
+def points_section(context, chat_id, data):
+    sections = getattr(context, "user_data", {}).setdefault("points_sections", {})
+    parts = (data or "").split(":")
+    if parts[:2] == ["pts", "home"] and len(parts) == _SECTION_CALLBACK_PARTS:
+        sections[str(chat_id)] = parts[3] if parts[3] in {"main", "display", "manage"} else "main"
+    return sections.get(str(chat_id), "main")

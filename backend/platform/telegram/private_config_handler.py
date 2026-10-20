@@ -5,6 +5,7 @@ from typing import Any
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 from telegram import Update
+from backend.shared.services.base import ValidationError
 from telegram.ext import ContextTypes
 
 from backend.platform.telegram.private_config_registry import (
@@ -42,6 +43,11 @@ class PrivateConfigHandler:
         if update.effective_user is None or update.effective_message is None:
             return
 
+        from backend.shared.ui.datetime_picker import KEY
+        picker = (state.state_data or {}).get(KEY)
+        if picker and picker.get("step") != "input":
+            await update.effective_message.reply_text("正在选择日期，请使用最新日历确认，或点击手动输入/取消；本条消息未保存。")
+            return
         state_type = state.state_type
 
         log.debug(
@@ -70,6 +76,9 @@ class PrivateConfigHandler:
         """执行配置处理器，包含统一错误处理"""
         try:
             await handler(update, context, session, state=state, message_text=message_text)
+        except ValidationError as exc:
+            await session.rollback()
+            await self._send_error_message(update, str(exc))
         except Exception as e:
             log.exception("private_config_handler_error", state_type=state_type, error=str(e))
             await session.rollback()

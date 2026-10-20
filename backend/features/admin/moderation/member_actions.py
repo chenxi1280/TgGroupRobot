@@ -284,6 +284,9 @@ class ModerationMemberActionsMixin:
 
         op = callback_data.get(3)
         arg = callback_data.get(4)
+        if op == "section":
+            await self._show_night_mode_menu(update, context, chat_id, section=arg)
+            return
         if op in {"toggle", "set"}:
             field_map = {
                 "enabled": "night_mode_enabled",
@@ -352,7 +355,8 @@ class ModerationMemberActionsMixin:
             "open_phrase": "👉 请输入开群词：",
             "close_phrase": "👉 请输入关群词：",
         }
-        markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:night:{chat_id}")]])
+        section = "phrases" if option in {"open_phrase", "close_phrase"} else "policy"
+        markup = InlineKeyboardMarkup([[InlineKeyboardButton("取消输入", callback_data=f"adm:night:{chat_id}:section:{section}")]])
         await self.message_helper.safe_edit(update, prompt_map[option], reply_markup=markup)
 
     async def _show_night_time_prompt(self, update, chat_id: int, *, option: str) -> None:

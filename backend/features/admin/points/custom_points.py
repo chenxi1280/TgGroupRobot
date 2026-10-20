@@ -95,18 +95,24 @@ class CustomPointsAdminControllerMixin:
         else:
             return False
         async with db.session_factory() as session:
+            item = await PointsExtendedService.get_custom_point_type(session, chat_id, type_id)
+            if item is None:
+                await answer_callback_query_safely(update, "自定义积分不存在", show_alert=True)
+                return True
+            current = str(item.name if callback_data.get(4) == "name" else (item.rank_command or "")) if op == "edit" else ""
             await set_user_state(
                 session, chat_id=update.effective_user.id,
                 user_id=update.effective_user.id,
                 state_type=state_type, state_data=state_data,
             )
             await session.commit()
-        keyboard = InlineKeyboardMarkup(
+        from backend.shared.ui.copy import copy_value_rows
+        keyboard = InlineKeyboardMarkup(copy_value_rows([("复制当前值", current)]) +
             [[InlineKeyboardButton(
                 "🔙 返回", callback_data=f"adm:cpt:{chat_id}:detail:{type_id}"
             )]]
         )
-        await self.message_helper.safe_edit(update, text=prompt, reply_markup=keyboard)
+        await self.message_helper.safe_edit(update, text=(f"当前值：{current}\n\n" if current else "") + prompt, reply_markup=keyboard)
         return True
 
     async def _clear_custom_point_balances(
@@ -173,14 +179,7 @@ class CustomPointsAdminControllerMixin:
         self, update, context, *, db, chat_id: int, op: str, callback_data
     ) -> bool:
         if op == "add":
-            async with db.session_factory() as session:
-                item = await PointsExtendedService.create_custom_point_type(
-                    session, chat_id, update.effective_user.id
-                )
-                await session.commit()
-            await self._show_custom_point_detail(
-                update, context, chat_id, type_id=item.id
-            )
+            await self._show_custom_points_add_entry(update, context, chat_id)
             return True
         if op == "detail":
             await self._show_custom_point_detail(
@@ -213,6 +212,9 @@ class CustomPointsAdminControllerMixin:
         *, callback_data: CallbackData,
     ) -> None:
         op = callback_data.get(3)
+        if op == "page":
+            await self._show_custom_points_menu(update, context, chat_id, page=callback_data.get_int_optional(4) or 0)
+            return
         if op == "noop":
             await answer_callback_query_safely(update, "请点击右侧按钮进行配置")
             return

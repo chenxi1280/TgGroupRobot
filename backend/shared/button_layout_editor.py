@@ -79,7 +79,6 @@ async def _open_layout(request: EditorCallbackRequest) -> None:
         session=request.session,
     )
 
-
 async def _add_button(request: EditorCallbackRequest) -> None:
     draft = await _ensure_draft(request.session, request.context, request.editor_ctx)
     next_grid, row, col = ButtonLayoutEditorService.add_button(
@@ -104,6 +103,10 @@ async def _add_button(request: EditorCallbackRequest) -> None:
 
 
 async def _clear_buttons(request: EditorCallbackRequest) -> None:
+    if request.action != "clear_confirm":
+        from backend.shared.button_editor_tools import confirm_clear
+        await confirm_clear(request)
+        return
     await _persist_editor_draft(request, ButtonLayoutEditorService.clear_buttons())
     await _open_layout(request)
 
@@ -152,19 +155,8 @@ async def _start_input(request: EditorCallbackRequest) -> None:
         state_type=state_type,
         state_data=_editor_state_data(request.editor_ctx),
     )
-    keyboard = InlineKeyboardMarkup([[
-        InlineKeyboardButton(
-            "🔙 返回",
-            callback_data=detail_callback_data(request.editor_ctx, "detail"),
-        )
-    ]])
-    await update.callback_query.edit_message_text(
-        text=(
-            f"{_module_title(request.editor_ctx.module_type)} | 编辑按钮信息\n\n"
-            f"{_input_prompt(request.action)}"
-        ),
-        reply_markup=keyboard,
-    )
+    from backend.shared.button_editor_tools import show_input
+    await show_input(request, _input_prompt(request.action), field=request.action, return_action="detail")
 
 
 async def _delete_button(request: EditorCallbackRequest) -> None:
@@ -265,11 +257,20 @@ async def _start_message_field(request):
     media_types = message_adapter(request.editor_ctx).media_types
     prompt = "发送新的正文。变量规则沿用原功能。" if request.action == "body" else (
         "发送图片" + ("或视频" if "video" in media_types else "（本功能不支持视频）") + "；发送 清除 可移除封面。")
+    if request.action == "body":
+        from backend.shared.button_editor_tools import show_input
+        await show_input(request, prompt, field="body", return_action="open")
+        return
     await request.update.callback_query.edit_message_text(prompt + "\n仅修改草稿，保存后生效。",
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("返回编辑面板", callback_data=detail_callback_data(request.editor_ctx, "open"))]]))
 
 
+from backend.shared.button_editor_tools import export_draft
+
 EDITOR_ACTIONS: dict[str, EditorAction] = {
+    "export_body": export_draft,
+    "export_buttons": export_draft,
+    "clear_confirm": _clear_buttons,
     "body": _start_message_field,
     "cover": _start_message_field,
     "open": _open_layout,
@@ -321,7 +322,7 @@ async def button_layout_editor_callback(update: Update, context: ContextTypes.DE
             await answer_callback_query_safely(update, error_text or "没有权限", show_alert=True)
             return
         try:
-            if action in {"open", "detail", "save", "discard", "discard_confirm", "preview"}:
+            if action in {"open", "detail", "save", "discard", "discard_confirm", "preview", "clear", "clear_confirm"}:
                 await ConversationStateService.clear(session, update.effective_chat.id, update.effective_user.id)
             await handler(request)
             await session.commit()

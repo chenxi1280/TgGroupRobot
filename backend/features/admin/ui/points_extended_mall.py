@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from backend.shared.ui.admin_keyboard import admin_keyboard
+from backend.shared.ui.menu_layout import action_rows, navigation_row
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -38,15 +39,9 @@ def points_mall_home_keyboard(setting, chat_id: int) -> InlineKeyboardMarkup:
 
 
 def points_mall_products_keyboard(products, chat_id: int, *, page: int = 0, total: int | None = None) -> InlineKeyboardMarkup:
-    rows = [
-        [
-            InlineKeyboardButton(f"🔢 编号:{product.product_id}", callback_data=f"adm:mall:{chat_id}:product:detail:{product.product_id}"),
-            InlineKeyboardButton("🧾 订单", callback_data=f"adm:mall:{chat_id}:orders:{product.product_id}"),
-            InlineKeyboardButton("🔧 修改", callback_data=f"adm:mall:{chat_id}:product:detail:{product.product_id}"),
-            InlineKeyboardButton("🗑 删除", callback_data=f"adm:mall:{chat_id}:product:delete_confirm:{product.product_id}"),
-        ]
-        for product in products
-    ]
+    rows = [[InlineKeyboardButton(f"#{product.product_id} {product.name[:22]} · {'✓' if product.status == 'on_sale' else '○'}",
+                                  callback_data=f"adm:mall:{chat_id}:product:detail:{product.product_id}")]
+            for product in products]
     total = len(products) if total is None else total
     nav = []
     if page:
@@ -55,38 +50,23 @@ def points_mall_products_keyboard(products, chat_id: int, *, page: int = 0, tota
         nav.append(InlineKeyboardButton("下一页", callback_data=f"adm:mall:{chat_id}:products:{page+1}"))
     if nav:
         rows.append(nav)
-    rows.append([InlineKeyboardButton("刷新", callback_data=f"adm:mall:{chat_id}:products:{page}")])
     rows.append([InlineKeyboardButton("➕ 添加一条", callback_data=f"adm:mall:{chat_id}:product:add")])
-    rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:points_mall:{chat_id}")])
+    rows.append(navigation_row(f"adm:menu:points_mall:{chat_id}", refresh=f"adm:mall:{chat_id}:products:{page}"))
     return InlineKeyboardMarkup(rows)
 
 
 def points_mall_product_detail_keyboard(product, chat_id: int) -> InlineKeyboardMarkup:
-    sale_toggle = "❎ 下架停售" if product.status == "on_sale" else "✅ 上架销售"
+    fields = [("商品名称", "name"), ("商品封面", "cover"), ("所需积分", "price"),
+              ("限购设置", "limit"), ("可售数量", "stock"), ("发放人员", "fulfiller"),
+              ("兑换说明", "description"), ("排序权重", "sort")]
+    rows = action_rows([InlineKeyboardButton(label, callback_data=f"adm:mall:{chat_id}:product:edit:{product.product_id}:{key}") for label, key in fields])
     sale_value = 0 if product.status == "on_sale" else 1
-    return admin_keyboard(
-        [
-            [
-                InlineKeyboardButton("🏷️ 商品名称", callback_data=f"adm:mall:{chat_id}:product:edit:{product.product_id}:name"),
-                InlineKeyboardButton("🖼️ 上传封面", callback_data=f"adm:mall:{chat_id}:product:edit:{product.product_id}:cover"),
-                InlineKeyboardButton("🪙 所需积分", callback_data=f"adm:mall:{chat_id}:product:edit:{product.product_id}:price"),
-            ],
-            [
-                InlineKeyboardButton("📮 限购设置", callback_data=f"adm:mall:{chat_id}:product:edit:{product.product_id}:limit"),
-                InlineKeyboardButton("🛒 可售数量", callback_data=f"adm:mall:{chat_id}:product:edit:{product.product_id}:stock"),
-                InlineKeyboardButton("👤 发放人员", callback_data=f"adm:mall:{chat_id}:product:edit:{product.product_id}:fulfiller"),
-            ],
-            [
-                InlineKeyboardButton("⚠️ 兑换说明", callback_data=f"adm:mall:{chat_id}:product:edit:{product.product_id}:description"),
-                InlineKeyboardButton("↕️ 排序权重", callback_data=f"adm:mall:{chat_id}:product:edit:{product.product_id}:sort"),
-            ],
-            [
-                InlineKeyboardButton(sale_toggle, callback_data=f"adm:mall:{chat_id}:product:toggle:{product.product_id}:{sale_value}"),
-                InlineKeyboardButton("👀 预览效果", callback_data=f"adm:mall:{chat_id}:product:preview:{product.product_id}"),
-            ],
-            [InlineKeyboardButton("🔙 返回上页", callback_data=f"adm:menu:points_mall_products:{chat_id}")],
-        ]
-    )
+    rows.append([InlineKeyboardButton("下架停售" if not sale_value else "上架销售", callback_data=f"adm:mall:{chat_id}:product:toggle:{product.product_id}:{sale_value}"),
+                 InlineKeyboardButton("预览效果", callback_data=f"adm:mall:{chat_id}:product:preview:{product.product_id}")])
+    rows.append([InlineKeyboardButton("商品订单", callback_data=f"adm:mall:{chat_id}:orders:{product.product_id}")])
+    rows.append([InlineKeyboardButton("删除商品", callback_data=f"adm:mall:{chat_id}:product:delete_confirm:{product.product_id}")])
+    rows.append(navigation_row(f"adm:menu:points_mall_products:{chat_id}"))
+    return InlineKeyboardMarkup(rows)
 
 
 def points_mall_orders_keyboard(chat_id: int, orders=None, product_id: int | None = None, *, status: str = "all", status_counts: dict[str, int] | None = None, page: int = 0, total: int | None = None) -> InlineKeyboardMarkup:
@@ -94,7 +74,7 @@ def points_mall_orders_keyboard(chat_id: int, orders=None, product_id: int | Non
     counts = status_counts or {}
     normalized_status = _mall_order_status(status)
     status_to_code = {"all": "a", "created": "c", "fulfilled": "f", "canceled": "x", "refunded": "r"}
-    rows.append(_mall_order_status_buttons(chat_id, product_id, counts=counts, normalized_status=normalized_status, status_to_code=status_to_code))
+    rows.extend(action_rows(_mall_order_status_buttons(chat_id, product_id, counts=counts, normalized_status=normalized_status, status_to_code=status_to_code)))
     product_token = product_id if product_id is not None else 0
     selected_code = status_to_code[normalized_status]
     for order in orders or []:
@@ -135,6 +115,8 @@ def points_mall_cover_keyboard(chat_id: int) -> InlineKeyboardMarkup:
         [
             [
                 InlineKeyboardButton("🖼️ 上传封面", callback_data=f"adm:mall:{chat_id}:edit:cover"),
+            ],
+            [
                 InlineKeyboardButton("🧹 清空封面", callback_data=f"adm:mall:{chat_id}:cover:clear"),
             ],
             [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:points_mall:{chat_id}")],

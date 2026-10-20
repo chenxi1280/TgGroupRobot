@@ -23,7 +23,8 @@
       "sm_edit_media",
       "sm_edit_buttons",
       "sm_edit_start_at",
-      "sm_edit_end_at"
+      "sm_edit_end_at",
+      "sm_edit_repeat"
     ],
     "sourceFiles": [
       "backend/features/admin/core/menu_dispatch.py",
@@ -284,6 +285,15 @@
         ],
         [
           {
+            "label": "自定义间隔",
+            "callbackData": "sm:edit:{chat_id}:{task_id}:repeat_custom",
+            "action": "input",
+            "target": "repeat_input",
+            "feedback": "请输入整数分钟。"
+          }
+        ],
+        [
+          {
             "label": "预览效果",
             "callbackData": "sm:preview:{chat_id}:{task_id}",
             "action": "goto",
@@ -475,18 +485,18 @@
       "input": {
         "type": "buttons",
         "prompt": "支持逐行格式、分号同排和 JSON",
-        "placeholder": "官网 - https://example.com",
+        "placeholder": "官网|https://example.com",
         "clearCommand": "/clear",
         "examples": [
           {
             "label": "逐行",
-            "value": "官网 - https://example.com",
+            "value": "官网|https://example.com",
             "target": "result",
             "feedback": "已填入：逐行。"
           },
           {
             "label": "同排",
-            "value": "官网 - https://a.com;客服 - https://b.com",
+            "value": "官网|https://a.com;客服|https://b.com",
             "target": "result",
             "feedback": "已填入：同排。"
           },
@@ -621,6 +631,40 @@
           }
         ]
       ]
+    },
+    {
+      "id": "repeat_input",
+      "title": "自定义间隔",
+      "message": [
+        "这里是后端进入私聊输入 state 后等待管理员发送内容的页面。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "返回",
+            "callbackData": "sm:open:{chat_id}:{task_id}",
+            "action": "back",
+            "target": "detail",
+            "feedback": "已返回上一层。"
+          }
+        ]
+      ],
+      "input": {
+        "type": "text",
+        "prompt": "输入 1—525600 的整数分钟；取消后不再接收输入",
+        "placeholder": "90",
+        "examples": [
+          {
+            "label": "90 分钟",
+            "value": "90",
+            "target": "result",
+            "feedback": "已填入：90 分钟。"
+          }
+        ],
+        "errors": [
+          "格式不符合要求时，Bot 会停留在输入态并提示重新输入。"
+        ]
+      }
     }
   ]
 }

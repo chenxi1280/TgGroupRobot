@@ -5,21 +5,17 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from backend.shared.ui.base.helpers import create_back_button
 
 
-def sm_list_keyboard(tasks: list, chat_id: int, page: int = 0, *, page_size: int = 10) -> InlineKeyboardMarkup:
+def sm_list_keyboard(tasks: list, chat_id: int, page: int = 0, *, page_size: int = 8) -> InlineKeyboardMarkup:
     buttons = []
+    page = min(max(0, page), max(0, (len(tasks) - 1) // page_size))
     start_idx = page * page_size
     end_idx = start_idx + page_size
 
     for task in tasks[start_idx:end_idx]:
-        buttons.append([
-            InlineKeyboardButton(f"🔢 编号:{task.short_id}", callback_data=f"sm:open:{chat_id}:{task.short_id}"),
-            InlineKeyboardButton(
-                "❌ 关闭" if task.enabled else "✅ 启用",
-                callback_data=f"sm:set:{chat_id}:{task.short_id}:enabled:{0 if task.enabled else 1}",
-            ),
-            InlineKeyboardButton("✏️ 修改", callback_data=f"sm:open:{chat_id}:{task.short_id}"),
-            InlineKeyboardButton("🗑 删除", callback_data=f"sm:del_confirm:{chat_id}:{task.short_id}"),
-        ])
+        status = "✓" if task.enabled else "停用"
+        title = str(getattr(task, "title", "") or "未命名")[:24]
+        buttons.append([InlineKeyboardButton(f"{status} #{task.short_id} {title}", callback_data=f"sm:open:{chat_id}:{task.short_id}")])
+
 
     nav_buttons = []
     if page > 0:

@@ -166,7 +166,7 @@ async def handle_points_config_message(update, context: ContextTypes.DEFAULT_TYP
             settings = await get_chat_settings(session, chat_id)
             await session.commit()
 
-        keyboard = points_config_keyboard(settings, chat_id)
+        keyboard = points_config_keyboard(settings, chat_id, section=context.user_data.get("points_sections", {}).get(str(chat_id), "main"))
         success_text = _points_config_success_text(field)
         clear_points_input(context)
         await update.effective_message.reply_text(success_text, reply_markup=keyboard)
@@ -191,6 +191,11 @@ async def handle_points_config_cancel(
     safe_edit_func=safe_edit_message,
 ) -> int:
     chat_id = context.user_data.get("points_edit_chat_id")
+    if update.callback_query:
+        from backend.shared.callback_parser import CallbackParser
+        callback = CallbackParser.parse(update.callback_query.data or "")
+        if callback.get(0) == "pts" and callback.get(1) == "home":
+            chat_id = callback.get_int(2)
     clear_points_input(context)
 
     if update.callback_query and await can_configure_points(update, context, chat_id):
@@ -199,7 +204,7 @@ async def handle_points_config_cancel(
             settings = await get_chat_settings_func(session, chat_id)
             await session.commit()
 
-        keyboard = points_config_keyboard(settings, chat_id)
+        keyboard = points_config_keyboard(settings, chat_id, section=context.user_data.get("points_sections", {}).get(str(chat_id), "main"))
         await safe_edit_func(update.callback_query, format_points_home_text(settings), reply_markup=keyboard)
 
     return ConversationHandler.END

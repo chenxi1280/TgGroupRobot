@@ -172,7 +172,7 @@ def garbage_guard_home_keyboard(settings, chat_id: int) -> InlineKeyboardMarkup:
     rows.append(
         [
             InlineKeyboardButton(
-                f"📄 总白名单管理（{whitelist_count}人，所有规则生效）",
+                f"总白名单 · {whitelist_count}人",
                 callback_data=f"gg:whitelist:{chat_id}",
             )
         ]
@@ -197,6 +197,7 @@ def format_garbage_guard_home_text(chat_title: str, settings) -> str:
             "禁止发言刷屏 - 短时间大量发言按阈值处罚",
             "快捷回复操作 - 管理员引用回复配置词快速禁言/踢出",
             "",
+            f"总白名单：{len(get_global_whitelist_user_ids(settings))} 人，对所有规则生效。",
             "以上规则对管理员和白名单用户无效",
             "",
             f"已启动规则: {enabled_count}/{len(RULE_ORDER)}",
