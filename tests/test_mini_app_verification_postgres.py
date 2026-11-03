@@ -205,3 +205,21 @@ async def test_group_prompt_links_to_real_bot_and_exact_challenge(scope):
             User(scope.user, "测试成员", False), settings=settings, challenge=challenge)
     markup = scope.bot.send_message.call_args.kwargs["reply_markup"]
     assert markup.inline_keyboard[0][0].url == f"https://t.me/test_mini_app_bot?startapp=verify_{token}"
+
+
+async def test_upgrade_accepts_existing_bootstrap_column(scope, monkeypatch):
+    from backend.platform.db.runtime.database_migrations import load_revision_modules
+    from sqlalchemy import text
+    revision = load_revision_modules()[-1]
+    class Operations:
+        def __init__(self, connection):
+            self.connection = connection
+        def execute(self, statement):
+            self.connection.execute(text(statement))
+    def upgrade(connection):
+        monkeypatch.setattr(revision, 'op', Operations(connection))
+        revision.upgrade()
+        revision.upgrade()
+    async with scope.db.engine.begin() as connection:
+        await connection.run_sync(upgrade)
+    await validate_database_schema(scope.db.engine)

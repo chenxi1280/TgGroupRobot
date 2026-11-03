@@ -8,7 +8,7 @@ depends_on = None
 
 
 def upgrade():
-    op.execute("ALTER TABLE bot.verification_challenges ADD COLUMN mini_app_status VARCHAR(32)")
+    op.execute("ALTER TABLE bot.verification_challenges ADD COLUMN IF NOT EXISTS mini_app_status VARCHAR(32)")
 
 
 def downgrade():

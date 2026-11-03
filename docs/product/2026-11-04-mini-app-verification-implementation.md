@@ -29,7 +29,7 @@
 
 ## 3. 已完成验证
 
-- 上海专用 `tgr_ui_test`：核验容器标签、数据库、角色与原始 guard，持有互斥锁后迁移/测试。63 项全部通过，75.65 秒；每项 60 秒超时。证据：[专项 JUnit](../../reports/2026-11-04-mini-app-verification/targeted.xml)。
+- 上海专用 `tgr_ui_test`：核验容器标签、数据库、角色与原始 guard，持有互斥锁后迁移/测试。64 项全部通过，124.60 秒；每项 60 秒超时。证据：[专项 JUnit](../../reports/2026-11-04-mini-app-verification/targeted.xml)。
 - 覆盖三种基础模式、不可代验、旧 token 失效、错答、到期、超时任务已领取、重复并发、解禁未成功/未知结果、原口令审核，以及数据库结构。
 - 本地无数据库的整套回归：1,160 通过、257 因需要隔离数据库而跳过；该次运行发生在最后的辅助函数收敛之前，不能替代最终 CI。证据：[本地 JUnit](../../reports/2026-11-04-mini-app-verification/local-tests.xml)。
 - 相关既有验证流程、schema fixture 和前端构建通过；质量阈值、调用契约、Ruff、mypy、文档目录和 55 条流程审计通过。
@@ -53,3 +53,7 @@
 | 性能 | 网页初次加载和主动提交才查询；不增加后台轮询或中间件。已记录既有群列表测试数据规模对回归时长的影响 |
 | 可维护性 | 规则在原验证域；新增成员路由只做认证和请求适配；口令生成/提示由两个入口复用同一函数 |
 | 安全性 | 身份和挑战归属由后端确认；前端不接收答案字段；API 不把身份/token 放在 URL，成员页面不复用后台会话 |
+
+## 6. 首轮 CI 拦截与修正
+
+首轮候选 `8dfe40f` 的[流水线](https://github.com/chenxi1280/TgGroupRobot/actions/runs/41685742958)在新库迁移阶段失败：`sql/init.sql` 已创建 `mini_app_status`，随后 `0018` 再次加列导致 DuplicateColumn。镜像和部署阶段均跳过，生产未改变。修正为符合现有 bootstrap＋迁移链约定的 `ADD COLUMN IF NOT EXISTS`，并增加在已初始化字段上重复执行本 revision 后通过 schema gate 的上海数据库回归。
