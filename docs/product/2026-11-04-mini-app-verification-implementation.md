@@ -57,3 +57,5 @@
 ## 6. 首轮 CI 拦截与修正
 
 首轮候选 `8dfe40f` 的[流水线](https://github.com/chenxi1280/TgGroupRobot/actions/runs/41685742958)在新库迁移阶段失败：`sql/init.sql` 已创建 `mini_app_status`，随后 `0018` 再次加列导致 DuplicateColumn。镜像和部署阶段均跳过，生产未改变。修正为符合现有 bootstrap＋迁移链约定的 `ADD COLUMN IF NOT EXISTS`，并增加在已初始化字段上重复执行本 revision 后通过 schema gate 的上海数据库回归。
+
+第二轮候选 `ef9e76c` 已通过新库迁移，[流水线](https://github.com/chenxi1280/TgGroupRobot/actions/runs/41686629591)在测试收集时被 AnyIO 4.16 的弃用告警拦截：旧 Starlette TestClient 引用了已弃用的 BlockingPortal 别名。仅将新增身份 HTTP 测试改成现有 httpx AsyncClient/ASGITransport 方式，保留 `-W error`，不降级依赖或屏蔽告警。本地 AnyIO 同步至 CI 的 4.16.0 后重新验证。

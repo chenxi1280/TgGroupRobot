@@ -1,5 +1,7 @@
 # TgGroupRobot PRD 入口与代码对接索引
 
+> 2026-11-04 基础验证 Mini App 实施进度见[实施与发布记录](./2026-11-04-mini-app-verification-implementation.md)。本次仅包含基础验证，房间游戏未实施；测试、发布和真实 Telegram 验收分别记录。
+
 > 版本：v1.15
 > 日期：2026-10-15
 > 状态：通用及验收续修已部署ab5d7f0；专用群G1/G3指定场景、G2附加动作恢复已实测，整体PRD未完成

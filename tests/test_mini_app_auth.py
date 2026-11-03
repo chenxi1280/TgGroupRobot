@@ -5,7 +5,7 @@ from urllib.parse import urlencode
 
 import pytest
 from fastapi import FastAPI
-from fastapi.testclient import TestClient
+import httpx
 from types import SimpleNamespace
 
 from backend.features.mini_app.auth import validate_init_data, verification_identity
@@ -53,8 +53,8 @@ def test_signed_extra_fields_are_included_in_hmac():
     assert identity.user.id == 42
 
 
-@pytest.mark.parametrize("dependency", [verification_identity])
-def test_http_dependency_rejects_missing_or_malformed_identity(dependency):
+@pytest.mark.asyncio
+async def test_http_dependency_rejects_missing_or_malformed_identity():
     app = FastAPI()
     app.state.settings = SimpleNamespace(bot_token=TOKEN)
     from fastapi import Depends
@@ -63,8 +63,8 @@ def test_http_dependency_rejects_missing_or_malformed_identity(dependency):
     def identity(actor=Depends(verification_identity)):
         return {"id": actor.user.id}
 
-    with TestClient(app) as client:
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         for value in ["", "Bearer anything", "tma invalid", "tma hash=bad"]:
-            response = client.get("/identity", headers={"authorization": value})
+            response = await client.get("/identity", headers={"authorization": value})
             assert response.status_code == 401
             assert "bad" not in response.text
