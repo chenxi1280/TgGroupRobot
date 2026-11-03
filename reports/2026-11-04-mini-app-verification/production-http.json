@@ -1,0 +1,10 @@
+{
+  "url": "https://robot.telema.cn/miniapp/",
+  "page_status": 200,
+  "assets": {
+    "/miniapp/assets/index-BHsLeyYz.js": 200,
+    "/miniapp/assets/index-CQYps7iO.css": 200
+  },
+  "unauthenticated_api_status": 401,
+  "admin_status": 200
+}

@@ -1,7 +1,7 @@
 # 基础验证 Mini App 实施与发布记录
 
 > 日期：2026-11-04（Asia/Shanghai）
-> 状态：本地实现与专项测试完成；发布流水线及生产验收待执行
+> 状态：基础验证 Mini App 已发布并启用；真实 Telegram 手机/桌面现场验收未完成
 > 范围：Mini App 外壳、Telegram 身份、按钮/数学题/验证码、原口令审核衔接
 
 ## 1. 本次范围
@@ -42,7 +42,9 @@
 - 用户已配置 `@testxd02bot` 的 Main Mini App，Bot API 回读 `has_main_web_app=True`。
 - 目标 HTTPS 地址为 `https://robot.telema.cn/miniapp/`。
 - 按本地 master 提交 → 本地 release-tg 合并 → 推送 release-tg，依赖 GitHub Actions 检查、镜像构建及部署。
-- 仅在所有门禁通过、确认公网路径可访问后启用 `MINI_APP_ENABLED`。回读运行镜像、迁移版本、schema gate、入口开关与 HTTP 状态。
+- 最终[发布流水线](https://github.com/chenxi1280/TgGroupRobot/actions/runs/41687700966)全部成功，发布提交为 `39adf18d05656634c1ddea9230f7a0e527e000ec`。完整 CI 回归 1,417 项通过、0 失败、0 跳过，耗时 102.78 秒；前端构建、质量阈值、调用契约、Ruff、mypy 和新库迁移均通过。
+- 生产运行镜像为 `ghcr.io/chenxi1280/tggrouprobot-bot:39adf18d05656634c1ddea9230f7a0e527e000ec`，容器运行中。独立回读 8 个关键源码文件的 SHA-256 与本地一致，数据库为 `0018_mini_app_verification`，schema gate 通过，`MINI_APP_ENABLED=true`。
+- 公网入口、JS、CSS 与原管理页均返回 200；无 Telegram 身份的验证 API 返回 401。已保留 Nginx 和运行配置修改前备份。
 - 真实 Telegram 手机/桌面入群、题目提交、限制解除、欢迎消息及口令审核现场验收尚未执行；隔离测试中 Telegram 调用为模拟边界。
 
 ## 5. 四个检查维度
@@ -59,3 +61,10 @@
 首轮候选 `8dfe40f` 的[流水线](https://github.com/chenxi1280/TgGroupRobot/actions/runs/41685742958)在新库迁移阶段失败：`sql/init.sql` 已创建 `mini_app_status`，随后 `0018` 再次加列导致 DuplicateColumn。镜像和部署阶段均跳过，生产未改变。修正为符合现有 bootstrap＋迁移链约定的 `ADD COLUMN IF NOT EXISTS`，并增加在已初始化字段上重复执行本 revision 后通过 schema gate 的上海数据库回归。
 
 第二轮候选 `ef9e76c` 已通过新库迁移，[流水线](https://github.com/chenxi1280/TgGroupRobot/actions/runs/41686629591)在测试收集时被 AnyIO 4.16 的弃用告警拦截：旧 Starlette TestClient 引用了已弃用的 BlockingPortal 别名。仅将新增身份 HTTP 测试改成现有 httpx AsyncClient/ASGITransport 方式，保留 `-W error`，不降级依赖或屏蔽告警。本地 AnyIO 同步至 CI 的 4.16.0 后重新验证。
+
+## 7. 最终证据与清理
+
+- [GitHub 发布结果](../../reports/2026-11-04-mini-app-verification/github-run.json)与[CI 汇总](../../reports/2026-11-04-mini-app-verification/ci-checks-summary.json)。
+- [生产源码与数据库回读](../../reports/2026-11-04-mini-app-verification/production-source-schema.json)、[公网 HTTP 检查](../../reports/2026-11-04-mini-app-verification/production-http.json)、[运行状态](../../reports/2026-11-04-mini-app-verification/production-runtime.json)。
+- 已关闭本次本地 Vite 和模拟 API 预览进程。上海专用测试库核验无其他连接后恢复测试前的停止状态，容器与持久卷保留。
+- 没有向真实群发送测试消息，也没有替用户执行真实入群；网页与部署检查通过不等同于成员现场验收。待真实成员从新挑战按钮打开 Mini App 后，再确认三种模式、解禁及欢迎消息链路。

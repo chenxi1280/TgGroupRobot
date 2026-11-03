@@ -1,0 +1,11 @@
+{
+  "commit": "39adf18d05656634c1ddea9230f7a0e527e000ec",
+  "image": "ghcr.io/chenxi1280/tggrouprobot-bot:39adf18d05656634c1ddea9230f7a0e527e000ec",
+  "container": "tggrouprobot-bot",
+  "status": "running",
+  "running": true,
+  "restarting": false,
+  "oom_killed": false,
+  "exit_code": 0,
+  "started_at": "2026-11-03T17:54:52.368681907Z"
+}
