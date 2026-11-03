@@ -72,6 +72,7 @@ class Settings(BaseSettings):
 
     # 内置后台管理
     admin_web_enabled: bool = Field(default=True, alias="ADMIN_WEB_ENABLED")
+    mini_app_enabled: bool = Field(default=False, alias="MINI_APP_ENABLED")
     admin_web_host: str = Field(default="127.0.0.1", alias="ADMIN_WEB_HOST")
     admin_web_port: int = Field(default=8088, alias="ADMIN_WEB_PORT")
     admin_session_days: int = Field(default=7, alias="ADMIN_SESSION_DAYS")

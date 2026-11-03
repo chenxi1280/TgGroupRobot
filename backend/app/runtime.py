@@ -95,15 +95,13 @@ async def _wait_for_shutdown_signal(leader_lock: LeaderLock) -> None:
 
 
 async def _start_admin_web(app, settings):
-    if not getattr(settings, "admin_web_enabled", True):
+    if not (settings.admin_web_enabled or settings.mini_app_enabled):
         return None, None
     import uvicorn
 
-    from backend.features.web_admin.app import create_admin_web_app
+    from backend.app.web import create_web_app
 
-    admin_web_app = create_admin_web_app(app.bot_data["db"], settings)
-    if "scheduler" in app.bot_data:
-        admin_web_app.state.scheduler = app.bot_data["scheduler"]
+    admin_web_app = create_web_app(app, settings)
     config = uvicorn.Config(
         admin_web_app,
         host=settings.admin_web_host,

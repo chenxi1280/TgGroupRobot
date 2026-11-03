@@ -1086,6 +1086,8 @@ COMMENT ON COLUMN bot.verification_challenges.prompt_attempts IS '验证提示�
 COMMENT ON COLUMN bot.verification_challenges.prompt_last_error IS '验证提示发送最近错误';
 COMMENT ON COLUMN bot.verification_challenges.prompt_completed_at IS '验证提示投递完成时间';
 
+ALTER TABLE bot.verification_challenges ADD COLUMN IF NOT EXISTS mini_app_status VARCHAR(32);
+
 -- 运营审计事件
 CREATE TABLE IF NOT EXISTS bot.ops_audit_events (
     id SERIAL PRIMARY KEY,

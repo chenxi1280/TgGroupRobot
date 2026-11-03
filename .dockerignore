@@ -13,6 +13,8 @@ __pycache__
 docs-site/node_modules
 docs-site/.astro
 docs-site/dist
+miniapp/node_modules
+miniapp/dist
 node_modules
 dist
 build

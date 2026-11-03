@@ -269,6 +269,17 @@ async def _mark_prompt_success(challenge, message) -> None:
     challenge.prompt_completed_at = dt.datetime.now(dt.UTC)
 
 
+async def _send_mini_app_prompt(context, chat, member, *, settings, challenge):
+    from backend.features.mini_app.links import verification_link
+
+    text = (f"🛡 {member.mention_html()} 请点击下方按钮，在 Telegram 内完成入群验证。\n\n"
+            f"⏱️ 请在 {settings.verification_timeout_seconds} 秒内完成，验证通过前暂时不能发言。")
+    return await _send_verification_prompt(
+        context, chat.id, settings, text=text,
+        reply_markup=verification_link(context.bot, challenge.token),
+    )
+
+
 async def _mark_prompt_failure(challenge, error: Exception) -> None:
     import datetime as dt
 
@@ -355,6 +366,9 @@ async def _start_member_challenge(context, session, chat, *, member, settings) -
         ttl_seconds=settings.verification_timeout_seconds,
         verification_type=settings.verification_mode,
     )
+    app_settings = context.application.bot_data.get("settings")
+    if getattr(app_settings, "mini_app_enabled", False) and settings.verification_mode in {"button", "math", "captcha"}:
+        challenge.mini_app_status = "pending"
     await session.commit()
     restrict_result = await restrict_user_safely(
         context,
@@ -370,7 +384,8 @@ async def _start_member_challenge(context, session, chat, *, member, settings) -
         await session.commit()
         return
     try:
-        sent = await _send_challenge_prompt(context, chat, member, settings=settings, challenge=challenge)
+        sender = _send_mini_app_prompt if challenge.mini_app_status else _send_challenge_prompt
+        sent = await sender(context, chat, member, settings=settings, challenge=challenge)
         await _mark_prompt_success(challenge, sent)
         await session.commit()
     except Exception as exc:

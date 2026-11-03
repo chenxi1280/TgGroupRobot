@@ -72,3 +72,9 @@ TGGROUPROBOT_CHECK_RETRY_DELAY_SECONDS=5
 ```bash
 bash /data/tggrouprobot/current/deploy/check-web.sh
 ```
+
+## 基础验证 Mini App
+
+Bot 镜像包含 `miniapp/` 的构建产物，成员页面地址为 `https://robot.telema.cn/miniapp/`。在 BotFather 为当前 Bot 配置 Main Mini App 后，设置 `MINI_APP_ENABLED=true` 并重新创建 bot 容器。默认 false，不改变既有群验证流程。Nginx 需要按示例代理 `/miniapp/` 并关闭该路径访问日志，避免启动参数进入日志。
+
+成员页与 `/admin/` 共用端口，认证分别处理。`ADMIN_WEB_ENABLED=false` 不会关闭已经启用的 Mini App。新增基础挑战通过网页完成，人工审核和口令审核保持原流程。版本、测试及未验项见 [实施记录](../docs/product/2026-11-04-mini-app-verification-implementation.md)。

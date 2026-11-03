@@ -745,7 +745,7 @@ async def test_new_member_without_invite_metadata_does_not_award_points(monkeypa
         return True, True, None
 
     async def fake_create_challenge(*args, **kwargs):
-        return SimpleNamespace(token="token-1", question="1+1=?", solved=False, timeout_handled=False)
+        return SimpleNamespace(token="token-1", question="1+1=?", solved=False, timeout_handled=False, mini_app_status=None)
 
     async def fake_t(*args, **kwargs):
         return "验证提示"
@@ -849,7 +849,7 @@ async def test_new_member_with_cached_invite_hint_awards_points(monkeypatch):
         return True, True, None
 
     async def fake_create_challenge(*args, **kwargs):
-        return SimpleNamespace(token="token-1", question="1+1=?", solved=False, timeout_handled=False)
+        return SimpleNamespace(token="token-1", question="1+1=?", solved=False, timeout_handled=False, mini_app_status=None)
 
     monkeypatch.setattr(verification_handler, "ensure_chat", fake_ensure_chat)
     monkeypatch.setattr(verification_handler, "get_chat_settings", fake_get_chat_settings)

@@ -102,6 +102,7 @@ async def test_challenge_is_committed_before_telegram_side_effects(monkeypatch) 
         solved=False,
         timeout_handled=False,
         prompt_attempts=0,
+        mini_app_status=None,
     )
 
     async def create_challenge(*args, **kwargs):
@@ -120,7 +121,7 @@ async def test_challenge_is_committed_before_telegram_side_effects(monkeypatch) 
     monkeypatch.setattr(verification_handler, "_send_challenge_prompt", send)
 
     await verification_handler._start_member_challenge(
-        SimpleNamespace(),
+        SimpleNamespace(application=SimpleNamespace(bot_data={"settings": SimpleNamespace(mini_app_enabled=False)})),
         _TrackingSession(events),
         SimpleNamespace(id=-100123),
         member=_member(),
@@ -419,7 +420,7 @@ async def test_math_wrong_answer_applies_configured_punishment(monkeypatch):
     replies: list[str] = []
 
     settings = _settings(verification_mode="math", verification_wrong_action="kick")
-    challenge = SimpleNamespace(question="1 + 1 = ?", solved=False)
+    challenge = SimpleNamespace(question="1 + 1 = ?", solved=False, mini_app_status=None)
 
     async def fake_get_chat_settings(session, chat_id: int):
         return settings
@@ -470,7 +471,7 @@ async def test_math_wrong_answer_keeps_challenge_when_punishment_fails(monkeypat
     marked: list[tuple[int, int]] = []
     replies: list[str] = []
     settings = _settings(verification_mode="math", verification_wrong_action="kick")
-    challenge = SimpleNamespace(question="1 + 1 = ?", solved=False)
+    challenge = SimpleNamespace(question="1 + 1 = ?", solved=False, mini_app_status=None)
 
     async def fake_get_chat_settings(session, chat_id: int):
         return settings

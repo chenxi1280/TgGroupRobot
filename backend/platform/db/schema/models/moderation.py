@@ -70,6 +70,7 @@ class VerificationChallenge(Base):
     token: Mapped[str] = mapped_column(String(64), index=True)
     expires_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), index=True)
     solved: Mapped[bool] = mapped_column(Boolean, default=False)
+    mini_app_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
     verification_type: Mapped[str] = mapped_column(String(16), default=VerificationMode.button.value)
     question: Mapped[str | None] = mapped_column(Text, nullable=True)
     answer: Mapped[str | None] = mapped_column(String(64), nullable=True)

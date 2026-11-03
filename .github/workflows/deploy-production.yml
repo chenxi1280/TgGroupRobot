@@ -49,6 +49,16 @@ jobs:
           python-version: '3.12'
           cache: pip
 
+      - name: Setup Node for Mini App
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: miniapp/package-lock.json
+
+      - name: Check Mini App build
+        run: npm ci --prefix miniapp && npm run build --prefix miniapp
+
       - name: Run Python code checks
         env:
           BOT_TOKEN: 123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi

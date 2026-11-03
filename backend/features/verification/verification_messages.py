@@ -176,6 +176,9 @@ async def _solve_verification(session, *, chat_id: int, user_id: int, answer: st
     if challenge is None or challenge.solved:
         await session.commit()
         return None
+    if challenge.mini_app_status is not None:
+        await session.commit()
+        return None
     requires_self_review = settings.verification_mode == "button"
     if requires_self_review and not is_self_review_question(challenge.question):
         await session.commit()

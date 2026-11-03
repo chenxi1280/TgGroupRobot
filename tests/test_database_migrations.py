@@ -152,6 +152,7 @@ def test_reliability_revisions_form_linear_chain_and_have_downgrades() -> None:
         "0015_general_admin_policies",
         "0016_delivery_action_facts",
         "0017_generic_admin_delivery",
+        "0018_mini_app_verification",
     ]
     assert [revision.down_revision for revision in revisions] == [
         None,
@@ -171,6 +172,7 @@ def test_reliability_revisions_form_linear_chain_and_have_downgrades() -> None:
         "0014_mall_intent_cancel",
         "0015_general_admin_policies",
         "0016_delivery_action_facts",
+        "0017_generic_admin_delivery",
     ]
     assert all(callable(revision.downgrade) for revision in revisions)
 

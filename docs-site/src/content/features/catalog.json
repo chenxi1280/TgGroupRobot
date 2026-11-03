@@ -126,19 +126,67 @@
       "category": "入群风控",
       "status": "历史记录待复核",
       "kind": "runtime",
-      "summary": "支持按钮、数学题、验证码和管理员审核等入群验证模式。",
-      "entry": { "label": "进群验证", "command": "/start", "menuKeys": ["verification"] },
-      "prerequisites": ["机器人有禁言、解除限制和删除消息等必要权限。", "群组允许机器人接收新成员事件。"],
+      "summary": "支持按钮、数学题、验证码和管理员审核；启用 Mini App 后，三种基础验证在 Telegram 内的网页完成。",
+      "entry": {
+        "label": "进群验证",
+        "command": "/start",
+        "menuKeys": [
+          "verification"
+        ]
+      },
+      "prerequisites": [
+        "机器人有禁言、解除限制和删除消息等必要权限。",
+        "群组允许机器人接收新成员事件。",
+        "网页验证需要配置 BotFather Main Mini App 和 HTTPS 地址，并启用 MINI_APP_ENABLED。"
+      ],
       "steps": [
-        { "title": "进入进群验证", "action": "发送 /start 打开基础菜单，点击管理入口，再点击「进群验证」。", "tip": "页面会展示当前验证模式和状态。" },
-        { "title": "选择验证模式", "action": "选择按钮、数学题、验证码或管理员审核，并设置超时时间。", "tip": "高风险群建议使用数学题或验证码。" },
-        { "title": "模拟新成员入群", "action": "让测试账号入群，确认验证消息、限制和通过后的解除动作。", "tip": "测试前确认机器人是管理员。" }
+        {
+          "title": "进入进群验证",
+          "action": "发送 /start 打开基础菜单，点击管理入口，再点击「进群验证」。",
+          "tip": "页面会展示当前验证模式和状态。"
+        },
+        {
+          "title": "选择验证模式",
+          "action": "选择按钮、数学题、验证码或管理员审核，并设置超时时间。",
+          "tip": "高风险群建议使用数学题或验证码。"
+        },
+        {
+          "title": "模拟新成员入群",
+          "action": "让测试账号入群。Mini App 启用时点击群消息下方的「点击验证」，在网页完成基础验证；人工审核、口令自助审核仍走原流程。",
+          "tip": "全部审核通过并确认 Telegram 实际解禁后，才显示可以返回发言；需继续审核时不会提前解禁。"
+        }
       ],
       "flowchart": "auto",
       "runtimeFlow": true,
-      "qa": [{ "question": "管理员审核模式会自动通过吗？", "answer": "不会，需要管理员在审核入口中确认。" }],
-      "logicAudit": { "status": "ok", "items": ["菜单入口为 verification。", "运行时需覆盖通过、失败、超时和机器人权限不足路径。"] },
-      "truthTableNames": ["新人验证"]
+      "qa": [
+        {
+          "question": "管理员审核模式会自动通过吗？",
+          "answer": "不会，需要管理员在审核入口中确认。"
+        },
+        {
+          "question": "网页提示基础验证通过，为什么还不能发言？",
+          "answer": "本群启用了后续口令审核。请返回群聊，按原提示完成审核；全部步骤通过前仍保持发言限制。"
+        },
+        {
+          "question": "能把验证链接转发给别人代验吗？",
+          "answer": "不能。后端会校验 Telegram 身份与挑战归属，仅新成员本人可提交。"
+        },
+        {
+          "question": "关闭验证网页会停止倒计时吗？",
+          "answer": "不会。期限由服务器记录，关闭、刷新或重新打开都不会重置。"
+        }
+      ],
+      "logicAudit": {
+        "status": "ok",
+        "items": [
+          "菜单入口为 verification。",
+          "运行时需覆盖通过、失败、超时和机器人权限不足路径。",
+          "Mini App 本地接口及隔离库测试不代替真实 Telegram 入群、客户端显示和实际解禁验收。"
+        ]
+      },
+      "truthTableNames": [
+        "新人验证"
+      ]
     },
     {
       "slug": "verification-timeout",

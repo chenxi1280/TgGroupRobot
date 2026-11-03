@@ -252,7 +252,7 @@ def _full_tables() -> dict[str, dict]:
                 "timeout_completed_at", "created_at",
                 "timeout_replay_of_attempt_id",
                 "prompt_status", "prompt_message_id", "prompt_attempts",
-                "prompt_last_error", "prompt_completed_at",
+                "prompt_last_error", "prompt_completed_at", "mini_app_status",
             },
             "indexes": [
                 {

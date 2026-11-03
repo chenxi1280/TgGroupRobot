@@ -23,7 +23,10 @@
       "backend/features/admin/runtime.py",
       "backend/features/admin/ui/admin_main_keyboards.py",
       "backend/features/verification/verification_runtime.py",
-      "backend/platform/scheduler/tasks/verification_timeout_task.py"
+      "backend/platform/scheduler/tasks/verification_timeout_task.py",
+      "backend/features/mini_app/verification_router.py",
+      "backend/features/verification/mini_app_service.py",
+      "backend/features/verification/mini_app_actions.py"
     ],
     "alignmentStatus": "ok",
     "alignmentSummary": "真实回调审计通过。"
@@ -183,7 +186,8 @@
         ]
       ],
       "stateLines": [
-        "当前群组：演示群"
+        "当前群组：演示群",
+        "启用 Mini App 后：按钮/数学题/验证码在网页完成；人工/口令审核保持原流程。"
       ]
     },
     {

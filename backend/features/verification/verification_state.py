@@ -18,29 +18,38 @@ from backend.shared.handlers.base.chat_resolver import ChatResolver
 log = structlog.get_logger(__name__)
 
 
-async def start_self_review_if_needed(context: ContextTypes.DEFAULT_TYPE, session, chat, *, user, settings) -> bool:
-    if not bool(getattr(settings, "join_self_review_enabled", False)):
-        return False
+async def create_self_review_challenge(session, *, chat_id: int, user_id: int, settings):
     challenge = await create_or_replace_challenge(
         session,
-        chat_id=chat.id,
-        user_id=user.id,
+        chat_id=chat_id,
+        user_id=user_id,
         ttl_seconds=int(getattr(settings, "join_self_review_timeout_seconds", 300) or 300),
         verification_type=VerificationMode.captcha.value,
     )
     challenge.question = build_self_review_question()
     challenge.answer = SELF_REVIEW_EXPECTED_ANSWER
     await session.flush()
+    return challenge
+
+
+async def send_self_review_prompt(context, challenge, *, user, settings):
+    return await context.bot.send_message(
+        chat_id=challenge.chat_id,
+        text=(
+            f"📝 {user.mention_html()} 请发送以下口令完成自助审核：\n\n"
+            f"<b>{SELF_REVIEW_EXPECTED_ANSWER}</b>\n\n"
+            f"⏱️ {settings.join_self_review_timeout_seconds} 秒内完成"
+        ),
+        parse_mode="HTML",
+    )
+
+
+async def start_self_review_if_needed(context: ContextTypes.DEFAULT_TYPE, session, chat, *, user, settings) -> bool:
+    if not bool(getattr(settings, "join_self_review_enabled", False)):
+        return False
+    challenge = await create_self_review_challenge(session, chat_id=chat.id, user_id=user.id, settings=settings)
     try:
-        await context.bot.send_message(
-            chat_id=chat.id,
-            text=(
-                f"📝 {user.mention_html()} 请发送以下口令完成自助审核：\n\n"
-                f"<b>{SELF_REVIEW_EXPECTED_ANSWER}</b>\n\n"
-                f"⏱️ {settings.join_self_review_timeout_seconds} 秒内完成"
-            ),
-            parse_mode="HTML",
-        )
+        await send_self_review_prompt(context, challenge, user=user, settings=settings)
     except Exception as exc:
         log.warning("send_self_review_prompt_failed", chat_id=chat.id, user_id=user.id, error=str(exc))
         challenge.solved = True

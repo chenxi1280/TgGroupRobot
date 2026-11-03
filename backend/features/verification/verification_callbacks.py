@@ -165,6 +165,9 @@ async def verify_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         update, origin, chat.id, user_id=update.effective_user.id
     ):
         return
+    if getattr(origin, "mini_app_status", None) is not None:
+        await answer_callback_query_safely(update, "请使用群里的小程序入口完成验证", show_alert=True)
+        return
     if action == "decline":
         await _handle_verification_decline(update, context, db, settings=settings)
         return
