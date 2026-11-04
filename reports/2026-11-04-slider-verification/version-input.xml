@@ -1,0 +1,1 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites><testsuite name="pytest" errors="0" failures="0" skipped="0" tests="1" time="3.023" timestamp="2026-11-04T09:53:48.745822+08:00" hostname="xida-mac.local"><testcase classname="tests.test_mini_app_verification_postgres" name="test_old_web_answer_and_uncompleted_slider_cannot_unmute" time="2.241" /></testsuite></testsuites>

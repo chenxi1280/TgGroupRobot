@@ -221,7 +221,7 @@ async def test_old_web_answer_and_uncompleted_slider_cannot_unmute(scope):
     token, _ = await make_challenge(scope)
     for payload in [{"action": "agree"}, {"action": "answer", "answer": "1234"},
                     {"puzzle_id": "0" * 32, "position": -1}, {"puzzle_id": "0" * 32, "position": 999},
-                    {"puzzle_id": "0" * 32, "position": True}]:
+                    {"puzzle_id": "0" * 32, "position": True}, {"puzzle_id": "中" * 32, "position": 160}]:
         response = await scope.client.post("/miniapp/api/verification", headers=headers(scope.user, token), json=payload)
         assert response.status_code == 422
     assert (await submit(scope, token, position=0)).status_code == 422

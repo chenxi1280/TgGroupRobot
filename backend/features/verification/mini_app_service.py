@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import datetime as dt
-import hmac
 
 from fastapi import HTTPException
 from sqlalchemy import select
@@ -63,7 +62,7 @@ async def claim_submission(session, token: str, user_id: int, *, payload):
     challenge = await load_challenge(session, token, user_id, lock=True)
     if pending_status(challenge) != "pending":
         return challenge, None
-    if not hmac.compare_digest(puzzle_id(challenge.question), payload.puzzle_id):
+    if puzzle_id(challenge.question) != payload.puzzle_id:
         raise HTTPException(status_code=422, detail="拼图已更新，请重试")
     if abs(int(challenge.answer) - payload.position) > TOLERANCE:
         challenge.question, challenge.answer = new_puzzle()

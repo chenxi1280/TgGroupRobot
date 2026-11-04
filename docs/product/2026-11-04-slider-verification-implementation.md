@@ -29,6 +29,7 @@
 
 - 上海专用 tgr_ui_test：原 guard 与互斥锁核验后运行，70 项全部通过，0 失败/错误/跳过，98.82 秒；[JUnit](../../reports/2026-11-04-slider-verification/targeted.xml)。测试覆盖两种位置分流、群内三种方式、权限限制、配置持久回读、拼图容差、错位换图不延长期限、旧版本、旧答案、非本人、过期、并发一次解禁、失败不重放和口令审核。
 - 首次专项回归 65 通过、1 项测试失败：非本人测试仍提交旧版 action 字段，被新请求结构以 422 拒绝而未进入归属检查。改为合法拼图请求后重跑上述 70 项全部通过；没有据此修改业务校验。
+- 发布前补查确认：公开拼图版本使用 HMAC 的 ASCII 字符串比较时，32 位非 ASCII 输入会触发 TypeError。版本本身公开，不需要恒定时间比较；改用普通字符串判等，旧版本和异常版本均返回可重试错误。[上海 HTTP 补测](../../reports/2026-11-04-slider-verification/version-input.xml) 1 项通过，3.02 秒。本轮候选 CI 主动取消，未部署，再提交修正后的候选。
 - 前端生产构建、Ruff、mypy（689 文件）、结构质量与调用契约均通过。文档目录完整；55 条流程、1,687 个回调的匹配审计 0 问题。体验审计只有既存 quick-publish 完成度提示，新人验证没有发现项；未修改无关功能。证据：[本地检查](../../reports/2026-11-04-slider-verification/local-checks.json)。
 - 浏览器预览使用本地受控模拟响应，不执行 Telegram 解禁。手机尺寸与桌面布局、鼠标拖动、触摸事件拖动、键盘提交以及错位后新拼图重置分别检查，[UI 检查记录](../../reports/2026-11-04-slider-verification/ui-checks.json)及[手机预览](../../output/playwright/slider-mobile.png)、[桌面预览](../../output/playwright/slider-desktop.png)已保存。
 
