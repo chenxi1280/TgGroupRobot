@@ -1,7 +1,7 @@
 # 群内验证与网页拼图实施、发布记录
 
 > 日期：2026-11-04（Asia/Shanghai）
-> 状态：实现与上海专项测试完成，生产发布待执行
+> 状态：已发布并完成独立生产核验；真实 Telegram 现场验收未完成
 > 需求：[已确认 PRD](./2026-11-04-verification-channels-prd.md)
 > 流程：[接入设计](../architecture/2026-11-04-verification-channels-flow.md)
 
@@ -44,4 +44,14 @@
 
 ## 5. 发布与现场验收
 
-完整 CI 通过后按 master → release-tg → GitHub Actions 发布，随后独立回读镜像、源码、开关、数据库结构和公网资源。当前没有发送真实群测试消息，也没有替用户执行入群；真实 Telegram 手机/桌面从入群到解禁的现场验收尚未完成，不能以浏览器模拟或 CI 替代。
+修正版 `f68b353f6c4591b73667752a7596ed46aa867890` 的[完整 CI](https://github.com/chenxi1280/TgGroupRobot/actions/runs/41757190210)已通过，1,434 项测试全部成功，0 失败/跳过，103.83 秒。按 master → release-tg → GitHub Actions 发布后，独立回读镜像、源码、开关、数据库结构和公网资源。当前没有发送真实群测试消息，也没有替用户执行入群；真实 Telegram 手机/桌面从入群到解禁的现场验收尚未完成，不能以浏览器模拟或 CI 替代。
+
+## 6. 最终发布核验
+
+[发布流水线](https://github.com/chenxi1280/TgGroupRobot/actions/runs/41757190210)全部成功，生产运行 `f68b353f6c4591b73667752a7596ed46aa867890` 镜像，状态 running，重启次数 0。相关 20 个源码/依赖文件 SHA-256 与本地一致；Pillow 为 13.0.0，schema gate 通过，迁移版本仍为 0018_mini_app_verification（本次无需结构迁移），Mini App 与原管理页开关均开启。
+
+公网入口、JS、CSS 与原管理页均返回 200；JS/CSS 与本地生产构建逐字节一致，未登录验证接口返回 401。没有批量更改群配置；管理员需在“进群验证 → 进群验证 → 网页验证 · 拼图滑块 → 启动”中启用，新挑战才走网页。原有群内配置继续在群里完成。
+
+证据：[流水线回读](../../reports/2026-11-04-slider-verification/github-run.json)、[CI 测试汇总](../../reports/2026-11-04-slider-verification/ci-checks-summary.json)、[源码与数据库](../../reports/2026-11-04-slider-verification/production-source-schema.json)、[公网资源](../../reports/2026-11-04-slider-verification/production-http.json)、[容器运行状态](../../reports/2026-11-04-slider-verification/production-runtime.json)。
+
+本次浏览器、预览进程和测试通道已关闭。上海测试容器确认无其他连接后恢复停止状态，数据与卷保留。真实 Telegram 成员入群、拖动、解禁和欢迎消息仍待现场验收；没有发送真实群测试消息。仓库原有的未提交 PRD、房间设计和历史报告保持原状。

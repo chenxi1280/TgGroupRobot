@@ -1,0 +1,12 @@
+{
+  "image": "ghcr.io/chenxi1280/tggrouprobot-bot:f68b353f6c4591b73667752a7596ed46aa867890",
+  "restart_count": 0,
+  "state": {
+    "Status": "running",
+    "Running": true,
+    "Restarting": false,
+    "OOMKilled": false,
+    "ExitCode": 0,
+    "StartedAt": "2026-11-04T01:59:24.265327496Z"
+  }
+}

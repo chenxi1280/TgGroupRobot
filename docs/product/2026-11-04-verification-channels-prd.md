@@ -1,7 +1,7 @@
 # 入群验证：群内与网页两种方式
 
 > 日期：2026-11-04（Asia/Shanghai）
-> 状态：需求已确认，实施中
+> 状态：已实现并发布；真实 Telegram 现场验收未完成。证据见[实施记录](./2026-11-04-slider-verification-implementation.md)
 > 本文取代 2026-11-02 Mini App PRD 中“将三种基础验证全部迁入网页”的范围。此前发布事实见[实施记录](./2026-11-04-mini-app-verification-implementation.md)。
 
 ## 用户确认范围

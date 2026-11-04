@@ -1,5 +1,7 @@
 # 基础验证 Mini App 实施与发布记录
 
+> 后续变更：本页保留 `39adf18` 的历史发布事实；当前“群内三种方式／网页拼图”行为及生产版本见[后续实施记录](./2026-11-04-slider-verification-implementation.md)。
+
 > 日期：2026-11-04（Asia/Shanghai）
 > 状态：基础验证 Mini App 已发布并启用；真实 Telegram 手机/桌面现场验收未完成
 > 范围：Mini App 外壳、Telegram 身份、按钮/数学题/验证码、原口令审核衔接

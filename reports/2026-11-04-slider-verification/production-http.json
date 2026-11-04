@@ -1,0 +1,18 @@
+{
+  "url": "https://robot.telema.cn/miniapp/",
+  "page_status": 200,
+  "assets": {
+    "/miniapp/assets/index-BtQvdkfY.js": {
+      "status": 200,
+      "matches_local_build": true,
+      "sha256": "566b96896df7073470db962655ece5fb4e64048a1e0f3badbdd8e4c956ad8966"
+    },
+    "/miniapp/assets/index-CcnkNARS.css": {
+      "status": 200,
+      "matches_local_build": true,
+      "sha256": "264eac60609426cca394cd79e4262ba53242404f68750ae22d3d2d187ff4c6a5"
+    }
+  },
+  "unauthenticated_api_status": 401,
+  "admin_status": 200
+}
