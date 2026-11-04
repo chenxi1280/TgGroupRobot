@@ -20,6 +20,7 @@ def format_verification_menu_text(
         "math": "🔢 简单加减法",
         "mute": "🤐 直接禁言新人",
         "captcha": "🔑 验证码验证",
+        "web": "🌐 网页拼图滑块",
         "admin": "👤 管理员确认",
     }.get(verification_mode, verification_mode)
     action_label = {"none": "不额外处理", "mute": "🔇 禁言", "kick": "👢 踢出"}.get(timeout_action, timeout_action)

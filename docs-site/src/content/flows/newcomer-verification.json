@@ -187,32 +187,39 @@
       ],
       "stateLines": [
         "当前群组：演示群",
-        "启用 Mini App 后：按钮/数学题/验证码在网页完成；人工/口令审核保持原流程。"
+        "群内保留按钮/数学题/数字验证码；网页使用拼图滑块。人工/口令审核保持原流程。"
       ]
     },
     {
       "id": "rules",
       "title": "验证规则总览",
       "message": [
-        "规则总览展示当前启用模式和超时处理。"
+        "选择群内验证或网页验证，每群只启用一种基础方式。"
       ],
       "keyboard": [
         [
           {
-            "label": "按钮验证",
-            "callbackData": "adm:vfy_home:{chat_id}:rule:button",
+            "label": "群内验证",
+            "callbackData": "adm:vfy_home:{chat_id}:group_rules",
             "action": "goto",
-            "target": "button_rule",
-            "feedback": "进入按钮验证。"
+            "target": "group_rules",
+            "feedback": "已进入或更新群内验证。"
+          },
+          {
+            "label": "网页验证 · 拼图滑块",
+            "callbackData": "adm:vfy_home:{chat_id}:rule:web",
+            "action": "goto",
+            "target": "web_rule",
+            "feedback": "已进入或更新网页验证 · 拼图滑块。"
           }
         ],
         [
           {
-            "label": "数学验证",
-            "callbackData": "adm:vfy_home:{chat_id}:rule:math",
+            "label": "直接禁言新人",
+            "callbackData": "adm:vfy_home:{chat_id}:rule:mute",
             "action": "goto",
-            "target": "math_rule",
-            "feedback": "进入数学验证。"
+            "target": "mute_rule",
+            "feedback": "已进入或更新直接禁言新人。"
           }
         ],
         [
@@ -282,10 +289,10 @@
         [
           {
             "label": "返回规则",
-            "callbackData": "adm:vfy_home:{chat_id}:rules",
+            "callbackData": "adm:vfy_home:{chat_id}:group_rules",
             "action": "back",
-            "target": "rules",
-            "feedback": "已返回规则总览。"
+            "target": "group_rules",
+            "feedback": "已返回群内验证。"
           }
         ]
       ]
@@ -339,10 +346,10 @@
         [
           {
             "label": "返回规则",
-            "callbackData": "adm:vfy_home:{chat_id}:rules",
+            "callbackData": "adm:vfy_home:{chat_id}:group_rules",
             "action": "back",
-            "target": "rules",
-            "feedback": "已返回规则总览。"
+            "target": "group_rules",
+            "feedback": "已返回群内验证。"
           }
         ]
       ]
@@ -553,6 +560,203 @@
       ],
       "stateLines": [
         "审计：回调来自后端真实路由"
+      ]
+    },
+    {
+      "id": "group_rules",
+      "title": "群内验证",
+      "message": [
+        "按钮、数学题、数字验证码继续在群里完成。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "按钮验证",
+            "callbackData": "adm:vfy_home:{chat_id}:rule:button",
+            "action": "goto",
+            "target": "button_rule",
+            "feedback": "进入按钮验证。"
+          }
+        ],
+        [
+          {
+            "label": "数学验证",
+            "callbackData": "adm:vfy_home:{chat_id}:rule:math",
+            "action": "goto",
+            "target": "math_rule",
+            "feedback": "进入数学验证。"
+          }
+        ],
+        [
+          {
+            "label": "数字验证码",
+            "callbackData": "adm:vfy_home:{chat_id}:rule:captcha",
+            "action": "goto",
+            "target": "captcha_rule",
+            "feedback": "已进入或更新数字验证码。"
+          }
+        ],
+        [
+          {
+            "label": "返回验证方式",
+            "callbackData": "adm:vfy_home:{chat_id}:rules",
+            "action": "back",
+            "target": "rules",
+            "feedback": "已进入或更新返回验证方式。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "web_rule",
+      "title": "网页拼图滑块",
+      "message": [
+        "先限制发言，打开 Telegram Mini App 拖动图片对齐缺口；错位换图重试，不延长原期限。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "启动",
+            "callbackData": "adm:vfy_home:{chat_id}:rule:web:toggle",
+            "action": "toggle",
+            "target": "web_rule",
+            "feedback": "已进入或更新启动。"
+          },
+          {
+            "label": "关闭",
+            "callbackData": "adm:vfy_home:{chat_id}:rule:web:disable",
+            "action": "toggle",
+            "target": "web_rule",
+            "feedback": "已进入或更新关闭。"
+          }
+        ],
+        [
+          {
+            "label": "超时时间",
+            "callbackData": "adm:vfy_home:{chat_id}:rule:web:cycle:timeout",
+            "action": "toggle",
+            "target": "web_rule",
+            "feedback": "已进入或更新超时时间。"
+          },
+          {
+            "label": "超时处理",
+            "callbackData": "adm:vfy_home:{chat_id}:rule:web:cycle:timeout_action",
+            "action": "toggle",
+            "target": "web_rule",
+            "feedback": "已进入或更新超时处理。"
+          }
+        ],
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:vfy_home:{chat_id}:rules",
+            "action": "back",
+            "target": "rules",
+            "feedback": "已进入或更新返回。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "captcha_rule",
+      "title": "群内数字验证码",
+      "message": [
+        "在群里输入提示中的数字验证码。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "启动",
+            "callbackData": "adm:vfy_home:{chat_id}:rule:captcha:toggle",
+            "action": "toggle",
+            "target": "captcha_rule",
+            "feedback": "已进入或更新启动。"
+          },
+          {
+            "label": "关闭",
+            "callbackData": "adm:vfy_home:{chat_id}:rule:captcha:disable",
+            "action": "toggle",
+            "target": "captcha_rule",
+            "feedback": "已进入或更新关闭。"
+          }
+        ],
+        [
+          {
+            "label": "超时时间",
+            "callbackData": "adm:vfy_home:{chat_id}:rule:captcha:cycle:timeout",
+            "action": "toggle",
+            "target": "captcha_rule",
+            "feedback": "已进入或更新超时时间。"
+          },
+          {
+            "label": "超时处理",
+            "callbackData": "adm:vfy_home:{chat_id}:rule:captcha:cycle:timeout_action",
+            "action": "toggle",
+            "target": "captcha_rule",
+            "feedback": "已进入或更新超时处理。"
+          }
+        ],
+        [
+          {
+            "label": "答错处理",
+            "callbackData": "adm:vfy_home:{chat_id}:rule:captcha:cycle:wrong_action",
+            "action": "toggle",
+            "target": "captcha_rule",
+            "feedback": "已进入或更新答错处理。"
+          }
+        ],
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:vfy_home:{chat_id}:group_rules",
+            "action": "back",
+            "target": "group_rules",
+            "feedback": "已进入或更新返回。"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "mute_rule",
+      "title": "直接禁言新人",
+      "message": [
+        "新成员直接禁言，沿用原流程。"
+      ],
+      "keyboard": [
+        [
+          {
+            "label": "启动",
+            "callbackData": "adm:vfy_home:{chat_id}:rule:mute:toggle",
+            "action": "toggle",
+            "target": "mute_rule",
+            "feedback": "已进入或更新启动。"
+          },
+          {
+            "label": "关闭",
+            "callbackData": "adm:vfy_home:{chat_id}:rule:mute:disable",
+            "action": "toggle",
+            "target": "mute_rule",
+            "feedback": "已进入或更新关闭。"
+          }
+        ],
+        [
+          {
+            "label": "禁言时长",
+            "callbackData": "adm:vfy_home:{chat_id}:rule:mute:cycle:duration",
+            "action": "toggle",
+            "target": "mute_rule",
+            "feedback": "已进入或更新禁言时长。"
+          }
+        ],
+        [
+          {
+            "label": "返回",
+            "callbackData": "adm:vfy_home:{chat_id}:rules",
+            "action": "back",
+            "target": "rules",
+            "feedback": "已进入或更新返回。"
+          }
+        ]
       ]
     }
   ]

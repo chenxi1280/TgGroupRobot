@@ -1,6 +1,6 @@
 # TgGroupRobot 功能真值表
 
-> 2026-11-04 基础验证 Mini App 已有独立实现及上海隔离测试证据；生产发布和 Telegram 现场状态见[实施记录](../product/2026-11-04-mini-app-verification-implementation.md)。房间游戏仍未实现。
+> 2026-11-04 群内验证保留按钮/数学题/数字验证码，网页验证使用拼图滑块；当前实现、测试、生产与现场验收边界见[实施记录](../product/2026-11-04-slider-verification-implementation.md)。房间游戏未实施。
 
 > 更新日期：2026-10-15
 > 历史代码审计基线：master / 07ce77d；最新生产通用/验收续修版本ab5d7f0

@@ -1,0 +1,38 @@
+{
+  "targeted": {
+    "tests": "70",
+    "failures": "0",
+    "errors": "0",
+    "skipped": "0",
+    "time": "98.823"
+  },
+  "quality_metrics_violations": 0,
+  "call_contract_violations": 0,
+  "mypy_files": 689,
+  "ruff": "passed",
+  "docs_alignment": {
+    "flows": 55,
+    "callbacks": 1687,
+    "findings": 0
+  },
+  "docs_experience": {
+    "flows": 55,
+    "findings": [
+      {
+        "slug": "quick-publish",
+        "title": "全局快捷发布",
+        "category": "频道管理",
+        "code": "completion",
+        "message": "长流程缺少完成度、必填项或下一步提示"
+      }
+    ],
+    "counts": {
+      "completion": 1
+    },
+    "byCategory": {
+      "频道管理": {
+        "completion": 1
+      }
+    }
+  }
+}

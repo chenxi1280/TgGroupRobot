@@ -20,6 +20,8 @@ VERIFICATION_MODE_LABELS = {
     "button": "简单接受条约",
     "math": "简单加减法",
     "mute": "直接禁言新人",
+    "captcha": "数字验证码",
+    "web": "网页拼图滑块",
 }
 
 JOIN_SELF_REVIEW_ACTION_LABELS = {

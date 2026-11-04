@@ -8,13 +8,14 @@ from backend.features.verification.mini_app_actions import resolve_submission
 from backend.features.verification.mini_app_service import (
     STATE_TEXT, challenge_view, claim_submission, load_challenge,
 )
+from backend.features.verification.slider_puzzle import MAX_POSITION
 
 router = APIRouter(prefix="/miniapp/api/verification")
 
 
 class VerificationSubmission(BaseModel):
-    action: str
-    answer: str = Field(default="", max_length=128)
+    puzzle_id: str = Field(min_length=32, max_length=32)
+    position: int = Field(ge=0, le=MAX_POSITION, strict=True)
 
 
 @router.get("")

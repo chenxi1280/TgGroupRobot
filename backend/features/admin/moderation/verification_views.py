@@ -66,7 +66,7 @@ _DURATION_LABEL_THRESHOLD_86400 = 86400
 VERIFICATION_RULES = [
     ("button", "📄 简单接受条约", "用户需要点击同意按钮"),
     ("math", "🔢 简单加减法", "用户需要做一道简单算术题"),
-    ("mute", "🤐 直接禁言新人", "新用户一律禁言"),
+    ("captcha", "🔢 数字验证码", "用户需要在群里输入数字验证码"),
 ]
 
 
@@ -169,41 +169,40 @@ class VerificationViewsMixin:
         keyboard = admin_keyboard(buttons)
         await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
 
-    async def _show_verification_rules_menu(
-        self,
-        update: Update,
-        context: ContextTypes.DEFAULT_TYPE,
-        chat_id: int,
-    ) -> None:
+    async def _show_verification_rules_menu(self, update, context, chat_id: int) -> None:
         db: Database = context.application.bot_data["db"]
         async with db.session_factory() as session:
             settings = await get_chat_settings(session, chat_id)
             await session.commit()
-
-        active_mode = settings.verification_mode if settings.verification_enabled else ""
-        active_label = _verification_mode_label(active_mode) if active_mode else "未启用"
-        lines = [
-            "🔢 进群验证",
-            "",
-            "简单接受条约 - 用户需要点击同意按钮",
-            "简单加减法 - 用户需要做一道简单算术题",
-            "直接禁言新人 - 新用户一律禁言",
-            "",
-            "只能启用一个验证，开启一个规则时，会自动关闭其他规则。",
-            f"当前启用：{active_label}",
-        ]
-        keyboard = admin_keyboard(
-            [
-                [
-                    InlineKeyboardButton(
-                        f"{'✅' if active_mode == mode else '❌'} {label}",
-                        callback_data=f"adm:vfy_home:{chat_id}:rule:{mode}",
-                    )
-                ]
-                for mode, label, _ in VERIFICATION_RULES
-            ]
-            + [[InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:verification:{chat_id}")]]
+        active_label = _verification_mode_label(settings.verification_mode) if settings.verification_enabled else "未启用"
+        text = (
+            "🛡️ 进群验证方式\n\n"
+            "💬 群内验证：按钮确认、数学题、数字验证码\n"
+            "🌐 网页验证：在 Telegram Mini App 拖动拼图对齐缺口\n\n"
+            "只能启用一个验证，开启一个规则时，会自动关闭其他规则。\n"
+            f"当前启用：{active_label}"
         )
+        keyboard = admin_keyboard([
+            [InlineKeyboardButton("💬 群内验证", callback_data=f"adm:vfy_home:{chat_id}:group_rules")],
+            [InlineKeyboardButton("🌐 网页验证 · 拼图滑块", callback_data=f"adm:vfy_home:{chat_id}:rule:web")],
+            [InlineKeyboardButton("🤐 直接禁言新人", callback_data=f"adm:vfy_home:{chat_id}:rule:mute")],
+            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:menu:verification:{chat_id}")],
+        ])
+        await self.message_helper.safe_edit(update, text, reply_markup=keyboard)
+
+    async def _show_group_verification_rules_menu(self, update, context, chat_id: int) -> None:
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            settings = await get_chat_settings(session, chat_id)
+            await session.commit()
+        active_mode = settings.verification_mode if settings.verification_enabled else ""
+        lines = ["💬 群内验证", "", *[f"{label} - {description}" for _, label, description in VERIFICATION_RULES],
+                 "", f"当前启用：{_verification_mode_label(active_mode)}"]
+        keyboard = admin_keyboard([
+            [InlineKeyboardButton(f"{'✅' if active_mode == mode else '❌'} {label}",
+                                  callback_data=f"adm:vfy_home:{chat_id}:rule:{mode}")]
+            for mode, label, _ in VERIFICATION_RULES
+        ] + [[InlineKeyboardButton("🔙 返回", callback_data=f"adm:vfy_home:{chat_id}:rules")]])
         await self.message_helper.safe_edit(update, "\n".join(lines), reply_markup=keyboard)
 
     async def _show_verification_rule_detail(
@@ -213,6 +212,9 @@ class VerificationViewsMixin:
         chat_id: int,
         *, mode: str,
     ) -> None:
+        if mode in {"captcha", "web"}:
+            await self._show_verification_slider_or_code_detail(update, context, chat_id, mode=mode)
+            return
         if mode == "math":
             await self._show_verification_math_detail(update, context, chat_id)
             return
@@ -261,7 +263,7 @@ class VerificationViewsMixin:
                 InlineKeyboardButton(f"⛔ 超时 {_verification_action_label(settings.verification_timeout_action)}", callback_data=f"adm:vfy_home:{chat_id}:rule:button:cycle:timeout_action"),
             ],
             [InlineKeyboardButton("🧹 清空封面", callback_data=f"adm:vfy_home:{chat_id}:rule:button:clear_cover")],
-            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:vfy_home:{chat_id}:rules")],
+            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:vfy_home:{chat_id}:group_rules")],
         ])
         await self.message_helper.safe_edit(update, text, reply_markup=keyboard)
 
@@ -307,9 +309,33 @@ class VerificationViewsMixin:
             ],
             [InlineKeyboardButton(f"❓ 答错 {_verification_action_label(getattr(settings, 'verification_wrong_action', 'none'))}", callback_data=f"adm:vfy_home:{chat_id}:rule:math:cycle:wrong_action")],
             [InlineKeyboardButton("🧹 清空封面", callback_data=f"adm:vfy_home:{chat_id}:rule:math:clear_cover")],
-            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:vfy_home:{chat_id}:rules")],
+            [InlineKeyboardButton("🔙 返回", callback_data=f"adm:vfy_home:{chat_id}:group_rules")],
         ])
         await self.message_helper.safe_edit(update, text, reply_markup=keyboard)
+
+    async def _show_verification_slider_or_code_detail(self, update, context, chat_id: int, *, mode: str) -> None:
+        db: Database = context.application.bot_data["db"]
+        async with db.session_factory() as session:
+            settings = await get_chat_settings(session, chat_id)
+            await session.commit()
+        active = bool(settings.verification_enabled) and settings.verification_mode == mode
+        description = "先限制发言，打开 Telegram 网页拖动拼图对齐缺口；错位可在截止前重试。" if mode == "web" else "在群里输入提示中的数字验证码，沿用群内答题流程。"
+        text = (f"{_verification_mode_label(mode)}\n\n{description}\n\n"
+                f"⚙️ 状态：{_status_label(active)}\n"
+                f"⏱️ 超时：{settings.verification_timeout_seconds} 秒\n"
+                f"⛔ 超时处理：{_verification_action_label(settings.verification_timeout_action)}")
+        rows = [
+            [InlineKeyboardButton("✅ 已启动" if active else "✅ 启动", callback_data=f"adm:vfy_home:{chat_id}:rule:{mode}:toggle"),
+             InlineKeyboardButton("❌ 关闭", callback_data=f"adm:vfy_home:{chat_id}:rule:{mode}:disable")],
+            [InlineKeyboardButton("⏱️ 超时时间", callback_data=f"adm:vfy_home:{chat_id}:rule:{mode}:cycle:timeout"),
+             InlineKeyboardButton("⛔ 超时处理", callback_data=f"adm:vfy_home:{chat_id}:rule:{mode}:cycle:timeout_action")],
+        ]
+        if mode == "captcha":
+            text += f"\n❓ 答错处理：{_verification_action_label(settings.verification_wrong_action)}"
+            rows.append([InlineKeyboardButton("❓ 答错处理", callback_data=f"adm:vfy_home:{chat_id}:rule:captcha:cycle:wrong_action")])
+        parent = "rules" if mode == "web" else "group_rules"
+        rows.append([InlineKeyboardButton("🔙 返回", callback_data=f"adm:vfy_home:{chat_id}:{parent}")])
+        await self.message_helper.safe_edit(update, text, reply_markup=admin_keyboard(rows))
 
     async def _show_verification_mute_detail(
         self,

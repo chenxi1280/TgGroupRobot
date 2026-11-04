@@ -6,25 +6,14 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 
 def verification_mode_menu(current_mode: str, chat_id: int | None = None) -> InlineKeyboardMarkup:
-    if chat_id is not None:
-        back_callback = f"adm:menu:category_safety:{chat_id}"
-        callbacks = [
-            f"adm:vfy_mode:{chat_id}:button",
-            f"adm:vfy_mode:{chat_id}:math",
-            f"adm:vfy_mode:{chat_id}:mute",
-        ]
-    else:
-        back_callback = "adm:menu:verification"
-        callbacks = ["adm:vfy_mode:button", "adm:vfy_mode:math", "adm:vfy_mode:mute"]
-
-    return admin_keyboard(
-        [
-            [InlineKeyboardButton("📄 简单接受条约", callback_data=callbacks[0])],
-            [InlineKeyboardButton("🔢 简单加减法", callback_data=callbacks[1])],
-            [InlineKeyboardButton("🤐 直接禁言新人", callback_data=callbacks[2])],
-            [InlineKeyboardButton("🔙 返回", callback_data=back_callback)],
-        ]
-    )
+    modes = [("button", "💬 群内 · 按钮验证"), ("math", "💬 群内 · 数学题"),
+             ("captcha", "💬 群内 · 数字验证码"), ("web", "🌐 网页 · 拼图滑块"),
+             ("mute", "🤐 直接禁言新人")]
+    prefix = f"adm:vfy_mode:{chat_id}:" if chat_id is not None else "adm:vfy_mode:"
+    back = f"adm:menu:category_safety:{chat_id}" if chat_id is not None else "adm:menu:verification"
+    return admin_keyboard([
+        [InlineKeyboardButton(label, callback_data=prefix + mode)] for mode, label in modes
+    ] + [[InlineKeyboardButton("🔙 返回", callback_data=back)]])
 
 
 def verification_config_menu(
@@ -41,6 +30,7 @@ def verification_config_menu(
         "math": "简单加减法",
         "mute": "直接禁言新人",
         "captcha": "验证码",
+        "web": "网页拼图滑块",
         "admin": "管理员",
     }.get(mode, mode)
     action_label = {"none": "不额外处理", "mute": "禁言", "kick": "踢出"}.get(timeout_action, timeout_action)

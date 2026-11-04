@@ -229,6 +229,7 @@ class VerificationMode(str, enum.Enum):
     math = "math"  # 简单加减法
     mute = "mute"  # 直接禁言新人
     captcha = "captcha"  # 验证码验证
+    web = "web"
     admin = "admin"  # 管理员确认（管理员手动审核）
 
 

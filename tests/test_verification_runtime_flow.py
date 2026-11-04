@@ -539,3 +539,36 @@ async def test_timeout_scheduler_delegates_to_reliable_worker(monkeypatch):
 
 async def _async_append(target: list[str], value: str) -> None:
     target.append(value)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["button", "math", "captcha", "web", "admin"])
+async def test_selected_mode_controls_group_or_web_prompt_with_mini_app_enabled(monkeypatch, mode):
+    events = []
+    challenge = SimpleNamespace(token="new", question=None, solved=False, timeout_handled=False,
+                                prompt_attempts=0, mini_app_status=None)
+    async def create(*args, **kwargs):
+        assert kwargs["verification_type"] == mode
+        return challenge
+    restrictions = []
+    async def restrict(*args, **kwargs):
+        restrictions.append(kwargs["permissions"].can_send_messages)
+        return SimpleNamespace(failed=False)
+    async def group(*args, **kwargs):
+        events.append("group")
+        return SimpleNamespace(message_id=9)
+    async def web(*args, **kwargs):
+        events.append("web")
+        return SimpleNamespace(message_id=9)
+    monkeypatch.setattr(verification_handler, "create_or_replace_challenge", create)
+    monkeypatch.setattr(verification_handler, "restrict_user_safely", restrict)
+    monkeypatch.setattr(verification_handler, "_send_challenge_prompt", group)
+    monkeypatch.setattr(verification_handler, "_send_mini_app_prompt", web)
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"settings": SimpleNamespace(mini_app_enabled=True)}))
+    await verification_handler._start_member_challenge(
+        context, _TrackingSession([]), SimpleNamespace(id=-100123), member=_member(),
+        settings=_settings(verification_mode=mode, verification_restrict_can_send=True),
+    )
+    assert events == ["web" if mode == "web" else "group"]
+    assert restrictions == [mode != "web"]
+    assert challenge.mini_app_status == ("pending" if mode == "web" else None)

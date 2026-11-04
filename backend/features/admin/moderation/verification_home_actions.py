@@ -189,9 +189,10 @@ class VerificationHomeActionsMixin:
         value = callback_data.get(6)
         db: Database = context.application.bot_data["db"]
 
+        if section == "group_rules":
+            return await self._show_group_verification_rules_menu(update, context, chat_id)
         if section == "rules":
-            await self._show_verification_rules_menu(update, context, chat_id)
-            return
+            return await self._show_verification_rules_menu(update, context, chat_id)
         if section == "rule":
             await self._handle_verification_rule_action(update, context, chat_id, mode=action, action=key, key=value, db=db)
             return
@@ -239,7 +240,7 @@ class VerificationHomeActionsMixin:
         key: str,
         db: Database,
     ) -> None:
-        if mode not in {"button", "math", "mute"}:
+        if mode not in {"button", "math", "captcha", "web", "mute"}:
             await answer_callback_query_safely(update, "未识别的验证规则", show_alert=True)
             return
 

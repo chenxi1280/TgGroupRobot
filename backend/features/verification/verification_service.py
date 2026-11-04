@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.platform.db.schema.models.core import VerificationChallenge
 from backend.platform.db.schema.models.enums import VerificationMode
 from backend.shared.services.base import ServiceBase
+from backend.features.verification.slider_puzzle import new_puzzle
 
 SELF_REVIEW_CHALLENGE_PREFIX = "[SELF_REVIEW]"
 SELF_REVIEW_EXPECTED_ANSWER = "我已阅读群规"
@@ -113,6 +114,8 @@ async def create_or_replace_challenge(
     elif verification_type == VerificationMode.captcha.value:
         code, answer = generate_captcha()
         question = f"请输入验证码: {code}"
+    elif verification_type == VerificationMode.web.value:
+        question, answer = new_puzzle()
 
     ch = VerificationChallenge(
         chat_id=chat_id,

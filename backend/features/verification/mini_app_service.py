@@ -6,14 +6,12 @@ import hmac
 from fastapi import HTTPException
 from sqlalchemy import select
 
-from backend.features.verification.verification_service import is_self_review_question
+from backend.features.verification.slider_puzzle import TOLERANCE, new_puzzle, puzzle_id, render_puzzle
 from backend.platform.db.schema.models.core import TgChat, VerificationChallenge
-from backend.shared.services.chat_service import get_chat_settings
 
-BASIC_MODES = {"button", "math", "captcha"}
 OPEN_TIMEOUT_STATUSES = {"pending", "retryable_failed"}
 STATE_TEXT = {
-    "pending": "请完成验证",
+    "pending": "拖动滑块，将拼图对齐缺口",
     "processing": "验证正在处理，请稍后刷新；如长时间未完成，请联系管理员",
     "verified": "验证成功，可以返回群聊",
     "punished": "已按本群规则处理，请联系管理员",
@@ -34,6 +32,8 @@ async def load_challenge(session, token: str, user_id: int, *, lock: bool = Fals
         raise HTTPException(status_code=403, detail="仅限新成员本人验证")
     if challenge.mini_app_status is None:
         raise HTTPException(status_code=409, detail="请按群内现有提示完成验证")
+    if challenge.verification_type != "web" and challenge.mini_app_status == "pending":
+        raise HTTPException(status_code=409, detail="验证入口已更新，请联系管理员重新发起验证")
     return challenge
 
 
@@ -48,51 +48,28 @@ def pending_status(challenge) -> str:
 
 
 async def challenge_view(session, challenge) -> dict:
-    settings = await get_chat_settings(session, challenge.chat_id)
     chat = await session.get(TgChat, challenge.chat_id)
     status = pending_status(challenge)
     return {
         "status": status, "message": STATE_TEXT.get(status, "验证已过期，请联系管理员"),
         "chat_id": challenge.chat_id, "chat_title": chat.title if chat else str(challenge.chat_id),
-        "mode": challenge.verification_type,
-        "question": challenge.question if status == "pending" else None,
-        "agreement": settings.verification_agreement_text or "请阅读并同意本群规则后再发言。",
+        "puzzle": render_puzzle(challenge.question, int(challenge.answer)) if status == "pending" else None,
         "expires_at": challenge.expires_at.isoformat(),
         "server_time": dt.datetime.now(dt.UTC).isoformat(),
     }
-
-
-def agreement_action(settings, action: str) -> str:
-    if action == "agree":
-        return "verify"
-    if action == "decline":
-        return settings.verification_timeout_action or "mute"
-    raise HTTPException(status_code=422, detail="请选择同意或不同意")
-
-
-def submission_action(challenge, settings, *, action: str, answer: str) -> str:
-    if challenge.verification_type not in BASIC_MODES or is_self_review_question(challenge.question):
-        raise HTTPException(status_code=409, detail="请返回群聊完成后续审核")
-    if challenge.verification_type == "button":
-        return agreement_action(settings, action)
-    if action != "answer":
-        raise HTTPException(status_code=422, detail="请提交验证答案")
-    expected = (challenge.answer or "").lower().encode()
-    if expected and hmac.compare_digest(expected, answer.lower().strip().encode()):
-        return "verify"
-    punishment = settings.verification_wrong_action or "none"
-    if punishment == "none":
-        raise HTTPException(status_code=422, detail="答案错误，请在截止前重试")
-    return punishment
 
 
 async def claim_submission(session, token: str, user_id: int, *, payload):
     challenge = await load_challenge(session, token, user_id, lock=True)
     if pending_status(challenge) != "pending":
         return challenge, None
-    settings = await get_chat_settings(session, challenge.chat_id)
-    action = submission_action(challenge, settings, action=payload.action, answer=payload.answer)
+    if not hmac.compare_digest(puzzle_id(challenge.question), payload.puzzle_id):
+        raise HTTPException(status_code=422, detail="拼图已更新，请重试")
+    if abs(int(challenge.answer) - payload.position) > TOLERANCE:
+        challenge.question, challenge.answer = new_puzzle()
+        await session.commit()
+        raise HTTPException(status_code=422, detail="未对齐缺口，已更换拼图，请重试")
     challenge.solved = True
     challenge.mini_app_status = "processing"
     await session.commit()
-    return challenge, action
+    return challenge, "verify"

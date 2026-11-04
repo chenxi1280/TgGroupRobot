@@ -128,7 +128,7 @@ async def test_verification_timeout_page_lists_retry_cancel_and_replay_actions(m
 
 
 @pytest.mark.asyncio
-async def test_verification_rules_menu_uses_three_mutually_exclusive_rules(monkeypatch):
+async def test_verification_rules_menu_separates_group_and_web(monkeypatch):
     rendered: dict[str, object] = {}
 
     async def fake_get_chat_settings(session, chat_id: int):
@@ -151,11 +151,11 @@ async def test_verification_rules_menu_uses_three_mutually_exclusive_rules(monke
 
     rows = [[button.text for button in row] for row in rendered["keyboard"]]
     assert rows == [
-        ["❌ 📄 简单接受条约", "✅ 🔢 简单加减法"],
-        ["❌ 🤐 直接禁言新人"],
+        ["💬 群内验证", "🌐 网页验证 · 拼图滑块"],
+        ["🤐 直接禁言新人"],
         ["🔙 返回"],
     ]
-    assert "简单接受条约 - 用户需要点击同意按钮" in rendered["text"]
+    assert "群内验证：按钮确认、数学题、数字验证码" in rendered["text"]
     assert "只能启用一个验证" in rendered["text"]
     assert "当前启用：简单加减法" in rendered["text"]
 
@@ -264,3 +264,38 @@ async def test_self_review_force_subscribe_preview_returns_to_self_review(monkey
 
     assert "强制关注" in rendered["text"]
     assert rendered["keyboard"][-1][0].callback_data == "adm:vfy_home:-1001:self_review"
+
+
+@pytest.mark.asyncio
+async def test_group_selector_keeps_all_three_modes_and_parent_return(monkeypatch):
+    rendered = {}
+    async def get_settings(*args):
+        return SimpleNamespace(verification_enabled=True, verification_mode="captcha")
+    async def edit(update, text, reply_markup):
+        rendered.update(text=text, keyboard=reply_markup.inline_keyboard)
+    monkeypatch.setattr(verification_views, "get_chat_settings", get_settings)
+    monkeypatch.setattr(admin_handler._admin_handler.message_helper, "safe_edit", edit)
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(_FakeSession())}))
+    await admin_handler._admin_handler._show_group_verification_rules_menu(SimpleNamespace(), context, -1001)
+    callbacks = [b.callback_data for row in rendered["keyboard"] for b in row]
+    assert callbacks == ["adm:vfy_home:-1001:rule:button", "adm:vfy_home:-1001:rule:math",
+                         "adm:vfy_home:-1001:rule:captcha", "adm:vfy_home:-1001:rules"]
+    assert "当前启用：数字验证码" in rendered["text"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["web", "captcha"])
+async def test_new_rule_activation_keeps_review_and_supports_reopen(monkeypatch, mode):
+    settings = SimpleNamespace(verification_enabled=True, verification_mode="math", join_self_review_enabled=True)
+    async def get_settings(*args):
+        return settings
+    shown = []
+    async def show(update, context, chat_id, *, mode):
+        shown.append((chat_id, mode))
+    monkeypatch.setattr(verification_home_actions, "get_chat_settings", get_settings)
+    monkeypatch.setattr(admin_handler._admin_handler, "_show_verification_rule_detail", show)
+    context = SimpleNamespace(application=SimpleNamespace(bot_data={"db": _FakeDb(_FakeSession())}))
+    cb = CallbackParser.parse(f"adm:vfy_home:-1001:rule:{mode}:toggle")
+    await admin_handler._admin_handler._handle_verification_home(SimpleNamespace(), context, -1001, callback_data=cb)
+    assert settings.verification_mode == mode and settings.verification_enabled and settings.join_self_review_enabled
+    assert shown == [(-1001, mode)]

@@ -48,7 +48,7 @@ async def _finish_verification_input(
     await session.commit()
     data = state.state_data if isinstance(state.state_data, dict) else {}
     return_rule = data.get("return_rule")
-    if return_rule in {"button", "math", "mute"}:
+    if return_rule in {"button", "math", "captcha", "mute"}:
         await admin_handler_instance()._show_verification_rule_detail(
             update, context, target_chat_id, mode=return_rule
         )

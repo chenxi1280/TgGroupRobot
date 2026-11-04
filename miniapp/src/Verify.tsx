@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { initData, miniApp } from '@tma.js/sdk-react';
-import { verifyRequest, type Verification } from './api';
+import { VerificationError, verifyRequest, type Verification } from './api';
+import { SliderPuzzle } from './SliderPuzzle';
 
 function Remaining({ value }: { value: Verification }) {
   const [seconds, setSeconds] = useState(0);
@@ -17,7 +18,6 @@ function Remaining({ value }: { value: Verification }) {
 
 export function Verify({ token }: { token: string }) {
   const [value, setValue] = useState<Verification>();
-  const [answer, setAnswer] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const load = async () => {
@@ -26,12 +26,15 @@ export function Verify({ token }: { token: string }) {
     catch (e) { setError((e as Error).message); }
   };
   useEffect(() => { void load(); }, [token]);
-  const submit = async (action: string) => {
+  const submit = async (position: number) => {
     setBusy(true); setError('');
     try {
-      const result = await verifyRequest(token, { action, answer });
+      const result = await verifyRequest(token, { position, puzzle_id: value!.puzzle!.id });
       setValue(previous => ({ ...previous, ...result }));
-    } catch (e) { setError((e as Error).message); }
+    } catch (e) {
+      if (e instanceof VerificationError && e.status === 422) await load();
+      setError((e as Error).message);
+    }
     finally { setBusy(false); }
   };
   const active = value?.status === 'pending';
@@ -48,17 +51,11 @@ export function Verify({ token }: { token: string }) {
           <div><strong>{initData.user()?.first_name}</strong><small>当前 Telegram 账号</small></div>
           {active && <Remaining value={value} />}
         </div>
-        {active && <form onSubmit={event => { event.preventDefault(); void submit(value.mode === 'button' ? 'agree' : 'answer'); }}>
+        {active && value.puzzle && <>
           <div className="divider" />
-          <h2>{value.mode === 'button' ? '阅读并同意群规' : value.mode === 'math' ? '回答一道简单算术题' : '输入验证码'}</h2>
-          {value.mode === 'button' ? <p className="agreement">{value.agreement}</p> : <>
-            <div className="question">{value.question}</div>
-            <label htmlFor="answer">你的答案</label>
-            <input id="answer" value={answer} onChange={event => setAnswer(event.target.value)} inputMode="numeric" autoComplete="off" maxLength={128} placeholder="在这里输入答案" required />
-          </>}
-          <button type="submit" disabled={busy}>{busy ? '正在处理…' : value.mode === 'button' ? '同意群规并验证' : '提交验证'}</button>
-          {value.mode === 'button' && <button className="quiet" type="button" disabled={busy} onClick={() => void submit('decline')}>不同意，按群规则处理</button>}
-        </form>}
+          <h2>拖动拼图完成验证</h2>
+          <SliderPuzzle key={value.puzzle.id} puzzle={value.puzzle} busy={busy} onSubmit={position => void submit(position)} />
+        </>}
         {error && <p role="alert" className="error">{error}</p>}
         {!active && <button disabled={busy} onClick={() => verified || value?.status === 'review' ? miniApp.close() : void load()}>{verified || value?.status === 'review' ? '返回群聊' : '刷新验证状态'}</button>}
       </section>

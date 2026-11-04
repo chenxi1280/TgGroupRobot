@@ -1,0 +1,34 @@
+{
+  "environment": "local Vite with controlled mock API; no Telegram side effects",
+  "viewports": [
+    [
+      390,
+      844
+    ],
+    [
+      1280,
+      900
+    ]
+  ],
+  "mouse_drag": "passed",
+  "touch_drag": {
+    "mechanism": "Chromium CDP touch events",
+    "position": 160,
+    "result": "verified"
+  },
+  "wrong_position": {
+    "result": "rejected",
+    "puzzle_rotated": true,
+    "slider_reset_to": 0
+  },
+  "keyboard": {
+    "mechanism": "ArrowRight and Enter",
+    "result": "verified"
+  },
+  "screenshots": [
+    "output/playwright/slider-mobile.png",
+    "output/playwright/slider-success.png",
+    "output/playwright/slider-desktop.png"
+  ],
+  "real_telegram_acceptance": false
+}

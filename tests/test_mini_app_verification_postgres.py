@@ -16,6 +16,7 @@ from telegram.error import NetworkError
 
 from backend.app.web import create_web_app
 from backend.features.verification import mini_app_actions
+from backend.features.verification.slider_puzzle import puzzle_id
 from backend.features.verification.verification_handler import _send_mini_app_prompt
 from backend.features.verification.verification_service import create_or_replace_challenge, get_challenge
 from backend.platform.config.core.settings import Settings
@@ -69,20 +70,26 @@ def headers(user, token):
     return {"Authorization": "tma " + signed_data(user_id=user, issued_at=int(time.time())), "X-Verification-Token": token}
 
 
-async def make_challenge(scope, mode="button", *, ttl=180):
+async def make_challenge(scope, mode="web", *, ttl=180):
     async with scope.db.session_factory() as session:
         challenge = await create_or_replace_challenge(
             session, scope.chat, scope.user, ttl_seconds=ttl, verification_type=mode,
         )
-        challenge.mini_app_status = "pending"
+        challenge.mini_app_status = "pending" if mode == "web" else None
         token, answer = challenge.token, challenge.answer
         await session.commit()
     return token, answer
 
 
-async def submit(scope, token, *, action="agree", answer=""):
+async def submit(scope, token, *, position=None, version=None):
+    async with scope.db.session_factory() as session:
+        challenge = await session.scalar(select(VerificationChallenge).where(VerificationChallenge.token == token))
+        if position is None:
+            position = int(challenge.answer) if challenge and challenge.verification_type == "web" else 0
+        if version is None:
+            version = puzzle_id(challenge.question) if challenge and challenge.verification_type == "web" else "0" * 32
     return await scope.client.post("/miniapp/api/verification",
-        headers=headers(scope.user, token), json={"action": action, "answer": answer})
+        headers=headers(scope.user, token), json={"position": position, "puzzle_id": version})
 
 
 async def test_schema_and_admin_disabled_member_app_are_independent(scope):
@@ -96,23 +103,24 @@ async def test_schema_and_admin_disabled_member_app_are_independent(scope):
         assert not (await get_challenge(s, scope.chat, scope.user)).solved
 
 
-@pytest.mark.parametrize("mode", ["button", "math", "captcha"])
-async def test_all_basic_modes_solve_without_exposing_answer_field(scope, mode):
-    token, answer = await make_challenge(scope, mode)
+async def test_web_puzzle_solve_without_exposing_answer_or_seed(scope):
+    token, answer = await make_challenge(scope)
     detail = await scope.client.get("/miniapp/api/verification", headers=headers(scope.user, token))
     assert "answer" not in detail.json()
-    response = await submit(scope, token, action="agree" if mode == "button" else "answer", answer=answer or "")
+    assert set(detail.json()["puzzle"]) == {"id", "background", "piece", "width", "height", "piece_size", "top"}
+    assert "question" not in detail.json()
+    response = await submit(scope, token)
     assert response.status_code == 200 and response.json()["status"] == "verified"
     assert scope.bot.restrict_chat_member.await_count == 1
     assert scope.welcome.await_count == 1
     assert scope.bot.restrict_chat_member.call_args.kwargs["chat_id"] == scope.chat
-    again = await submit(scope, token, action="agree" if mode == "button" else "answer", answer=answer or "")
+    again = await submit(scope, token)
     assert again.json()["status"] == "verified" and scope.welcome.await_count == 1
 
 
 async def test_wrong_user_and_replaced_token_do_not_change_challenge(scope):
     token, _ = await make_challenge(scope)
-    response = await scope.client.post("/miniapp/api/verification", headers=headers(scope.user + 1, token), json={"action": "agree"})
+    response = await scope.client.post("/miniapp/api/verification", headers=headers(scope.user + 1, token), json={"puzzle_id": "0" * 32, "position": 0})
     assert response.status_code == 403
     await make_challenge(scope)
     assert (await submit(scope, token)).status_code == 410
@@ -120,8 +128,8 @@ async def test_wrong_user_and_replaced_token_do_not_change_challenge(scope):
 
 
 async def test_wrong_answer_retry_expiry_and_timeout_claim_cannot_unmute(scope):
-    token, _ = await make_challenge(scope, "math")
-    assert (await submit(scope, token, action="answer", answer="incorrect")).status_code == 422
+    token, _ = await make_challenge(scope)
+    assert (await submit(scope, token, position=0)).status_code == 422
     async with scope.db.session_factory() as s:
         challenge = await get_challenge(s, scope.chat, scope.user)
         assert not challenge.solved
@@ -180,20 +188,54 @@ async def test_enabled_self_review_stays_in_original_group_flow(scope):
     assert scope.bot.send_message.await_count == 1
 
 
-async def test_decline_and_wrong_answer_apply_configured_policy_once(scope, monkeypatch):
+async def test_wrong_position_rotates_puzzle_without_punishment_or_extending_deadline(scope, monkeypatch):
     punish = AsyncMock()
     monkeypatch.setattr(mini_app_actions, "apply_verification_punishment", punish)
-    token, _ = await make_challenge(scope)
-    assert (await submit(scope, token, action="decline")).json()["status"] == "punished"
-    await submit(scope, token, action="decline")
-    assert punish.await_count == 1
+    token, answer = await make_challenge(scope)
     async with scope.db.session_factory() as s:
+        challenge = await get_challenge(s, scope.chat, scope.user)
+        version, expires = puzzle_id(challenge.question), challenge.expires_at
         settings = await get_chat_settings(s, scope.chat)
         settings.verification_wrong_action = "kick"
         await s.commit()
-    token, _ = await make_challenge(scope, "captcha")
-    assert (await submit(scope, token, action="answer", answer="wrong")).json()["status"] == "punished"
-    assert punish.call_args.kwargs["action"] == "kick"
+    assert (await submit(scope, token, position=0, version=version)).status_code == 422
+    async with scope.db.session_factory() as s:
+        challenge = await get_challenge(s, scope.chat, scope.user)
+        assert puzzle_id(challenge.question) != version and challenge.expires_at == expires
+        assert not challenge.solved
+    assert (await submit(scope, token, position=int(answer), version=version)).status_code == 422
+    assert (await submit(scope, token)).json()["status"] == "verified"
+    punish.assert_not_awaited()
+
+
+@pytest.mark.parametrize("mode", ["button", "math", "captcha", "admin"])
+async def test_group_modes_cannot_be_answered_from_web(scope, mode):
+    token, _ = await make_challenge(scope, mode)
+    detail = await scope.client.get("/miniapp/api/verification", headers=headers(scope.user, token))
+    assert detail.status_code == 409
+    assert (await submit(scope, token)).status_code == 409
+    scope.bot.restrict_chat_member.assert_not_awaited()
+
+
+async def test_old_web_answer_and_uncompleted_slider_cannot_unmute(scope):
+    token, _ = await make_challenge(scope)
+    for payload in [{"action": "agree"}, {"action": "answer", "answer": "1234"},
+                    {"puzzle_id": "0" * 32, "position": -1}, {"puzzle_id": "0" * 32, "position": 999},
+                    {"puzzle_id": "0" * 32, "position": True}]:
+        response = await scope.client.post("/miniapp/api/verification", headers=headers(scope.user, token), json=payload)
+        assert response.status_code == 422
+    assert (await submit(scope, token, position=0)).status_code == 422
+    scope.bot.restrict_chat_member.assert_not_awaited()
+
+
+async def test_old_pending_web_basic_challenge_requires_new_entry(scope):
+    token, _ = await make_challenge(scope, "button")
+    async with scope.db.session_factory() as s:
+        challenge = await get_challenge(s, scope.chat, scope.user)
+        challenge.mini_app_status = "pending"
+        await s.commit()
+    response = await scope.client.get("/miniapp/api/verification", headers=headers(scope.user, token))
+    assert response.status_code == 409 and "入口已更新" in response.text
 
 
 async def test_group_prompt_links_to_real_bot_and_exact_challenge(scope):
@@ -223,3 +265,25 @@ async def test_upgrade_accepts_existing_bootstrap_column(scope, monkeypatch):
     async with scope.db.engine.begin() as connection:
         await connection.run_sync(upgrade)
     await validate_database_schema(scope.db.engine)
+
+
+@pytest.mark.parametrize("offset", [-4, 4, 5])
+async def test_alignment_tolerance_is_decided_by_server(scope, offset):
+    token, answer = await make_challenge(scope)
+    result = await submit(scope, token, position=int(answer) + offset)
+    assert result.status_code == (200 if abs(offset) <= 4 else 422)
+    assert scope.bot.restrict_chat_member.await_count == (1 if abs(offset) <= 4 else 0)
+
+
+async def test_group_config_selection_round_trip_keeps_original_modes(scope):
+    from backend.features.admin.moderation.verification_home_actions import _apply_verification_rule
+    for mode in ["web", "button", "math", "captcha"]:
+        async with scope.db.session_factory() as session:
+            settings = await get_chat_settings(session, scope.chat)
+            settings.join_self_review_enabled = True
+            _apply_verification_rule(settings, mode=mode, action="toggle", key="")
+            await session.commit()
+        async with scope.db.session_factory() as session:
+            settings = await get_chat_settings(session, scope.chat)
+            assert settings.verification_mode == mode and settings.verification_enabled
+            assert settings.join_self_review_enabled

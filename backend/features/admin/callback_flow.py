@@ -35,7 +35,7 @@ async def private_admin_callback_impl(update: Update, context: ContextTypes.DEFA
 
 
 async def _handle_group_verification_mode(update, *, session, settings, cb) -> bool:
-    if cb.get(1) != "vfy_mode" or cb.get(2) not in {"button", "math", "mute"}:
+    if cb.get(1) != "vfy_mode" or cb.get(2) not in {"button", "math", "captcha", "web", "mute"}:
         return False
     settings.verification_mode = cb.get(2)
     settings.verification_enabled = True

@@ -26,8 +26,12 @@ _MODE_ALIASES = {
     "数学题": "math",
     "直接禁言新人": "mute",
     "禁言新人": "mute",
+    "数字验证码": "captcha",
+    "验证码": "captcha",
+    "网页验证": "web",
+    "网页拼图滑块": "web",
 }
-_SUPPORTED_MODES = frozenset({"button", "math", "mute"})
+_SUPPORTED_MODES = frozenset({"button", "math", "captcha", "web", "mute"})
 
 
 log = structlog.get_logger(__name__)
@@ -109,6 +113,7 @@ def _verification_result_text(config: dict) -> str:
         "math": "简单加减法",
         "mute": "直接禁言新人",
         "captcha": "验证码",
+        "web": "网页拼图滑块",
         "admin": "管理员确认",
     }.get(config["mode"], config["mode"])
     result_text = (
@@ -222,7 +227,7 @@ def _parse_verification_config_text(text: str) -> dict:
     for line in (item.strip() for item in text.strip().splitlines() if item.strip()):
         config = _parse_config_line(config, line)
     if config["mode"] not in _SUPPORTED_MODES:
-        raise ValueError("验证方式仅支持：简单接受条约、简单加减法、直接禁言新人")
+        raise ValueError("验证方式仅支持：简单接受条约、简单加减法、数字验证码、网页拼图滑块、直接禁言新人")
     return config
 
 
