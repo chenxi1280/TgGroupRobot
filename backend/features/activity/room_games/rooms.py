@@ -5,7 +5,7 @@ import datetime as dt
 from sqlalchemy import select
 
 from backend.features.activity.room_games.fees import (
-    change_game_points, collect_fee, fee_settings, require_closed_mall,
+    change_game_points, collect_fee, fee_settings, require_closed_mall, require_room_enabled,
 )
 from backend.features.activity.room_games.flower import flower_awards, flower_move, flower_options, flower_start
 from backend.features.activity.room_games.mahjong import RESERVE_UNITS, mahjong
@@ -42,13 +42,12 @@ async def available_rooms(session, chat_id: int) -> list[RoomGame]:
 
 async def create_room(session, chat_id: int, user, *, data) -> RoomGame:
     await require_closed_mall(session, chat_id)
-    settings = await fee_settings(session)
-    config = getattr(settings, data.game)
-    if not config.enabled:
-        raise ValidationError("管理员尚未启用该房间游戏")
+    config = await require_room_enabled(session, chat_id, data.game)
+    await require_room_points(session, chat_id, user.id)
+    schedule = getattr(await fee_settings(session), data.game)
     room = RoomGame(
         chat_id=chat_id, owner_id=user.id, game=data.game, unit=data.base * data.multiplier,
-        fee=config.points, hand_limit=config.hands, status="waiting",
+        fee=config.points, hand_limit=schedule.hands, status="waiting",
         seats=[{"id": user.id, "name": user.full_name}],
         options={"base": data.base, "multiplier": data.multiplier, "special": data.special},
         hand={}, history=[], created_at=now(), deadline=now() + dt.timedelta(minutes=WAIT_MINUTES),
@@ -56,6 +55,11 @@ async def create_room(session, chat_id: int, user, *, data) -> RoomGame:
     session.add(room)
     await session.flush()
     return room
+
+
+async def require_room_points(session, chat_id: int, user_id: int) -> None:
+    if await get_balance(session, chat_id, user_id) <= 0:
+        raise ValidationError("可用群积分为 0，请先获取群积分")
 
 
 def join_room(room: RoomGame, user) -> None:
@@ -99,8 +103,7 @@ async def open_hand(session, room: RoomGame, *, first: bool) -> None:
     if len(room.seats) < minimum:
         raise ValidationError(f"至少需要 {minimum} 名玩家")
     await require_closed_mall(session, room.chat_id)
-    if not getattr(await fee_settings(session), room.game).enabled:
-        raise ValidationError("管理员已停用该游戏")
+    await require_room_enabled(session, room.chat_id, room.game)
     engine = await _start_engine(room)
     number = len(room.history) + 1
     reserve = hand_reserve(room.game, room.unit)
@@ -232,7 +235,7 @@ async def room_view(session, room: RoomGame, user_id: int) -> dict:
         "version": room.version, "deadline": room.deadline, "balance": balance,
         "requirement": room.fee + hand_reserve(room.game, room.unit),
         "fee_charged": bool(room.hand and seat is not None), "table": table, "results": results,
-        "options": room.options,
+        "options": room.options, "group_invited": room.options.get("group_invited", False),
     }
 
 

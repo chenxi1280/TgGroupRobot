@@ -24,6 +24,18 @@ def room_keyboard(bot, chat_id: int, *, room_id: int | None = None, number: int 
     return InlineKeyboardMarkup([[InlineKeyboardButton(label, url=mini_app_url(bot, scene))]])
 
 
+def room_invite_card(bot, room) -> tuple[str, InlineKeyboardMarkup]:
+    name = GAME_NAMES[room.game]
+    text = (
+        f"🎮 {name}房间 #{room.id} 等待加入\n"
+        f"底分 {room.options['base']} · 倍率 {room.options['multiplier']}×\n"
+        f"每人场费 {room.fee} 分，开场时扣除 · {room.hand_limit} 小局"
+    )
+    scene = f"room_{-room.chat_id}_{room.id}"
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("加入房间", url=mini_app_url(bot, scene))]])
+    return text, keyboard
+
+
 def _mention(player: dict) -> str:
     return f'<a href="tg://user?id={player["id"]}">{html.escape(player["name"])}</a>'
 
@@ -31,9 +43,7 @@ def _mention(player: dict) -> str:
 async def room_notice(bot, room, event: str) -> None:
     name = GAME_NAMES[room.game]
     number = None
-    if event == "created":
-        text = f"🎮 {name}房间 #{room.id} 等待加入\n每人场费 {room.fee} 分，开场时扣除 · {room.hand_limit} 小局"
-    elif event == "started":
+    if event == "started":
         players = "、".join(map(_mention, room.seats))
         text = f"🃏 {name}开场 · #{room.id}\n{players}\n每人已扣场费 {room.fee} 分，输赢逐小局结算。"
     elif event == "hand_started":

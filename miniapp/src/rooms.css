@@ -51,7 +51,7 @@
 .room-panel p { margin: 0 0 8px; }
 .room-form { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 6px; }
 .room-app label { color: #c0d7cd; margin: 0 0 7px; }
-.room-form select, .room-form input {
+.room-form select, .room-form input, .room-settings-row input[type="number"] {
   display: block;
   margin: 4px 0 0;
   width: 100%;
@@ -100,3 +100,8 @@
   .room-app .room-mahjong { margin-inline: -10px; }
   .room-app .room-mahjong .sc-table { --rw: 12px; }
 }
+
+.room-settings summary { color: var(--room-gold); cursor: pointer; }
+.room-settings form { margin-top: 10px; }
+.room-settings-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 8px 0; }
+.room-settings-row input[type="number"] { display: inline-block; width: 80px; margin: 0 0 0 6px; }

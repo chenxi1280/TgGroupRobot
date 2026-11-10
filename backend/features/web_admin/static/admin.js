@@ -179,8 +179,6 @@ const feeNames = { sichuan: '四川血战', zhajinhua: '炸金花', k3: '快三'
 const loadGameFees = async () => {
   const { data } = await api('/admin/api/game-fees?offset=' + gameFeeOffset)
   for (const game of feeGames) {
-    $(game + 'Enabled').checked = data.settings[game].enabled
-    $(game + 'Fee').value = data.settings[game].points
     $(game + 'Hands').value = data.settings[game].hands
   }
   $('k3Fee').value = data.settings.k3
@@ -497,8 +495,6 @@ $('gameFeesForm').addEventListener('submit', async (event) => {
   try {
     const settings = { k3: Number($('k3Fee').value) }
     for (const game of feeGames) settings[game] = {
-      enabled: $(game + 'Enabled').checked,
-      points: Number($(game + 'Fee').value),
       hands: Number($(game + 'Hands').value),
     }
     await api('/admin/api/game-fees', { method: 'PUT', body: JSON.stringify(settings) })

@@ -6,21 +6,25 @@ from dataclasses import dataclass
 from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response
-from pydantic import BaseModel, Field
-from telegram import User
+from pydantic import BaseModel, ConfigDict, Field
+from telegram import InlineQueryResultArticle, InputTextMessageContent, User
 from telegram.error import BadRequest, Forbidden, TelegramError
 
-from backend.features.activity.room_games.fees import fee_settings, require_closed_mall
-from backend.features.activity.room_games.notices import room_notice
+from backend.features.activity.room_games.fees import (
+    GroupRoomSettings, fee_settings, group_room_settings, require_closed_mall, require_room_enabled,
+    save_group_room_settings,
+)
+from backend.features.activity.room_games.notices import room_invite_card, room_notice
 from backend.features.activity.room_games.rooms import (
     advance_hand, available_rooms, create_room, join_room, leave_room, now, open_hand,
-    room_summary, room_view, seat_for,
+    require_room_points, room_summary, room_view, seat_for,
 )
 from backend.features.mini_app.auth import VERIFICATION_AUTH_SECONDS, request_identity
 from backend.features.points.services.points_service_accounts import get_balance
 from backend.platform.db.schema.models.core import PointsMallSetting, TgChat
 from backend.platform.db.schema.models.room_games import RoomGame
 from backend.shared.services.base import ValidationError
+from backend.shared.services.ops_audit_service import record_ops_event
 from backend.shared.services.user_service import ensure_user
 
 router = APIRouter(prefix="/miniapp/api/rooms")
@@ -32,6 +36,7 @@ MEMBERSHIP_CACHE_LIMIT = 1024
 class RoomMember:
     user: User
     chat_id: int
+    can_manage: bool
 
 
 class CreateRoom(BaseModel):
@@ -47,18 +52,26 @@ class RoomAction(BaseModel):
     action: dict = Field(default_factory=dict)
 
 
-async def _require_member(bot, chat_id: int, user_id: int) -> None:
+class RoomInvite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    target: Literal["group", "private"]
+
+
+async def _require_member(bot, chat_id: int, user_id: int) -> bool:
     try:
         member = await bot.get_chat_member(chat_id, user_id)
     except (BadRequest, Forbidden) as exc:
         raise HTTPException(403, "无法确认群成员资格") from exc
     except TelegramError as exc:
         raise HTTPException(503, "暂时无法验证群成员资格") from exc
-    if member.status in {"creator", "administrator", "member"}:
-        return
-    if member.status == "restricted" and member.is_member and member.can_send_messages:
-        return
-    raise HTTPException(403, "仅本群可发言成员可参加")
+    if member.status in {"creator", "administrator"}:
+        return True
+    if member.status == "member" or (
+        member.status == "restricted" and member.is_member and member.can_send_messages
+    ):
+        return False
+    raise HTTPException(403, "请先加入原群并完成入群验证，房间仅对原群可发言成员开放")
 
 
 async def room_member(request: Request) -> RoomMember:
@@ -69,12 +82,13 @@ async def room_member(request: Request) -> RoomMember:
     chat_id = -int(scene[1] or scene[2])
     key = (chat_id, actor.user.id)
     cache = request.app.state.room_read_membership
-    if request.method != "GET" or cache.get(key, 0) <= time.monotonic():
-        await _require_member(request.app.state.telegram_app.bot, chat_id, actor.user.id)
+    expires, can_manage = cache.get(key, (0, False))
+    if request.method != "GET" or expires <= time.monotonic():
+        can_manage = await _require_member(request.app.state.telegram_app.bot, chat_id, actor.user.id)
         if len(cache) >= MEMBERSHIP_CACHE_LIMIT:
             cache.clear()
-        cache[key] = time.monotonic() + MEMBERSHIP_READ_SECONDS
-    return RoomMember(actor.user, chat_id)
+        cache[key] = (time.monotonic() + MEMBERSHIP_READ_SECONDS, can_manage)
+    return RoomMember(actor.user, chat_id, can_manage)
 
 
 async def _ensure_member(session, member: RoomMember) -> None:
@@ -98,19 +112,41 @@ async def _room(session, room_id: int, member: RoomMember, *, lock: bool = False
 async def lobby(request: Request, response: Response, member: RoomMember = Depends(room_member)):
     response.headers["Cache-Control"] = "no-store"
     async with request.app.state.db.session_factory() as session:
-        config = await fee_settings(session)
+        config = await group_room_settings(session, member.chat_id)
+        schedule = await fee_settings(session)
         mall = await session.get(PointsMallSetting, member.chat_id)
         return {
-            "games": {"sichuan": config.sichuan, "zhajinhua": config.zhajinhua},
+            "games": {
+                game: terms | getattr(schedule, game).model_dump()
+                for game, terms in config.model_dump().items()
+            },
+            "can_manage": member.can_manage,
             "mall_open": bool(mall and mall.enabled),
             "rooms": [room_summary(room) for room in await available_rooms(session, member.chat_id)],
             "balance": await get_balance(session, member.chat_id, member.user.id),
         }
 
 
+@router.put("/settings")
+async def update_settings(
+    data: GroupRoomSettings, *, request: Request, member: RoomMember = Depends(room_member),
+):
+    if not member.can_manage:
+        raise HTTPException(403, "仅本群管理员可以修改房间游戏设置")
+    async with request.app.state.db.session_factory() as session:
+        await _ensure_member(session, member)
+        await save_group_room_settings(session, member.chat_id, data)
+        await record_ops_event(
+            session, domain="room_games", event_type="settings_updated",
+            chat_id=member.chat_id, user_id=member.user.id, detail=data.model_dump(),
+        )
+        await session.commit()
+    return data
+
+
 @router.post("")
 async def open_room(
-    data: CreateRoom, *, request: Request, tasks: BackgroundTasks, member: RoomMember = Depends(room_member),
+    data: CreateRoom, *, request: Request, member: RoomMember = Depends(room_member),
 ):
     async with request.app.state.db.session_factory() as session:
         try:
@@ -120,7 +156,6 @@ async def open_room(
             await session.commit()
         except ValidationError as exc:
             raise HTTPException(409, str(exc)) from exc
-    tasks.add_task(room_notice, request.app.state.telegram_app.bot, room, "created")
     return view
 
 
@@ -157,6 +192,8 @@ async def _change_room(session, room, member, *, data, bot) -> str | None:
         if seat is None:
             _require_fresh(room, data)
             await require_closed_mall(session, room.chat_id)
+            await require_room_enabled(session, room.chat_id, room.game)
+            await require_room_points(session, room.chat_id, member.user.id)
             await _ensure_member(session, member)
             join_room(room, member.user)
         return None
@@ -191,3 +228,40 @@ async def change_room(
     if event:
         tasks.add_task(room_notice, bot, room, event)
     return view
+
+
+@router.post("/{room_id}/invite")
+async def invite_room(
+    room_id: int, data: RoomInvite, *, request: Request, member: RoomMember = Depends(room_member),
+):
+    bot = request.app.state.telegram_app.bot
+    async with request.app.state.db.session_factory() as session:
+        room = await _room(session, room_id, member, lock=data.target == "group")
+        if room.owner_id != member.user.id:
+            raise HTTPException(403, "仅房主可以发出邀请")
+        if room.status != "waiting" or room.deadline is not None and room.deadline <= now():
+            raise HTTPException(409, "房间已停止接受邀请")
+        if data.target == "group" and room.options.get("group_invited"):
+            return {"sent": True}
+        try:
+            await require_room_enabled(session, room.chat_id, room.game)
+            text, keyboard = room_invite_card(bot, room)
+            if data.target == "private":
+                result = await bot.do_api_request("savePreparedInlineMessage", api_kwargs={
+                    "user_id": member.user.id,
+                    "result": InlineQueryResultArticle(
+                        id=str(room.id), title="加入房间",
+                        input_message_content=InputTextMessageContent(text), reply_markup=keyboard,
+                    ),
+                    "allow_user_chats": True, "allow_bot_chats": False,
+                    "allow_group_chats": False, "allow_channel_chats": False,
+                })
+                return {"message_id": result["id"]}
+            await bot.send_message(chat_id=room.chat_id, text=text, reply_markup=keyboard)
+        except ValidationError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except TelegramError as exc:
+            raise HTTPException(502, "暂时无法发出邀请，请稍后重试") from exc
+        room.options = {**room.options, "group_invited": True}
+        await session.commit()
+    return {"sent": True}

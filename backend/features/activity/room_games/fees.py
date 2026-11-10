@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime as dt
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
 
 from pydantic import BaseModel, Field
 
@@ -18,18 +19,47 @@ GAME_NAMES = {"sichuan": "四川血战", "zhajinhua": "炸金花", "k3": "快三
 class RoomFee(BaseModel):
     enabled: bool = False
     points: int = Field(default=0, ge=0, le=100_000, strict=True)
+
+
+class GroupRoomSettings(BaseModel):
+    sichuan: RoomFee = Field(default_factory=RoomFee)
+    zhajinhua: RoomFee = Field(default_factory=RoomFee)
+
+
+class RoomSchedule(BaseModel):
     hands: int = Field(default=20, ge=1, le=20, strict=True)
 
 
 class FeeSettings(BaseModel):
-    sichuan: RoomFee = Field(default_factory=RoomFee)
-    zhajinhua: RoomFee = Field(default_factory=RoomFee)
+    sichuan: RoomSchedule = Field(default_factory=RoomSchedule)
+    zhajinhua: RoomSchedule = Field(default_factory=RoomSchedule)
     k3: int = Field(default=0, ge=0, le=100_000, strict=True)
 
 
 async def fee_settings(session) -> FeeSettings:
     setting = await session.get(AppSetting, SETTINGS_KEY)
     return FeeSettings.model_validate_json(setting.value) if setting else FeeSettings()
+
+
+async def group_room_settings(session, chat_id: int) -> GroupRoomSettings:
+    setting = await session.get(AppSetting, f"room_games:{chat_id}")
+    return GroupRoomSettings.model_validate_json(setting.value) if setting else GroupRoomSettings()
+
+
+async def save_group_room_settings(session, chat_id: int, settings: GroupRoomSettings) -> None:
+    await session.execute(select(TgChat.id).where(TgChat.id == chat_id).with_for_update())
+    stmt = insert(AppSetting).values(key=f"room_games:{chat_id}", value=settings.model_dump_json())
+    await session.execute(stmt.on_conflict_do_update(
+        index_elements=[AppSetting.key],
+        set_={"value": stmt.excluded.value, "updated_at": stmt.excluded.updated_at},
+    ))
+
+
+async def require_room_enabled(session, chat_id: int, game: str) -> RoomFee:
+    config = getattr(await group_room_settings(session, chat_id), game)
+    if not config.enabled:
+        raise ValidationError("本群尚未开启此玩法")
+    return config
 
 
 async def require_closed_mall(session, chat_id: int) -> None:
