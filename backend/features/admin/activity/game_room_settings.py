@@ -13,6 +13,8 @@ from backend.shared.handlers.base.message_helper import MessageHelper
 from backend.shared.services.base import ValidationError
 from backend.shared.services.permission_service import PermissionPolicyService, is_user_admin
 from backend.shared.ui.admin_keyboard import admin_keyboard
+from backend.shared.ui.common.keyboard import toggle_row
+from backend.shared.ui.menu_layout import navigation_row
 
 ROOM_GAMES = ("sichuan", "zhajinhua")
 
@@ -33,19 +35,20 @@ async def show_room_game_settings(update, context, chat_id: int) -> None:
         settings = await group_room_settings(session, chat_id)
     title = await admin_handler_instance()._get_chat_title(db, chat_id)
     lines = [f"🎮 {title} | 房间游戏设置", "", "服务费在建房时锁定，开场时向每位玩家扣除。"]
+    menu = f"gm:rooms:{chat_id}"
     rows = []
     for game in ROOM_GAMES:
         terms = getattr(settings, game)
-        status = "已开启" if terms.enabled else "已关闭"
-        lines.append(f"{GAME_NAMES[game]} · {status} · 每人每场 {terms.points} 分")
-        rows.append([
-            InlineKeyboardButton(
-                f"{'关闭' if terms.enabled else '开启'}{GAME_NAMES[game]}",
-                callback_data=f"gm:rooms:{chat_id}:toggle:{game}:{int(not terms.enabled)}",
-            ),
-            InlineKeyboardButton(f"设置{GAME_NAMES[game]}服务费", callback_data=f"gm:rooms:{chat_id}:fee:{game}"),
-        ])
-    rows.append([InlineKeyboardButton("返回游戏", callback_data=f"gm:home:{chat_id}")])
+        lines.append(f"{GAME_NAMES[game]} · 每人每场 {terms.points} 分")
+        rows.append(toggle_row(
+            GAME_NAMES[game], enabled=terms.enabled, label_callback=f"{menu}:home",
+            on_callback=f"{menu}:toggle:{game}:1", off_callback=f"{menu}:toggle:{game}:0",
+        ))
+    rows.append([
+        InlineKeyboardButton(f"设置{GAME_NAMES[game]}服务费", callback_data=f"{menu}:fee:{game}")
+        for game in ROOM_GAMES
+    ])
+    rows.append(navigation_row(f"gm:home:{chat_id}"))
     await MessageHelper.safe_edit(update, "\n".join(lines), reply_markup=admin_keyboard(rows))
 
 
@@ -67,8 +70,10 @@ async def handle_room_game_settings(update, context, chat_id: int, *, callback_d
             payload={"target_chat_id": chat_id, "game": game},
         )
         await MessageHelper.safe_edit(
-            update, f"请输入{GAME_NAMES[game]}每人每场的服务费（0 至 100000 积分，0 表示免费）。",
-            reply_markup=admin_keyboard([[InlineKeyboardButton("返回房间游戏设置", callback_data=f"gm:rooms:{chat_id}:home")]]),
+            update,
+            f"🎮 房间游戏 | {GAME_NAMES[game]}服务费\n\n"
+            f"请输入每人每场的服务费（0 至 {MAX_ROOM_FEE} 积分）\n例如：10\n0 表示免费。",
+            reply_markup=admin_keyboard([navigation_row(f"gm:rooms:{chat_id}:home")]),
         )
         return
     enabled = callback_data.get(5)

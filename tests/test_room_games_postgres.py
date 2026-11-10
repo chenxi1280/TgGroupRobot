@@ -310,9 +310,27 @@ async def _configure_rooms_from_bot(paid):
         await click(1, f"adm:menu:game:{paid.chat}:category")
         assert any(room_menu + ":home" in str(params) for _, params in transport.calls)
         await click(2, room_menu + ":home")
-        assert any("设置炸金花服务费" in str(params) for _, params in transport.calls)
-        await click(3, room_menu + ":toggle:sichuan:0")
-        await click(4, room_menu + ":fee:zhajinhua")
+        rows = transport.calls[-1][1]["reply_markup"]["inline_keyboard"]
+        assert [[button["text"] for button in row] for row in rows] == [
+            ["四川血战", "✅ 启动", "关闭"], ["炸金花", "✅ 启动", "关闭"],
+            ["设置四川血战服务费", "设置炸金花服务费"], ["🔙 返回"],
+        ]
+        assert rows[-1][0]["callback_data"] == f"gm:home:{paid.chat}"
+        await click(3, rows[0][2]["callback_data"])
+        rows = transport.calls[-1][1]["reply_markup"]["inline_keyboard"]
+        assert [button["text"] for button in rows[0]] == ["四川血战", "启动", "✅ 关闭"]
+        fee_callback = rows[2][1]["callback_data"]
+        await click(4, fee_callback)
+        prompt = transport.calls[-1][1]
+        assert "例如：10" in prompt["text"]
+        back = prompt["reply_markup"]["inline_keyboard"][0][0]
+        assert back["text"] == "🔙 返回" and back["callback_data"] == room_menu + ":home"
+        await click(11, back["callback_data"])
+        async with paid.db.session_factory() as session:
+            from backend.platform.state.conversation_state_service import ConversationStateService
+            state = await ConversationStateService.get(session, paid.user, paid.user)
+            assert state.state_type == "selected_chat"
+        await click(12, fee_callback)
         await message(5, "25.5")
         assert any("之间的整数" in str(params) for _, params in transport.calls)
         await message(6, "25")
