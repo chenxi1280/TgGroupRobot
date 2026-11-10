@@ -39,6 +39,7 @@ def _register_scheduler_tasks(scheduler: Scheduler) -> None:
 
     from backend.platform.scheduler.tasks.mall_notification_task import MallNotificationTask
     from backend.platform.scheduler.tasks.admin_automation_task import AdminAutomationTask
+    from backend.platform.scheduler.tasks.room_game_task import RoomGameTask
     scheduler.register_tasks([
         AdminAutomationTask(),
         LotteryTask(),
@@ -53,6 +54,7 @@ def _register_scheduler_tasks(scheduler: Scheduler) -> None:
         BottomButtonTask(),
         EngagementTask(),
         GameTask(),
+        RoomGameTask(),
         GuessTask(),
         MallNotificationTask(),
         TeacherSearchTask(),

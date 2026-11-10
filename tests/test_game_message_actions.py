@@ -148,7 +148,8 @@ async def test_blackjack_action_falls_back_to_reply_when_edit_fails(monkeypatch)
     async def fake_get_or_create_setting(session, chat_id: int):
         return SimpleNamespace(delete_game_message_mode="keep")
 
-    async def fake_get_active_blackjack_round(session, chat_id: int, user_id: int):
+    async def fake_get_active_blackjack_round(session, chat_id: int, user_id: int, *, lock: bool):
+        assert lock
         round_obj = SimpleNamespace(announcement_message_id=321)
         participant = SimpleNamespace(choice_data={"player_cards": [10, 9]})
         return round_obj, participant

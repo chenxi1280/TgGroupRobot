@@ -1,0 +1,102 @@
+.room-app {
+  --room-panel: #14362e;
+  --room-line: #f4dc9c30;
+  --room-gold: #e9c775;
+  color: #f5f0e4;
+  background: radial-gradient(ellipse at 50% 0%, #205847, #0d251f 68%);
+  min-height: 100dvh;
+  max-width: 780px;
+  margin: 0 auto;
+  padding: max(12px, env(safe-area-inset-top)) 14px 26px;
+  font-size: 14px;
+}
+.room-app .room-header {
+  max-width: none;
+  margin: 0;
+  padding: 8px 0 13px;
+  justify-content: space-between;
+  align-items: end;
+}
+.room-header h1 { font-size: 24px; letter-spacing: 0; }
+.room-kicker { color: #b6cfc3; font-size: 11px; letter-spacing: .08em; margin: 0 0 5px; }
+.room-app button {
+  width: auto;
+  height: auto;
+  min-height: 36px;
+  padding: 8px 11px;
+  color: #f5f0e4;
+  border: 1px solid var(--room-line);
+  background: #0f2922;
+  border-radius: 10px;
+  font-size: 13px;
+}
+.room-app button.room-primary { background: var(--room-gold); border-color: transparent; color: #251e0f; }
+.room-app button:disabled { opacity: .5; }
+.room-app button.btn { background: var(--felt-glass-2); }
+.room-app button.btn--felt-primary { background: var(--felt-accent); color: #251e0f; }
+.room-balance, .room-panel, .room-fee {
+  background: var(--room-panel);
+  border: 1px solid var(--room-line);
+  border-radius: 15px;
+  padding: 12px;
+  margin: 8px 0;
+}
+.room-balance { display: flex; justify-content: space-between; align-items: center; }
+.room-balance strong, .room-fee strong { color: var(--room-gold); font-size: 20px; }
+.room-fee { display: grid; gap: 5px; }
+.room-fee span { color: #d0dfd7; }
+.room-fee dl { display: grid; grid-template-columns: 1fr auto; gap: 3px 10px; margin: 4px 0 0; }
+.room-fee dd { margin: 0; font-variant-numeric: tabular-nums; }
+.room-panel h2 { color: var(--room-gold); margin: 0 0 7px; }
+.room-panel p { margin: 0 0 8px; }
+.room-form { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 6px; }
+.room-app label { color: #c0d7cd; margin: 0 0 7px; }
+.room-form select, .room-form input {
+  display: block;
+  margin: 4px 0 0;
+  width: 100%;
+  padding: 7px 5px;
+  border: 1px solid var(--room-line);
+  background: #102c24;
+  color: #fff;
+  border-radius: 8px;
+  font-size: 14px;
+}
+.room-checkbox { display: flex; align-items: center; gap: 6px; }
+.room-checkbox input { width: auto; margin: 0; }
+.room-actions, .room-history { display: flex; flex-wrap: wrap; gap: 5px; margin: 9px 0; align-items: center; }
+.room-app .room-row { display: flex; justify-content: space-between; width: 100%; margin-top: 5px; gap: 6px; }
+.room-error { background: #602b2b; padding: 9px; border-radius: 9px; }
+.room-error button { display: inline-block; }
+.room-result table { width: 100%; border-collapse: collapse; text-align: left; font-variant-numeric: tabular-nums; }
+.room-result th, .room-result td { border-bottom: 1px solid var(--room-line); padding: 8px 3px; }
+.room-result th { color: #bad4c6; font-size: 12px; }
+.room-win { color: #92eab8; }
+.room-loss { color: #ffac9f; }
+.room-mahjong {
+  position: relative;
+  height: max(530px, 68dvh);
+  border: 1px solid var(--room-line);
+  border-radius: 16px;
+  background: #225145;
+  margin-top: 10px;
+  overflow: hidden;
+}
+.room-app .room-mahjong .sc { color: #f5f0e4; }
+.room-app .room-mahjong .sc-handtile { animation-duration: .35s; }
+.room-app .room-flower {
+  position: relative;
+  height: 345px;
+  margin: 8px 0;
+  border: 1px solid var(--room-line);
+  background: radial-gradient(ellipse at 50% 45%, #34735c, #112e26 70%);
+}
+.room-flower .flower-info { z-index: 1; top: 3px; padding: 3px 9px; }
+.room-flower .flower-seat { min-width: 0; padding: 4px 5px; }
+.room-flower .flower-seat strong { display: block; max-width: 100px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.room-flower .card-size-xs { width: clamp(19px, 8vw, 40px); height: clamp(28px, 11vw, 57px); }
+.room-turn { margin: 8px 0 0; color: var(--room-gold); }
+@media (max-width: 460px) {
+  .room-app .room-mahjong { margin-inline: -10px; }
+  .room-app .room-mahjong .sc-table { --rw: 12px; }
+}

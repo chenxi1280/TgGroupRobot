@@ -126,7 +126,10 @@ def _register_commands(app: Application) -> None:
     """注册命令处理器"""
     from telegram.ext import CommandHandler
 
+    from backend.features.activity.room_games.notices import rooms_command
+
     app.add_handler(CommandHandler("start", start_callback))
+    app.add_handler(CommandHandler("rooms", rooms_command))
     app.add_handler(CommandHandler("cancel", cancel_callback))
 
 

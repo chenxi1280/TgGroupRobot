@@ -42,7 +42,7 @@ class _Db:
 
 
 @pytest.mark.asyncio
-async def test_game_task_rolls_back_round_when_result_announcement_fails(monkeypatch):
+async def test_game_task_commits_round_before_result_announcement(monkeypatch):
     db = _Db()
     settled: list[int] = []
     shown: list[int] = []
@@ -60,7 +60,10 @@ async def test_game_task_rolls_back_round_when_result_announcement_fails(monkeyp
     async def fake_schedule(session, now_local):
         return []
 
+    commits_at_send: list[int] = []
+
     async def fail_send(self, app, summary):
+        commits_at_send.append(db.sessions[1].commits)
         raise RuntimeError("telegram down")
 
     async def fake_show(*args, **kwargs):
@@ -77,9 +80,10 @@ async def test_game_task_rolls_back_round_when_result_announcement_fails(monkeyp
 
     assert settled == [7]
     assert db.sessions[0].commits == 1
-    assert db.sessions[1].rollbacks == 1
-    assert db.sessions[1].commits == 0
-    assert shown == []
+    assert db.sessions[1].rollbacks == 0
+    assert db.sessions[1].commits == 1
+    assert shown == [-1001]
+    assert commits_at_send == [1]
 
 
 @pytest.mark.asyncio

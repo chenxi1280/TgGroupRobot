@@ -15,6 +15,7 @@ docs-site/.astro
 docs-site/dist
 miniapp/node_modules
 miniapp/dist
+miniapp/dist-room
 node_modules
 dist
 build

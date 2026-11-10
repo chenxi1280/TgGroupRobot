@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from telegram.ext import ConversationHandler, ContextTypes
 
 from backend.features.admin.points_config_shared import WAIT_VALUE, resolve_points_target_user, safe_edit_message, log
@@ -10,8 +10,9 @@ from backend.features.admin.points_config_shared import (
 from backend.features.admin.ui.points import format_points_home_text, points_config_keyboard
 from backend.features.points.services.points_service import change_points
 from backend.platform.db.runtime.session import Database
-from backend.platform.db.schema.models.core import PointsAccount, PointsTransaction, SignInLog, UserDailyStats
+from backend.platform.db.schema.models.core import PointsAccount, PointsTransaction, SignInLog, TgChat, UserDailyStats
 from backend.platform.db.schema.models.enums import PointsTxnType
+from backend.platform.db.schema.models.room_games import RoomGame
 from backend.shared.services.chat_service import get_chat_settings
 _HANDLE_POINTS_CONFIG_MESSAGE_THRESHOLD_2 = 2
 LIMIT_FIELDS = {"message_daily_limit": "message_points_daily_limit", "invite_daily_limit": "invite_points_daily_limit",
@@ -84,6 +85,13 @@ async def _apply_admin_points_adjustment(message, session, chat_id: int, *, text
 async def _clear_chat_points(message, session, chat_id: int, *, text: str) -> bool:
     if text.strip().upper() != "CONFIRM":
         await message.reply_text("请输入 CONFIRM 确认清空积分。")
+        return False
+    await session.execute(select(TgChat.id).where(TgChat.id == chat_id).with_for_update())
+    active = await session.scalar(select(RoomGame.id).where(
+        RoomGame.chat_id == chat_id, RoomGame.status.in_(("playing", "between")),
+    ).limit(1))
+    if active is not None:
+        await message.reply_text("本群有正在进行的游戏场次，请先结算并结束再清空积分。")
         return False
     for model in (PointsAccount, PointsTransaction, UserDailyStats, SignInLog):
         await session.execute(delete(model).where(model.chat_id == chat_id))

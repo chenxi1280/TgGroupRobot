@@ -7,6 +7,7 @@ from backend.features.web_admin.account_router import router as account_router
 from backend.features.web_admin.ad_delivery_router import router as ad_delivery_router
 from backend.features.web_admin.auth_router import router as auth_router
 from backend.features.web_admin.card_router import router as card_router
+from backend.features.web_admin.game_fee_router import router as game_fee_router
 from backend.features.web_admin.platform_router import router as platform_router
 from backend.features.web_admin.ops_router import router as ops_router
 from backend.features.web_admin.verification_timeout_router import router as verification_timeout_router
@@ -17,6 +18,7 @@ ADMIN_ROUTERS = (
     auth_router,
     card_router,
     platform_router,
+    game_fee_router,
     account_router,
     verification_timeout_router,
     ad_delivery_router,

@@ -1,0 +1,121 @@
+/* ============================== 麻将牌 ============================== */
+:root {
+  --tile-face: #fbf7ee;
+  --tile-edge: #e7dfcc;
+  --tile-back-1: #2f7a64;
+  --tile-back-2: #1f5a49;
+  /* 手牌、牌河的牌宽 */
+  --tw: clamp(30px, min(4.4vw, 8.6vh), 60px);
+  --rw: clamp(15px, min(2.4vw, 4.5vh), 36px);
+}
+[data-felt='indigo'] {
+  --tile-back-1: #3a5f8f;
+  --tile-back-2: #26446b;
+}
+[data-felt='wine'] {
+  --tile-back-1: #7d3a47;
+  --tile-back-2: #5a2631;
+}
+[data-felt='graphite'] {
+  --tile-back-1: #4b5056;
+  --tile-back-2: #33373c;
+}
+
+.mjtile {
+  --w: var(--tw);
+  position: relative;
+  flex: none;
+  width: var(--w);
+  height: calc(var(--w) * 1.34);
+  border-radius: calc(var(--w) * 0.13);
+  background: linear-gradient(180deg, #fffdf7 0%, var(--tile-face) 70%, #f1eadb 100%);
+  /* 立体厚度：下方的牌背色边 */
+  box-shadow:
+    inset 0 0 0 1px rgba(120, 100, 60, 0.18),
+    0 calc(var(--w) * 0.07) 0 var(--tile-edge),
+    0 calc(var(--w) * 0.12) 0 var(--tile-back-1),
+    0 calc(var(--w) * 0.12 + 2px) 6px rgba(0, 0, 0, 0.3);
+  margin-bottom: calc(var(--w) * 0.12);
+  user-select: none;
+  transition:
+    translate 0.15s var(--ease),
+    filter 0.15s,
+    box-shadow 0.15s;
+}
+.mjtile__svg {
+  position: absolute;
+  inset: 6% 8%;
+  width: 84%;
+  height: 88%;
+}
+.mjtile--back {
+  background:
+    radial-gradient(circle at 50% 45%, rgba(255, 255, 255, 0.14), transparent 60%),
+    linear-gradient(170deg, var(--tile-back-1), var(--tile-back-2));
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.12),
+    0 calc(var(--w) * 0.07) 0 var(--tile-edge),
+    0 calc(var(--w) * 0.07 + 2px) 5px rgba(0, 0, 0, 0.3);
+  margin-bottom: calc(var(--w) * 0.07);
+}
+.mjtile.is-selected {
+  translate: 0 calc(var(--w) * -0.3);
+  box-shadow:
+    inset 0 0 0 1px rgba(120, 100, 60, 0.18),
+    0 0 0 2px var(--felt-accent),
+    0 calc(var(--w) * 0.07) 0 var(--tile-edge),
+    0 calc(var(--w) * 0.12) 0 var(--tile-back-1),
+    0 10px 20px rgba(0, 0, 0, 0.35);
+}
+.mjtile.is-dim {
+  filter: brightness(0.72) saturate(0.6);
+}
+.mjtile.is-highlight {
+  z-index: 2;
+  box-shadow:
+    inset 0 0 0 1px rgba(120, 100, 60, 0.18),
+    0 0 0 2px var(--felt-accent),
+    0 0 14px rgba(231, 200, 134, 0.75),
+    0 calc(var(--w) * 0.07) 0 var(--tile-back-1);
+  animation: glow 1.6s ease-in-out infinite;
+}
+@keyframes glow {
+  50% {
+    filter: brightness(1.06);
+  }
+}
+.mjtile__que {
+  position: absolute;
+  right: -3px;
+  top: -3px;
+  font-size: max(9px, calc(var(--w) * 0.26));
+  line-height: 1;
+  padding: 2px 3px;
+  border-radius: 4px;
+  background: #b9483a;
+  color: #fff;
+  font-weight: 700;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.suit-badge {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: var(--font-display);
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+.suit-badge.is-wan {
+  background: #b9483a;
+}
+.suit-badge.is-tiao {
+  background: #2e7a4f;
+}
+.suit-badge.is-tong {
+  background: #2a5b8c;
+}

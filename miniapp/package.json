@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "build": "tsc --noEmit && vite build",
-    "preview": "vite preview --host 127.0.0.1"
+    "build": "tsc --noEmit && vite build && npm run build:room-engine",
+    "preview": "vite preview --host 127.0.0.1",
+    "build:room-engine": "esbuild room-engine.ts --bundle --platform=node --format=esm --outfile=dist-room/engine.mjs"
   },
   "dependencies": {
     "@tma.js/sdk-react": "^3.0.8",
@@ -17,6 +18,9 @@
     "@types/react": "^18.3.24",
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react-swc": "^3.11.0",
+    "esbuild": "0.25.12",
+    "framer-motion": "^12.35.2",
+    "lucide-react": "^1.61.0",
     "typescript": "^5.9.2",
     "vite": "^6.3.5"
   }

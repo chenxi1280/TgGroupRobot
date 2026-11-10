@@ -204,6 +204,29 @@
             <button type="submit">保存公共配置</button>
           </form>
         </section>
+        <section class="panel">
+          <div class="panel-head"><h2>游戏设置</h2><span class="pill">平台固定台费</span></div>
+          <form id="gameFeesForm" class="form-grid">
+            <label><span>开启四川血战房间</span><input id="sichuanEnabled" type="checkbox"></label>
+            <label><span>四川血战每人每场台费</span><input id="sichuanFee" required type="number" min="0" max="100000"></label>
+            <label><span>四川血战每场小局数</span><input id="sichuanHands" required type="number" min="1" max="20"></label>
+            <label><span>开启炸金花房间</span><input id="zhajinhuaEnabled" type="checkbox"></label>
+            <label><span>炸金花每人每场台费</span><input id="zhajinhuaFee" required type="number" min="0" max="100000"></label>
+            <label><span>炸金花每场小局数</span><input id="zhajinhuaHands" required type="number" min="1" max="20"></label>
+            <label><span>快三每次成功下注台费</span><input id="k3Fee" required type="number" min="0" max="100000"></label>
+            <button type="submit">保存游戏设置</button>
+          </form>
+          <h3>平台积分账户</h3>
+          <p id="gameFeeBalances"></p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>来源群</th><th>游戏</th><th>场次／局号</th><th>玩家</th><th>积分</th><th>时间</th></tr></thead>
+              <tbody id="gameFeeEntries"></tbody>
+            </table>
+          </div>
+          <button id="gameFeePrev" type="button" disabled>上一页</button>
+          <button id="gameFeeNext" type="button" disabled>下一页</button>
+        </section>
       </section>
 
       <section id="tabAccounts" class="tab-panel hidden">

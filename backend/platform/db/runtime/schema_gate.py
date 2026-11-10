@@ -273,6 +273,7 @@ def _load_model_metadata() -> None:
     import backend.platform.db.schema.models.garage_features  # noqa: F401
     import backend.platform.db.schema.models.moderation  # noqa: F401
     import backend.platform.db.schema.models.points  # noqa: F401
+    import backend.platform.db.schema.models.room_games  # noqa: F401
     import backend.platform.db.schema.models.scheduled_message  # noqa: F401
     import backend.platform.db.schema.models.subscription  # noqa: F401
     import backend.platform.db.schema.models.welcome  # noqa: F401

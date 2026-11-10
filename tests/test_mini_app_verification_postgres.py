@@ -252,7 +252,7 @@ async def test_group_prompt_links_to_real_bot_and_exact_challenge(scope):
 async def test_upgrade_accepts_existing_bootstrap_column(scope, monkeypatch):
     from backend.platform.db.runtime.database_migrations import load_revision_modules
     from sqlalchemy import text
-    revision = load_revision_modules()[-1]
+    revision = next(item for item in load_revision_modules() if item.revision == "0018_mini_app_verification")
     class Operations:
         def __init__(self, connection):
             self.connection = connection

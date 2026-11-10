@@ -172,6 +172,26 @@ const loadPlatformConfig = async () => {
   $('helpText').value = data.help_text || ''
 }
 
+let gameFeeOffset = 0
+const feeGames = ['sichuan', 'zhajinhua']
+const feeNames = { sichuan: '四川血战', zhajinhua: '炸金花', k3: '快三' }
+
+const loadGameFees = async () => {
+  const { data } = await api('/admin/api/game-fees?offset=' + gameFeeOffset)
+  for (const game of feeGames) {
+    $(game + 'Enabled').checked = data.settings[game].enabled
+    $(game + 'Fee').value = data.settings[game].points
+    $(game + 'Hands').value = data.settings[game].hands
+  }
+  $('k3Fee').value = data.settings.k3
+  $('gameFeeBalances').textContent = data.balances.map(row => '群 ' + row.chat_id + ' · ' + row.points + ' 分').join('　') || '暂无入账'
+  $('gameFeeEntries').innerHTML = data.entries.map(entry => '<tr>' + [
+    entry.chat_id, feeNames[entry.game], entry.session_id, entry.user_id, entry.amount, formatTime(entry.charged_at),
+  ].map(value => '<td>' + escapeHtml(value) + '</td>').join('') + '</tr>').join('')
+  $('gameFeePrev').disabled = gameFeeOffset === 0
+  $('gameFeeNext').disabled = data.entries.length < 50
+}
+
 const renderAccounts = (items) => {
   $('accountsBody').innerHTML = items.map((account) => {
     const nextStatus = account.status === 'active' ? 'disabled' : 'active'
@@ -264,6 +284,7 @@ const showAdminPanel = async (admin) => {
     loadKeys(),
     loadAnnouncement(),
     loadPlatformConfig(),
+    loadGameFees(),
     loadAccounts(),
     loadAuditLogs(),
     loadOpsCenter(),
@@ -470,6 +491,34 @@ $('platformConfigForm').addEventListener('submit', async (event) => {
     toast(error.message)
   }
 })
+
+$('gameFeesForm').addEventListener('submit', async (event) => {
+  event.preventDefault()
+  try {
+    const settings = { k3: Number($('k3Fee').value) }
+    for (const game of feeGames) settings[game] = {
+      enabled: $(game + 'Enabled').checked,
+      points: Number($(game + 'Fee').value),
+      hands: Number($(game + 'Hands').value),
+    }
+    await api('/admin/api/game-fees', { method: 'PUT', body: JSON.stringify(settings) })
+    await loadGameFees()
+    toast('游戏设置已保存')
+  } catch (error) {
+    toast(error.message)
+  }
+})
+
+for (const [id, step] of [['gameFeePrev', -50], ['gameFeeNext', 50]]) {
+  $(id).addEventListener('click', async () => {
+    gameFeeOffset += step
+    try { await loadGameFees() }
+    catch (error) {
+      gameFeeOffset -= step
+      toast(error.message)
+    }
+  })
+}
 
 $('accountForm').addEventListener('submit', async (event) => {
   event.preventDefault()

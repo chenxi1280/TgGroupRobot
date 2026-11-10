@@ -4,7 +4,9 @@ import structlog
 from sqlalchemy import func, select
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
+from telegram.error import BadRequest
 
+from backend.features.activity.room_games.notices import room_keyboard
 from backend.features.activity.services.game_service import (
     K3_OPTION_LABELS,
     K3_OPTION_MULTIPLIERS,
@@ -13,6 +15,7 @@ from backend.features.activity.services.game_service import (
     get_or_create_setting,
     update_setting,
 )
+from backend.features.mini_app.links import game_link
 from backend.platform.db.runtime.session import Database
 from backend.platform.db.schema.models.expansion import GameParticipant
 
@@ -70,7 +73,7 @@ def blackjack_round_keyboard(chat_id: int) -> InlineKeyboardMarkup:
     )
 
 
-async def build_k3_panel_text(db: Database, chat_id: int) -> str:
+async def build_k3_panel_text(db: Database, chat_id: int, *, web: bool = False) -> str:
     async with db.session_factory() as session:
         setting = await get_or_create_setting(session, chat_id)
         points_label = await get_game_points_chat_label(session, chat_id, setting.points_source_chat_id)
@@ -88,7 +91,7 @@ async def build_k3_panel_text(db: Database, chat_id: int) -> str:
         f"🔗 关联积分：{points_label}",
     ]
     if round_obj is None:
-        lines.append("🧾 当前暂无进行中的牌局，点击下方按钮即可下注开局。")
+        lines.append("🧾 当前暂无进行中的牌局。")
     else:
         lines.extend(
             [
@@ -100,7 +103,7 @@ async def build_k3_panel_text(db: Database, chat_id: int) -> str:
     lines.extend(
         [
             "",
-            "选择对应的玩法按钮进行下注",
+            "打开小程序选择玩法和积分" if web else "选择对应的玩法按钮进行下注",
             "└ 单局 60 秒，超时自动开奖",
             "└ 指令：快三规则 快三统计",
         ]
@@ -108,7 +111,7 @@ async def build_k3_panel_text(db: Database, chat_id: int) -> str:
     return "\n".join(lines)
 
 
-async def build_blackjack_panel_text(db: Database, chat_id: int) -> str:
+async def build_blackjack_panel_text(db: Database, chat_id: int, *, web: bool = False) -> str:
     from backend.platform.db.schema.models.expansion import GameRound
 
     async with db.session_factory() as session:
@@ -129,7 +132,7 @@ async def build_blackjack_panel_text(db: Database, chat_id: int) -> str:
         f"🔗 关联积分：{points_label}",
         f"🧾 进行中对局：{active_count}",
         "",
-        "选择对应的积分按钮进行下注",
+        "打开小程序进入牌桌" if web else "选择对应的积分按钮进行下注",
         "└ 单局 1～2 分钟，超时自动停牌",
         "└ 指令：黑杰克规则 黑杰克统计",
     ]
@@ -154,6 +157,10 @@ async def render_panel_message(
                 reply_markup=reply_markup,
             )
             return message_id
+        except BadRequest as exc:
+            if "message is not modified" in str(exc).lower():
+                return message_id
+            log.warning("game_panel_edit_failed", chat_id=chat_id, message_id=message_id, error=str(exc))
         except Exception as exc:
             log.warning(
                 "game_panel_edit_failed",
@@ -168,17 +175,30 @@ async def render_panel_message(
     return sent.message_id
 
 
+def _mini_app_enabled(context) -> bool:
+    app = getattr(context, "application", context)
+    settings = getattr(app, "bot_data", {}).get("settings")
+    return bool(getattr(settings, "mini_app_enabled", False))
+
+
+def _web_panel_keyboard(bot, chat_id: int, *, game: str) -> InlineKeyboardMarkup:
+    table = game_link(bot, chat_id, game=game)
+    lobby = room_keyboard(bot, chat_id)
+    return InlineKeyboardMarkup([*table.inline_keyboard, *lobby.inline_keyboard])
+
+
 async def show_k3_panel(context: ContextTypes.DEFAULT_TYPE, db: Database, chat_id: int, *, create_if_missing: bool = True) -> int | None:
     async with db.session_factory() as session:
         setting = await get_or_create_setting(session, chat_id)
         existing_message_id = setting.k3_panel_message_id
         await session.commit()
-    text = await build_k3_panel_text(db, chat_id)
+    web = _mini_app_enabled(context)
+    text = await build_k3_panel_text(db, chat_id, web=web)
     message_id = await render_panel_message(
         context,
         chat_id,
         text,
-        reply_markup=k3_panel_keyboard(chat_id),
+        reply_markup=_web_panel_keyboard(context.bot, chat_id, game="k3") if web else k3_panel_keyboard(chat_id),
         message_id=existing_message_id,
         create_if_missing=create_if_missing,
     )
@@ -195,12 +215,13 @@ async def show_blackjack_panel(context: ContextTypes.DEFAULT_TYPE, db: Database,
         setting = await get_or_create_setting(session, chat_id)
         existing_message_id = setting.blackjack_panel_message_id
         await session.commit()
-    text = await build_blackjack_panel_text(db, chat_id)
+    web = _mini_app_enabled(context)
+    text = await build_blackjack_panel_text(db, chat_id, web=web)
     message_id = await render_panel_message(
         context,
         chat_id,
         text,
-        reply_markup=blackjack_panel_keyboard(chat_id),
+        reply_markup=_web_panel_keyboard(context.bot, chat_id, game="blackjack") if web else blackjack_panel_keyboard(chat_id),
         message_id=existing_message_id,
         create_if_missing=create_if_missing,
     )

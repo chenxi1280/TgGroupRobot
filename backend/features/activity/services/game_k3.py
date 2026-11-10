@@ -1,20 +1,23 @@
 from __future__ import annotations
 
+import datetime as dt
 import random
 from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.features.activity.room_games.fees import collect_fee, fee_settings, require_closed_mall
 from backend.features.activity.services.game_base import (
     get_or_create_setting,
     get_rake_ratio_value,
     get_round_points_chat_id,
     now_utc,
+    resolve_points_chat_id,
 )
 from backend.features.points.services.points_service import change_points
 from backend.platform.db.schema.models.enums import PointsTxnType
-from backend.platform.db.schema.models.expansion import GameParticipant, GameRound
+from backend.platform.db.schema.models.expansion import GameParticipant, GameRound, GameSetting
 from backend.shared.services.base import ValidationError
 _CLASSIFY_K3_RESULT_THRESHOLD_11 = 11
 _CLASSIFY_K3_RESULT_THRESHOLD_2 = 2
@@ -139,7 +142,9 @@ def format_k3_help(enabled: bool, rake_ratio: str | None) -> str:
     )
 
 
-async def get_active_k3_round(session: AsyncSession, chat_id: int) -> GameRound | None:
+async def get_active_k3_round(
+    session: AsyncSession, chat_id: int, *, lock: bool = False
+) -> GameRound | None:
     stmt = (
         select(GameRound)
         .where(
@@ -150,9 +155,36 @@ async def get_active_k3_round(session: AsyncSession, chat_id: int) -> GameRound 
             GameRound.settle_at > now_utc(),
         )
         .order_by(GameRound.created_at.desc())
+        .limit(1)
     )
+    if lock:
+        stmt = stmt.with_for_update().execution_options(populate_existing=True)
     result = await session.execute(stmt)
     return result.scalars().first()
+
+
+async def _lock_k3_betting_round(
+    session: AsyncSession, chat_id: int, *, points_chat_id: int | None, expected_round_id: int | None,
+):
+    # The settings row also serializes first bets when no round exists.
+    setting = await session.get(GameSetting, chat_id, with_for_update=True, populate_existing=True)
+    round_obj = await get_active_k3_round(session, chat_id, lock=True)
+    if round_obj is not None and not is_k3_round_joinable(round_obj):
+        round_obj = None
+    if expected_round_id is not None and (round_obj is None or round_obj.id != expected_round_id):
+        raise ValidationError("这局快三已截止，请查看最新牌局。")
+    return round_obj, points_chat_id or resolve_points_chat_id(setting)
+
+
+async def _new_k3_round(session, chat_id: int, user_id: int, *, points_chat_id: int) -> GameRound:
+    round_obj = GameRound(
+        chat_id=chat_id, game_type="k3", creator_user_id=user_id, status="pending",
+        settle_at=now_utc() + dt.timedelta(seconds=K3_ROUND_SECONDS),
+        result_data={"points_chat_id": points_chat_id},
+    )
+    session.add(round_obj)
+    await session.flush()
+    return round_obj
 
 
 async def create_or_join_k3_round(
@@ -163,27 +195,22 @@ async def create_or_join_k3_round(
     bet_points: int,
 
     points_chat_id: int | None = None,
+    expected_round_id: int | None = None,
+    expected_fee: int | None = None,
 ) -> tuple[GameRound, GameParticipant]:
     normalized_guess = normalize_k3_guess(guess)
-    round_obj = await get_active_k3_round(session, chat_id)
-    round_points_chat_id = int(points_chat_id or chat_id)
-    if round_obj is not None and not is_k3_round_joinable(round_obj):
-        round_obj = None
-    if round_obj is None:
-        import datetime as dt
-
-        round_obj = GameRound(
-            chat_id=chat_id,
-            game_type="k3",
-            creator_user_id=user_id,
-            status="pending",
-            settle_at=now_utc() + dt.timedelta(seconds=K3_ROUND_SECONDS),
-            result_data={"points_chat_id": round_points_chat_id},
-        )
-        session.add(round_obj)
-        await session.flush()
-    else:
+    round_obj, round_points_chat_id = await _lock_k3_betting_round(
+        session, chat_id, points_chat_id=points_chat_id, expected_round_id=expected_round_id,
+    )
+    if round_obj is not None:
         round_points_chat_id = get_round_points_chat_id(round_obj, round_points_chat_id)
+    fee = (await fee_settings(session)).k3
+    if (expected_fee or 0) != fee:
+        raise ValidationError(f"快三当前每次台费 {fee} 分，请打开群内小程序查看并确认后下注。")
+    if fee:
+        await require_closed_mall(session, round_points_chat_id)
+    if round_obj is None:
+        round_obj = await _new_k3_round(session, chat_id, user_id, points_chat_id=round_points_chat_id)
 
     existing_stmt = select(GameParticipant).where(
         GameParticipant.round_id == round_obj.id,
@@ -194,12 +221,20 @@ async def create_or_join_k3_round(
     if existing is not None:
         raise ValidationError("本局快三你已经下注了，请等待开奖。")
 
+    ok, balance = await change_points(
+        session, round_points_chat_id, user_id, amount=-bet_points,
+        txn_type=PointsTxnType.penalty.value, reason="快三下注",
+    )
+    if not ok:
+        raise ValidationError(f"积分不足，当前余额 {balance}。")
+
+    await collect_fee(session, round_points_chat_id, user_id, game="k3", session_id=round_obj.id, amount=fee)
     participant = GameParticipant(
         round_id=round_obj.id,
         chat_id=chat_id,
         user_id=user_id,
         bet_points=bet_points,
-        choice_data={"guess": normalized_guess, "points_chat_id": round_points_chat_id},
+        choice_data={"guess": normalized_guess, "points_chat_id": round_points_chat_id, "fee": fee},
     )
     session.add(participant)
     await session.flush()
@@ -262,6 +297,12 @@ def _store_k3_round_result(round_obj, dice: list[int], result: dict, *, points_c
     return label
 
 
+def _k3_rake(gross: int, ratio: Decimal, choice: dict | None) -> int:
+    if gross <= 0 or (choice or {}).get("fee"):
+        return 0
+    return int((Decimal(gross) * ratio).quantize(Decimal("1")))
+
+
 async def _settle_k3_participant(
     session,
     participant,
@@ -275,7 +316,7 @@ async def _settle_k3_participant(
     guess = normalize_k3_guess(str((participant.choice_data or {}).get("guess") or ""))
     multiplier = K3_OPTION_MULTIPLIERS.get(guess, Decimal("0")) if guess in winning_keys else Decimal("0")
     gross = int((Decimal(participant.bet_points) * multiplier).quantize(Decimal("1"))) if multiplier > 0 else 0
-    rake = int((Decimal(gross) * rake_ratio).quantize(Decimal("1"))) if gross > 0 else 0
+    rake = _k3_rake(gross, rake_ratio, participant.choice_data)
     payout = max(0, gross - rake)
     participant.payout_points = payout
     participant.status = "won" if payout > 0 else "lost"

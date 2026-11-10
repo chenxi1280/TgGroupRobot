@@ -15,27 +15,19 @@ from backend.features.activity.services.game_service import (
     blackjack_hit,
     blackjack_stand,
     create_or_join_k3_round,
-    finalize_blackjack_round,
+    place_blackjack_bet,
     format_blackjack_round_text,
-    get_active_k3_round,
     get_active_blackjack_round,
     get_or_create_setting,
-    get_round_points_chat_id,
     k3_guess_label,
     MAX_GAME_BET_POINTS,
-    resolve_points_chat_id,
-    start_blackjack_round,
 )
-from backend.features.points.services.points_service import change_points
 from backend.platform.db.runtime.session import Database
-from backend.platform.db.schema.models.enums import PointsTxnType
 from backend.platform.db.schema.models.expansion import GameParticipant, GameRound
 from backend.platform.telegram.errors import answer_callback_query_safely
 from backend.shared.callback_parser import CallbackParser
 from backend.shared.services.base import ValidationError
 from backend.shared.services.user_service import ensure_user
-_HANDLE_GAME_RUNTIME_CALLBACK_THRESHOLD_2 = 2
-_HANDLE_GAME_RUNTIME_CALLBACK_THRESHOLD_21 = 21
 
 
 log = structlog.get_logger(__name__)
@@ -109,21 +101,10 @@ async def _place_runtime_k3_bet(flow: _RuntimeFlow, guess: str, bet: int):
             await session.commit()
             await answer_callback_query_safely(flow.update, "快三当前未开启", show_alert=True)
             return None
-        active_round = await get_active_k3_round(session, flow.chat_id)
-        default_chat_id = resolve_points_chat_id(setting, flow.chat_id)
-        points_chat_id = get_round_points_chat_id(active_round, default_chat_id) if active_round else default_chat_id
-        ok, balance = await change_points(
-            session, points_chat_id, flow.user.id, amount=-bet,
-            txn_type=PointsTxnType.penalty.value, reason="快三下注",
-        )
-        if not ok:
-            await session.commit()
-            await answer_callback_query_safely(flow.update, f"积分不足，当前余额 {balance}", show_alert=True)
-            return None
         try:
             round_obj, _ = await create_or_join_k3_round(
                 session, flow.chat_id, flow.user.id, guess=guess,
-                bet_points=bet, points_chat_id=points_chat_id,
+                bet_points=bet,
             )
         except ValidationError as exc:
             await session.rollback()
@@ -150,43 +131,21 @@ async def _handle_runtime_k3_bet(flow: _RuntimeFlow) -> None:
     )
 
 
-async def _runtime_blackjack_outcome(session, round_obj, participant):
-    cards = (participant.choice_data or {}).get("player_cards") or []
-    if len(cards) != _HANDLE_GAME_RUNTIME_CALLBACK_THRESHOLD_2:
-        return None
-    from backend.features.activity.services.game_service import blackjack_total
-    if blackjack_total(cards) != _HANDLE_GAME_RUNTIME_CALLBACK_THRESHOLD_21:
-        return None
-    return await finalize_blackjack_round(session, round_obj, participant, mode="stand")
-
-
 async def _create_runtime_blackjack(flow: _RuntimeFlow, bet: int):
     async with flow.db.session_factory() as session:
         await _ensure_runtime_user(session, flow.user)
         setting = await get_or_create_setting(session, flow.chat_id)
+        await session.refresh(setting, with_for_update=True)
         if not setting.blackjack_enabled:
             await session.commit()
             await answer_callback_query_safely(flow.update, "黑杰克当前未开启", show_alert=True)
             return None
-        points_chat_id = resolve_points_chat_id(setting, flow.chat_id)
-        ok, balance = await change_points(
-            session, points_chat_id, flow.user.id, amount=-bet,
-            txn_type=PointsTxnType.penalty.value, reason="黑杰克下注",
-        )
-        if not ok:
-            await session.commit()
-            await answer_callback_query_safely(flow.update, f"积分不足，当前余额 {balance}", show_alert=True)
-            return None
         try:
-            round_obj, participant = await start_blackjack_round(
-                session, flow.chat_id, flow.user.id,
-                bet_points=bet, points_chat_id=points_chat_id,
-            )
+            round_obj, participant, outcome = await place_blackjack_bet(session, setting, flow.user.id, bet=bet)
         except ValidationError as exc:
             await session.rollback()
             await answer_callback_query_safely(flow.update, str(exc), show_alert=True)
             return None
-        outcome = await _runtime_blackjack_outcome(session, round_obj, participant)
         await session.commit()
     return round_obj, participant, outcome
 
@@ -240,11 +199,16 @@ async def _edit_runtime_blackjack(
 async def _handle_runtime_blackjack_action(flow: _RuntimeFlow) -> None:
     async with flow.db.session_factory() as session:
         round_obj, participant = await get_active_blackjack_round(
-            session, flow.chat_id, flow.user.id
+            session, flow.chat_id, flow.user.id, lock=True
         )
         if round_obj is None or participant is None:
             await session.commit()
             await answer_callback_query_safely(flow.update, "你当前没有进行中的黑杰克", show_alert=True)
+            return
+        message = flow.update.callback_query.message
+        if message is None or message.message_id != round_obj.announcement_message_id:
+            await session.commit()
+            await answer_callback_query_safely(flow.update, "这是旧牌局按钮，请使用当前牌局的按钮", show_alert=True)
             return
         if flow.action == "hit":
             _, participant, outcome = await blackjack_hit(session, round_obj, participant)
@@ -261,7 +225,7 @@ async def _runtime_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return None
     data = CallbackParser.parse(update.callback_query.data or "")
     chat_id = data.get_int_optional(3)
-    if chat_id is None:
+    if chat_id is None or chat_id != update.effective_chat.id:
         await answer_callback_query_safely(update, "参数错误", show_alert=True)
         return None
     db: Database = context.application.bot_data["db"]

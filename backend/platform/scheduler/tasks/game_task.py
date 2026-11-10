@@ -9,6 +9,8 @@ from types import SimpleNamespace
 
 from backend.platform.scheduler.core.core import ScheduledTask
 from backend.platform.scheduler.core.task_config import TASK_CONFIG
+from backend.features.activity.game_web_notifications import announce_web_game
+from backend.features.mini_app.links import game_link
 from backend.features.activity.game_panels import show_blackjack_panel, show_k3_panel
 from backend.features.activity.services.game_service import (
     apply_auto_schedule,
@@ -74,14 +76,12 @@ class GameTask(ScheduledTask):
             if summary is None:
                 await session.commit()
                 return
-            try:
-                await self._send_k3_summary(app, summary)
-            except Exception as exc:
-                await session.rollback()
-                log.error("k3_result_announcement_failed", round_id=round_id, error=str(exc))
-                return
             chat_id = int(summary["round"].chat_id)
             await session.commit()
+        try:
+            await self._send_k3_summary(app, summary)
+        except Exception as exc:
+            log.error("k3_result_announcement_failed", round_id=round_id, error=str(exc))
         try:
             await show_k3_panel(app, db, chat_id)
         except Exception as exc:
@@ -93,14 +93,12 @@ class GameTask(ScheduledTask):
             if summary is None:
                 await session.commit()
                 return
-            try:
-                await self._send_blackjack_summary(app, summary)
-            except Exception as exc:
-                await session.rollback()
-                log.error("blackjack_result_announcement_failed", round_id=round_id, error=str(exc))
-                return
             chat_id = int(summary["round"].chat_id)
             await session.commit()
+        try:
+            await self._send_blackjack_summary(app, summary)
+        except Exception as exc:
+            log.error("blackjack_result_announcement_failed", round_id=round_id, error=str(exc))
         try:
             await show_blackjack_panel(app, db, chat_id)
         except Exception as exc:
@@ -136,12 +134,17 @@ class GameTask(ScheduledTask):
             chat_id=round_obj.chat_id,
             text="\n".join(lines),
             parse_mode="HTML",
+            reply_markup=game_link(app.bot, round_obj.chat_id, game="k3")
+            if getattr(getattr(app, "bot_data", {}).get("settings"), "mini_app_enabled", False) else None,
         )
 
     async def _send_blackjack_summary(self, app, summary: dict) -> None:
         round_obj = summary["round"]
         participant = summary["participant"]
         outcome = summary["outcome"]
+        if (round_obj.result_data or {}).get("mini_app"):
+            await announce_web_game(app.bot, round_obj, participant, opened=False, outcome=outcome)
+            return
         text = format_blackjack_round_text(participant, reveal_dealer=True, outcome=outcome)
         context = SimpleNamespace(bot=app.bot, application=app)
         if round_obj.announcement_message_id:

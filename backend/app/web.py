@@ -2,6 +2,8 @@ import logging
 
 from fastapi import FastAPI
 
+from backend.features.mini_app.game_router import router as game_router
+from backend.features.mini_app.room_router import router as room_router
 from backend.features.mini_app.router import mount_assets, router as member_router
 from backend.features.mini_app.verification_router import router as verification_router
 from backend.features.web_admin.app import ADMIN_ROUTERS
@@ -23,8 +25,11 @@ def create_web_app(telegram_app, settings) -> FastAPI:
         for router in ADMIN_ROUTERS:
             app.include_router(router)
     if settings.mini_app_enabled:
+        app.state.room_read_membership = {}
         logging.getLogger("uvicorn.access").addFilter(MiniAppAccessFilter())
         app.include_router(member_router)
         app.include_router(verification_router)
+        app.include_router(game_router)
+        app.include_router(room_router)
         mount_assets(app)
     return app

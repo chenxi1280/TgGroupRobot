@@ -1,0 +1,124 @@
+/*
+ * 闲亭设计令牌（Design Tokens）
+ * 所有颜色、字号、圆角、阴影都在这里定义；移植 App 时可直接对照 src/lib/tokens.ts。
+ */
+:root {
+  /* 字体 */
+  --font-ui:
+    -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
+    'Noto Sans SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --font-display:
+    'Songti SC', 'STSong', 'Noto Serif SC', 'Source Han Serif SC', 'Noto Serif CJK SC', 'SimSun',
+    Georgia, serif;
+  --font-card:
+    'SF Pro Display', -apple-system, 'Segoe UI', 'Helvetica Neue', Roboto, Arial, sans-serif;
+
+  /* 大厅（浅色） */
+  --paper: #f4f1ea;
+  --paper-2: #ece8de;
+  --surface: #fffdf9;
+  --surface-2: #f8f6f1;
+  --ink: #1c1d1f;
+  --ink-2: #5d6166;
+  --ink-3: #979ba1;
+  --line: rgba(28, 29, 31, 0.08);
+  --line-2: rgba(28, 29, 31, 0.14);
+  --accent: #1f5c4f;
+  --accent-ink: #ffffff;
+  --accent-soft: #e2ece8;
+  --gold: #b48a4e;
+  --gold-soft: #f3e9d8;
+  --danger: #b3412f;
+  --focus: rgba(31, 92, 79, 0.35);
+
+  /* 卡牌 */
+  --card-face: #fffefb;
+  --card-edge: rgba(20, 22, 26, 0.12);
+  --card-red: #c4352b;
+  --card-black: #1e2126;
+  --card-blue: #23599b;
+  --card-green: #2b7442;
+  --card-back-1: #1f5c4f;
+  --card-back-2: #17463c;
+  --card-shadow: 0 1px 1px rgba(0, 0, 0, 0.18), 0 3px 10px rgba(0, 0, 0, 0.14);
+
+  /* 牌桌（默认：墨绿） */
+  --felt-1: #2a6152;
+  --felt-2: #173a31;
+  --felt-3: #0f2822;
+  --felt-ink: #f3f1ea;
+  --felt-ink-2: rgba(243, 241, 234, 0.66);
+  --felt-ink-3: rgba(243, 241, 234, 0.4);
+  --felt-line: rgba(255, 255, 255, 0.09);
+  --felt-glass: rgba(10, 20, 17, 0.32);
+  --felt-glass-2: rgba(255, 255, 255, 0.07);
+  --felt-accent: #e7c886;
+
+  /* 尺寸 */
+  --radius-xs: 6px;
+  --radius-sm: 10px;
+  --radius: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+  --shadow-sm: 0 1px 2px rgba(28, 29, 31, 0.06), 0 1px 1px rgba(28, 29, 31, 0.04);
+  --shadow: 0 1px 2px rgba(28, 29, 31, 0.05), 0 8px 24px rgba(28, 29, 31, 0.07);
+  --shadow-lg: 0 2px 6px rgba(0, 0, 0, 0.08), 0 24px 60px rgba(0, 0, 0, 0.18);
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* 卡牌尺寸（随屏幕自适应） */
+  --cw: clamp(40px, min(6.6vw, 13vh), 124px);
+  --ch: calc(var(--cw) * 1.4);
+  --cw-sm: calc(var(--cw) * 0.72);
+  --cw-xs: calc(var(--cw) * 0.5);
+
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  --paper: #121314;
+  --paper-2: #18191b;
+  --surface: #1c1d20;
+  --surface-2: #222326;
+  --ink: #ecebe7;
+  --ink-2: #a7a9ad;
+  --ink-3: #6f7277;
+  --line: rgba(255, 255, 255, 0.08);
+  --line-2: rgba(255, 255, 255, 0.14);
+  --accent: #5fb39d;
+  --accent-ink: #0d1f1a;
+  --accent-soft: rgba(95, 179, 157, 0.14);
+  --gold: #d4ac6e;
+  --gold-soft: rgba(212, 172, 110, 0.14);
+  --focus: rgba(95, 179, 157, 0.4);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.35);
+  color-scheme: dark;
+}
+
+/* 桌布主题 */
+[data-felt='indigo'] {
+  --felt-1: #2f4a72;
+  --felt-2: #1a2b47;
+  --felt-3: #111c30;
+  --card-back-1: #2f4a72;
+  --card-back-2: #22375a;
+  --felt-glass: rgba(8, 14, 26, 0.34);
+}
+[data-felt='wine'] {
+  --felt-1: #6a2f3b;
+  --felt-2: #3e1820;
+  --felt-3: #2a0f15;
+  --card-back-1: #6a2f3b;
+  --card-back-2: #4f2029;
+  --felt-glass: rgba(24, 6, 10, 0.34);
+}
+[data-felt='graphite'] {
+  --felt-1: #3b3d40;
+  --felt-2: #242527;
+  --felt-3: #18191a;
+  --card-back-1: #3e4146;
+  --card-back-2: #2b2d31;
+  --felt-glass: rgba(0, 0, 0, 0.3);
+  --felt-accent: #e0c48c;
+}
