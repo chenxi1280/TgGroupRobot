@@ -45,7 +45,7 @@ async def show_room_game_settings(update, context, chat_id: int) -> None:
             on_callback=f"{menu}:toggle:{game}:1", off_callback=f"{menu}:toggle:{game}:0",
         ))
     rows.append([
-        InlineKeyboardButton(f"设置{GAME_NAMES[game]}服务费", callback_data=f"{menu}:fee:{game}")
+        InlineKeyboardButton(f"设置{GAME_NAMES[game]}服务费", callback_data=f"gm:rooms:{chat_id}:fee:{game}")
         for game in ROOM_GAMES
     ])
     rows.append(navigation_row(f"gm:home:{chat_id}"))
