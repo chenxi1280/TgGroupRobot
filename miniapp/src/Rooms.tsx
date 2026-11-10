@@ -193,7 +193,11 @@ export default function Rooms({ initialRoom, initialHand }: { initialRoom?: numb
     setError('');
     try {
       const result = await roomInvite(room.id, target);
-      if (result.message_id) await shareMessage(result.message_id);
+      if (result.message_id) {
+        await shareMessage(result.message_id).catch(cause => {
+          if (cause.message !== 'USER_DECLINED') setError('私发邀请失败，请重试。');
+        });
+      }
       if (result.sent) setRoom({ ...room, group_invited: true });
     } catch (cause) {
       setError((cause as Error).message);
