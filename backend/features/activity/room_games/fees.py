@@ -20,7 +20,7 @@ GAME_NAMES = {"sichuan": "四川血战", "zhajinhua": "炸金花", "k3": "快三
 
 class RoomFee(BaseModel):
     enabled: bool = False
-    points: int = Field(default=0, ge=0, le=MAX_ROOM_FEE, strict=True)
+    points: int = Field(default=10, ge=0, le=MAX_ROOM_FEE, strict=True)
 
 
 class GroupRoomSettings(BaseModel):
