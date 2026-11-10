@@ -608,6 +608,15 @@ def _full_tables() -> dict[str, dict]:
             },
             "uniques": [{"name": "uq_game_participant_round_user", "column_names": ["round_id", "user_id"]}],
         },
+        "room_games": {
+            "columns": {
+                "id", "chat_id", "owner_id", "game", "status", "unit", "fee",
+                "hand_limit", "version", "deadline", "seats", "options", "hand", "history", "created_at",
+            },
+        },
+        "platform_game_fees": {
+            "columns": {"game", "session_id", "chat_id", "user_id", "amount", "charged_at"},
+        },
         "guess_settings": {
             "columns": {"chat_id", "rake_ratio", "rake_owner_user_id", "delete_message_mode", "updated_at"},
         },
