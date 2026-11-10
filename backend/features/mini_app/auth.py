@@ -34,7 +34,7 @@ def validate_init_data(raw: str, token: str, *, max_age: int, now: int | None = 
     if age < 0 or age > max_age:
         raise ValueError("身份已过期，请重新打开小程序")
     payload = json.loads(fields["user"])
-    user = User.de_json(payload, None)
+    user = User.de_json({"is_bot": False, **payload}, None)
     if user is None or user.id <= 0 or user.is_bot:
         raise ValueError("请使用 Telegram 个人账号打开")
     return MiniAppIdentity(user=user, start_param=fields.get("start_param", ""))
