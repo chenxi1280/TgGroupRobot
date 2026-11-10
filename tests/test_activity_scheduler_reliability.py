@@ -42,7 +42,7 @@ class _Db:
 
 
 @pytest.mark.asyncio
-async def test_game_task_commits_round_before_result_announcement(monkeypatch):
+async def test_game_task_queues_result_in_settlement_transaction(monkeypatch):
     db = _Db()
     settled: list[int] = []
     shown: list[int] = []
@@ -60,11 +60,11 @@ async def test_game_task_commits_round_before_result_announcement(monkeypatch):
     async def fake_schedule(session, now_local):
         return []
 
-    commits_at_send: list[int] = []
+    queued: list[_Session] = []
 
-    async def fail_send(self, app, summary):
-        commits_at_send.append(db.sessions[1].commits)
-        raise RuntimeError("telegram down")
+    def queue(self, session, app, summary):
+        assert session.commits == 0
+        queued.append(session)
 
     async def fake_show(*args, **kwargs):
         shown.append(args[2])
@@ -73,7 +73,7 @@ async def test_game_task_commits_round_before_result_announcement(monkeypatch):
     monkeypatch.setattr(game_task, "list_due_k3_round_ids", fake_list_k3)
     monkeypatch.setattr(game_task, "list_due_blackjack_round_ids", fake_list_bj)
     monkeypatch.setattr(game_task, "settle_k3_round", fake_settle)
-    monkeypatch.setattr(game_task.GameTask, "_send_k3_summary", fail_send)
+    monkeypatch.setattr(game_task.GameTask, "_queue_k3_summary", queue)
     monkeypatch.setattr(game_task, "show_k3_panel", fake_show)
 
     await game_task.GameTask().execute(SimpleNamespace(bot_data={"db": db}))
@@ -83,7 +83,7 @@ async def test_game_task_commits_round_before_result_announcement(monkeypatch):
     assert db.sessions[1].rollbacks == 0
     assert db.sessions[1].commits == 1
     assert shown == [-1001]
-    assert commits_at_send == [1]
+    assert queued == [db.sessions[1]]
 
 
 @pytest.mark.asyncio
@@ -168,29 +168,21 @@ async def test_guess_task_sends_fallback_when_deadline_edit_fails(monkeypatch):
     assert "后台" not in bot.sent_messages[0]["text"]
 
 
-@pytest.mark.asyncio
-async def test_game_task_k3_summary_uses_mentions_without_admin_hint():
-    sent_messages: list[dict] = []
-
-    class _Bot:
-        async def send_message(self, **kwargs):
-            sent_messages.append(kwargs)
-            return SimpleNamespace(message_id=66)
-
+def test_game_task_k3_summary_uses_mentions_without_admin_hint():
+    notices = []
     summary = {
-        "round": SimpleNamespace(chat_id=-1001, result_data={"dice": [1, 2, 3], "label": "小"}),
+        "round": SimpleNamespace(id=7, chat_id=-1001, result_data={"dice": [1, 2, 3], "label": "小"}),
         "winners": [{"user_id": 42, "guess": "小", "bet": 10, "payout": 20, "net": 10}],
     }
-
-    await game_task.GameTask()._send_k3_summary(SimpleNamespace(bot=_Bot()), summary)
-
-    assert sent_messages
-    text = sent_messages[0]["text"]
-    assert sent_messages[0]["parse_mode"] == "HTML"
-    assert '<a href="tg://user?id=42">用户42</a>' in text
-    assert "用户 42" not in text
-    assert "后台" not in text
-    assert "管理员" not in text
+    session = SimpleNamespace(add=notices.append)
+    app = SimpleNamespace(bot=SimpleNamespace(username="isolated_bot"),
+                          bot_data={"settings": SimpleNamespace(mini_app_enabled=True)})
+    game_task.GameTask()._queue_k3_summary(session, app, summary)
+    payload = notices[0].payload
+    assert payload["parse_mode"] == "HTML"
+    assert '<a href="tg://user?id=42">用户42</a>' in payload["text"]
+    assert "后台" not in payload["text"] and "管理员" not in payload["text"]
+    assert payload["reply_markup"]["inline_keyboard"][0][0]["url"].endswith("game_k3_1001_7")
 
 
 @pytest.mark.asyncio

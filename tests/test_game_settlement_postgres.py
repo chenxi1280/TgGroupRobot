@@ -10,15 +10,17 @@ from unittest.mock import AsyncMock
 import pytest
 import pytest_asyncio
 from sqlalchemy import delete, select, text
-from telegram.error import Forbidden
+from telegram.error import TimedOut
 
 from backend.features.activity import game_runtime_actions
+from backend.features.activity.game_notice_delivery import deliver_game_notices
 from backend.features.activity.services import game_blackjack as blackjack, game_k3 as k3
 from backend.features.activity.services.game_base import get_or_create_setting
 from backend.features.points.services.points_service import change_points, get_balance
 from backend.platform.db.runtime.session import create_database
 from backend.platform.db.schema.models.core import PointsTransaction, TgChat, TgUser
 from backend.platform.db.schema.models.expansion import GameParticipant, GameRound
+from backend.platform.db.schema.models.room_games import GameNotice
 from backend.platform.scheduler.tasks import game_task
 
 URL = os.environ.get("TGR_REPAIR_TEST_DATABASE_URL")
@@ -42,6 +44,7 @@ async def game_scope():
         yield db, chat_id, user_id
     finally:
         async with db.session_factory() as session:
+            await session.execute(delete(GameNotice).where(GameNotice.chat_id == chat_id))
             await session.execute(delete(TgChat).where(TgChat.id == chat_id))
             await session.execute(delete(TgUser).where(TgUser.id.in_(users)))
             await session.commit()
@@ -151,14 +154,28 @@ async def test_unavailable_notification_keeps_persisted_result_and_payout(game_s
         monkeypatch.setattr(k3.random, "randint", lambda *_: next(values))
     else:
         round_id, _ = await start_blackjack(db, chat_id, user_id, message_id=8, deadline=past)
-    fail_send = AsyncMock(side_effect=Forbidden("mock chat cannot receive message"))
+    fail_send = AsyncMock(side_effect=TimedOut())
+    app = SimpleNamespace(bot_data={"db": db}, bot=SimpleNamespace(
+        send_message=fail_send, edit_message_text=fail_send,
+    ))
     task = game_task.GameTask()
-    monkeypatch.setattr(task, f"_send_{kind}_summary", fail_send)
     monkeypatch.setattr(game_task, f"show_{kind}_panel", AsyncMock())
     process = getattr(task, f"_process_{kind}_round")
-    await process(None, db, round_id)
-    await process(None, db, round_id)
+    await process(app, db, round_id)
+    await process(app, db, round_id)
+    async with db.session_factory() as session:
+        notice, = (await session.scalars(select(GameNotice).where(GameNotice.chat_id == chat_id))).all()
+    await deliver_game_notices(db, app.bot, [notice.id])
     fail_send.assert_awaited_once()
+    async with db.session_factory() as session:
+        stored = await session.get(GameNotice, notice.id)
+        assert stored.error == "TimedOut" and stored.attempts == 1 and stored.due_at is not None
+        stored.due_at = past
+        await session.commit()
+    fail_send.side_effect = None
+    await deliver_game_notices(db, app.bot, [notice.id])
+    await deliver_game_notices(db, app.bot, [notice.id])
+    assert fail_send.await_count == 2
     async with db.session_factory() as session:
         round_obj = await session.get(GameRound, round_id)
         assert round_obj.status == "finished"

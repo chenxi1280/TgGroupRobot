@@ -2,15 +2,19 @@ from __future__ import annotations
 
 import structlog
 from dataclasses import dataclass
-from sqlalchemy import func, select
+from sqlalchemy import Integer, func, select
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from backend.features.activity.game_notice_delivery import deliver_game_notices
+from backend.features.activity.game_web_notifications import queue_group_blackjack
 from backend.features.activity.game_panels import (
     blackjack_round_keyboard,
+    k3_fee_confirmation,
     show_blackjack_panel,
     show_k3_panel,
 )
+from backend.features.activity.room_games.fees import fee_settings
 from backend.features.activity.services.game_service import (
     blackjack_hit,
     blackjack_stand,
@@ -57,6 +61,7 @@ async def build_user_game_stats(session, chat_id: int, user_id: int, *, game_typ
             func.count(GameParticipant.id),
             func.coalesce(func.sum(GameParticipant.bet_points), 0),
             func.coalesce(func.sum(GameParticipant.payout_points), 0),
+            func.coalesce(func.sum(GameParticipant.choice_data["fee"].astext.cast(Integer)), 0),
         )
         .join(GameRound, GameRound.id == GameParticipant.round_id)
         .where(
@@ -67,9 +72,10 @@ async def build_user_game_stats(session, chat_id: int, user_id: int, *, game_typ
         .group_by(GameParticipant.status)
     )
     rows = result.all()
-    status_counts = {str(status): int(count or 0) for status, count, _bet, _payout in rows}
-    total_bet = sum(int(bet or 0) for _status, _count, bet, _payout in rows)
-    total_payout = sum(int(payout or 0) for _status, _count, _bet, payout in rows)
+    status_counts = {str(status): int(count or 0) for status, count, _bet, _payout, _fee in rows}
+    total_bet = sum(int(bet or 0) for _status, _count, bet, _payout, _fee in rows)
+    total_payout = sum(int(payout or 0) for _status, _count, _bet, payout, _fee in rows)
+    total_fee = sum(int(fee or 0) for _, _, _, _, fee in rows)
     total_rounds = sum(status_counts.values())
     return "\n".join(
         [
@@ -77,7 +83,7 @@ async def build_user_game_stats(session, chat_id: int, user_id: int, *, game_typ
             f"获胜：{status_counts.get('won', 0)}", f"失败：{status_counts.get('lost', 0)}",
             f"平局：{status_counts.get('push', 0)}", f"进行中：{status_counts.get('active', 0)}",
             f"累计下注：{total_bet}", f"累计返奖：{total_payout}",
-            f"净结果：{total_payout - total_bet}",
+            f"净结果：{total_payout - total_bet - total_fee}",
         ]
     )
 
@@ -187,6 +193,13 @@ async def _create_k3_bet(flow: _GameMessageFlow, parsed):
             await session.commit()
             await _reply_game(flow, "🎮 快三当前未开启。")
             return None
+        fee = (await fee_settings(session)).k3
+        if fee:
+            text, keyboard = k3_fee_confirmation(flow.chat.id, flow.user.id, guess=guess, bet=bet_points, fee=fee)
+            await session.rollback()
+            await PublishService.reply(flow.context, chat_id=flow.chat.id, text=text,
+                                       reply_to_message_id=flow.message.message_id, reply_markup=keyboard)
+            return None
         try:
             round_obj, _ = await create_or_join_k3_round(
                 session, flow.chat.id, flow.user.id, guess=guess,
@@ -246,31 +259,22 @@ async def _create_blackjack_bet(flow: _GameMessageFlow, bet: int):
             await session.rollback()
             await _reply_game(flow, f"⚠️ {exc}")
             return None
+        notice = queue_group_blackjack(
+            session, round_obj, participant, outcome=outcome, opening=True, reply_to=flow.message.message_id,
+            keyboard=None if outcome else blackjack_round_keyboard(flow.chat.id),
+        )
+        await session.flush()
+        notice_id = notice.id
         await session.commit()
-    return setting, round_obj, participant, outcome
-
-
-async def _store_blackjack_message(flow: _GameMessageFlow, round_id: int, message_id: int) -> None:
-    async with flow.db.session_factory() as session:
-        row = await session.execute(select(GameRound).where(GameRound.id == round_id))
-        stored_round = row.scalar_one_or_none()
-        if stored_round is not None:
-            stored_round.announcement_message_id = message_id
-        await session.commit()
+    return setting, notice_id
 
 
 async def _handle_blackjack_bet(flow: _GameMessageFlow, bet: int) -> bool:
     result = await _create_blackjack_bet(flow, bet)
     if result is None:
         return True
-    setting, round_obj, participant, outcome = result
-    sent = await flow.context.bot.send_message(
-        chat_id=flow.chat.id,
-        text=format_blackjack_round_text(participant, reveal_dealer=bool(outcome), outcome=outcome),
-        reply_markup=None if outcome else blackjack_round_keyboard(flow.chat.id),
-        reply_to_message_id=flow.message.message_id,
-    )
-    await _store_blackjack_message(flow, round_obj.id, sent.message_id)
+    setting, notice_id = result
+    await deliver_game_notices(flow.db, flow.context.bot, [notice_id])
     await show_blackjack_panel(flow.context, flow.db, flow.chat.id)
     await delete_source_if_needed(
         flow.context, flow.chat.id, flow.message.message_id,
@@ -314,8 +318,16 @@ async def _handle_blackjack_action(flow: _GameMessageFlow) -> bool:
             _, participant, outcome = await blackjack_hit(session, round_obj, participant)
         else:
             outcome = await blackjack_stand(session, round_obj, participant)
+        notice_id = None
+        if outcome:
+            notice = queue_group_blackjack(session, round_obj, participant, outcome=outcome)
+            await session.flush()
+            notice_id = notice.id
         await session.commit()
-    await _publish_blackjack_action(flow, round_obj, participant, outcome=outcome)
+    if notice_id is not None:
+        await deliver_game_notices(flow.db, flow.context.bot, [notice_id])
+    else:
+        await _publish_blackjack_action(flow, round_obj, participant, outcome=outcome)
     await show_blackjack_panel(flow.context, flow.db, flow.chat.id)
     await delete_source_if_needed(
         flow.context, flow.chat.id, flow.message.message_id,

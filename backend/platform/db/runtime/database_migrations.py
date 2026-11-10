@@ -37,6 +37,7 @@ REVISION_FILES = (
     "0017_generic_admin_delivery.py",
     "0018_mini_app_verification.py",
     "0019_room_games.py",
+    "0020_game_notices.py",
 )
 
 log = structlog.get_logger(__name__)

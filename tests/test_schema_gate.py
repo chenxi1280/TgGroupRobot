@@ -614,6 +614,9 @@ def _full_tables() -> dict[str, dict]:
                 "hand_limit", "version", "deadline", "seats", "options", "hand", "history", "created_at",
             },
         },
+        "game_notices": {
+            "columns": {"id", "chat_id", "actor_id", "payload", "created_at", "due_at", "attempts", "error"},
+        },
         "platform_game_fees": {
             "columns": {"game", "session_id", "chat_id", "user_id", "amount", "charged_at"},
         },

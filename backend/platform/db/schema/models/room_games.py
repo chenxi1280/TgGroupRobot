@@ -40,3 +40,17 @@ class PlatformGameFee(Base):
     user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     amount: Mapped[int] = mapped_column(Integer)
     charged_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True))
+
+
+class GameNotice(Base):
+    __tablename__ = "game_notices"
+    __table_args__ = {"schema": "bot"}
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    actor_id: Mapped[int | None] = mapped_column(BigInteger)
+    payload: Mapped[dict] = mapped_column(JSONB)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True))
+    due_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[str | None] = mapped_column(String(64))

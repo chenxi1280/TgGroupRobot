@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from fastapi import HTTPException
 from sqlalchemy import func, select
 
 from backend.features.activity.room_games.fees import fee_settings
@@ -89,12 +90,12 @@ async def _latest_k3_draw(session, chat_id: int) -> dict | None:
     return {"id": round_obj.id, "dice": data.get("dice"), "label": data.get("label")}
 
 
-async def _k3_view(session, chat_id: int, *, active, latest) -> dict:
+async def _k3_view(session, *, active, latest, draw) -> dict:
     return {
         "round": await _k3_active_view(session, active),
         "fee": (await fee_settings(session)).k3,
         "my_k3": _k3_player_view(latest),
-        "draw": await _latest_k3_draw(session, chat_id),
+        "draw": draw,
         "options": [
             {"key": key, "label": label, "multiplier": str(K3_OPTION_MULTIPLIERS[key])}
             for key, label in K3_OPTION_LABELS.items()
@@ -102,10 +103,30 @@ async def _k3_view(session, chat_id: int, *, active, latest) -> dict:
     }
 
 
-async def game_view(session, setting, user_id: int, *, game: str) -> dict:
+async def _historical_result(session, chat_id: int, user_id: int, *, game: str, round_id: int):
+    result = await session.get(GameRound, round_id)
+    if result is None or result.chat_id != chat_id or result.game_type != game or result.status != "finished":
+        raise HTTPException(404, "这局结果不可用")
+    statement = select(GameParticipant).where(GameParticipant.round_id == result.id)
+    draw = None
+    if game == "k3":
+        statement = statement.where(GameParticipant.user_id == user_id)
+        data = result.result_data or {}
+        draw = {"id": result.id, "dice": data.get("dice"), "label": data.get("label")}
+    participant = await session.scalar(statement)
+    return ((result, participant) if participant else None), draw
+
+
+async def game_view(session, setting, user_id: int, *, game: str, result_round_id: int | None = None) -> dict:
     chat_id = setting.chat_id
-    latest = await latest_player_game(session, chat_id, user_id, game=game)
-    k3_round = await get_active_k3_round(session, chat_id) if game == "k3" else None
+    k3_round = draw = None
+    if result_round_id is not None:
+        latest, draw = await _historical_result(session, chat_id, user_id, game=game, round_id=result_round_id)
+    else:
+        latest = await latest_player_game(session, chat_id, user_id, game=game)
+        if game == "k3":
+            k3_round = await get_active_k3_round(session, chat_id)
+            draw = await _latest_k3_draw(session, chat_id)
     balance_round = k3_round
     if game == "blackjack" and latest and latest[0].status == "player_turn":
         balance_round = latest[0]
@@ -113,9 +134,10 @@ async def game_view(session, setting, user_id: int, *, game: str) -> dict:
     if balance_round is not None:
         points_chat = get_round_points_chat_id(balance_round, points_chat)
     chat = await session.get(TgChat, chat_id)
-    details = await _k3_view(session, chat_id, active=k3_round, latest=latest) if game == "k3" else {"round": _blackjack_view(latest)}
+    details = await _k3_view(session, active=k3_round, latest=latest, draw=draw) if game == "k3" else {"round": _blackjack_view(latest)}
     return {
         **details, "game": game, "chat_title": chat.title or "群游戏",
+        "historical": result_round_id is not None, "own_result": bool(latest and latest[1].user_id == user_id),
         "enabled": {"k3": setting.k3_enabled, "blackjack": setting.blackjack_enabled},
         "balance": await get_balance(session, points_chat, user_id),
         "balance_label": await get_game_points_chat_label(session, chat_id, points_chat),

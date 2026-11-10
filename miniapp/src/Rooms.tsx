@@ -7,7 +7,7 @@ import {
 } from './roomApi';
 import './rooms.css';
 
-type Operation = 'join' | 'start' | 'next' | 'leave' | 'move';
+type Operation = 'join' | 'start' | 'next' | 'leave' | 'move' | 'remove';
 
 function ResultTable({ result, mine }: { result: Settlement; mine: number | undefined }) {
   return <section className="room-result room-panel" aria-label="结算">
@@ -94,22 +94,29 @@ export default function Rooms({ initialRoom, initialHand }: { initialRoom?: numb
   const [lobby, setLobby] = useState<Lobby>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [readError, setReadError] = useState('');
   const flight = useRef(false);
   const revision = useRef(0);
+  const reader = useRef<AbortController | null>(null);
 
   const refresh = async () => {
-    if (flight.current) return;
-    const current = ++revision.current;
+    if (flight.current || reader.current) return;
+    const current = revision.current;
+    const controller = new AbortController();
+    reader.current = controller;
     try {
       if (roomId === undefined) {
-        const data = await roomRequest<Lobby>();
+        const data = await roomRequest<Lobby>(undefined, undefined, controller.signal);
         if (revision.current === current) setLobby(data);
       } else {
-        const data = await roomRequest<RoomView>(roomId);
+        const data = await roomRequest<RoomView>(roomId, undefined, controller.signal);
         if (revision.current === current) setRoom(data);
       }
+      if (revision.current === current) setReadError('');
     } catch (cause) {
-      if (revision.current === current) setError((cause as Error).message);
+      if (!controller.signal.aborted && revision.current === current) setReadError((cause as Error).message);
+    } finally {
+      if (reader.current === controller) reader.current = null;
     }
   };
 
@@ -120,6 +127,8 @@ export default function Rooms({ initialRoom, initialHand }: { initialRoom?: numb
     document.addEventListener('visibilitychange', visible);
     return () => {
       revision.current++;
+      reader.current?.abort();
+      reader.current = null;
       window.clearInterval(timer);
       document.removeEventListener('visibilitychange', visible);
     };
@@ -167,13 +176,14 @@ export default function Rooms({ initialRoom, initialHand }: { initialRoom?: numb
   };
 
   const back = () => {
+    setReadError('');
     setRoom(undefined);
     setRoomId(undefined);
     setHistoryNo(undefined);
     setError('');
   };
-  const act = (operation: Operation, action?: object) => {
-    if (room) void submit(room.id, { operation, version: room.version, action });
+  const act = (operation: Operation, action?: object, targetUserId?: number) => {
+    if (room) void submit(room.id, { operation, version: room.version, action, target_user_id: targetUserId });
   };
   const mine = room?.seat == null ? undefined : room.seats[room.seat].id;
   const selected = room?.results.find(result => result.number === historyNo);
@@ -192,12 +202,12 @@ export default function Rooms({ initialRoom, initialHand }: { initialRoom?: numb
     <header className="room-header">
       <div><p className="room-kicker">TG 群游戏 · 积分牌桌</p>
         <h1>{room ? roomNames[room.game] + ' #' + room.id : '游戏房间'}</h1></div>
-      <button type="button" onClick={roomId === undefined ? () => miniApp.close.ifAvailable() : back}>
+      <button type="button" disabled={busy} onClick={roomId === undefined ? () => miniApp.close.ifAvailable() : back}>
         {roomId === undefined ? '返回群聊' : '大厅'}
       </button>
     </header>
     <div className="room-balance"><span>可用群积分</span><strong>{room?.balance ?? lobby?.balance ?? '—'}</strong></div>
-    {error && <p className="room-error" role="alert">{error} <button onClick={() => { setError(''); void refresh(); }}>刷新</button></p>}
+    {(error || readError) && <p className="room-error" role="alert">{error || readError} <button onClick={() => { setError(''); void refresh(); }}>刷新</button></p>}
     {roomId === undefined && lobby && <>
       <CreatePanel lobby={lobby} create={data => void submit(undefined, data)} busy={busy} />
       <section className="room-panel"><h2>本群房间</h2>
@@ -210,11 +220,15 @@ export default function Rooms({ initialRoom, initialHand }: { initialRoom?: numb
     {roomId !== undefined && room && <>
       <RoomFeeNotice room={room} />
       {room.status === 'waiting' && <section className="room-panel">
-        <h2>等待玩家</h2><p>{room.seats.map(seat => seat.name).join('、')}</p>
+        <h2>等待玩家</h2>
+        <ul>{room.seats.map(seat => <li key={seat.id}>{seat.name}
+          {owner && seat.id !== mine && <button type="button" disabled={busy}
+            aria-label={`移除 ${seat.name}`} onClick={() => act('remove', undefined, seat.id)}>移除</button>}
+        </li>)}</ul>
         <p>底分 {room.options.base} · 倍率 {room.options.multiplier}×</p>
-        {room.seat === null && room.balance <= 0 && <p>可用群积分为 0，请先获取群积分。</p>}
+        {room.seat === null && room.balance < room.requirement && <p>开场至少需要 {room.requirement} 分。</p>}
         <div className="room-actions">
-          {room.seat === null && <button className="room-primary" disabled={busy || room.balance <= 0}
+          {room.seat === null && <button className="room-primary" disabled={busy || room.balance < room.requirement}
             onClick={() => act('join')}>加入房间</button>}
           {owner && <button className="room-primary"
             disabled={busy || room.balance < room.requirement || room.players < (room.game === 'sichuan' ? 4 : 2)}
@@ -223,13 +237,13 @@ export default function Rooms({ initialRoom, initialHand }: { initialRoom?: numb
         </div>
         {owner && <div className="room-actions" aria-label="邀请玩家">
           <button disabled={busy || room.group_invited} onClick={() => void invite('group')}>
-            {room.group_invited ? '已发到本群' : '发到本群'}
+            {room.group_invited ? '已提交群邀请' : '发到本群'}
           </button>
           <button disabled={busy || !shareMessage.isAvailable()} onClick={() => void invite('private')}>私发好友</button>
         </div>}
       </section>}
       {room.status === 'playing' && room.table && !selected &&
-        (room.game === 'sichuan' ? <RoomMahjong room={room} move={action => act('move', action)} />
+        (room.game === 'sichuan' ? <RoomMahjong room={room} move={action => act('move', action)} busy={busy} />
           : <RoomFlower room={room} move={action => act('move', action)} busy={busy} />)}
       {room.status === 'playing' && room.seat === null && <p className="room-panel">本场已开场，请等待下一场。</p>}
       {room.status === 'closed' && room.results.length > 0 && <MatchSummary room={room} />}

@@ -295,13 +295,19 @@ function winValue(state: ScState, p: ScPlayer, extra: Tile | null) {
   return evaluateHand(countKinds(tiles), meldShapes(p), { jingoudiao: state.options.jingoudiao });
 }
 
-function deal(state: ScState): void {
+function deal(state: ScState, randomInt?: (n: number) => number): void {
   const rng = new Rng(state.rng);
-  const wall = rng.shuffle(createTiles());
+  const wall = createTiles();
+  if (randomInt) {
+    for (let i = wall.length - 1; i > 0; i--) {
+      const j = randomInt(i + 1);
+      [wall[i], wall[j]] = [wall[j], wall[i]];
+    }
+  } else rng.shuffle(wall);
   state.exchangeDir = state.options.exchange
-    ? (['next', 'prev', 'across'] as const)[rng.int(3)]
+    ? (['next', 'prev', 'across'] as const)[(randomInt ?? ((n) => rng.int(n)))(3)]
     : null;
-  state.rng = rng.state;
+  state.rng = randomInt ? 0 : rng.state;
   state.players = [0, 1, 2, 3].map(() => ({
     hand: [],
     melds: [],
@@ -817,7 +823,7 @@ function cleanAction(a: ScAction): ScAction {
   }
 }
 
-export const sichuan: GameDefinition<ScState, ScAction, ScView, ScOptions> = {
+export const sichuan = {
   meta: {
     id: 'sichuan',
     category: 'mahjong',
@@ -879,14 +885,14 @@ export const sichuan: GameDefinition<ScState, ScAction, ScView, ScOptions> = {
     { key: 'jingoudiao', label: '金钩钓', hint: '单钓将且其余全是碰杠时 +1 番', type: 'toggle' },
   ],
 
-  setup({ options, seed }) {
+  setup({ options, seed }, randomInt?: (n: number) => number) {
     const rng = new Rng(seed);
     const state: ScState = {
       options: { ...options },
       rng: 0,
       round: 1,
       phase: 'exchange',
-      dealer: rng.int(N),
+      dealer: randomInt ? randomInt(N) : rng.int(N),
       wall: [],
       players: [],
       turn: 0,
@@ -912,7 +918,7 @@ export const sichuan: GameDefinition<ScState, ScAction, ScView, ScOptions> = {
       eventSeq: 0,
     };
     state.rng = rng.state;
-    deal(state);
+    deal(state, randomInt);
     return state;
   },
 
@@ -968,7 +974,7 @@ export const sichuan: GameDefinition<ScState, ScAction, ScView, ScOptions> = {
     }
   },
 
-  apply(prev, seat, raw) {
+  apply(prev, seat, raw, randomInt?: (n: number) => number) {
     // 只保留各动作需要的字段：决定会存进状态，不能带上客户端附加的任意数据
     const action = cleanAction(raw);
     const state = clone(prev);
@@ -979,7 +985,7 @@ export const sichuan: GameDefinition<ScState, ScAction, ScView, ScOptions> = {
         if (state.ready.every(Boolean)) {
           state.dealer = state.result!.nextDealer;
           state.round++;
-          deal(state);
+          deal(state, randomInt);
         }
         return state;
       }
@@ -1174,7 +1180,7 @@ export const sichuan: GameDefinition<ScState, ScAction, ScView, ScOptions> = {
 
   bot: sichuanBot,
   aiPrompt: scAiPrompt,
-};
+} satisfies GameDefinition<ScState, ScAction, ScView, ScOptions>;
 
 /** 测试用：直接执行终局结算与账本折算 */
 export { settle as _settle, deltasOf };

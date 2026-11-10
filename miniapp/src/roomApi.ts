@@ -18,7 +18,7 @@ export type FlowerTableView = {
   legal: { look?: boolean; fold?: boolean; call?: number; raises?: number[]; compare?: number[] };
 };
 export type RoomView = RoomSummary & {
-  seats: Seat[]; seat: number | null; owner_id: number; version: number; deadline: string | null;
+  seats: Seat[]; seat: number | null; owner_id: number; version: number; deadline: string | null; server_time: string;
   group_invited: boolean; balance: number; requirement: number; fee_charged: boolean; results: Settlement[]; options: RoomOptions;
   table: sc.ScView | FlowerTableView | null;
 };
@@ -28,19 +28,23 @@ export type Lobby = {
 };
 export type InviteTarget = 'group' | 'private';
 
-async function request<T>(route: string, method: string, body?: object): Promise<T> {
+let roomSession: string | null = null;
+
+async function request<T>(route: string, method: string, body?: object, signal?: AbortSignal): Promise<T> {
   const result = await fetch('/miniapp/api/rooms' + route, {
     method,
-    headers: { Authorization: 'tma ' + initData.raw(), 'Content-Type': 'application/json' },
+    signal,
+    headers: { Authorization: roomSession ? 'room ' + roomSession : 'tma ' + initData.raw(), 'Content-Type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined,
   });
   const data = await result.json();
   if (!result.ok) throw new Error(typeof data.detail === 'string' ? data.detail : '操作失败，请刷新房间');
+  roomSession = result.headers.get('X-Room-Session') ?? roomSession;
   return data;
 }
 
-export function roomRequest<T>(id?: number, body?: object) {
-  return request<T>(id === undefined ? '' : '/' + id, body ? 'POST' : 'GET', body);
+export function roomRequest<T>(id?: number, body?: object, signal?: AbortSignal) {
+  return request<T>(id === undefined ? '' : '/' + id, body ? 'POST' : 'GET', body, signal);
 }
 
 export function roomInvite(id: number, target: InviteTarget) {

@@ -3,7 +3,7 @@ from __future__ import annotations
 import structlog
 from sqlalchemy import select
 
-from backend.features.activity.room_games.notices import room_notice
+from backend.features.activity.room_games.notices import queue_room_notice
 from backend.features.activity.room_games.rooms import advance_hand, now, void_hand
 from backend.platform.db.schema.models.room_games import RoomGame
 from backend.platform.scheduler.core.core import ScheduledTask
@@ -37,9 +37,9 @@ class RoomGameTask(ScheduledTask):
             else:
                 room.status, room.deadline = "closed", None
                 room.version += 1
+            if settled:
+                queue_room_notice(session, app.bot, room, event="settled")
             await session.commit()
-        if settled:
-            await room_notice(app.bot, room, "settled")
 
     async def _play_timeout(self, session, room):
         room_id = room.id

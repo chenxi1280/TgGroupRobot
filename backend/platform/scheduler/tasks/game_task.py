@@ -5,11 +5,11 @@ from __future__ import annotations
 import datetime as dt
 import html
 import structlog
-from types import SimpleNamespace
 
 from backend.platform.scheduler.core.core import ScheduledTask
 from backend.platform.scheduler.core.task_config import TASK_CONFIG
-from backend.features.activity.game_web_notifications import announce_web_game
+from backend.features.activity.game_notice_delivery import queue_game_notice
+from backend.features.activity.game_web_notifications import queue_web_game
 from backend.features.mini_app.links import game_link
 from backend.features.activity.game_panels import show_blackjack_panel, show_k3_panel
 from backend.features.activity.services.game_service import (
@@ -22,9 +22,9 @@ from backend.features.activity.services.game_service import (
     settle_k3_round,
 )
 from backend.shared.time_helper import LOCAL_TIMEZONE
-from backend.shared.services.publish_service import PublishService
 
 log = structlog.get_logger(__name__)
+SUMMARY_CHUNK_LIMIT = 3500
 
 
 class GameTask(ScheduledTask):
@@ -77,11 +77,8 @@ class GameTask(ScheduledTask):
                 await session.commit()
                 return
             chat_id = int(summary["round"].chat_id)
+            self._queue_k3_summary(session, app, summary)
             await session.commit()
-        try:
-            await self._send_k3_summary(app, summary)
-        except Exception as exc:
-            log.error("k3_result_announcement_failed", round_id=round_id, error=str(exc))
         try:
             await show_k3_panel(app, db, chat_id)
         except Exception as exc:
@@ -94,11 +91,8 @@ class GameTask(ScheduledTask):
                 await session.commit()
                 return
             chat_id = int(summary["round"].chat_id)
+            self._queue_blackjack_summary(session, app, summary)
             await session.commit()
-        try:
-            await self._send_blackjack_summary(app, summary)
-        except Exception as exc:
-            log.error("blackjack_result_announcement_failed", round_id=round_id, error=str(exc))
         try:
             await show_blackjack_panel(app, db, chat_id)
         except Exception as exc:
@@ -109,13 +103,13 @@ class GameTask(ScheduledTask):
                 error=str(exc),
             )
 
-    async def _send_k3_summary(self, app, summary: dict) -> None:
+    def _queue_k3_summary(self, session, app, summary: dict) -> None:
         round_obj = summary["round"]
         data = round_obj.result_data or {}
         dice = data.get("dice") or []
         winners = summary["winners"]
         lines = [
-            "🎲 快三开奖",
+            f"🎲 快三开奖 · #{round_obj.id}",
             f"🎯 点数：{dice}（{data.get('label', '未知')}）",
         ]
         if winners:
@@ -129,39 +123,23 @@ class GameTask(ScheduledTask):
                 )
         else:
             lines.append("😶 本局无人中奖，下注积分已按规则结算。")
-        await PublishService.send(
-            SimpleNamespace(bot=app.bot, application=app),
-            chat_id=round_obj.chat_id,
-            text="\n".join(lines),
-            parse_mode="HTML",
-            reply_markup=game_link(app.bot, round_obj.chat_id, game="k3")
-            if getattr(getattr(app, "bot_data", {}).get("settings"), "mini_app_enabled", False) else None,
-        )
+        keyboard = game_link(app.bot, round_obj.chat_id, game="k3", round_id=round_obj.id) if getattr(
+            app.bot_data.get("settings"), "mini_app_enabled", False,
+        ) else None
+        text = ""
+        for line in lines:
+            if len(text) + len(line) > SUMMARY_CHUNK_LIMIT:
+                queue_game_notice(session, round_obj.chat_id, text, parse_mode="HTML", keyboard=keyboard)
+                text = lines[0]
+            text += ("\n" if text else "") + line
+        queue_game_notice(session, round_obj.chat_id, text, parse_mode="HTML", keyboard=keyboard)
 
-    async def _send_blackjack_summary(self, app, summary: dict) -> None:
+    def _queue_blackjack_summary(self, session, app, summary: dict) -> None:
         round_obj = summary["round"]
         participant = summary["participant"]
         outcome = summary["outcome"]
         if (round_obj.result_data or {}).get("mini_app"):
-            await announce_web_game(app.bot, round_obj, participant, opened=False, outcome=outcome)
+            queue_web_game(session, app.bot, round_obj, participant=participant, opened=False, outcome=outcome)
             return
         text = format_blackjack_round_text(participant, reveal_dealer=True, outcome=outcome)
-        context = SimpleNamespace(bot=app.bot, application=app)
-        if round_obj.announcement_message_id:
-            try:
-                await PublishService.edit(
-                    context,
-                    chat_id=round_obj.chat_id,
-                    message_id=round_obj.announcement_message_id,
-                    text=text,
-                )
-            except Exception as exc:
-                log.warning(
-                    "blackjack_summary_edit_failed",
-                    chat_id=round_obj.chat_id,
-                    message_id=round_obj.announcement_message_id,
-                    error=str(exc),
-                )
-                await PublishService.send(context, chat_id=round_obj.chat_id, text=text)
-        else:
-            await PublishService.send(context, chat_id=round_obj.chat_id, text=text)
+        queue_game_notice(session, round_obj.chat_id, text, message_id=round_obj.announcement_message_id)

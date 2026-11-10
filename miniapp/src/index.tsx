@@ -14,12 +14,12 @@ const root = ReactDOM.createRoot(document.getElementById('root')!);
 try {
   init();
   const scene = initData.startParam() || '';
-  const game = /^game_(blackjack|k3)_[1-9][0-9]{0,15}$/.exec(scene);
+  const game = /^game_(blackjack|k3)_[1-9][0-9]{0,15}(?:_([1-9][0-9]{0,9}))?$/.exec(scene);
   const room = /^(?:rooms_[1-9][0-9]{0,15}|room_[1-9][0-9]{0,15}_([1-9][0-9]{0,9})(?:_([1-9][0-9]?))?)$/.exec(scene);
   if (room) root.render(<Suspense fallback={<main>正在打开游戏房间…</main>}>
     <Rooms initialRoom={room[1] ? Number(room[1]) : undefined} initialHand={room[2] ? Number(room[2]) : undefined} />
   </Suspense>);
-  else if (game) root.render(<Games initial={game[1] === 'k3' ? 'k3' : 'blackjack'} />);
+  else if (game) root.render(<Games initial={game[1] === 'k3' ? 'k3' : 'blackjack'} historical={Boolean(game[2])} />);
   else if (scene.startsWith('verify_')) root.render(<Verify token={scene.slice('verify_'.length)} />);
   else throw new Error('请从群内打开');
 } catch {

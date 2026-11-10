@@ -187,6 +187,23 @@ async def _new_k3_round(session, chat_id: int, user_id: int, *, points_chat_id: 
     return round_obj
 
 
+async def _validate_bet_fee(
+    session, chat_id: int, user_id: int, *, points_chat_id: int,
+    expected_fee: int | None, confirmation_id: int | None,
+) -> int:
+    fee = (await fee_settings(session)).k3
+    if (expected_fee or 0) != fee:
+        raise ValidationError(f"快三当前每次台费 {fee} 分，请刷新后重新确认下注。")
+    if confirmation_id is not None and await session.scalar(select(GameParticipant.id).where(
+        GameParticipant.chat_id == chat_id, GameParticipant.user_id == user_id,
+        GameParticipant.choice_data["k3_confirmation"].astext == str(confirmation_id),
+    ).limit(1)) is not None:
+        raise ValidationError("该次下注已确认，请重新发起下注。")
+    if fee:
+        await require_closed_mall(session, points_chat_id)
+    return fee
+
+
 async def create_or_join_k3_round(
     session: AsyncSession,
     chat_id: int,
@@ -197,6 +214,7 @@ async def create_or_join_k3_round(
     points_chat_id: int | None = None,
     expected_round_id: int | None = None,
     expected_fee: int | None = None,
+    confirmation_id: int | None = None,
 ) -> tuple[GameRound, GameParticipant]:
     normalized_guess = normalize_k3_guess(guess)
     round_obj, round_points_chat_id = await _lock_k3_betting_round(
@@ -204,11 +222,8 @@ async def create_or_join_k3_round(
     )
     if round_obj is not None:
         round_points_chat_id = get_round_points_chat_id(round_obj, round_points_chat_id)
-    fee = (await fee_settings(session)).k3
-    if (expected_fee or 0) != fee:
-        raise ValidationError(f"快三当前每次台费 {fee} 分，请打开群内小程序查看并确认后下注。")
-    if fee:
-        await require_closed_mall(session, round_points_chat_id)
+    fee = await _validate_bet_fee(session, chat_id, user_id, points_chat_id=round_points_chat_id,
+                                  expected_fee=expected_fee, confirmation_id=confirmation_id)
     if round_obj is None:
         round_obj = await _new_k3_round(session, chat_id, user_id, points_chat_id=round_points_chat_id)
 
@@ -236,6 +251,8 @@ async def create_or_join_k3_round(
         bet_points=bet_points,
         choice_data={"guess": normalized_guess, "points_chat_id": round_points_chat_id, "fee": fee},
     )
+    if confirmation_id is not None:
+        participant.choice_data = {**participant.choice_data, "k3_confirmation": confirmation_id}
     session.add(participant)
     await session.flush()
     return round_obj, participant
@@ -336,7 +353,7 @@ async def _settle_k3_participant(
         "guess": k3_guess_label(guess),
         "bet": participant.bet_points,
         "payout": payout,
-        "net": payout - participant.bet_points,
+        "net": payout - participant.bet_points - (participant.choice_data or {}).get("fee", 0),
     }
 
 

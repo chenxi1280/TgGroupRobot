@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from sqlalchemy import select
+from sqlalchemy import BigInteger, func, select
 
 from backend.features.activity.room_games.fees import (
     change_game_points, collect_fee, fee_settings, require_closed_mall, require_room_enabled,
@@ -17,6 +17,8 @@ from vendor.golden_flower.models.game import GameState, PlayerStatus
 
 ACTION_SECONDS = 20
 WAIT_MINUTES = 10
+ROOM_CREATES_PER_PLAYER = 3
+ROOM_CREATES_PER_GROUP = 30
 MAHJONG_SEATS = 4
 FLOWER_MIN_SEATS = 2
 MAX_SEATS = 6
@@ -44,12 +46,20 @@ async def create_room(session, chat_id: int, user, *, data) -> RoomGame:
     await require_closed_mall(session, chat_id)
     config = await require_room_enabled(session, chat_id, data.game)
     await require_room_points(session, chat_id, user.id)
+    # require_closed_mall holds the group row lock across this check and insertion.
+    cutoff = now() - dt.timedelta(minutes=WAIT_MINUTES)
+    counts = await session.execute(select(
+        func.count(), func.count().filter(func.coalesce(RoomGame.options["creator_id"].astext.cast(BigInteger), RoomGame.owner_id) == user.id),
+    ).where(RoomGame.chat_id == chat_id, RoomGame.created_at > cutoff))
+    group_count, player_count = counts.one()
+    if group_count >= ROOM_CREATES_PER_GROUP or player_count >= ROOM_CREATES_PER_PLAYER:
+        raise ValidationError("最近建房次数已达上限，请使用已有房间或稍后再试")
     schedule = getattr(await fee_settings(session), data.game)
     room = RoomGame(
         chat_id=chat_id, owner_id=user.id, game=data.game, unit=data.base * data.multiplier,
         fee=config.points, hand_limit=schedule.hands, status="waiting",
         seats=[{"id": user.id, "name": user.full_name}],
-        options={"base": data.base, "multiplier": data.multiplier, "special": data.special},
+        options={"base": data.base, "multiplier": data.multiplier, "special": data.special, "creator_id": user.id},
         hand={}, history=[], created_at=now(), deadline=now() + dt.timedelta(minutes=WAIT_MINUTES),
     )
     session.add(room)
@@ -57,9 +67,12 @@ async def create_room(session, chat_id: int, user, *, data) -> RoomGame:
     return room
 
 
-async def require_room_points(session, chat_id: int, user_id: int) -> None:
-    if await get_balance(session, chat_id, user_id) <= 0:
+async def require_room_points(session, chat_id: int, user_id: int, *, minimum: int = 1) -> None:
+    balance = await get_balance(session, chat_id, user_id)
+    if balance <= 0:
         raise ValidationError("可用群积分为 0，请先获取群积分")
+    if balance < minimum:
+        raise ValidationError(f"积分不足，开场至少需要 {minimum} 分，当前可用 {balance} 分")
 
 
 def join_room(room: RoomGame, user) -> None:
@@ -104,10 +117,17 @@ async def open_hand(session, room: RoomGame, *, first: bool) -> None:
         raise ValidationError(f"至少需要 {minimum} 名玩家")
     await require_closed_mall(session, room.chat_id)
     await require_room_enabled(session, room.chat_id, room.game)
+    reserve = hand_reserve(room.game, room.unit)
+    required = reserve + (room.fee if first else 0)
+    players = sorted(room.seats, key=lambda row: row["id"])
+    for player in players:
+        try:
+            await require_room_points(session, room.chat_id, player["id"], minimum=required)
+        except ValidationError as exc:
+            raise ValidationError(f'{player["name"]}：{exc}') from exc
     engine = await _start_engine(room)
     number = len(room.history) + 1
-    reserve = hand_reserve(room.game, room.unit)
-    for player in sorted(room.seats, key=lambda row: row["id"]):
+    for player in players:
         user_id = player["id"]
         if first:
             await collect_fee(session, room.chat_id, user_id, game=room.game, session_id=room.id, amount=room.fee)
@@ -232,7 +252,7 @@ async def room_view(session, room: RoomGame, user_id: int) -> dict:
     ]
     return {
         **room_summary(room), "seats": room.seats, "owner_id": room.owner_id, "seat": seat,
-        "version": room.version, "deadline": room.deadline, "balance": balance,
+        "version": room.version, "deadline": room.deadline, "server_time": now(), "balance": balance,
         "requirement": room.fee + hand_reserve(room.game, room.unit),
         "fee_charged": bool(room.hand and seat is not None), "table": table, "results": results,
         "options": room.options, "group_invited": room.options.get("group_invited", False),

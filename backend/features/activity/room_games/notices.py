@@ -2,14 +2,11 @@ from __future__ import annotations
 
 import html
 
-import structlog
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.error import TelegramError
 
+from backend.features.activity.game_notice_delivery import queue_game_notice
 from backend.features.activity.room_games.fees import GAME_NAMES
 from backend.features.mini_app.links import mini_app_url
-
-log = structlog.get_logger(__name__)
 
 
 def room_keyboard(bot, chat_id: int, *, room_id: int | None = None, number: int | None = None):
@@ -40,7 +37,7 @@ def _mention(player: dict) -> str:
     return f'<a href="tg://user?id={player["id"]}">{html.escape(player["name"])}</a>'
 
 
-async def room_notice(bot, room, event: str) -> None:
+def queue_room_notice(session, bot, room, *, event: str):
     name = GAME_NAMES[room.game]
     number = None
     if event == "started":
@@ -55,13 +52,10 @@ async def room_notice(bot, room, event: str) -> None:
         heading = "小局已作废，游戏投入已退回" if result.get("void") else "小局已结算"
         text = f"🏁 {name} · #{room.id} 第 {number} {heading}\n{rows}"
         text += "\n本场已结束。" if room.status == "closed" else ""
-    try:
-        await bot.send_message(
-            chat_id=room.chat_id, text=text, parse_mode="HTML",
-            reply_markup=room_keyboard(bot, room.chat_id, room_id=room.id, number=number),
-        )
-    except TelegramError as exc:
-        log.warning("room_notice_failed", room_id=room.id, event=event, error=type(exc).__name__)
+    return queue_game_notice(
+        session, room.chat_id, text, parse_mode="HTML",
+        keyboard=room_keyboard(bot, room.chat_id, room_id=room.id, number=number),
+    )
 
 
 async def rooms_command(update, context) -> None:

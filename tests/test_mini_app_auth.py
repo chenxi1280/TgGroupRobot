@@ -74,3 +74,36 @@ async def test_http_dependency_rejects_missing_or_malformed_identity():
             response = await client.get("/identity", headers={"authorization": value})
             assert response.status_code == 401
             assert "bad" not in response.text
+
+
+@pytest.mark.asyncio
+async def test_room_session_renews_after_telegram_launch_data_expires(monkeypatch):
+    from fastapi import Request, Response
+
+    from backend.features.mini_app import auth
+
+    clock = NOW
+    monkeypatch.setattr(auth.time, "time", lambda: clock)
+    app = FastAPI()
+    app.state.settings = SimpleNamespace(bot_token=TOKEN)
+
+    @app.get("/room")
+    def room(request: Request, response: Response):
+        actor, issued, expires = auth.room_session_identity(request)
+        auth.renew_room_session(request, response, actor, issued=issued, expires=expires)
+        return {"id": actor.user.id, "scene": actor.start_param}
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        launch = {"Authorization": "tma " + signed_data(scene="rooms_1001")}
+        first = await client.get("/room", headers=launch)
+        room_token = first.headers[auth.ROOM_SESSION_HEADER]
+        clock += 3700
+        assert (await client.get("/room", headers=launch)).status_code == 401
+        second = await client.get("/room", headers={"Authorization": "room " + room_token})
+        assert second.json() == {"id": 42, "scene": "rooms_1001"}
+        renewed = second.headers[auth.ROOM_SESSION_HEADER]
+        assert renewed != room_token
+        clock += 3501
+        assert (await client.get("/room", headers={"Authorization": "room " + room_token})).status_code == 401
+        assert (await client.get("/room", headers={"Authorization": "room " + renewed})).status_code == 200
+        assert (await client.get("/room", headers={"Authorization": "room " + renewed + "0"})).status_code == 401

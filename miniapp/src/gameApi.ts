@@ -12,6 +12,8 @@ export type BlackjackHand = Player & {
 export type Draw = { id: number; dice: number[] | null; label: string | null };
 type Common = {
   chat_title: string;
+  historical: boolean;
+  own_result: boolean;
   enabled: Record<Game, boolean>;
   balance: number;
   balance_label: string;
@@ -38,8 +40,8 @@ export class GameError extends Error {
   constructor(message: string, public status: number) { super(message); }
 }
 
-export async function gameRequest(game: Game, move?: Move): Promise<GameState> {
-  const result = await fetch('/miniapp/api/games/' + game, {
+export async function gameRequest(game: Game, move?: Move, current = false): Promise<GameState> {
+  const result = await fetch('/miniapp/api/games/' + game + (current ? '?current=true' : ''), {
     method: move ? 'POST' : 'GET',
     headers: { Authorization: 'tma ' + initData.raw(), 'Content-Type': 'application/json' },
     body: move ? JSON.stringify(move) : undefined,

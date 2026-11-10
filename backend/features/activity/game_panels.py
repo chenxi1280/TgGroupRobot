@@ -7,6 +7,7 @@ from telegram.ext import ContextTypes
 from telegram.error import BadRequest
 
 from backend.features.activity.room_games.notices import room_keyboard
+from backend.features.activity.services.game_k3 import normalize_k3_guess
 from backend.features.activity.services.game_service import (
     K3_OPTION_LABELS,
     K3_OPTION_MULTIPLIERS,
@@ -46,6 +47,20 @@ def k3_panel_keyboard(chat_id: int) -> InlineKeyboardMarkup:
         )
     buttons.append([InlineKeyboardButton("🔄 刷新面板", callback_data=f"gmrun:k3:refresh:{chat_id}")])
     return InlineKeyboardMarkup(buttons)
+
+
+
+def k3_fee_confirmation(chat_id: int, user_id: int, *, guess: str, bet: int, fee: int):
+    guess = normalize_k3_guess(guess)
+    choice = tuple(K3_OPTION_LABELS).index(guess)
+    button = InlineKeyboardButton(
+        f"确认扣除 {bet + fee} 积分",
+        callback_data=f"gmrun:k3:pay:{chat_id}:{choice}:{bet}:{fee}:{user_id}",
+    )
+    return (
+        f"快三 {K3_OPTION_LABELS[guess]} · 下注 {bet} 分 + 台费 {fee} 分。请在 60 秒内确认。",
+        InlineKeyboardMarkup([[button]]),
+    )
 
 
 def blackjack_panel_keyboard(chat_id: int) -> InlineKeyboardMarkup:

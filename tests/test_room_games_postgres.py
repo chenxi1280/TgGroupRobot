@@ -19,6 +19,7 @@ from backend.platform.db.schema.models.core import AppSetting, PointsMallSetting
 from backend.platform.db.schema.models.expansion import GameRound
 from backend.platform.db.schema.models.ops import OpsAuditEvent
 from backend.platform.db.schema.models.room_games import PlatformGameFee, RoomGame
+from backend.platform.scheduler.tasks.game_notice_task import GameNoticeTask
 from backend.platform.scheduler.tasks.game_task import GameTask
 from backend.platform.scheduler.tasks.room_game_task import RoomGameTask
 from test_mini_app_games_postgres import auth, games  # noqa: F401
@@ -155,6 +156,7 @@ async def _expire(paid, room_id):
         await s.commit()
 
 
+@pytest.mark.timeout(120)
 async def test_sichuan_reserve_timeout_and_paid_receipt(paid):
     room = await create(paid, "sichuan")
     for user in paid.users[1:]:
@@ -169,17 +171,16 @@ async def test_sichuan_reserve_timeout_and_paid_receipt(paid):
         await _expire(paid, room["id"])
         await task._advance(paid.app, paid.db, room["id"])
         assert (await read(paid, room))["table"]["phase"] == phase
-    async with paid.db.session_factory() as s:
-        model = await s.get(RoomGame, room["id"])
-        model.hand = {**model.hand, "engine": {**model.hand["engine"], "wall": []}}
-        await s.commit()
-    for _ in range(8):
+    for _ in range(140):
         await _expire(paid, room["id"])
         await task._advance(paid.app, paid.db, room["id"])
         result = await read(paid, room)
         if result["status"] == "closed":
             break
-    assert result["status"] == "closed"
+    assert result["status"] == "closed" and not result["results"][0]["void"]
+    await GameNoticeTask().execute(paid.app)
+    assert "四川血战" in paid.bot.send_message.await_args.kwargs["text"]
+    assert "小局已结算" in paid.bot.send_message.await_args.kwargs["text"]
     assert sum(row["delta"] for row in result["results"][0]["rows"]) == 0
     assert result["balance"] == 510 + result["results"][0]["rows"][0]["delta"]
 
@@ -204,6 +205,8 @@ async def test_k3_charges_confirmed_fee_once_and_keeps_odds(paid, monkeypatch):
     rolls = iter([1, 2, 3])
     monkeypatch.setattr(game_k3.random, "randint", lambda *args: next(rolls))
     await GameTask()._process_k3_round(paid.app, paid.db, round_id)
+    await GameNoticeTask().execute(paid.app)
+    assert "净结果 7" in paid.bot.send_message.await_args.kwargs["text"]
     assert (await paid.client.get(path, headers=token)).json()["balance"] == 107
     async with paid.db.session_factory() as s:
         rows = (await s.scalars(select(PlatformGameFee).where(PlatformGameFee.chat_id == paid.points))).all()
@@ -224,6 +227,7 @@ async def test_engine_failure_refunds_only_hand_reserve(paid, monkeypatch):
     monkeypatch.setattr(rooms, "mahjong", broken_engine)
     await _expire(paid, room["id"])
     await RoomGameTask()._advance(paid.app, paid.db, room["id"])
+    await GameNoticeTask().execute(paid.app)
     result = await read(paid, room)
     assert result["status"] == "closed" and result["results"][0]["void"]
     assert result["balance"] == 510
@@ -410,3 +414,69 @@ async def test_room_owner_invites_to_origin_group_or_personal_chats_and_join_req
     paid.bot.get_chat_member.return_value = SimpleNamespace(status="member")
     joined = await paid.client.post(path, headers=auth(paid, user=other, scene=scene), json=join)
     assert joined.status_code == 200 and joined.json()["balance"] == 500
+
+
+async def test_concurrent_create_limit_counts_closed_rooms(paid):
+    body = {"game": "zhajinhua", "base": 1, "multiplier": 1}
+    responses = await asyncio.gather(*(paid.client.post(
+        "/miniapp/api/rooms", headers=headers(paid), json=body,
+    ) for _ in range(4)))
+    assert sorted(response.status_code for response in responses) == [200, 200, 200, 409]
+    room = next(response.json() for response in responses if response.status_code == 200)
+    await operate(paid, room, "leave")
+    another = await paid.client.post("/miniapp/api/rooms", headers=headers(paid), json=body)
+    assert another.status_code == 409
+
+
+async def test_owner_can_remove_ineligible_player_and_start_with_replacement(paid):
+    room = await create(paid, "zhajinhua")
+    other = paid.users[1]
+    room = await operate(paid, room, "join", user=other)
+    path = f'/miniapp/api/rooms/{room["id"]}'
+    paid.bot.get_chat_member.side_effect = lambda chat, user: SimpleNamespace(
+        status="left" if user == other else "member",
+    )
+    refused = await operate(paid, room, "start", code=409)
+    assert "已无本群游戏资格" in refused["detail"]
+    payload = {"operation": "remove", "version": room["version"], "target_user_id": other}
+    assert (await paid.client.post(path, headers=headers(paid, paid.users[2]), json=payload)).status_code == 409
+    removed = await paid.client.post(path, headers=headers(paid), json=payload)
+    assert removed.status_code == 200 and removed.json()["players"] == 1
+    room = await operate(paid, removed.json(), "join", user=paid.users[2])
+    await operate(paid, room, "start")
+
+
+@pytest.mark.parametrize("entry", ["text", "panel"])
+async def test_group_k3_can_confirm_fee_without_mini_app(paid, entry):
+    from backend.features.activity.game_message_actions import handle_game_message
+    from backend.features.activity.game_runtime_actions import handle_game_runtime_callback
+
+    paid.app.bot_data["settings"].mini_app_enabled = False
+    user = SimpleNamespace(id=paid.user, username=None, first_name="test", last_name=None, language_code="zh")
+    chat = SimpleNamespace(id=paid.chat, type="supergroup")
+    context = SimpleNamespace(application=paid.app, bot=paid.bot)
+    message = SimpleNamespace(text="快三 小 10", message_id=17, date=dt.datetime.now(dt.UTC))
+    if entry == "text":
+        assert await handle_game_message(SimpleNamespace(effective_chat=chat, effective_user=user,
+                                                         effective_message=message), context)
+    else:
+        click = SimpleNamespace(data=f"gmrun:k3:bet:{paid.chat}:small:10", message=message, answer=AsyncMock())
+        await handle_game_runtime_callback(
+            SimpleNamespace(effective_chat=chat, effective_user=user, callback_query=click), context,
+        )
+    sent = paid.bot.send_message.await_args.kwargs
+    assert "台费 3 分" in sent["text"]
+    button = sent["reply_markup"].inline_keyboard[0][0]
+    assert button.text == "确认扣除 13 积分"
+    async with paid.db.session_factory() as session:
+        assert await get_balance(session, paid.points, paid.user) == 100
+    callback = SimpleNamespace(data=button.callback_data, message=message, answer=AsyncMock())
+    update = SimpleNamespace(effective_chat=chat, effective_user=user, callback_query=callback)
+    await handle_game_runtime_callback(update, context)
+    await handle_game_runtime_callback(update, context)
+    async with paid.db.session_factory() as session:
+        assert await get_balance(session, paid.points, paid.user) == 87
+        receipts = (await session.scalars(select(PlatformGameFee).where(PlatformGameFee.chat_id == paid.points))).all()
+        assert len(receipts) == 1 and receipts[0].amount == 3
+    charged = next(call.kwargs for call in paid.bot.send_message.await_args_list if "已扣台费" in call.kwargs["text"])
+    assert charged["reply_markup"] is None

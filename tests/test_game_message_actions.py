@@ -142,7 +142,7 @@ async def test_game_runtime_refresh_callback_returns_visible_feedback(monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_blackjack_action_falls_back_to_reply_when_edit_fails(monkeypatch):
+async def test_blackjack_non_terminal_action_falls_back_to_reply_when_edit_fails(monkeypatch):
     replies: list[str] = []
 
     async def fake_get_or_create_setting(session, chat_id: int):
@@ -155,7 +155,7 @@ async def test_blackjack_action_falls_back_to_reply_when_edit_fails(monkeypatch)
         return round_obj, participant
 
     async def fake_blackjack_hit(session, round_obj, participant):
-        return round_obj, participant, "push"
+        return round_obj, participant, None
 
     async def fake_reply(context, *, chat_id: int, text: str, reply_to_message_id: int, **kwargs):
         replies.append(text)

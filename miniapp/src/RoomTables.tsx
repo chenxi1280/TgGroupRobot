@@ -11,13 +11,32 @@ import '../room-preview/deskpark/web/components/mahjong.css';
 import '../room-preview/deskpark/web/screens/table.css';
 import '../room-preview/preview.css';
 
-export function RoomMahjong({ room, move }: { room: RoomView; move: (action: object) => void }) {
+function useRemaining(room: RoomView) {
+  const [seconds, setSeconds] = useState(0);
+  useEffect(() => {
+    const duration = Date.parse(room.deadline ?? '') - Date.parse(room.server_time);
+    const ends = Date.now() + duration;
+    const update = () => setSeconds(Math.max(0, Math.ceil((ends - Date.now()) / 1000)));
+    update();
+    const timer = window.setInterval(update, 250);
+    return () => window.clearInterval(timer);
+  }, [room.deadline, room.server_time]);
+  return seconds;
+}
+
+export function RoomMahjong({ room, move, busy }: { room: RoomView; move: (action: object) => void; busy: boolean }) {
+  const remaining = useRemaining(room);
   const table = room.table as sc.ScView;
   return <div className="room-mahjong room-preview">
+    <p className="room-turn">操作剩余 <output aria-label="操作剩余时间">{remaining} 秒</output></p>
     <SichuanBoard showResult={false} displayUnit={room.unit} ctl={{
       def: sichuan, view: table, seat: room.seat, players: room.seats, version: room.version,
       deadlines: {}, canRestart: false, restart() {}, leave() {},
-      act(action) { move(action); return null; },
+      act(action) {
+        if (busy || !remaining) return busy ? "操作提交中" : "等待牌桌更新";
+        move(action);
+        return null;
+      },
     }} />
     <ToastHost />
   </div>;
@@ -32,6 +51,7 @@ export function RoomFlower({
   room, move, busy,
 }: { room: RoomView; move: (action: object) => void; busy: boolean }) {
   const table = room.table as FlowerTableView;
+  const remaining = useRemaining(room);
   const [dealing, setDealing] = useState(true);
   const [choosing, setChoosing] = useState(false);
   const hand = room.results.length + 1;
@@ -44,7 +64,7 @@ export function RoomFlower({
     setChoosing(false);
     move({ type, target });
   };
-  const locked = busy || dealing;
+  const locked = busy || dealing || !remaining;
   return <section aria-label="炸金花牌桌">
     <div className="room-flower flower-preview">
       <div className="flower-info">第 {table.round} 轮 · 底池 {table.pot} · 当前注 {table.current_bet}</div>
@@ -59,7 +79,7 @@ export function RoomFlower({
       {dealing && <DealingAnimation isDealing seatPositions={seats} playerCount={seats.length}
         onComplete={() => setDealing(false)} />}
     </div>
-    <p className="room-turn" aria-live="polite">{dealing ? '正在发牌…' : '轮到 ' + room.seats[table.turn].name}</p>
+    <p className="room-turn" aria-live="polite">{dealing ? '正在发牌…' : '轮到 ' + room.seats[table.turn].name} · 剩余 <output aria-label="操作剩余时间">{remaining} 秒</output></p>
     <div className="room-actions">
       {legal.look && <button disabled={locked} onClick={() => play('look')}>看牌</button>}
       {legal.fold && <button disabled={locked} onClick={() => play('fold')}>弃牌</button>}

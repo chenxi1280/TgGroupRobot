@@ -12,6 +12,9 @@ function RoundStatus({ state, remaining }: { state: GameState; remaining: number
   const hand = state.round;
   const my = state.game === 'k3' ? state.my_k3 : state.round;
   const fee = state.game === "k3" ? state.my_k3?.fee ?? 0 : 0;
+  if (state.historical && (!my || !state.own_result)) {
+    return <span>第 {state.game === 'k3' ? state.draw?.id : my?.id} 局 · {state.game === 'k3' ? '已开奖' : '已结算'}</span>;
+  }
   if (!my) return <span>{state.game === 'blackjack' ? '选择积分，开始发牌' : '选择玩法和积分，加入本局'}</span>;
   if (my.status === 'finished') {
     const result = { won: '你获胜', lost: '未获胜', push: '平局' }[my.player_status] ?? '已结算';
@@ -27,7 +30,9 @@ function remainingSeconds(round: Round | null, now: number) {
   return round?.settle_at ? Math.max(0, Math.ceil((Date.parse(round.settle_at) - now) / 1000)) : 0;
 }
 
-function Board({ game, onSwitch }: { game: Game; onSwitch: (game: Game) => void }) {
+function Board({ game, onSwitch, historical }: {
+  game: Game; onSwitch: (game: Game) => void; historical: boolean;
+}) {
   const [state, setState] = useState<GameState>();
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -47,7 +52,7 @@ function Board({ game, onSwitch }: { game: Game; onSwitch: (game: Game) => void 
     if (inFlight.current) return;
     const revision = ++version.current;
     try {
-      const result = await gameRequest(game);
+      const result = await gameRequest(game, undefined, !historical);
       if (version.current === revision) accept(result);
     } catch (cause) {
       if (version.current === revision) setError(readError(cause));
@@ -57,7 +62,7 @@ function Board({ game, onSwitch }: { game: Game; onSwitch: (game: Game) => void 
     void refresh();
     const timer = window.setInterval(() => setNow(Date.now() + offset.current), 1000);
     const poll = window.setInterval(() => {
-      if (!document.hidden) void refresh();
+      if (!document.hidden && !historical) void refresh();
     }, 8000);
     const visible = () => { if (!document.hidden) void refresh(); };
     document.addEventListener('visibilitychange', visible);
@@ -67,7 +72,7 @@ function Board({ game, onSwitch }: { game: Game; onSwitch: (game: Game) => void 
       window.clearInterval(poll);
       document.removeEventListener('visibilitychange', visible);
     };
-  }, [game]);
+  }, [game, historical]);
 
   const submit = async (move: Move) => {
     if (inFlight.current) return;
@@ -136,7 +141,7 @@ function Board({ game, onSwitch }: { game: Game; onSwitch: (game: Game) => void 
           setError('');
           void refresh();
         }}>刷新</button></div>}
-        {locked ? <div className="gt-actions">
+        {historical ? <button type="button" onClick={() => onSwitch(game)}>返回当前牌桌</button> : locked ? <div className="gt-actions">
           <button type="button" disabled={busy || !remaining} onClick={() => play('hit')}>＋ 要牌</button>
           <button type="button" disabled={busy || !remaining} onClick={() => play('stand')}>停牌</button>
         </div> : state?.enabled[game] && !joined && !waitDraw && <>
@@ -165,7 +170,11 @@ function Board({ game, onSwitch }: { game: Game; onSwitch: (game: Game) => void 
   </main>;
 }
 
-export function Games({ initial }: { initial: Game }) {
+export function Games({ initial, historical = false }: { initial: Game; historical?: boolean }) {
   const [game, setGame] = useState(initial);
-  return <Board key={game} game={game} onSwitch={setGame} />;
+  const [showResult, setShowResult] = useState(historical);
+  return <Board key={game + String(showResult)} game={game} historical={showResult} onSwitch={next => {
+    setShowResult(false);
+    setGame(next);
+  }} />;
 }

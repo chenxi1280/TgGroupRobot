@@ -1,3 +1,4 @@
+import { randomInt } from 'node:crypto';
 import { Rng, sc, sichuan } from './room-preview/deskpark/engine';
 
 type Request = {
@@ -13,7 +14,7 @@ type Request = {
 function move(state: sc.ScState, seat: number, action: sc.ScAction) {
   const error = sichuan.validate(state, seat, action);
   if (error) throw new Error(error);
-  return sichuan.apply(state, seat, action);
+  return sichuan.apply(state, seat, action, randomInt);
 }
 
 function run(input: Request) {
@@ -24,7 +25,7 @@ function run(input: Request) {
         players: input.names.map((name) => ({ name, isBot: false })),
         options: { ...sichuan.defaultOptions, rounds: input.rounds },
         seed: input.seed,
-      });
+      }, randomInt);
       break;
     case 'move':
       state = move(state, input.seat, input.action);

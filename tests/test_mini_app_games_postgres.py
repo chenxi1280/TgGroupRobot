@@ -21,6 +21,8 @@ from backend.platform.config.core.settings import Settings
 from backend.platform.db.runtime.session import create_database
 from backend.platform.db.schema.models.core import TgChat, TgUser
 from backend.platform.db.schema.models.expansion import GameRound
+from backend.platform.db.schema.models.room_games import GameNotice
+from backend.platform.scheduler.tasks.game_notice_task import GameNoticeTask
 from backend.platform.scheduler.tasks.game_task import GameTask
 from test_mini_app_auth import TOKEN, signed_data
 
@@ -56,6 +58,7 @@ async def games():
             yield SimpleNamespace(db=db, app=app, bot=bot, chat=chat, points=points, user=user, client=client)
     finally:
         async with db.session_factory() as s:
+            await s.execute(delete(GameNotice).where(GameNotice.chat_id == chat))
             await s.execute(delete(TgChat).where(TgChat.id.in_([chat, points])))
             await s.execute(delete(TgUser).where(TgUser.id.in_([user, user + 1])))
             await s.commit()
@@ -114,6 +117,31 @@ async def test_blackjack_group_link_signed_member_and_points_lifecycle(games, mo
         assert await get_balance(s, games.chat, games.user) == 22
 
 
+async def test_old_blackjack_link_reopens_exact_result_for_group_member(games, monkeypatch):
+    monkeypatch.setattr(game_blackjack, "build_blackjack_deck", lambda: [10, 2, 6, 10, 9, 7])
+    path = "/miniapp/api/games/blackjack"
+    identity = auth(games)
+    first = (await games.client.post(path, headers=identity, json={
+        "action": "start", "round_id": 0, "bet": 10,
+    })).json()["round"]["id"]
+    assert (await games.client.post(path, headers=identity, json={
+        "action": "stand", "round_id": first, "card_count": 2,
+    })).status_code == 200
+    url = games.bot.send_message.await_args.kwargs["reply_markup"].inline_keyboard[0][0].url
+    scene = url.partition("startapp=")[2]
+    assert scene == f"game_blackjack_{-games.chat}_{first}"
+    newer = (await games.client.post(path, headers=identity, json={
+        "action": "start", "round_id": first, "bet": 20,
+    })).json()["round"]["id"]
+    other = auth(games, user=games.user + 1, scene=scene)
+    result = (await games.client.get(path, headers=other)).json()
+    assert result["historical"] and not result["own_result"]
+    assert result["round"]["id"] == first and result["round"]["bet"] == 10
+    assert "deck" not in result["round"]
+    assert (await games.client.get(path + "?current=true", headers=auth(games, scene=scene))).json()["round"]["id"] == newer
+    assert (await games.client.get(path, headers=auth(games, scene=f"game_blackjack_{-games.chat}_{newer}"))).status_code == 404
+
+
 async def test_k3_reuses_group_round_and_scheduler_result(games, monkeypatch):
     url = "/miniapp/api/games/k3"
     for user in (games.user, games.user + 1):
@@ -132,9 +160,16 @@ async def test_k3_reuses_group_round_and_scheduler_result(games, monkeypatch):
     rolls = iter([1, 2, 3])
     monkeypatch.setattr(game_k3.random, "randint", lambda *args: next(rolls))
     await GameTask()._process_k3_round(games.app, games.db, round_id)
+    await GameNoticeTask().execute(games.app)
     result = (await games.client.get(url, headers=auth(games))).json()
     assert result["round"] is None and result["draw"]["dice"] == [1, 2, 3]
     assert result["my_k3"]["payout"] == 20 and result["balance"] == 110
+    draw = next(call.kwargs for call in games.bot.send_message.await_args_list if "快三开奖" in call.kwargs["text"])
+    scene = draw["reply_markup"].inline_keyboard[0][0].url.partition("startapp=")[2]
+    assert scene == f"game_k3_{-games.chat}_{round_id}"
+    history = (await games.client.get(url, headers=auth(games, user=games.user + 2, scene=scene))).json()
+    assert history["historical"] and history["my_k3"] is None and history["draw"]["id"] == round_id
+
     assert any("快三开奖" in call.kwargs["text"] for call in games.bot.send_message.await_args_list)
     late = await games.client.post(
         url, headers=auth(games),
