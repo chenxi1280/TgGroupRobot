@@ -169,6 +169,7 @@ class ConversationStateType(str, enum.Enum):
     bottom_button_text_input = "bottom_button_text_input"  # 底部按钮头部文案
     bottom_button_button_text_input = "bottom_button_button_text_input"  # 底部按钮文案
     bottom_button_payload_input = "bottom_button_payload_input"  # 底部按钮发送内容
+    game_wait_room_fee = "game_wait_room_fee"  # 房间游戏服务费
     game_wait_rake_ratio = "game_wait_rake_ratio"  # 游戏抽水比例
     game_wait_rake_owner = "game_wait_rake_owner"  # 游戏抽水归属
     game_wait_auto_start_time = "game_wait_auto_start_time"  # 游戏自动启动时间

@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { miniApp, shareMessage } from '@tma.js/sdk-react';
 import { RoomFlower, RoomMahjong } from './RoomTables';
 import {
-  roomInvite, roomNames, roomRequest, saveGroupRoomSettings,
-  type GroupRoomSettings, type InviteTarget, type Lobby, type RoomGame, type RoomView, type Settlement,
+  roomInvite, roomNames, roomRequest,
+  type InviteTarget, type Lobby, type RoomGame, type RoomView, type Settlement,
 } from './roomApi';
 import './rooms.css';
 
@@ -13,7 +13,7 @@ function ResultTable({ result, mine }: { result: Settlement; mine: number | unde
   return <section className="room-result room-panel" aria-label="结算">
     <p className="room-kicker">本小局积分流水</p>
     <h2>第 {result.number} 小局{result.void ? '已作废' : '结算'}</h2>
-    {result.void && <p>本小局游戏投入已退回，台费按开场记录。</p>}
+    {result.void && <p>本小局游戏投入已退回，服务费按开场记录。</p>}
     <table><thead><tr><th>玩家</th><th>本局输赢</th><th>结算余额</th></tr></thead>
       <tbody>{result.rows.map(row => <tr key={row.id}>
         <td>{row.name}{row.id === mine ? '（我）' : ''}</td>
@@ -27,7 +27,7 @@ function MatchSummary({ room }: { room: RoomView }) {
   return <section className="room-panel room-result" aria-label="整场结算">
     <p className="room-kicker">已完成 {room.results.filter(hand => !hand.void).length} 小局</p>
     <h2>整场结算</h2>
-    <table><thead><tr><th>玩家</th><th>小局合计</th><th>台费</th><th>整场净变动</th></tr></thead>
+    <table><thead><tr><th>玩家</th><th>小局合计</th><th>服务费</th><th>整场净变动</th></tr></thead>
       <tbody>{room.seats.map(seat => {
         const total = room.results.reduce((sum, hand) =>
           sum + (hand.rows.find(row => row.id === seat.id)?.delta ?? 0), 0);
@@ -36,46 +36,6 @@ function MatchSummary({ room }: { room: RoomView }) {
           <td>{room.fee} 分</td><td className={net < 0 ? 'room-loss' : 'room-win'}>{net > 0 ? '+' : ''}{net} 分</td></tr>;
       })}</tbody></table>
   </section>;
-}
-
-function RoomSettings({ games, onSaved }: { games: Lobby['games']; onSaved: () => void }) {
-  const [saving, setSaving] = useState(false);
-  const [feedback, setFeedback] = useState('');
-  return <details className="room-panel room-settings">
-    <summary>本群房间游戏设置</summary>
-    <form key={JSON.stringify(games)} onSubmit={async event => {
-      event.preventDefault();
-      const fields = new FormData(event.currentTarget);
-      const settings = {} as GroupRoomSettings;
-      for (const game of Object.keys(roomNames) as RoomGame[]) {
-        settings[game] = { enabled: fields.has(game), points: Number(fields.get(game + '-fee')) };
-      }
-      setSaving(true);
-      setFeedback('');
-      try {
-        await saveGroupRoomSettings(settings);
-        setFeedback('本群设置已保存');
-        onSaved();
-      } catch (cause) {
-        setFeedback((cause as Error).message);
-      } finally {
-        setSaving(false);
-      }
-    }}>
-      <p>台费在房间创建时锁定，玩家开场时扣除。</p>
-      {Object.entries(roomNames).map(([game, name]) => <div key={game} className="room-settings-row">
-        <label className="room-checkbox">
-          <input type="checkbox" name={game} defaultChecked={games[game as RoomGame].enabled} />开启{name}
-        </label>
-        <label>每人每场台费
-          <input name={game + '-fee'} type="number" min={0} max={100000} required
-            defaultValue={games[game as RoomGame].points} />
-        </label>
-      </div>)}
-      <button type="submit" disabled={saving}>保存本群设置</button>
-      {feedback && <p role="status">{feedback}</p>}
-    </form>
-  </details>;
 }
 
 function CreatePanel({ lobby, create, busy }: {
@@ -105,7 +65,6 @@ function CreatePanel({ lobby, create, busy }: {
     </div>
     {game === 'zhajinhua' && <label className="room-checkbox"><input type="checkbox" checked={special}
       onChange={event => setSpecial(event.target.checked)} />235 两人比牌吃豹子</label>}
-    <p>每人场费 {lobby.games[game].points} 分 · {lobby.games[game].hands} 小局</p>
     {lobby.balance <= 0 && <p>可用群积分为 0，请先获取群积分。</p>}
     <button disabled={busy || lobby.balance <= 0} className="room-primary" type="submit">创建房间</button>
   </form>;
@@ -114,12 +73,12 @@ function CreatePanel({ lobby, create, busy }: {
 function RoomFeeNotice({ room }: { room: RoomView }) {
   if (room.fee_charged) {
     return <aside className="room-fee" role="status">
-      <strong>{room.fee ? "本场已扣台费 " + room.fee + " 分" : "本场免台费"}</strong><span>每小局输赢单独结算</span>
+      <strong>{room.fee ? "本场已扣服务费 " + room.fee + " 分" : "本场免服务费"}</strong><span>每小局输赢单独结算</span>
     </aside>;
   }
   return <aside className="room-fee" aria-label="费用说明">
-    <strong>每人场费 {room.fee} 分</strong>
-    <span>加入时不扣费。房主开场后统一扣除，提前结束场费不退。</span>
+    <strong className="room-fee-label">服务费每人每场 {room.fee} 分</strong>
+    <span>加入时不扣费。房主开场时统一扣除，提前结束服务费不退。</span>
     <dl>
       <dt>本场小局数</dt><dd>{room.hand_limit}</dd>
       <dt>首小局{room.game === 'sichuan' ? '预扣赔付' : '底注'}</dt><dd>{room.requirement - room.fee} 分</dd>
@@ -240,12 +199,11 @@ export default function Rooms({ initialRoom, initialHand }: { initialRoom?: numb
     <div className="room-balance"><span>可用群积分</span><strong>{room?.balance ?? lobby?.balance ?? '—'}</strong></div>
     {error && <p className="room-error" role="alert">{error} <button onClick={() => { setError(''); void refresh(); }}>刷新</button></p>}
     {roomId === undefined && lobby && <>
-      {lobby.can_manage && <RoomSettings games={lobby.games} onSaved={() => void refresh()} />}
       <CreatePanel lobby={lobby} create={data => void submit(undefined, data)} busy={busy} />
       <section className="room-panel"><h2>本群房间</h2>
         {!lobby.rooms.length && <p>目前没有房间。</p>}
         {lobby.rooms.map(item => <button className="room-row" key={item.id} onClick={() => setRoomId(item.id)}>
-          <strong>{roomNames[item.game]} #{item.id}</strong><span>{item.players} 人 · 场费 {item.fee} 分</span>
+          <strong>{roomNames[item.game]} #{item.id}</strong><span>{item.players} 人 · 服务费 {item.fee} 分</span>
         </button>)}
       </section>
     </>}
@@ -260,7 +218,7 @@ export default function Rooms({ initialRoom, initialHand }: { initialRoom?: numb
             onClick={() => act('join')}>加入房间</button>}
           {owner && <button className="room-primary"
             disabled={busy || room.balance < room.requirement || room.players < (room.game === 'sichuan' ? 4 : 2)}
-            onClick={() => act('start')}>开场并扣除台费</button>}
+            onClick={() => act('start')}>开场并扣除服务费</button>}
           {room.seat !== null && <button disabled={busy} onClick={() => act('leave')}>离座</button>}
         </div>
         {owner && <div className="room-actions" aria-label="邀请玩家">

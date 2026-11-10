@@ -123,7 +123,7 @@ def _resolve_car_review_target(cb: CallbackParser) -> int | None:
 _STANDARD_SCOPED_ACTIONS = {
     "auc": {"home", "toggle", "perm", "points_mode", "list", "detail"},
     "btm": {"home", "toggle", "text", "layout", "generate", "repeat", "button"},
-    "gm": {"home", "toggle", "rake", "auto", "delete_mode", "rounds", "help", "detail", "points"},
+    "gm": {"home", "toggle", "rake", "auto", "delete_mode", "rounds", "help", "detail", "points", "rooms"},
     "guess": {"home", "create", "list", "settings", "detail", "open", "cancel"},
     "act": {"home", "egg", "chat"},
     "qpub": {"home", "input", "clear", "send"},

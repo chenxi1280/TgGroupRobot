@@ -450,7 +450,9 @@ async def test_game_menu_exposes_rounds_and_help(monkeypatch):
     monkeypatch.setattr(admin_handler, "get_game_rake_owner_label", fake_get_rake_owner)
     monkeypatch.setattr(admin_handler._admin_handler.message_helper, "safe_edit", fake_safe_edit)
 
-    update = SimpleNamespace(callback_query=None, effective_user=SimpleNamespace(id=1))
+    update = SimpleNamespace(
+        callback_query=None, effective_user=SimpleNamespace(id=1), effective_chat=SimpleNamespace(type="group"),
+    )
     context = SimpleNamespace(user_data={}, application=SimpleNamespace(bot_data={"db": _Db()}))
 
     await admin_handler._admin_handler._show_game_menu(update, context, -100123)
@@ -459,6 +461,7 @@ async def test_game_menu_exposes_rounds_and_help(monkeypatch):
     row_texts = [[button.text for button in row] for row in keyboard.inline_keyboard]
     assert ["📋 最近牌局", "📘 指令帮助"] in row_texts
     assert ["关联积分"] in row_texts
+    assert not any("🎮 房间游戏设置" in row for row in row_texts)
 
 
 @pytest.mark.asyncio

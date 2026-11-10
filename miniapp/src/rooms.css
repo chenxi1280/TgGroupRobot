@@ -45,13 +45,14 @@
 .room-balance strong, .room-fee strong { color: var(--room-gold); font-size: 20px; }
 .room-fee { display: grid; gap: 5px; }
 .room-fee span { color: #d0dfd7; }
+.room-app .room-fee-label { color: #b8c3be; }
 .room-fee dl { display: grid; grid-template-columns: 1fr auto; gap: 3px 10px; margin: 4px 0 0; }
 .room-fee dd { margin: 0; font-variant-numeric: tabular-nums; }
 .room-panel h2 { color: var(--room-gold); margin: 0 0 7px; }
 .room-panel p { margin: 0 0 8px; }
 .room-form { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 6px; }
 .room-app label { color: #c0d7cd; margin: 0 0 7px; }
-.room-form select, .room-form input, .room-settings-row input[type="number"] {
+.room-form select, .room-form input {
   display: block;
   margin: 4px 0 0;
   width: 100%;
@@ -100,8 +101,3 @@
   .room-app .room-mahjong { margin-inline: -10px; }
   .room-app .room-mahjong .sc-table { --rw: 12px; }
 }
-
-.room-settings summary { color: var(--room-gold); cursor: pointer; }
-.room-settings form { margin-top: 10px; }
-.room-settings-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 8px 0; }
-.room-settings-row input[type="number"] { display: inline-block; width: 80px; margin: 0 0 0 6px; }

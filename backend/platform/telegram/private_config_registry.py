@@ -129,6 +129,7 @@ def _points_activity_specs() -> tuple[HandlerSpec, ...]:
         _full(points_states, "backend.features.admin.points_extended", "handle_points_extended_input"),
         _full(("bottom_button_text_input", "bottom_button_button_text_input", "bottom_button_payload_input"), "backend.features.admin.activity", "handle_bottom_button_input"),
         _full(("game_wait_rake_ratio", "game_wait_rake_owner", "game_wait_auto_start_time", "game_wait_auto_stop_time"), "backend.features.admin.activity", "handle_game_input"),
+        _full(("game_wait_room_fee",), "backend.features.admin.activity.game_room_settings", "handle_room_fee_input"),
         _full(guess_states, "backend.features.admin.activity", "handle_guess_input"),
         _full(("engagement_wait_egg_template", "engagement_wait_chat_target", "engagement_wait_chat_plan", "engagement_wait_chat_command"), "backend.features.admin.activity", "handle_engagement_input"),
     )

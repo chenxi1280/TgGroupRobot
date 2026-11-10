@@ -9,6 +9,7 @@ from backend.features.admin.activity.game_presenters import (
     format_game_round_detail,
     format_game_points_text,
 )
+from backend.features.admin.activity.game_room_settings import can_configure_room_games, handle_room_game_settings
 from backend.features.admin.support import *
 from backend.shared.time_ui import (
     build_copy_time_keyboard,
@@ -73,7 +74,9 @@ class GameAdminControllerMixin:
             auto_stop_time=setting.auto_stop_time,
             delete_mode=setting.delete_game_message_mode,
         )
-        keyboard = build_game_menu_keyboard(setting, chat_id, points_chat_label)
+        keyboard = build_game_menu_keyboard(
+            setting, chat_id, points_chat_label, show_rooms=await can_configure_room_games(update, context, chat_id),
+        )
         await self.message_helper.safe_edit(update, text=text, reply_markup=keyboard)
 
     async def _show_game_points_menu(
@@ -214,6 +217,9 @@ class GameAdminControllerMixin:
         callback_data: CallbackData,
     ) -> None:
         action = callback_data.get(1)
+        if action == "rooms":
+            await handle_room_game_settings(update, context, chat_id, callback_data=callback_data)
+            return
         if await self._handle_game_navigation(
             update, context, chat_id=chat_id, action=action, callback_data=callback_data
         ):

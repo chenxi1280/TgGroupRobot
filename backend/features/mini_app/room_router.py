@@ -11,8 +11,7 @@ from telegram import InlineQueryResultArticle, InputTextMessageContent, User
 from telegram.error import BadRequest, Forbidden, TelegramError
 
 from backend.features.activity.room_games.fees import (
-    GroupRoomSettings, fee_settings, group_room_settings, require_closed_mall, require_room_enabled,
-    save_group_room_settings,
+    fee_settings, group_room_settings, require_closed_mall, require_room_enabled,
 )
 from backend.features.activity.room_games.notices import room_invite_card, room_notice
 from backend.features.activity.room_games.rooms import (
@@ -24,7 +23,6 @@ from backend.features.points.services.points_service_accounts import get_balance
 from backend.platform.db.schema.models.core import PointsMallSetting, TgChat
 from backend.platform.db.schema.models.room_games import RoomGame
 from backend.shared.services.base import ValidationError
-from backend.shared.services.ops_audit_service import record_ops_event
 from backend.shared.services.user_service import ensure_user
 
 router = APIRouter(prefix="/miniapp/api/rooms")
@@ -36,7 +34,6 @@ MEMBERSHIP_CACHE_LIMIT = 1024
 class RoomMember:
     user: User
     chat_id: int
-    can_manage: bool
 
 
 class CreateRoom(BaseModel):
@@ -58,19 +55,17 @@ class RoomInvite(BaseModel):
     target: Literal["group", "private"]
 
 
-async def _require_member(bot, chat_id: int, user_id: int) -> bool:
+async def _require_member(bot, chat_id: int, user_id: int) -> None:
     try:
         member = await bot.get_chat_member(chat_id, user_id)
     except (BadRequest, Forbidden) as exc:
         raise HTTPException(403, "无法确认群成员资格") from exc
     except TelegramError as exc:
         raise HTTPException(503, "暂时无法验证群成员资格") from exc
-    if member.status in {"creator", "administrator"}:
-        return True
-    if member.status == "member" or (
-        member.status == "restricted" and member.is_member and member.can_send_messages
-    ):
-        return False
+    if member.status in {"creator", "administrator", "member"}:
+        return
+    if member.status == "restricted" and member.is_member and member.can_send_messages:
+        return
     raise HTTPException(403, "请先加入原群并完成入群验证，房间仅对原群可发言成员开放")
 
 
@@ -82,13 +77,12 @@ async def room_member(request: Request) -> RoomMember:
     chat_id = -int(scene[1] or scene[2])
     key = (chat_id, actor.user.id)
     cache = request.app.state.room_read_membership
-    expires, can_manage = cache.get(key, (0, False))
-    if request.method != "GET" or expires <= time.monotonic():
-        can_manage = await _require_member(request.app.state.telegram_app.bot, chat_id, actor.user.id)
+    if request.method != "GET" or cache.get(key, 0) <= time.monotonic():
+        await _require_member(request.app.state.telegram_app.bot, chat_id, actor.user.id)
         if len(cache) >= MEMBERSHIP_CACHE_LIMIT:
             cache.clear()
-        cache[key] = (time.monotonic() + MEMBERSHIP_READ_SECONDS, can_manage)
-    return RoomMember(actor.user, chat_id, can_manage)
+        cache[key] = time.monotonic() + MEMBERSHIP_READ_SECONDS
+    return RoomMember(actor.user, chat_id)
 
 
 async def _ensure_member(session, member: RoomMember) -> None:
@@ -120,28 +114,10 @@ async def lobby(request: Request, response: Response, member: RoomMember = Depen
                 game: terms | getattr(schedule, game).model_dump()
                 for game, terms in config.model_dump().items()
             },
-            "can_manage": member.can_manage,
             "mall_open": bool(mall and mall.enabled),
             "rooms": [room_summary(room) for room in await available_rooms(session, member.chat_id)],
             "balance": await get_balance(session, member.chat_id, member.user.id),
         }
-
-
-@router.put("/settings")
-async def update_settings(
-    data: GroupRoomSettings, *, request: Request, member: RoomMember = Depends(room_member),
-):
-    if not member.can_manage:
-        raise HTTPException(403, "仅本群管理员可以修改房间游戏设置")
-    async with request.app.state.db.session_factory() as session:
-        await _ensure_member(session, member)
-        await save_group_room_settings(session, member.chat_id, data)
-        await record_ops_event(
-            session, domain="room_games", event_type="settings_updated",
-            chat_id=member.chat_id, user_id=member.user.id, detail=data.model_dump(),
-        )
-        await session.commit()
-    return data
 
 
 @router.post("")

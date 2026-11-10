@@ -91,9 +91,11 @@ def _game_footer_rows(setting, chat_id: int) -> list[list[InlineKeyboardButton]]
 
 
 def build_game_menu_keyboard(
-    setting, chat_id: int, points_chat_label: str
+    setting, chat_id: int, points_chat_label: str, *, show_rooms: bool = False,
 ) -> InlineKeyboardMarkup:
     rows = _game_toggle_rows(setting, chat_id)
+    if show_rooms:
+        rows.append([InlineKeyboardButton("🎮 房间游戏设置", callback_data=f"gm:rooms:{chat_id}:home")])
     rows.extend(_game_config_rows(setting, chat_id, points_chat_label))
     rows.extend(_game_footer_rows(setting, chat_id))
     return admin_keyboard(rows)

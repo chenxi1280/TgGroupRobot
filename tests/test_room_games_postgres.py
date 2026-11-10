@@ -1,5 +1,6 @@
 import asyncio
 import datetime as dt
+import json
 import os
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -9,7 +10,7 @@ import pytest_asyncio
 from sqlalchemy import delete, select
 
 from backend.features.activity.room_games.fees import (
-    SETTINGS_KEY, FeeSettings, GroupRoomSettings, RoomFee, RoomSchedule, save_group_room_settings,
+    SETTINGS_KEY, FeeSettings, GroupRoomSettings, RoomFee, RoomSchedule,
 )
 from backend.features.activity.room_games.mahjong import RESERVE_UNITS
 from backend.features.activity.services import game_k3
@@ -39,7 +40,10 @@ async def paid(games):  # noqa: F811
         old_value = old.value if old else None
         await s.merge(AppSetting(key=SETTINGS_KEY, value=settings.model_dump_json()))
         terms = RoomFee(enabled=True, points=12)
-        await save_group_room_settings(s, games.chat, GroupRoomSettings(sichuan=terms, zhajinhua=terms))
+        await s.merge(AppSetting(
+            key=f"room_games:{games.chat}",
+            value=GroupRoomSettings(sichuan=terms, zhajinhua=terms).model_dump_json(),
+        ))
         s.add_all(TgUser(id=user) for user in users[2:])
         await s.flush()
         for user in users:
@@ -267,16 +271,70 @@ async def test_platform_admin_updates_fees_and_reads_scoped_balance(paid):
             await s.commit()
 
 
-async def test_group_admin_settings_are_scoped_and_new_fee_only_applies_to_new_rooms(paid):
+async def _configure_rooms_from_bot(paid):
+    from telegram import Update
+    from telegram.ext import Application, MessageHandler, filters
+
+    from backend.app.update_pipeline import MessageDispatcher
+    from backend.features.admin.admin_router import AdminRouter
+    from test_admin_routes_postgres import TelegramBoundary, callback_update, command_update
+
+    class RoomTelegram(TelegramBoundary):
+        member_status = "creator"
+
+        async def do_request(self, url, method, request_data=None, **kwargs):
+            if url.endswith("/getChatMember") and self.member_status == "member":
+                user_id = int(request_data.parameters["user_id"])
+                result = {"status": "member", "user": {"id": user_id, "is_bot": False, "first_name": "tester"}}
+                return 200, json.dumps({"ok": True, "result": result}).encode()
+            return await super().do_request(url, method, request_data=request_data, **kwargs)
+
+    transport = RoomTelegram()
+    app = Application.builder().token("999000:TEST_TOKEN").request(transport).build()
+    app.bot_data.update(paid.app.bot_data)
+    AdminRouter().register(app)
+    app.add_handler(MessageHandler(filters.ALL, MessageDispatcher().dispatch))
+    await app.initialize()
+    try:
+        room_menu = f"gm:rooms:{paid.chat}"
+        async def click(update_id, data):
+            await app.process_update(callback_update(app, paid.user, update_id, data))
+
+        async def message(update_id, value):
+            raw = command_update(app, paid.user, paid.user, update_id, value).to_dict()
+            raw["message"].pop("entities", None)
+            await app.process_update(Update.de_json(raw, app.bot))
+
+        await click(10, f"adm:menu:category_activities:{paid.chat}")
+        assert any(f"adm:menu:game:{paid.chat}:category" in str(params) for _, params in transport.calls)
+        await click(1, f"adm:menu:game:{paid.chat}:category")
+        assert any(room_menu + ":home" in str(params) for _, params in transport.calls)
+        await click(2, room_menu + ":home")
+        assert any("设置炸金花服务费" in str(params) for _, params in transport.calls)
+        await click(3, room_menu + ":toggle:sichuan:0")
+        await click(4, room_menu + ":fee:zhajinhua")
+        await message(5, "25.5")
+        assert any("之间的整数" in str(params) for _, params in transport.calls)
+        await message(6, "25")
+        await click(7, room_menu + ":fee:zhajinhua")
+        transport.member_status = "member"
+        await message(8, "99")
+        assert any("本群管理权限已失效" in str(params) for _, params in transport.calls)
+    finally:
+        await app.shutdown()
+
+
+async def test_bot_group_admin_configures_room_settings_and_h5_only_reads(paid):
     path = "/miniapp/api/rooms"
     old = await create(paid, "zhajinhua")
-    settings = {"sichuan": {"enabled": False, "points": 0}, "zhajinhua": {"enabled": True, "points": 25}}
-    assert (await paid.client.put(path + "/settings", headers=headers(paid), json=settings)).status_code == 403
+    await _configure_rooms_from_bot(paid)
 
     paid.bot.get_chat_member.return_value = SimpleNamespace(status="administrator")
-    assert (await paid.client.put(path + "/settings", headers=headers(paid), json=settings)).status_code == 200
+    assert (await paid.client.put(path + "/settings", headers=headers(paid), json={})).status_code == 405
     lobby = (await paid.client.get(path, headers=headers(paid))).json()
-    assert lobby["can_manage"] and lobby["games"]["zhajinhua"]["points"] == 25
+    assert "can_manage" not in lobby
+    assert not lobby["games"]["sichuan"]["enabled"]
+    assert lobby["games"]["zhajinhua"]["points"] == 25
     other = (await paid.client.get(path, headers=auth(paid, scene=f"rooms_{-paid.points}"))).json()
     assert not other["games"]["zhajinhua"]["enabled"]
 
@@ -286,8 +344,10 @@ async def test_group_admin_settings_are_scoped_and_new_fee_only_applies_to_new_r
     opened = await operate(paid, room, "start")
     assert opened["fee"] == 12 and opened["balance"] == 509
     async with paid.db.session_factory() as s:
-        audit = await s.scalar(select(OpsAuditEvent).where(OpsAuditEvent.chat_id == paid.chat))
-        assert audit.user_id == paid.user and audit.detail == settings
+        audits = (await s.scalars(select(OpsAuditEvent).where(OpsAuditEvent.chat_id == paid.chat)
+                                  .order_by(OpsAuditEvent.id))).all()
+        assert [audit.user_id for audit in audits] == [paid.user, paid.user]
+        assert audits[-1].detail["zhajinhua"] == {"enabled": True, "points": 25}
 
 
 async def test_room_owner_invites_to_origin_group_or_personal_chats_and_join_requires_points(paid):

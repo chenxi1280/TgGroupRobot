@@ -24,9 +24,8 @@ export type RoomView = RoomSummary & {
 };
 export type Lobby = {
   balance: number; games: Record<RoomGame, FeeOption>; rooms: RoomSummary[];
-  mall_open: boolean; can_manage: boolean;
+  mall_open: boolean;
 };
-export type GroupRoomSettings = Record<RoomGame, Pick<FeeOption, 'enabled' | 'points'>>;
 export type InviteTarget = 'group' | 'private';
 
 async function request<T>(route: string, method: string, body?: object): Promise<T> {
@@ -42,10 +41,6 @@ async function request<T>(route: string, method: string, body?: object): Promise
 
 export function roomRequest<T>(id?: number, body?: object) {
   return request<T>(id === undefined ? '' : '/' + id, body ? 'POST' : 'GET', body);
-}
-
-export function saveGroupRoomSettings(settings: GroupRoomSettings) {
-  return request<GroupRoomSettings>('/settings', 'PUT', settings);
 }
 
 export function roomInvite(id: number, target: InviteTarget) {
